@@ -1,18 +1,13 @@
 use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
 use tauri::WebviewWindowBuilder;
-use tauri::http;
+use tauri_plugin_notification::NotificationExt;
 use std::sync::Mutex;
-
-// カスタムスキーム名: tauri が認識するため英数字のみ（短く）
-const NOTIF_SCHEME: &str = "simpnotif";
-
-// HTML を実行ファイルに埋め込む。カスタム URI スキーム経由で配信する
-const CONTAINER_HTML: &str = include_str!("../../public/notification-container.html");
 
 const CONTAINER_LABEL: &str = "notif_container";
 const PICKER_LABEL: &str = "notif_pos_picker";
 
 const CONTAINER_W: i32 = 360;
+#[allow(dead_code)]
 const CONTAINER_H_INITIAL: i32 = 100;       // 初期は1枚分の高さだけ
 const CONTAINER_H_DEFAULT: i32 = 600;       // 「右下」デフォルト計算用の見込み高さ
 const CONTAINER_H_MIN: i32 = 90;            // カードなしのとき
@@ -111,9 +106,12 @@ fn resolve_window_position(
 }
 
 // ===========================================================================
-// コンテナウィンドウ生成・取得
+// コンテナウィンドウ生成・取得（現在は使用していない: WebView2 でのハング問題により
+// Windows ネイティブのトースト通知に切り替えた。将来カスタム UI を再開する際の
+// ためにコードは残してある）
 // ===========================================================================
 
+#[allow(dead_code)]
 fn ensure_container_window(
     app_handle: &tauri::AppHandle,
 ) -> Result<(tauri::WebviewWindow, bool), String> {
@@ -122,62 +120,25 @@ fn ensure_container_window(
         log::info!("[ensure] step 1.5: existing container found, reusing");
         return Ok((win, false));
     }
-    log::info!("[ensure] step 2: no existing, will create new");
+    log::error!("[ensure] step 2: container should have been pre-created in setup()! Falling back...");
+    // フォールバック: setup() で作られていなかった場合に build を試みる
+    // ただしハングする可能性あり
+    let win = WebviewWindowBuilder::new(
+        app_handle,
+        CONTAINER_LABEL,
+        tauri::WebviewUrl::App("/notification-container.html".into()),
+    )
+    .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
+    .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
+    .build()
+    .map_err(|e| format!("fallback build failed: {}", e))?;
 
-    // ファイル URL ではなくカスタムスキーム経由で HTML を Rust から直接配信する
-    // (`/notification-container.html` のバンドル/フォールバック問題を完全回避)
-    let url_str = format!("{}://localhost/container", NOTIF_SCHEME);
-    log::info!("[ensure] step 2.5: container URL = {}", url_str);
-    let url = url_str
-        .parse::<url::Url>()
-        .map_err(|e| format!("URL parse failed: {}", e))?;
+    let _ = win.set_decorations(false);
+    let _ = win.set_skip_taskbar(true);
+    let _ = win.set_always_on_top(true);
+    let _ = win.set_resizable(false);
 
-    // BUILD は最小オプションで実行する
-    log::info!("[ensure] step 3: about to call WebviewWindowBuilder::build()");
-    let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        WebviewWindowBuilder::new(
-            app_handle,
-            CONTAINER_LABEL,
-            tauri::WebviewUrl::External(url),
-        )
-        .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
-        .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
-        .build()
-    }));
-
-    let win = match build_result {
-        Ok(Ok(w)) => {
-            log::info!("[ensure] step 4: build OK");
-            w
-        }
-        Ok(Err(e)) => {
-            log::error!("[ensure] step 4 BUILD ERROR: {}", e);
-            return Err(format!("build failed: {}", e));
-        }
-        Err(panic) => {
-            log::error!("[ensure] step 4 BUILD PANICKED: {:?}", panic);
-            return Err("build panicked".to_string());
-        }
-    };
-
-    // 各設定を1つずつ適用、各ステップでログ
-    log::info!("[ensure] step 5a: set_decorations(false)");
-    if let Err(e) = win.set_decorations(false) {
-        log::warn!("[ensure] set_decorations failed: {}", e);
-    }
-    log::info!("[ensure] step 5b: set_skip_taskbar(true)");
-    if let Err(e) = win.set_skip_taskbar(true) {
-        log::warn!("[ensure] set_skip_taskbar failed: {}", e);
-    }
-    log::info!("[ensure] step 5c: set_always_on_top(true)");
-    if let Err(e) = win.set_always_on_top(true) {
-        log::warn!("[ensure] set_always_on_top failed: {}", e);
-    }
-    log::info!("[ensure] step 5d: set_resizable(false)");
-    if let Err(e) = win.set_resizable(false) {
-        log::warn!("[ensure] set_resizable failed: {}", e);
-    }
-    log::info!("[ensure] step 6: container window setup complete");
+    log::info!("[ensure] step 6: container window setup complete (fallback)");
     Ok((win, true))
 }
 
@@ -243,70 +204,27 @@ fn resize_notif_container(
 #[tauri::command]
 fn enqueue_notification(
     app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
+    _state: tauri::State<'_, NotificationState>,
     title: String,
     body: String,
     room_id: String,
 ) -> Result<(), String> {
-    log::info!("[enqueue] A: enqueue_notification: title={}, body={}", title, body);
+    log::info!("[enqueue] toast: title={}, body={}, room_id={}", title, body, room_id);
 
-    log::info!("[enqueue] B: locking saved_position");
-    let saved = state.saved_position.lock().unwrap().clone();
-    log::info!("[enqueue] C: saved={}", saved.is_some());
+    // Windows ネイティブのトースト通知を使う（WebView2 ベースのカスタム UI は環境問題で動かないため）
+    // メインウィンドウを閉じていても確実に表示される
+    app_handle
+        .notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| {
+            log::error!("[enqueue] notification show failed: {}", e);
+            format!("notification failed: {}", e)
+        })?;
 
-    log::info!("[enqueue] D: calling ensure_container_window");
-    let (window, was_new) = ensure_container_window(&app_handle)?;
-    log::info!("[enqueue] E: ensure_container_window returned, was_new={}", was_new);
-
-    if was_new {
-        *state.container_ready.lock().unwrap() = false;
-        log::info!("[enqueue] F: marked container_ready=false (new container)");
-    }
-
-    log::info!("[enqueue] G: resolving window position");
-    if let Some((wx, wy, _stack_dir)) = resolve_window_position(&app_handle, saved.as_ref()) {
-        log::info!("[enqueue] H: setting position to ({}, {})", wx, wy);
-        window
-            .set_position(tauri::PhysicalPosition { x: wx, y: wy })
-            .map_err(|e| format!("set_position failed: {}", e))?;
-        log::info!("[enqueue] I: position set");
-    }
-
-    let stack_dir = saved
-        .as_ref()
-        .map(|s| s.stack_direction.clone())
-        .unwrap_or_else(|| "up".to_string());
-
-    let id = uuid::Uuid::new_v4().to_string();
-    let payload = serde_json::json!({
-        "id": id,
-        "title": title.clone(),
-        "body": body.clone(),
-        "roomId": room_id.clone(),
-        "stackDir": stack_dir.clone(),
-    });
-
-    log::info!("[enqueue] J: checking container_ready flag");
-    let ready = *state.container_ready.lock().unwrap();
-    if ready {
-        log::info!("[enqueue] K: ready=true, emitting new-notif");
-        window
-            .emit("new-notif", payload)
-            .map_err(|e| format!("emit failed: {}", e))?;
-        log::info!("[enqueue] L: emit done");
-    } else {
-        log::info!("[enqueue] K: ready=false, queueing notification");
-        state.pending.lock().unwrap().push(PendingNotif {
-            id,
-            title,
-            body,
-            room_id,
-            stack_dir,
-        });
-        log::info!("[enqueue] L: queued");
-    }
-
-    log::info!("[enqueue] M: returning Ok");
+    log::info!("[enqueue] toast shown OK");
     Ok(())
 }
 
@@ -681,17 +599,6 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // カスタム URI スキーム: 通知コンテナ HTML を Rust から直接配信
-        // これにより public/ のバンドルや URL フォールバックに依存しない
-        .register_uri_scheme_protocol(NOTIF_SCHEME, |_ctx, _request| {
-            log::info!("[scheme] serving container HTML");
-            http::Response::builder()
-                .status(200)
-                .header("Content-Type", "text/html; charset=utf-8")
-                .header("Access-Control-Allow-Origin", "*")
-                .body(CONTAINER_HTML.as_bytes().to_vec())
-                .unwrap()
-        })
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
             enqueue_notification,
