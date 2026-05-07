@@ -2006,6 +2006,7 @@
       let currentServerId = null;
       let currentServerData = null;
       let serverListUnsubscribe = null;
+      let currentServerNickname = null;
 
       let awayTimer = null;
       const AWAY_TIMEOUT = 5 * 60 * 1000;
@@ -2915,13 +2916,28 @@
       // Server Features
       // =========================================================================
 
-      // SHA-256 ハッシュ（パスワード検証用）
+      // HTMLエスケープ（XSS対策: innerHTML に埋め込む全ての文字列に適用する）
+      function escapeHtml(s) {
+        if (s == null) return "";
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      // PBKDF2 ハッシュ（SHA-256より総当たり耐性が大幅に高い）
       async function hashPassword(password, serverId) {
         const encoder = new TextEncoder();
-        const data = encoder.encode(password + serverId);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const keyMaterial = await crypto.subtle.importKey(
+          'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
+        );
+        const bits = await crypto.subtle.deriveBits(
+          { name: 'PBKDF2', salt: encoder.encode(serverId), iterations: 100000, hash: 'SHA-256' },
+          keyMaterial, 256
+        );
+        return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
       }
 
       // サーバー一覧の表示
@@ -2932,14 +2948,17 @@
 
         if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
-        const serversQuery = query(collection(db, `artifacts/${appId}/servers`));
+        // 管理者は全件取得、一般ユーザーは自分が参加しているサーバーのみをFirestore側でフィルタリング
+        const serversQuery = isAdmin
+          ? query(collection(db, `artifacts/${appId}/servers`))
+          : query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId));
+
         serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
           serverGrid.innerHTML = "";
           const servers = [];
           snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
 
-          // 管理者: 全サーバー, 一般: 参加済みのみ
-          const visible = isAdmin ? servers : servers.filter(s => s.joinedUsers && s.joinedUsers.includes(userId));
+          const visible = servers;
 
           if (visible.length === 0) {
             serverGrid.appendChild(Object.assign(document.createElement("div"), {
@@ -2956,10 +2975,11 @@
             const card = document.createElement("div");
             card.className = "server-card";
             const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+            const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
             card.innerHTML = `
               <div class="server-card-icon"><i class="fas fa-server"></i></div>
-              <div class="server-card-name">${server.name || server.serverId}</div>
-              <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${server.memberCount || (server.joinedUsers ? server.joinedUsers.length : 0)} メンバー</div>
+              <div class="server-card-name">${escapeHtml(server.name || server.serverId)}</div>
+              <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div>
               ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
               ${isAdmin && !isMine ? '<span class="server-card-admin-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe"><i class="fas fa-shield-alt mr-1"></i>全体管理者</span>' : ''}
             `;
@@ -2986,6 +3006,14 @@
           settingsBtn.classList.add("hidden");
         }
 
+        // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
+        try {
+          const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
+          currentServerNickname = (profileSnap.exists() && profileSnap.data().nickname)
+            ? profileSnap.data().nickname
+            : null;
+        } catch(e) { currentServerNickname = null; }
+
         // ルームを読み込む
         loadServerRooms(serverId);
         membersSidebar.classList.remove("hidden");
@@ -2998,10 +3026,12 @@
         currentServerId = null;
         currentServerData = null;
         currentRoomId = null;
+        currentServerNickname = null;
 
         if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
         if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
         if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+        if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
 
         Object.values(unreadListeners).forEach(u => u());
         unreadListeners = {}; unreadCounts = {};
@@ -3615,8 +3645,16 @@
           const room = d.data();
           const item = document.createElement("div");
           item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg";
-          item.innerHTML = `<span class="text-sm font-medium text-gray-800"># ${room.name}</span>
-            <button data-room-id="${d.id}" data-room-name="${room.name}" class="del-room-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-trash"></i></button>`;
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "text-sm font-medium text-gray-800";
+          nameSpan.textContent = `# ${room.name}`;
+          const delBtn = document.createElement("button");
+          delBtn.className = "del-room-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all";
+          delBtn.dataset.roomId = d.id;
+          delBtn.dataset.roomName = room.name;
+          delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
+          item.appendChild(nameSpan);
+          item.appendChild(delBtn);
           listEl.appendChild(item);
         });
         listEl.querySelectorAll(".del-room-btn").forEach(btn => {
@@ -3672,18 +3710,27 @@
           const isAdmin_ = admins.includes(uid);
           const item = document.createElement("div");
           item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg mb-2";
+          const displayName = profile.nickname || uid.substring(0, 8);
+          const initial = escapeHtml((profile.nickname || '?').charAt(0).toUpperCase());
           item.innerHTML = `
             <div class="flex items-center gap-2">
-              <div class="w-8 h-8 rounded-full bg-gray-700 text-white flex items-center justify-center text-sm font-bold">${(profile.nickname || '?').charAt(0).toUpperCase()}</div>
+              <div class="w-8 h-8 rounded-full bg-gray-700 text-white flex items-center justify-center text-sm font-bold">${initial}</div>
               <div>
-                <div class="text-sm font-medium text-gray-800">${profile.nickname || uid.substring(0,8)}</div>
+                <div class="text-sm font-medium text-gray-800">${escapeHtml(displayName)}</div>
                 ${isAdmin_ ? '<span class="text-xs text-amber-600 font-bold"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
               </div>
             </div>
             <div class="flex gap-2">
-              ${uid !== userId ? `<button data-uid="${uid}" data-is-admin="${isAdmin_}" class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
-              ${uid !== userId ? `<button data-uid="${uid}" class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
+              ${uid !== userId ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
+              ${uid !== userId ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
             </div>`;
+          // data-uid はサニタイズ不要な UID だが innerHTML の外で設定して安全に
+          if (uid !== userId) {
+            const tb = item.querySelector(".toggle-admin-btn");
+            const kb = item.querySelector(".kick-btn");
+            if (tb) { tb.dataset.uid = uid; tb.dataset.isAdmin = String(isAdmin_); }
+            if (kb) { kb.dataset.uid = uid; }
+          }
           listEl.appendChild(item);
         }
 
@@ -3729,13 +3776,18 @@
           if (inv.disabled) return;
           const item = document.createElement("div");
           item.className = "invite-code-item";
+          const uses = Number.isFinite(inv.uses) ? inv.uses : 0;
+          const maxUsesLabel = inv.maxUses > 0 ? inv.maxUses : '∞';
+          const expLabel = inv.expiresAt ? '・' + new Date(inv.expiresAt.toDate()).toLocaleDateString() + 'まで' : '';
           item.innerHTML = `
             <div class="flex-1">
-              <div class="invite-code-text">${d.id}</div>
-              <div class="invite-code-meta">${inv.uses || 0}/${inv.maxUses || '∞'}回使用 ${inv.expiresAt ? '・' + new Date(inv.expiresAt.toDate()).toLocaleDateString() + 'まで' : ''}</div>
+              <div class="invite-code-text">${escapeHtml(d.id)}</div>
+              <div class="invite-code-meta">${uses}/${maxUsesLabel}回使用${escapeHtml(expLabel)}</div>
             </div>
-            <button data-code="${d.id}" class="copy-invite-btn text-gray-400 hover:text-gray-700 p-1 rounded" title="コピー"><i class="fas fa-copy"></i></button>
-            <button data-code="${d.id}" class="disable-invite-btn text-red-400 hover:text-red-600 p-1 rounded" title="無効化"><i class="fas fa-ban"></i></button>`;
+            <button class="copy-invite-btn text-gray-400 hover:text-gray-700 p-1 rounded" title="コピー"><i class="fas fa-copy"></i></button>
+            <button class="disable-invite-btn text-red-400 hover:text-red-600 p-1 rounded" title="無効化"><i class="fas fa-ban"></i></button>`;
+          item.querySelector(".copy-invite-btn").dataset.code = d.id;
+          item.querySelector(".disable-invite-btn").dataset.code = d.id;
           listEl.appendChild(item);
         });
         listEl.querySelectorAll(".copy-invite-btn").forEach(btn => {
@@ -3756,7 +3808,10 @@
       document.getElementById("createInviteCodeBtn").addEventListener("click", async () => {
         const expiryDays = parseInt(document.getElementById("inviteExpiry").value);
         const maxUses = parseInt(document.getElementById("inviteMaxUses").value);
-        const code = Math.random().toString(36).toUpperCase().slice(2, 10);
+        const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const _codeBytes = new Uint8Array(8);
+        crypto.getRandomValues(_codeBytes);
+        const code = Array.from(_codeBytes).map(b => _codeChars[b % 36]).join('');
         const inviteData = {
           createdBy: userId,
           createdAt: serverTimestamp(),
@@ -3823,7 +3878,7 @@
           
           loadingOverlay.classList.remove("hidden");
           try {
-              const data = { text, senderId: userId, senderNickname: userNickname, timestamp: serverTimestamp() };
+              const data = { text, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
               if(attachedFile) {
                   Object.assign(data, { fileData: attachedFile.data, fileName: attachedFile.name, fileType: attachedFile.type, fileSize: attachedFile.size });
               }
@@ -3993,7 +4048,8 @@
               mentionPopup.classList.add("hidden"); return;
           }
           mentionPopup.innerHTML = "";
-          const users = cachedUsers.filter(u => u.id !== userId);
+          const serverMemberIds = currentServerData?.joinedUsers || [];
+          const users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
           if (users.length === 0) {
               mentionPopup.innerHTML = '<div class="p-2 text-sm text-gray-500">ユーザーがいません</div>';
           } else {
@@ -4023,11 +4079,18 @@
 
       function escapeHtmlAndLinkUrls(text) {
         if (!text) return "";
+        // まず全体をHTMLエスケープ（XSS防止）
         let escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        escapedText = escapedText.replace(urlRegex, `<a href="$1" target="_blank" rel="noopener noreferrer" style="color: black; text-decoration: underline;">$1</a>`);
+        // URL置換: スペース・引用符・不等号を含まない安全なURLのみ <a> に変換
+        // href属性値は encodeURIComponent で二重保護しない（既にエスケープ済み文字列から抽出するため、
+        // "&quot;" などを含むと壊れる）。代わりに href を直接 DOM で設定してインジェクションを根絶する。
+        const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
+        escapedText = escapedText.replace(urlRegex, (safeUrl) => {
+          // safeUrl はすでにエスケープ済みテキストから取り出した安全な断片
+          return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color: black; text-decoration: underline;">${safeUrl}</a>`;
+        });
         // メンションの置換 (@ユーザー名)
-        const mentionRegex = /@([^\s]+)/g;
+        const mentionRegex = /@([^\s<&]+)/g;
         escapedText = escapedText.replace(mentionRegex, (match, p1) => {
             return `<span class="mention-text">@${p1}</span>`;
         });

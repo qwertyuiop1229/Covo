@@ -133,10 +133,11 @@ service cloud.firestore {
           allow read: if isAuthenticated();
           // 作成・無効化はサーバー管理者のみ
           allow create, delete: if isServerAdmin(appId, serverId);
-          // 使用回数のインクリメントは任意の認証済みユーザーが可能
+          // 使用回数は +1 のインクリメントのみ許可（リセット・改ざん防止）
           allow update: if isServerAdmin(appId, serverId) ||
             (isAuthenticated() &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses']));
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses']) &&
+             request.resource.data.uses == resource.data.uses + 1);
         }
       }
     }
