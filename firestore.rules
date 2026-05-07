@@ -8,14 +8,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // [Fix] exists()チェックを追加 — adminListがない場合にエラーではなくfalseを返す
     function isGlobalAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
         (request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails);
     }
 
-    // [Fix] exists()チェックを追加 — サーバードキュメントが存在しない場合はfalse
     function isServerAdmin(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
@@ -23,7 +21,6 @@ service cloud.firestore {
           || isGlobalAdmin(appId));
     }
 
-    // [Fix] exists()チェックを追加
     function isJoinedServer(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
@@ -47,118 +44,104 @@ service cloud.firestore {
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // ============================================================
-      // 旧パス互換ルール（移行完了後に削除予定）
-      // ============================================================
-
       match /users/{userId}/profile/{docId} {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
+      // 3. グローバルオンライン状態
       match /status/{userId} {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      match /public/data/rooms/{roomId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && request.resource.data.createdBy == request.auth.uid;
-        allow update: if isAuthenticated() && (resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId));
-        allow delete: if isGlobalAdmin(appId);
-
-        // [Fix] 旧実装では isAuthenticated() だけで誰でも書けた — ルーム作成者かGlobal Adminのみに絞る
-        match /secrets/{docId} {
-          allow read: if isGlobalAdmin(appId);
-          allow create: if isAuthenticated() &&
-            get(/databases/$(database)/documents/artifacts/$(appId)/public/data/rooms/$(roomId)).data.createdBy == request.auth.uid;
-          allow update: if isGlobalAdmin(appId);
-          allow delete: if isGlobalAdmin(appId);
-        }
-
-        match /messages/{messageId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
-          // [Fix] 送信者本人でも senderId フィールドは変更不可
-          allow update: if isAuthenticated() && (
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-            || (resource.data.senderId == request.auth.uid
-                && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId']))
-            || isGlobalAdmin(appId)
-          );
-          allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isGlobalAdmin(appId));
-        }
-
-        match /readReceipts/{receiptUserId} {
-          allow read: if isAuthenticated();
-          allow write: if isAuthenticated() && request.auth.uid == receiptUserId;
-          allow delete: if isGlobalAdmin(appId);
-        }
-      }
-
       // ============================================================
-      // 新パス（サーバーベース構造）
+      // サーバーベース構造
       // ============================================================
 
       match /servers/{serverId} {
+        // 認証済みユーザーは全サーバーのメタ情報（名前・ID・パスワードハッシュ）を読める
+        // （参加検証のため）
         allow read: if isAuthenticated();
+
+        // サーバー作成: 自分をcreatedBy・serverAdmins・joinedUsersに含める必要がある
         allow create: if isAuthenticated() &&
           request.resource.data.createdBy == request.auth.uid &&
           request.auth.uid in request.resource.data.serverAdmins &&
           request.auth.uid in request.resource.data.joinedUsers;
+
+        // 管理者によるフル更新
         allow update: if isServerAdmin(appId, serverId);
+
+        // 参加操作: joinedUsersとmemberCountのみ変更可（自分自身を追加する場合のみ）
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'memberCount']) &&
+          request.auth.uid in request.resource.data.joinedUsers &&
+          !(request.auth.uid in resource.data.joinedUsers);
+
+        // サーバー削除: グローバル管理者またはサーバー管理者
         allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
 
+        // サーバー内の秘密情報（管理者のみ）
         match /secrets/{docId} {
           allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
           allow create, update: if isServerAdmin(appId, serverId);
           allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
         }
 
+        // ルーム一覧
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
-          allow create: if isJoinedServer(appId, serverId);
-          allow update: if isJoinedServer(appId, serverId) &&
-            (resource.data.createdBy == request.auth.uid || isServerAdmin(appId, serverId));
+          allow create: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId);
           allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+
+          // ルーム内メッセージ
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              request.resource.data.senderId == request.auth.uid;
+            allow update: if isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId']))
+              || isServerAdmin(appId, serverId)
+            );
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          }
+
+          // 既読レシート
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) &&
+              request.auth.uid == receiptUserId;
+          }
         }
 
-        match /messages/{messageId} {
+        // サーバー別プロフィール
+        match /profiles/{profileUserId} {
           allow read: if isJoinedServer(appId, serverId);
-          allow create: if isJoinedServer(appId, serverId) && request.resource.data.senderId == request.auth.uid;
-          // [Fix] senderId変更を防止
-          allow update: if isJoinedServer(appId, serverId) && (
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-            || (resource.data.senderId == request.auth.uid
-                && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId']))
-            || isServerAdmin(appId, serverId)
-          );
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          allow write: if isJoinedServer(appId, serverId) &&
+            request.auth.uid == profileUserId;
         }
 
-        match /profiles/{userId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-        }
-
-        match /status/{userId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-        }
-
-        match /readReceipts/{userId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        // 招待コード
+        match /inviteCodes/{code} {
+          // 認証済みユーザーは招待コードを読める（参加検証のため）
+          allow read: if isAuthenticated();
+          // 作成・無効化はサーバー管理者のみ
+          allow create, delete: if isServerAdmin(appId, serverId);
+          // 使用回数のインクリメントは任意の認証済みユーザーが可能
+          allow update: if isServerAdmin(appId, serverId) ||
+            (isAuthenticated() &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses']));
         }
       }
     }
 
-    // ============================================================
-    // [Fix/New] タイピングインジケーター用パス
-    // artifacts/{appId}/... とは別の apps/{appId}/... パスのため別途定義が必要
-    // ============================================================
+    // タイピングインジケーター（既存パス維持）
     match /apps/{appId}/rooms/{roomId}/typing/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;

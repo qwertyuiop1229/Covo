@@ -920,6 +920,125 @@
       }
       #updateErrorBox button:hover { background: rgba(255,255,255,0.2); }
 
+      /* === サーバーリスト画面 === */
+      #serverListScreen {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #f3f4f6;
+        overflow-y: auto;
+      }
+      #serverListScreen.hidden { display: none !important; }
+      .server-list-header {
+        background: #1f2937;
+        color: white;
+        padding: 1.25rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .server-list-title { font-size: 1.1rem; font-weight: 700; }
+      .server-list-actions { display: flex; gap: 8px; }
+      .server-list-actions button {
+        padding: 7px 14px;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #joinServerBtn { background: rgba(255,255,255,0.12); color: white; }
+      #joinServerBtn:hover { background: rgba(255,255,255,0.22); }
+      #createServerBtn { background: #f3f4f6; color: #1f2937; }
+      #createServerBtn:hover { background: #e5e7eb; }
+      .server-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+        padding: 1.5rem;
+      }
+      .server-card {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 1.25rem;
+        cursor: pointer;
+        transition: box-shadow 0.15s, transform 0.15s;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .server-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-1px); }
+      .server-card-icon {
+        width: 48px; height: 48px;
+        background: #1f2937;
+        border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.4rem; color: white;
+        margin-bottom: 4px;
+      }
+      .server-card-name { font-size: 1rem; font-weight: 700; color: #111827; }
+      .server-card-meta { font-size: 0.75rem; color: #6b7280; }
+      .server-card-admin-badge {
+        display: inline-block;
+        background: #fef3c7;
+        color: #92400e;
+        font-size: 0.65rem;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 99px;
+        border: 1px solid #fde68a;
+      }
+      .server-list-empty {
+        text-align: center;
+        padding: 3rem 1.5rem;
+        color: #6b7280;
+      }
+      .server-list-empty i { font-size: 2.5rem; margin-bottom: 1rem; color: #d1d5db; }
+      /* サーバーヘッダー（チャットエリア上部） */
+      #serverHeader {
+        background: #111827;
+        color: white;
+        padding: 0.6rem 1rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      #backToServerListBtn {
+        background: none; border: none; color: #9ca3af;
+        cursor: pointer; font-size: 0.9rem; padding: 4px 8px;
+        border-radius: 6px; transition: background 0.15s, color 0.15s;
+      }
+      #backToServerListBtn:hover { background: rgba(255,255,255,0.1); color: white; }
+      #serverNameDisplay { font-size: 0.95rem; font-weight: 700; flex: 1; }
+      #serverSettingsBtn {
+        background: none; border: none; color: #9ca3af;
+        cursor: pointer; font-size: 0.9rem; padding: 4px 8px;
+        border-radius: 6px; transition: background 0.15s, color 0.15s;
+      }
+      #serverSettingsBtn:hover { background: rgba(255,255,255,0.1); color: white; }
+      /* サーバー設定モーダル内のタブ */
+      .ss-tab { flex: 1; padding: 8px; font-size: 0.82rem; font-weight: 700; border-radius: 8px; border: none; cursor: pointer; transition: background 0.15s; }
+      .ss-tab.active { background: #1f2937; color: white; }
+      .ss-tab:not(.active) { background: transparent; color: #6b7280; }
+      .ss-tab:not(.active):hover { background: #f3f4f6; }
+      /* 招待コード表示 */
+      .invite-code-item {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .invite-code-text { font-family: ui-monospace, Consolas, monospace; font-size: 1rem; font-weight: 700; color: #111827; flex: 1; letter-spacing: 2px; }
+      .invite-code-meta { font-size: 0.7rem; color: #9ca3af; }
+
       /* === PWAインストールバナー === */
       #pwaInstallBanner {
         display: none;
@@ -1070,8 +1189,8 @@
 
             <!-- 新規登録フォーム -->
             <div id="signupFormArea" class="hidden">
-              <p class="text-sm text-gray-600 mb-4 text-center">※管理者から許可されたメールアドレスのみ登録可能です。</p>
-              <input type="email" id="signupEmailInput" placeholder="許可されたメールアドレス" class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+              <p class="text-sm text-gray-600 mb-4 text-center">メールアドレスとパスワードでアカウントを作成します。</p>
+              <input type="email" id="signupEmailInput" placeholder="メールアドレス" class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
               <input type="password" id="signupPasswordInput" placeholder="新規パスワードを設定" class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none" />
               <button id="signupButton" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors duration-200 mb-4">アカウント作成</button>
             </div>
@@ -1492,23 +1611,185 @@
           </div>
         </div>
 
+        <!-- サーバー一覧画面 -->
+        <div id="serverListScreen" class="hidden">
+          <div class="server-list-header">
+            <div class="server-list-title"><i class="fas fa-layer-group mr-2"></i>SimpleChat</div>
+            <div class="server-list-actions">
+              <button id="joinServerBtn"><i class="fas fa-sign-in-alt mr-1"></i>参加</button>
+              <button id="createServerBtn"><i class="fas fa-plus mr-1"></i>新規作成</button>
+            </div>
+          </div>
+          <div id="serverGrid" class="server-grid">
+            <div class="server-list-empty" id="serverListEmpty" style="grid-column:1/-1">
+              <i class="fas fa-server" style="display:block"></i>
+              <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
+              <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- サーバー作成モーダル -->
+        <div id="createServerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+          <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-xl font-bold text-gray-800 mb-6"><i class="fas fa-plus-circle mr-2"></i>新しいサーバーを作成</h2>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名</label>
+                <input type="text" id="newServerName" placeholder="例: 私のサーバー" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID <span class="text-gray-400 font-normal">(英数字・ハイフンのみ)</span></label>
+                <input type="text" id="newServerId" placeholder="例: my-server-01" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+                <p id="serverIdAvailability" class="text-xs mt-1 ml-1"></p>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
+                <input type="password" id="newServerPassword" placeholder="参加パスワード" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード（確認）</label>
+                <input type="password" id="newServerPasswordConfirm" placeholder="同じパスワードを再入力" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+            </div>
+            <p id="createServerMessage" class="text-red-500 text-sm mt-3"></p>
+            <div class="flex gap-3 mt-6">
+              <button id="cancelCreateServerBtn" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
+              <button id="confirmCreateServerBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">作成</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- サーバー参加モーダル -->
+        <div id="joinServerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+          <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-xl font-bold text-gray-800 mb-4"><i class="fas fa-sign-in-alt mr-2"></i>サーバーに参加</h2>
+            <!-- タブ -->
+            <div class="flex gap-2 mb-5 bg-gray-100 p-1 rounded-xl">
+              <button id="joinTabPassword" class="ss-tab active">ID・パスワード</button>
+              <button id="joinTabCode" class="ss-tab">招待コード</button>
+            </div>
+            <!-- パスワード参加 -->
+            <div id="joinByPasswordSection" class="space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID</label>
+                <input type="text" id="joinServerId" placeholder="サーバーID" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
+                <input type="password" id="joinServerPassword" placeholder="参加パスワード" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+            </div>
+            <!-- 招待コード参加 -->
+            <div id="joinByCodeSection" class="hidden space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">招待コード</label>
+                <input type="text" id="joinInviteCode" placeholder="招待コード（8文字）" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono text-center text-xl tracking-widest uppercase" maxlength="8" />
+              </div>
+            </div>
+            <p id="joinServerMessage" class="text-red-500 text-sm mt-3"></p>
+            <div class="flex gap-3 mt-6">
+              <button id="cancelJoinServerBtn" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
+              <button id="confirmJoinServerBtn" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">参加</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- サーバー設定モーダル -->
+        <div id="serverSettingsModal" class="fixed inset-0 modal-overlay overflow-y-auto z-50 hidden">
+          <div class="flex min-h-full items-center justify-center p-6">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden">
+            <button id="closeServerSettingsBtn" class="absolute top-3.5 right-4 text-gray-400 hover:text-gray-700 z-10"><i class="fas fa-times text-lg"></i></button>
+            <div class="bg-gray-800 text-white px-6 py-4 flex-shrink-0">
+              <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
+              <p id="serverSettingsTitle" class="font-bold text-lg"></p>
+            </div>
+            <!-- タブ -->
+            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100">
+              <button id="ssTabRooms" class="ss-tab active">ルーム</button>
+              <button id="ssTabMembers" class="ss-tab">メンバー</button>
+              <button id="ssTabInvites" class="ss-tab">招待</button>
+              <button id="ssTabDanger" class="ss-tab">その他</button>
+            </div>
+            <div class="p-6 max-h-[60vh] overflow-y-auto">
+              <!-- ルームタブ -->
+              <div id="ssRoomsSection">
+                <div class="flex gap-2 mb-4">
+                  <input type="text" id="newRoomNameInput" placeholder="新しいルーム名" class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none text-sm" />
+                  <button id="createRoomInServerBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all">追加</button>
+                </div>
+                <div id="serverRoomsList" class="space-y-2"></div>
+              </div>
+              <!-- メンバータブ -->
+              <div id="ssMembersSection" class="hidden space-y-2">
+                <div id="serverMembersManageList"></div>
+              </div>
+              <!-- 招待タブ -->
+              <div id="ssInvitesSection" class="hidden">
+                <div class="mb-4 space-y-2">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-xs text-gray-500 block mb-1">有効期限</label>
+                      <select id="inviteExpiry" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                        <option value="0">なし</option>
+                        <option value="1">1日</option>
+                        <option value="7">7日</option>
+                        <option value="30">30日</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="text-xs text-gray-500 block mb-1">使用回数</label>
+                      <select id="inviteMaxUses" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                        <option value="0">無制限</option>
+                        <option value="1">1回</option>
+                        <option value="5">5回</option>
+                        <option value="10">10回</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button id="createInviteCodeBtn" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
+                </div>
+                <div id="inviteCodesList" class="space-y-2"></div>
+              </div>
+              <!-- その他タブ -->
+              <div id="ssDangerSection" class="hidden space-y-4">
+                <div>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名を変更</label>
+                  <div class="flex gap-2">
+                    <input type="text" id="renameServerInput" placeholder="新しいサーバー名" class="flex-1 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                    <button id="renameServerBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-bold">変更</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワードを変更</label>
+                  <div class="space-y-2">
+                    <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                    <button id="changeServerPasswordBtn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 rounded-lg text-sm">パスワード変更</button>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-red-100">
+                  <button id="deleteServerBtn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all"><i class="fas fa-trash mr-1"></i>このサーバーを削除</button>
+                </div>
+              </div>
+            </div>
+            <p id="serverSettingsMessage" class="text-center text-sm px-6 pb-2 font-medium"></p>
+          </div>
+          </div>
+        </div>
+
         <!-- チャットアプリ本体 -->
         <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
           <!-- ルームリストサイドバー -->
           <div id="sidebar" class="bg-gray-100 flex flex-col flex-shrink-0" style="width: 250px;">
+            <!-- サーバーヘッダー -->
+            <div id="serverHeader">
+              <button id="backToServerListBtn" title="サーバー一覧に戻る"><i class="fas fa-arrow-left"></i></button>
+              <span id="serverNameDisplay">サーバー</span>
+              <button id="serverSettingsBtn" title="サーバー設定" class="hidden"><i class="fas fa-cog"></i></button>
+            </div>
             <!-- ルームリスト -->
             <div id="roomList" class="flex-1 scrollable p-4 pb-0">
               <!-- ルームはここに動的に追加されます -->
-            </div>
-            
-            <!-- ルーム作成ボタンエリア -->
-            <div class="p-4 pt-2 pb-2">
-                <button
-                  id="promptCreateRoomButton"
-                  class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg shadow-sm transition-colors duration-200"
-                >
-                  <i class="fas fa-plus mr-2"></i>ルームを作成
-                </button>
             </div>
 
             <!-- ユーザー情報パネル (Discord風マイページボタン) -->
@@ -1721,6 +2002,11 @@
       let unreadCounts = {};
       let unreadListeners = {};
 
+      // サーバー管理用
+      let currentServerId = null;
+      let currentServerData = null;
+      let serverListUnsubscribe = null;
+
       let awayTimer = null;
       const AWAY_TIMEOUT = 5 * 60 * 1000;
 
@@ -1925,36 +2211,39 @@
               if (userProfileSnap.exists() && userProfileSnap.data().nickname) {
                 userNickname = userProfileSnap.data().nickname;
                 userAvatarUrl = userProfileSnap.data().avatarUrl || null;
-                
-                // ★ヘッダータイトルの更新
+
                 headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
                 updateUserPanelUI();
-                
+
                 authContainer.classList.add("hidden");
                 nicknameContainer.classList.add("hidden");
-                appContainer.classList.remove("hidden");
-                loadRooms();
+                appContainer.classList.add("hidden");
+                document.getElementById("serverListScreen").classList.remove("hidden");
+                showServerList();
                 startPresenceSystem();
                 initializeFCM();
               } else {
                 authContainer.classList.add("hidden");
                 appContainer.classList.add("hidden");
+                document.getElementById("serverListScreen").classList.add("hidden");
                 nicknameContainer.classList.remove("hidden");
                 nicknameInput.value = "";
               }
             } else {
               // Cleanup on logout
               userId = null; userNickname = null; isAdmin = false; isAuthReady = false;
-              currentRoomId = null;
-              headerTitle.textContent = ""; // Reset header
+              currentRoomId = null; currentServerId = null; currentServerData = null;
+              headerTitle.textContent = "";
               currentRoomHeader.classList.add("hidden");
               messagesDisplay.innerHTML = "";
               messageInput.disabled = true;
               sendMessageButton.disabled = true;
               stopPresenceSystem();
-              
+              if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
+
               authContainer.classList.remove("hidden");
               appContainer.classList.add("hidden");
+              document.getElementById("serverListScreen").classList.add("hidden");
               nicknameContainer.classList.add("hidden");
               membersSidebar.classList.add("hidden");
             }
@@ -2022,12 +2311,13 @@
         }
       });
 
-      // サインアップ処理 (Cloudflare Workers API経由)
+      // サインアップ処理（誰でも登録可能）
       signupButton.addEventListener("click", async () => {
+          const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
           const email = signupEmailInput.value;
           const password = signupPasswordInput.value;
           authMessage.textContent = "";
-          
+
           if (!email || !password) {
               authMessage.textContent = "メールアドレスとパスワードを入力してください。";
               return;
@@ -2039,26 +2329,18 @@
 
           loadingOverlay.classList.remove("hidden");
           try {
-              // Workers API へのリクエスト
-              const apiUrl = "https://simplechat-api.astro-fray-server.workers.dev/api/signup";
-              
-              const res = await fetch(apiUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ email, password })
-              });
-              
-              const data = await res.json();
-              
-              if (res.ok) {
-                  // サインアップ成功時はそのままログインを試行
-                  await signInWithEmailAndPassword(auth, email, password);
-              } else {
-                  authMessage.textContent = data.error || "アカウント作成に失敗しました。";
-              }
+              await createUserWithEmailAndPassword(auth, email, password);
           } catch (err) {
               console.error("Signup error:", err);
-              authMessage.textContent = "通信エラーが発生しました。サーバーが起動していない可能性があります。";
+              if (err.code === "auth/email-already-in-use") {
+                  authMessage.textContent = "このメールアドレスはすでに使われています。";
+              } else if (err.code === "auth/invalid-email") {
+                  authMessage.textContent = "メールアドレスの形式が正しくありません。";
+              } else if (err.code === "auth/weak-password") {
+                  authMessage.textContent = "パスワードが弱すぎます（6文字以上）。";
+              } else {
+                  authMessage.textContent = "アカウント作成に失敗しました: " + err.message;
+              }
           } finally {
               loadingOverlay.classList.add("hidden");
           }
@@ -2528,8 +2810,14 @@
       function renderMembersList(users) {
         if (!membersList) return;
         membersList.innerHTML = "";
-        
-        const processedUsers = users.map(u => {
+
+        // サーバーメンバーのみ表示（currentServerData がない場合は全員）
+        const serverMemberIds = currentServerData?.joinedUsers || null;
+        const filtered = serverMemberIds
+          ? users.filter(u => serverMemberIds.includes(u.id))
+          : users;
+
+        const processedUsers = filtered.map(u => {
             const computedState = u.state || 'offline';
             
             // update own UI status indicator here
@@ -2623,69 +2911,261 @@
 
 
       // =========================================================================
-      // Room Features
       // =========================================================================
-      async function loadRooms() {
-        const roomsQuery = query(collection(db, `artifacts/${appId}/public/data/rooms`));
-        onSnapshot(roomsQuery, (snapshot) => {
+      // Server Features
+      // =========================================================================
+
+      // SHA-256 ハッシュ（パスワード検証用）
+      async function hashPassword(password, serverId) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password + serverId);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+
+      // サーバー一覧の表示
+      async function showServerList() {
+        const serverListScreen = document.getElementById("serverListScreen");
+        const serverGrid = document.getElementById("serverGrid");
+        const empty = document.getElementById("serverListEmpty");
+
+        if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
+
+        const serversQuery = query(collection(db, `artifacts/${appId}/servers`));
+        serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
+          serverGrid.innerHTML = "";
+          const servers = [];
+          snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
+
+          // 管理者: 全サーバー, 一般: 参加済みのみ
+          const visible = isAdmin ? servers : servers.filter(s => s.joinedUsers && s.joinedUsers.includes(userId));
+
+          if (visible.length === 0) {
+            serverGrid.appendChild(Object.assign(document.createElement("div"), {
+              className: "server-list-empty",
+              style: "grid-column:1/-1",
+              innerHTML: `<i class="fas fa-server" style="display:block;font-size:2.5rem;margin-bottom:1rem;color:#d1d5db"></i>
+                <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
+                <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>`
+            }));
+            return;
+          }
+
+          visible.forEach(server => {
+            const card = document.createElement("div");
+            card.className = "server-card";
+            const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+            card.innerHTML = `
+              <div class="server-card-icon"><i class="fas fa-server"></i></div>
+              <div class="server-card-name">${server.name || server.serverId}</div>
+              <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${server.memberCount || (server.joinedUsers ? server.joinedUsers.length : 0)} メンバー</div>
+              ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+              ${isAdmin && !isMine ? '<span class="server-card-admin-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe"><i class="fas fa-shield-alt mr-1"></i>全体管理者</span>' : ''}
+            `;
+            card.addEventListener("click", () => enterServer(server.id, server));
+            serverGrid.appendChild(card);
+          });
+        });
+      }
+
+      // サーバーに入る
+      async function enterServer(serverId, serverData) {
+        currentServerId = serverId;
+        currentServerData = serverData;
+
+        document.getElementById("serverListScreen").classList.add("hidden");
+        appContainer.classList.remove("hidden");
+
+        // サーバーヘッダー更新
+        document.getElementById("serverNameDisplay").textContent = serverData.name || serverId;
+        const settingsBtn = document.getElementById("serverSettingsBtn");
+        if (serverData.serverAdmins && serverData.serverAdmins.includes(userId) || isAdmin) {
+          settingsBtn.classList.remove("hidden");
+        } else {
+          settingsBtn.classList.add("hidden");
+        }
+
+        // ルームを読み込む
+        loadServerRooms(serverId);
+        membersSidebar.classList.remove("hidden");
+        // サーバーメンバーでメンバーリストを即時更新
+        renderMembersList(cachedUsers);
+      }
+
+      // サーバーを出てリストに戻る
+      function leaveServerView() {
+        currentServerId = null;
+        currentServerData = null;
+        currentRoomId = null;
+
+        if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+        if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+        if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+
+        Object.values(unreadListeners).forEach(u => u());
+        unreadListeners = {}; unreadCounts = {};
+
+        roomList.innerHTML = "";
+        messagesDisplay.innerHTML = "";
+        currentRoomHeader.classList.add("hidden");
+        messageInput.disabled = true;
+        sendMessageButton.disabled = true;
+        membersSidebar.classList.add("hidden");
+
+        appContainer.classList.add("hidden");
+        document.getElementById("serverListScreen").classList.remove("hidden");
+      }
+
+      // サーバー存在確認
+      async function checkServerIdAvailable(serverId) {
+        const snap = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+        return !snap.exists();
+      }
+
+      // サーバー作成
+      async function createServer(name, customId, password) {
+        const passwordHash = await hashPassword(password, customId);
+        const serverData = {
+          name,
+          serverId: customId,
+          passwordHash,
+          joinedUsers: [userId],
+          serverAdmins: [userId],
+          createdBy: userId,
+          createdAt: serverTimestamp(),
+          memberCount: 1
+        };
+        await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
+
+        // プロフィール作成
+        await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/profiles`, userId), {
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null,
+          joinedAt: serverTimestamp()
+        });
+
+        // 最初のルームを作成
+        await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
+          name: "一般",
+          createdAt: serverTimestamp(),
+          createdBy: userId
+        });
+
+        enterServer(customId, serverData);
+      }
+
+      // パスワードでサーバー参加
+      async function joinServerByPassword(serverId, password) {
+        const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+        if (!serverSnap.exists()) throw new Error("サーバーが見つかりません");
+
+        const serverData = serverSnap.data();
+        if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+          // 既に参加済み
+          enterServer(serverId, serverData);
+          return;
+        }
+
+        const hash = await hashPassword(password, serverId);
+        if (hash !== serverData.passwordHash) throw new Error("パスワードが違います");
+
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, serverId), {
+          joinedUsers: arrayUnion(userId),
+          memberCount: (serverData.memberCount || 0) + 1
+        });
+        await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId), {
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null,
+          joinedAt: serverTimestamp()
+        });
+        enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+      }
+
+      // 招待コードでサーバー参加
+      async function joinServerByInviteCode(code) {
+        code = code.toUpperCase().trim();
+
+        // コードを全サーバーから検索
+        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+        let foundServerId = null;
+        let foundInvite = null;
+
+        for (const serverDoc of serversSnap.docs) {
+          const inviteSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverDoc.id}/inviteCodes`, code));
+          if (inviteSnap.exists()) {
+            foundServerId = serverDoc.id;
+            foundInvite = inviteSnap.data();
+            break;
+          }
+        }
+
+        if (!foundServerId) throw new Error("招待コードが見つかりません");
+        if (foundInvite.disabled) throw new Error("この招待コードは無効化されています");
+        if (foundInvite.expiresAt && foundInvite.expiresAt.toDate() < new Date()) throw new Error("招待コードの有効期限が切れています");
+        if (foundInvite.maxUses > 0 && foundInvite.uses >= foundInvite.maxUses) throw new Error("招待コードの使用上限に達しています");
+
+        const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, foundServerId));
+        const serverData = serverSnap.data();
+
+        if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+          enterServer(foundServerId, serverData);
+          return;
+        }
+
+        // 参加処理
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, foundServerId), {
+          joinedUsers: arrayUnion(userId),
+          memberCount: (serverData.memberCount || 0) + 1
+        });
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/inviteCodes`, code), {
+          uses: (foundInvite.uses || 0) + 1
+        });
+        await setDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/profiles`, userId), {
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null,
+          joinedAt: serverTimestamp()
+        });
+        enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+      }
+
+      // =========================================================================
+      // Room Features (Server-based)
+      // =========================================================================
+      function loadServerRooms(serverId) {
+        const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
+        if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
+
+        loadServerRooms._unsub = onSnapshot(roomsQuery, (snapshot) => {
           roomList.innerHTML = "";
-          // 既存のリスナーを解除し、現在のルームIDを記録
           const currentRoomIds = new Set();
-          snapshot.forEach((doc) => {
-            currentRoomIds.add(doc.id);
-            const room = doc.data();
-            roomNames[doc.id] = room.name; // Tauri通知でルーム名を表示するためキャッシュ
+          snapshot.forEach((docSnap) => {
+            currentRoomIds.add(docSnap.id);
+            const room = docSnap.data();
+            roomNames[docSnap.id] = room.name;
             const div = document.createElement("div");
             div.className = "flex items-center justify-between p-3 mb-2 bg-gray-50 hover:bg-gray-200 rounded-lg cursor-pointer";
-            div.id = `room-item-${doc.id}`;
-            const isRoomJoined = !room.hasPassword || isAdmin || (room.joinedUsers && room.joinedUsers.includes(userId));
-            div.addEventListener("click", () => handleRoomSelection(doc.id, room.name, room.hasPassword, isRoomJoined));
-            
+            div.id = `room-item-${docSnap.id}`;
+            div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
+
             const nameDiv = document.createElement("div");
             nameDiv.className = "flex-1 truncate";
-            nameDiv.textContent = room.name;
-            
-            // 未読バッジ
+            nameDiv.textContent = `# ${room.name}`;
+
             const badgeSpan = document.createElement("span");
             badgeSpan.className = "unread-badge";
-            badgeSpan.id = `unread-badge-${doc.id}`;
-            const count = unreadCounts[doc.id] || 0;
+            badgeSpan.id = `unread-badge-${docSnap.id}`;
+            const count = unreadCounts[docSnap.id] || 0;
             badgeSpan.textContent = count > 99 ? "99+" : count;
-            badgeSpan.style.display = (count > 0 && doc.id !== currentRoomId) ? "flex" : "none";
-            
-            const dropDiv = document.createElement("div");
-            dropDiv.className = "dropdown-container";
-            const btn = document.createElement("button");
-            btn.textContent = "⋮";
-            // 当たり判定を大きくするため w-10 h-10 にしつつ、レイアウトが崩れないようネガティブマージンを入れる
-            btn.className = "text-gray-700 w-10 h-10 text-lg hover:bg-gray-200 rounded-full flex items-center justify-center -mr-2 -my-2";
-            btn.onclick = (e) => {
-              e.stopPropagation();
-              const content = dropDiv.querySelector(".dropdown-content");
-              document.querySelectorAll(".dropdown-content").forEach(d => { if(d!==content) d.style.display="none"; });
-              content.style.display = content.style.display === "block" ? "none" : "block";
-            };
-            const content = document.createElement("div");
-            content.className = "dropdown-content";
-            const delBtn = document.createElement("button");
-            delBtn.textContent = "削除";
-            delBtn.onclick = (e) => {
-               e.stopPropagation();
-               content.style.display = "none";
-               handleDeleteRoomClick(doc.id, room.name, !!room.password, room.password);
-            };
-            content.appendChild(delBtn);
-            dropDiv.appendChild(btn);
-            dropDiv.appendChild(content);
+            badgeSpan.style.display = (count > 0 && docSnap.id !== currentRoomId) ? "flex" : "none";
 
             div.appendChild(nameDiv);
             div.appendChild(badgeSpan);
-            div.appendChild(dropDiv);
             roomList.appendChild(div);
-            
-            // 未読リスナーを設定
-            if (!unreadListeners[doc.id]) {
-              setupUnreadListener(doc.id);
+
+            if (!unreadListeners[docSnap.id]) {
+              setupUnreadListener(serverId, docSnap.id);
+              checkInitialUnread(serverId, docSnap.id);
             }
           });
           // 削除されたルームのリスナーを解除
@@ -2699,40 +3179,62 @@
         });
 
         document.addEventListener("click", (e) => {
-            if(!e.target.closest(".dropdown-container")) {
-                document.querySelectorAll(".dropdown-content").forEach(d => d.style.display="none");
-            }
+          if (!e.target.closest(".dropdown-container")) {
+            document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
+          }
         });
       }
 
-      function setupUnreadListener(roomId) {
+      function setupUnreadListener(serverId, roomId) {
         const q = query(
-          collection(db, `artifacts/${appId}/public/data/rooms/${roomId}/messages`),
+          collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
           orderBy("timestamp", "desc"),
           limit(1)
         );
         let isFirst = true;
         unreadListeners[roomId] = onSnapshot(q, (snapshot) => {
-          if (isFirst) { isFirst = false; return; } // 初回は無視
+          if (isFirst) { isFirst = false; return; }
           snapshot.docChanges().forEach(change => {
             if (change.type === "added") {
               const msgData = change.doc.data();
               if (roomId !== currentRoomId && msgData.senderId !== userId) {
                 unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1;
                 updateUnreadBadge(roomId);
-
-                // Tauri: 独自UIの通知ウィンドウを表示（FCM/SWは使わない）
-                // Web版は SW (firebase-messaging-sw.js) が背景でブラウザ通知を出す
                 if (isTauri) {
-                  const roomName = roomNames[roomId] || 'SimpleChat';
+                  const serverName = currentServerData?.name || 'SimpleChat';
+                  const roomName = roomNames[roomId] || 'room';
                   const sender = msgData.senderNickname || 'Unknown';
                   const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
-                  showNotification(roomName, `${sender}: ${text}`, roomId);
+                  showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
                 }
               }
             }
           });
         });
+      }
+
+      // アプリ起動時の過去の未読メッセージチェック
+      async function checkInitialUnread(serverId, roomId) {
+        try {
+          const receiptRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/readReceipts`, userId);
+          const receiptSnap = await getDoc(receiptRef);
+          if (!receiptSnap.exists()) return;
+          const { lastReadAt } = receiptSnap.data();
+          if (!lastReadAt) return;
+
+          const q = query(
+            collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
+            where("timestamp", ">", lastReadAt)
+          );
+          const snap = await getDocs(q);
+          const unread = snap.docs.filter(d => d.data().senderId !== userId).length;
+          if (unread > 0) {
+            unreadCounts[roomId] = unread;
+            updateUnreadBadge(roomId);
+          }
+        } catch (e) {
+          console.error("checkInitialUnread error:", e);
+        }
       }
 
       function updateUnreadBadge(roomId) {
@@ -2748,7 +3250,7 @@
           
           const oldScrollHeight = messagesDisplay.scrollHeight;
           // 最新のメッセージから limit 件取得するために desc を使用
-          const q = query(collection(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/messages`), orderBy("timestamp", "desc"), limit(messageLimit));
+          const q = query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy("timestamp", "desc"), limit(messageLimit));
           
           unsubscribeMessages = onSnapshot(q, (snapshot) => {
               snapshot.docChanges().forEach(change => {
@@ -2833,7 +3335,7 @@
         
         subscribeToMessages();
 
-        const rrRef = collection(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/readReceipts`);
+        const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
         readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
             roomReadReceipts = {};
             snap.forEach(d => roomReadReceipts[d.id] = d.data());
@@ -2873,80 +3375,10 @@
           }
       });
 
-      promptCreateRoomButton.addEventListener("click", () => {
-         document.getElementById("modalNewRoomNameInput").value = "";
-         newRoomPasswordInput.value = "";
-         createRoomPasswordModal.classList.remove("hidden");
-      });
-      confirmCreateRoomButton.addEventListener("click", async () => {
-         const name = document.getElementById("modalNewRoomNameInput").value.trim();
-         const pass = newRoomPasswordInput.value.trim();
-         if(!name) return;
-         loadingOverlay.classList.remove("hidden");
-         createRoomPasswordModal.classList.add("hidden");
-         try {
-             const data = { name, createdAt: serverTimestamp(), createdBy: userId, createdByNickname: userNickname };
-             
-             let roomRef;
-             if(pass) {
-                 data.hasPassword = true;
-                 data.joinedUsers = [userId]; // Creator is automatically joined
-                 roomRef = await addDoc(collection(db, `artifacts/${appId}/public/data/rooms`), data);
-                 // 秘密のサブコレクションにパスワードを保存
-                 await setDoc(doc(db, `artifacts/${appId}/public/data/rooms/${roomRef.id}/secrets`, "password"), { password: pass });
-             } else {
-                 roomRef = await addDoc(collection(db, `artifacts/${appId}/public/data/rooms`), data);
-             }
-             alertMessage("ルームを作成しました", "success");
-         } catch(e) { console.error(e); }
-         finally { loadingOverlay.classList.add("hidden"); }
-      });
-      cancelCreateRoomButton.addEventListener("click", () => createRoomPasswordModal.classList.add("hidden"));
-
-      function handleRoomSelection(id, name, hasPass, isRoomJoined) {
-          if(hasPass && !isRoomJoined) {
-              pendingRoomJoin = { roomId: id, roomName: name };
-              joinRoomPasswordInput.value = "";
-              joinRoomTitle.textContent = `${name}に参加`;
-              joinRoomPasswordModal.classList.remove("hidden");
-              joinRoomPasswordMessage.textContent = "";
-          } else {
-              selectRoom(id, name);
-          }
+      // 旧ルーム作成ボタンは無効化（サーバー設定から管理）
+      if (document.getElementById("promptCreateRoomButton")) {
+        document.getElementById("promptCreateRoomButton").style.display = "none";
       }
-
-      confirmJoinRoomButton.addEventListener("click", async () => {
-          const pass = joinRoomPasswordInput.value.trim();
-          if(!pass) return;
-          
-          joinRoomPasswordMessage.textContent = "確認中...";
-          try {
-              // サーバーにパスワード確認を依頼
-              const response = await fetch("https://simplechat-api.astro-fray-server.workers.dev/api/joinRoom", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                      roomId: pendingRoomJoin.roomId,
-                      password: pass,
-                      userId: userId,
-                      appId: appId
-                  })
-              });
-              
-              const result = await response.json();
-              
-              if(response.ok && result.success) {
-                  selectRoom(pendingRoomJoin.roomId, pendingRoomJoin.roomName);
-                  joinRoomPasswordModal.classList.add("hidden");
-              } else {
-                  joinRoomPasswordMessage.textContent = "パスワードが違います";
-              }
-          } catch(e) {
-              console.error(e);
-              joinRoomPasswordMessage.textContent = "エラーが発生しました";
-          }
-      });
-      cancelJoinRoomButton.addEventListener("click", () => joinRoomPasswordModal.classList.add("hidden"));
 
       function handleDeleteRoomClick(id, name) {
           pendingRoomDelete = { roomId: id, roomName: name };
@@ -2960,6 +3392,7 @@
       cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
 
       async function deleteRoomAndMessages(roomId) {
+        if (!currentServerId) return;
         if (currentRoomId === roomId) {
           currentRoomId = null;
           updateUserStatus('online');
@@ -2975,25 +3408,25 @@
           const batch = writeBatch(db);
 
           // 1. messages サブコレクションの全削除
-          const messagesRef = collection(db, `artifacts/${appId}/public/data/rooms/${roomId}/messages`);
+          const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
           const messagesSnap = await getDocs(messagesRef);
           messagesSnap.forEach((docSnap) => {
             batch.delete(docSnap.ref);
           });
 
           // 2. readReceipts サブコレクションの全削除
-          const readReceiptsRef = collection(db, `artifacts/${appId}/public/data/rooms/${roomId}/readReceipts`);
+          const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
           const readReceiptsSnap = await getDocs(readReceiptsRef);
           readReceiptsSnap.forEach((docSnap) => {
             batch.delete(docSnap.ref);
           });
 
           // 3. ルーム本体の削除
-          const roomRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
+          const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
           batch.delete(roomRef);
 
           await batch.commit();
-          console.log(`Successfully deleted room document and all its subcollections for ${roomId}.`);
+          console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
         } catch (error) {
           console.error("Error during room deletion process:", error);
           throw error;
@@ -3012,7 +3445,375 @@
           pendingRoomDelete = null;
         }
       };
-      
+
+      // =========================================================================
+      // Server UI イベントハンドラー
+      // =========================================================================
+
+      // サーバー一覧へ戻るボタン
+      document.getElementById("backToServerListBtn").addEventListener("click", () => {
+        leaveServerView();
+      });
+
+      // サーバー作成ボタン
+      document.getElementById("createServerBtn").addEventListener("click", () => {
+        document.getElementById("newServerName").value = "";
+        document.getElementById("newServerId").value = "";
+        document.getElementById("newServerPassword").value = "";
+        document.getElementById("newServerPasswordConfirm").value = "";
+        document.getElementById("createServerMessage").textContent = "";
+        document.getElementById("serverIdAvailability").textContent = "";
+        document.getElementById("createServerModal").classList.remove("hidden");
+      });
+
+      document.getElementById("cancelCreateServerBtn").addEventListener("click", () => {
+        document.getElementById("createServerModal").classList.add("hidden");
+      });
+
+      // サーバーID リアルタイムバリデーション
+      let serverIdCheckTimer = null;
+      document.getElementById("newServerId").addEventListener("input", (e) => {
+        const val = e.target.value;
+        const availEl = document.getElementById("serverIdAvailability");
+        // 英数字・ハイフンのみ
+        if (!/^[a-z0-9-]*$/i.test(val)) {
+          availEl.textContent = "英数字とハイフンのみ使えます";
+          availEl.className = "text-xs mt-1 ml-1 text-red-500";
+          return;
+        }
+        if (val.length < 3) {
+          availEl.textContent = "3文字以上必要です";
+          availEl.className = "text-xs mt-1 ml-1 text-gray-400";
+          return;
+        }
+        clearTimeout(serverIdCheckTimer);
+        serverIdCheckTimer = setTimeout(async () => {
+          const available = await checkServerIdAvailable(val.toLowerCase());
+          if (available) {
+            availEl.textContent = "✓ 使用可能";
+            availEl.className = "text-xs mt-1 ml-1 text-green-600";
+          } else {
+            availEl.textContent = "✗ このIDは使われています";
+            availEl.className = "text-xs mt-1 ml-1 text-red-500";
+          }
+        }, 500);
+      });
+
+      document.getElementById("confirmCreateServerBtn").addEventListener("click", async () => {
+        const name = document.getElementById("newServerName").value.trim();
+        const rawId = document.getElementById("newServerId").value.trim().toLowerCase();
+        const pass = document.getElementById("newServerPassword").value;
+        const passConfirm = document.getElementById("newServerPasswordConfirm").value;
+        const msgEl = document.getElementById("createServerMessage");
+
+        if (!name) { msgEl.textContent = "サーバー名を入力してください"; return; }
+        if (!rawId || rawId.length < 3) { msgEl.textContent = "サーバーID（3文字以上）を入力してください"; return; }
+        if (!/^[a-z0-9-]+$/.test(rawId)) { msgEl.textContent = "IDは英数字とハイフンのみ使えます"; return; }
+        if (!pass) { msgEl.textContent = "パスワードを入力してください"; return; }
+        if (pass !== passConfirm) { msgEl.textContent = "パスワードが一致しません"; return; }
+
+        loadingOverlay.classList.remove("hidden");
+        try {
+          const available = await checkServerIdAvailable(rawId);
+          if (!available) { msgEl.textContent = "このIDは既に使われています"; return; }
+          await createServer(name, rawId, pass);
+          document.getElementById("createServerModal").classList.add("hidden");
+        } catch(e) {
+          console.error(e);
+          msgEl.textContent = "作成に失敗しました: " + e.message;
+        } finally {
+          loadingOverlay.classList.add("hidden");
+        }
+      });
+
+      // サーバー参加ボタン
+      document.getElementById("joinServerBtn").addEventListener("click", () => {
+        document.getElementById("joinServerId").value = "";
+        document.getElementById("joinServerPassword").value = "";
+        document.getElementById("joinInviteCode").value = "";
+        document.getElementById("joinServerMessage").textContent = "";
+        document.getElementById("joinServerModal").classList.remove("hidden");
+      });
+
+      document.getElementById("cancelJoinServerBtn").addEventListener("click", () => {
+        document.getElementById("joinServerModal").classList.add("hidden");
+      });
+
+      // 参加モーダルのタブ切り替え
+      document.getElementById("joinTabPassword").addEventListener("click", () => {
+        document.getElementById("joinTabPassword").classList.add("active");
+        document.getElementById("joinTabCode").classList.remove("active");
+        document.getElementById("joinByPasswordSection").classList.remove("hidden");
+        document.getElementById("joinByCodeSection").classList.add("hidden");
+      });
+      document.getElementById("joinTabCode").addEventListener("click", () => {
+        document.getElementById("joinTabCode").classList.add("active");
+        document.getElementById("joinTabPassword").classList.remove("active");
+        document.getElementById("joinByCodeSection").classList.remove("hidden");
+        document.getElementById("joinByPasswordSection").classList.add("hidden");
+      });
+
+      document.getElementById("confirmJoinServerBtn").addEventListener("click", async () => {
+        const msgEl = document.getElementById("joinServerMessage");
+        msgEl.textContent = "";
+        loadingOverlay.classList.remove("hidden");
+        try {
+          const isCodeTab = !document.getElementById("joinByCodeSection").classList.contains("hidden");
+          if (isCodeTab) {
+            const code = document.getElementById("joinInviteCode").value.trim();
+            if (!code) { msgEl.textContent = "招待コードを入力してください"; return; }
+            await joinServerByInviteCode(code);
+          } else {
+            const serverId = document.getElementById("joinServerId").value.trim().toLowerCase();
+            const password = document.getElementById("joinServerPassword").value;
+            if (!serverId) { msgEl.textContent = "サーバーIDを入力してください"; return; }
+            if (!password) { msgEl.textContent = "パスワードを入力してください"; return; }
+            await joinServerByPassword(serverId, password);
+          }
+          document.getElementById("joinServerModal").classList.add("hidden");
+        } catch(e) {
+          console.error(e);
+          msgEl.textContent = e.message || "参加に失敗しました";
+        } finally {
+          loadingOverlay.classList.add("hidden");
+        }
+      });
+
+      // サーバー設定モーダル
+      const serverSettingsModal = document.getElementById("serverSettingsModal");
+      document.getElementById("serverSettingsBtn").addEventListener("click", openServerSettings);
+      document.getElementById("closeServerSettingsBtn").addEventListener("click", () => serverSettingsModal.classList.add("hidden"));
+
+      // サーバー設定のタブ
+      let currentSsTab = "rooms";
+      function switchSsTab(tab) {
+        currentSsTab = tab;
+        ["rooms","members","invites","danger"].forEach(t => {
+          document.getElementById(`ssTab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle("active", t === tab);
+          document.getElementById(`ss${t.charAt(0).toUpperCase()+t.slice(1)}Section`).classList.toggle("hidden", t !== tab);
+        });
+      }
+      ["Rooms","Members","Invites","Danger"].forEach(t => {
+        document.getElementById(`ssTab${t}`).addEventListener("click", () => switchSsTab(t.toLowerCase()));
+      });
+
+      async function openServerSettings() {
+        if (!currentServerId) return;
+        document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
+        document.getElementById("serverSettingsMessage").textContent = "";
+        serverSettingsModal.classList.remove("hidden");
+        switchSsTab("rooms");
+        await loadServerSettingsRooms();
+      }
+
+      async function loadServerSettingsRooms() {
+        const listEl = document.getElementById("serverRoomsList");
+        listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+        listEl.innerHTML = "";
+        snap.forEach(d => {
+          const room = d.data();
+          const item = document.createElement("div");
+          item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg";
+          item.innerHTML = `<span class="text-sm font-medium text-gray-800"># ${room.name}</span>
+            <button data-room-id="${d.id}" data-room-name="${room.name}" class="del-room-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-trash"></i></button>`;
+          listEl.appendChild(item);
+        });
+        listEl.querySelectorAll(".del-room-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            if (!confirm(`「${btn.dataset.roomName}」を削除しますか？`)) return;
+            loadingOverlay.classList.remove("hidden");
+            try {
+              await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, btn.dataset.roomId));
+              if (currentRoomId === btn.dataset.roomId) {
+                currentRoomId = null;
+                currentRoomHeader.classList.add("hidden");
+                messagesDisplay.innerHTML = "";
+                messageInput.disabled = true;
+                sendMessageButton.disabled = true;
+              }
+              await loadServerSettingsRooms();
+            } catch(e) { alertMessage("削除に失敗しました", "error"); }
+            finally { loadingOverlay.classList.add("hidden"); }
+          });
+        });
+      }
+
+      document.getElementById("createRoomInServerBtn").addEventListener("click", async () => {
+        const name = document.getElementById("newRoomNameInput").value.trim();
+        if (!name) return;
+        loadingOverlay.classList.remove("hidden");
+        try {
+          await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
+            name, createdAt: serverTimestamp(), createdBy: userId
+          });
+          document.getElementById("newRoomNameInput").value = "";
+          await loadServerSettingsRooms();
+          alertMessage("ルームを作成しました", "success");
+        } catch(e) { alertMessage("作成に失敗しました", "error"); }
+        finally { loadingOverlay.classList.add("hidden"); }
+      });
+
+      // メンバー管理タブ
+      document.getElementById("ssMembersSection").parentElement; // (reference check)
+      async function loadServerSettingsMembers() {
+        if (currentSsTab !== "members") return;
+        const listEl = document.getElementById("serverMembersManageList");
+        listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
+        const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+        const serverData = serverSnap.data();
+        const members = serverData.joinedUsers || [];
+        const admins = serverData.serverAdmins || [];
+
+        listEl.innerHTML = "";
+        for (const uid of members) {
+          const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/profiles`, uid));
+          const profile = profileSnap.exists() ? profileSnap.data() : { nickname: uid.substring(0,8) };
+          const isAdmin_ = admins.includes(uid);
+          const item = document.createElement("div");
+          item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg mb-2";
+          item.innerHTML = `
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-full bg-gray-700 text-white flex items-center justify-center text-sm font-bold">${(profile.nickname || '?').charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="text-sm font-medium text-gray-800">${profile.nickname || uid.substring(0,8)}</div>
+                ${isAdmin_ ? '<span class="text-xs text-amber-600 font-bold"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              ${uid !== userId ? `<button data-uid="${uid}" data-is-admin="${isAdmin_}" class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
+              ${uid !== userId ? `<button data-uid="${uid}" class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
+            </div>`;
+          listEl.appendChild(item);
+        }
+
+        // イベント
+        listEl.querySelectorAll(".toggle-admin-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const targetUid = btn.dataset.uid;
+            const wasAdmin = btn.dataset.isAdmin === "true";
+            try {
+              await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
+                serverAdmins: wasAdmin ? arrayRemove(targetUid) : arrayUnion(targetUid)
+              });
+              await loadServerSettingsMembers();
+            } catch(e) { alertMessage("操作に失敗しました", "error"); }
+          });
+        });
+        listEl.querySelectorAll(".kick-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            if (!confirm("このメンバーをキックしますか？")) return;
+            const targetUid = btn.dataset.uid;
+            try {
+              await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
+                joinedUsers: arrayRemove(targetUid),
+                serverAdmins: arrayRemove(targetUid),
+                memberCount: Math.max(0, ((await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId))).data().memberCount || 1) - 1)
+              });
+              await loadServerSettingsMembers();
+            } catch(e) { alertMessage("キックに失敗しました", "error"); }
+          });
+        });
+      }
+      document.getElementById("ssTabMembers").addEventListener("click", loadServerSettingsMembers);
+
+      // 招待コードタブ
+      document.getElementById("ssTabInvites").addEventListener("click", loadInviteCodes);
+      async function loadInviteCodes() {
+        if (currentSsTab !== "invites") return;
+        const listEl = document.getElementById("inviteCodesList");
+        listEl.innerHTML = "";
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`));
+        snap.forEach(d => {
+          const inv = d.data();
+          if (inv.disabled) return;
+          const item = document.createElement("div");
+          item.className = "invite-code-item";
+          item.innerHTML = `
+            <div class="flex-1">
+              <div class="invite-code-text">${d.id}</div>
+              <div class="invite-code-meta">${inv.uses || 0}/${inv.maxUses || '∞'}回使用 ${inv.expiresAt ? '・' + new Date(inv.expiresAt.toDate()).toLocaleDateString() + 'まで' : ''}</div>
+            </div>
+            <button data-code="${d.id}" class="copy-invite-btn text-gray-400 hover:text-gray-700 p-1 rounded" title="コピー"><i class="fas fa-copy"></i></button>
+            <button data-code="${d.id}" class="disable-invite-btn text-red-400 hover:text-red-600 p-1 rounded" title="無効化"><i class="fas fa-ban"></i></button>`;
+          listEl.appendChild(item);
+        });
+        listEl.querySelectorAll(".copy-invite-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            navigator.clipboard.writeText(`サーバーID: ${currentServerId} / 招待コード: ${btn.dataset.code}`);
+            alertMessage("コピーしました", "success");
+          });
+        });
+        listEl.querySelectorAll(".disable-invite-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            if (!confirm("このコードを無効化しますか？")) return;
+            await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, btn.dataset.code), { disabled: true });
+            await loadInviteCodes();
+          });
+        });
+      }
+
+      document.getElementById("createInviteCodeBtn").addEventListener("click", async () => {
+        const expiryDays = parseInt(document.getElementById("inviteExpiry").value);
+        const maxUses = parseInt(document.getElementById("inviteMaxUses").value);
+        const code = Math.random().toString(36).toUpperCase().slice(2, 10);
+        const inviteData = {
+          createdBy: userId,
+          createdAt: serverTimestamp(),
+          uses: 0,
+          maxUses,
+          disabled: false
+        };
+        if (expiryDays > 0) {
+          const exp = new Date();
+          exp.setDate(exp.getDate() + expiryDays);
+          inviteData.expiresAt = exp;
+        } else {
+          inviteData.expiresAt = null;
+        }
+        try {
+          await setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, code), inviteData);
+          await loadInviteCodes();
+          alertMessage(`招待コード ${code} を作成しました`, "success");
+        } catch(e) { alertMessage("作成に失敗しました", "error"); }
+      });
+
+      // その他タブ
+      document.getElementById("renameServerBtn").addEventListener("click", async () => {
+        const name = document.getElementById("renameServerInput").value.trim();
+        if (!name) return;
+        try {
+          await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { name });
+          document.getElementById("serverNameDisplay").textContent = name;
+          document.getElementById("serverSettingsTitle").textContent = name;
+          currentServerData = { ...currentServerData, name };
+          alertMessage("サーバー名を変更しました", "success");
+        } catch(e) { alertMessage("変更に失敗しました", "error"); }
+      });
+
+      document.getElementById("changeServerPasswordBtn").addEventListener("click", async () => {
+        const newPass = document.getElementById("changeServerPasswordInput").value;
+        if (!newPass || newPass.length < 4) { alertMessage("パスワードは4文字以上にしてください", "error"); return; }
+        try {
+          const hash = await hashPassword(newPass, currentServerId);
+          await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: hash });
+          document.getElementById("changeServerPasswordInput").value = "";
+          alertMessage("パスワードを変更しました", "success");
+        } catch(e) { alertMessage("変更に失敗しました", "error"); }
+      });
+
+      document.getElementById("deleteServerBtn").addEventListener("click", async () => {
+        if (!confirm(`「${currentServerData?.name || currentServerId}」を削除しますか？この操作は取り消せません。`)) return;
+        loadingOverlay.classList.remove("hidden");
+        try {
+          await deleteDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+          serverSettingsModal.classList.add("hidden");
+          leaveServerView();
+          alertMessage("サーバーを削除しました", "success");
+        } catch(e) { alertMessage("削除に失敗しました", "error"); }
+        finally { loadingOverlay.classList.add("hidden"); }
+      });
+
       async function sendMessage() {
           const text = messageInput.value.trim();
           if((!text && !attachedFile) || !currentRoomId) return;
@@ -3029,36 +3830,30 @@
               if(replyingToMessage) {
                   data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
               }
-              await addDoc(collection(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/messages`), data);
+              await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
 
-              // 通知を送信
+              // FCMプッシュ通知（サーバーメンバー全員に送信）
               try {
-                  const roomDoc = await getDoc(doc(db, `artifacts/${appId}/public/data/rooms`, currentRoomId));
-                  let receiverIds = [];
-                  if (roomDoc.exists()) {
-                      const roomData = roomDoc.data();
-                      if (roomData.hasPassword && roomData.joinedUsers) {
-                          receiverIds = roomData.joinedUsers;
-                      } else {
-                          // 全てのユーザーを取得
-                          const allUsersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-                          receiverIds = allUsersSnap.docs.map(d => d.id);
+                  const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+                  if (serverSnap.exists()) {
+                      const serverData = serverSnap.data();
+                      const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
+                      if (receiverIds.length > 0) {
+                          const serverName = serverData.name || 'SimpleChat';
+                          const roomName = roomNames[currentRoomId] || 'room';
+                          fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                  receiverIds,
+                                  title: `${serverName} › #${roomName}`,
+                                  body: `${userNickname}: ${text || (attachedFile ? '（ファイル）' : '')}`,
+                                  roomId: currentRoomId,
+                                  appId: appId,
+                                  senderId: userId
+                              })
+                          }).catch(e => console.error("Notification trigger error:", e));
                       }
-                  }
-                  
-                  if (receiverIds.length > 0) {
-                      fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                              receiverIds: receiverIds,
-                              title: `${roomDoc.data()?.name || 'Room'}`,
-                              body: `${userNickname}: ${text || (attachedFile ? '（ファイル）' : '')}`,
-                              roomId: currentRoomId,
-                              appId: appId,
-                              senderId: userId
-                          })
-                      }).catch(e => console.error("Notification trigger error:", e));
                   }
               } catch (notifyErr) {
                   console.error("Failed to trigger notification:", notifyErr);
@@ -3371,7 +4166,7 @@
         if (lastMsgId === _lastSentReadMessageId) return;
         _lastSentReadMessageId = lastMsgId;
         try {
-          const myReceiptRef = doc(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/readReceipts`, userId);
+          const myReceiptRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`, userId);
           await setDoc(myReceiptRef, { lastReadAt: serverTimestamp(), lastReadMessageId: lastMsgId }, { merge: true });
         } catch (error) {}
       }
@@ -3456,8 +4251,8 @@
           messageContextMenu.classList.add("hidden");
       });
       deleteMessageButton.addEventListener("click", async () => {
-          if(selectedMessageForContext && (selectedMessageForContext.senderId === userId || isAdmin)) {
-              await deleteDoc(doc(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/messages`, selectedMessageForContext.id));
+          if(selectedMessageForContext && (selectedMessageForContext.senderId === userId || isAdmin || (currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId)))) {
+              await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id));
               alertMessage("削除しました", "success");
           } else {
               alertMessage("権限がありません", "warning");
@@ -3632,7 +4427,7 @@
       // --- ピン留め機能 ---
       pinMessageButton.addEventListener("click", async () => {
           if(selectedMessageForContext) {
-              const msgRef = doc(db, `artifacts/${appId}/public/data/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
+              const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
               const isPinned = !selectedMessageForContext.isPinned;
               await updateDoc(msgRef, { isPinned: isPinned }, { merge: true });
               alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
