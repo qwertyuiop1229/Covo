@@ -600,7 +600,7 @@
       }
       #messageInputInner {
         display: flex;
-        align-items: flex-end;
+        align-items: center;
         gap: 4px;
         background: #ffffff;
         border: 1.5px solid #e5e7eb;
@@ -1105,6 +1105,72 @@
       .invite-code-text { font-family: ui-monospace, Consolas, monospace; font-size: 1rem; font-weight: 700; color: #111827; flex: 1; letter-spacing: 2px; }
       .invite-code-meta { font-size: 0.7rem; color: #9ca3af; }
 
+      /* === サーバービュー用ニックネームヘッダー === */
+      #globalAppHeader {
+        display: none;
+        background: #1c2d4a;
+        color: white;
+        padding: 0.45rem 1rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 8px;
+      }
+      #globalAppHeader.server-mode {
+        display: flex;
+      }
+      #headerTitle {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: 0.88;
+      }
+      #headerUserAvatar {
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.68rem; font-weight: 700; flex-shrink: 0;
+      }
+      /* === カスタム確認ダイアログ === */
+      #customConfirmModal .confirm-box {
+        text-align: left;
+      }
+      /* === モーダル角丸崩れ防止 === */
+      .modal-dark-header {
+        border-radius: inherit;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      /* === メンションバッジ通知 === */
+      .mention-toast {
+        display: flex; align-items: center; gap: 8px;
+      }
+      .mention-toast-badge {
+        background: #4f46e5; color: white;
+        font-size: 0.65rem; font-weight: 800;
+        padding: 2px 6px; border-radius: 99px; flex-shrink: 0;
+        letter-spacing: 0.03em;
+      }
+      /* === ルームリストアイテムアニメーション === */
+      @keyframes roomSlideIn {
+        from { opacity: 0; transform: translateX(-8px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+      .room-list-anim {
+        animation: roomSlideIn 0.2s ease both;
+      }
+      /* === メンバーリストアイテムアニメーション === */
+      @keyframes memberFadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .member-anim {
+        animation: memberFadeIn 0.18s ease both;
+      }
       /* === PWAインストールバナー === */
       #pwaInstallBanner {
         display: none;
@@ -1223,8 +1289,9 @@
     </div>
 
     <div class="container">
-      <!-- ヘッダー（非表示：各画面が独自ヘッダーを持つため不要） -->
-      <div id="globalAppHeader" style="display:none">
+      <!-- サーバービュー時のニックネームヘッダー -->
+      <div id="globalAppHeader">
+        <div id="headerUserAvatar"></div>
         <h1 id="headerTitle"></h1>
       </div>
 
@@ -1791,7 +1858,7 @@
           <div class="flex min-h-full items-center justify-center p-6">
           <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden modal-box">
             <button id="closeServerSettingsBtn" class="absolute top-3.5 right-4 text-gray-400 hover:text-gray-700 z-10"><i class="fas fa-times text-lg"></i></button>
-            <div class="bg-gray-800 text-white px-6 py-4 flex-shrink-0">
+            <div class="bg-gray-800 text-white px-6 py-4 flex-shrink-0 modal-dark-header">
               <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
               <p id="serverSettingsTitle" class="font-bold text-lg"></p>
             </div>
@@ -1987,7 +2054,7 @@
                   rows="1"
                   disabled
                 ></textarea>
-                <button id="sendMessageButton" class="input-action-btn send-btn mb-0.5 mr-0.5" title="送信 (Enter)" disabled><i class="fas fa-paper-plane text-sm"></i></button>
+                <button id="sendMessageButton" class="input-action-btn send-btn mr-0.5" title="送信 (Enter)" disabled><i class="fas fa-paper-plane text-sm"></i></button>
               </div>
             </div>
           </div>
@@ -2001,6 +2068,28 @@
             </div>
           </div>
 
+        </div>
+      </div>
+    </div>
+
+    <!-- カスタム確認ダイアログ -->
+    <div id="customConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box">
+        <p id="customConfirmMessage" class="text-gray-800 font-medium mb-1 text-base leading-snug"></p>
+        <p id="customConfirmSub" class="text-gray-500 text-sm mb-6 hidden"></p>
+        <div class="flex gap-3 mt-4">
+          <button id="customConfirmCancel" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
+          <button id="customConfirmOk" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">確認</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- カスタム情報ダイアログ -->
+    <div id="customAlertModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box">
+        <p id="customAlertMessage" class="text-gray-800 font-medium mb-1 text-base leading-snug whitespace-pre-wrap"></p>
+        <div class="flex mt-5">
+          <button id="customAlertOk" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">OK</button>
         </div>
       </div>
     </div>
@@ -2023,6 +2112,9 @@
       } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
       import {
         getFirestore,
+        initializeFirestore,
+        persistentLocalCache,
+        persistentMultipleTabManager,
         doc,
         getDoc,
         addDoc,
@@ -2264,7 +2356,13 @@
         try {
           if (!app) {
             app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
+            try {
+              db = initializeFirestore(app, {
+                localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+              });
+            } catch(e) {
+              db = getFirestore(app);
+            }
             auth = getAuth(app);
           }
 
@@ -2605,7 +2703,7 @@
       });
 
       async function removeAllowedEmail(email) {
-          if (!confirm(`「${email}」を許可リストから削除しますか？`)) return;
+          if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
           adminMessage.textContent = "削除中...";
           try {
               const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
@@ -2642,7 +2740,7 @@
 
       async function removeAdminEmail(email) {
           if (email === userAuthEmail) { adminMessage.textContent = "自分自身は削除できません。"; return; }
-          if (!confirm(`「${email}」を管理者から削除しますか？`)) return;
+          if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
           adminMessage.textContent = "削除中...";
           try {
               const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
@@ -3063,9 +3161,10 @@
           titleDiv.textContent = `${title} — ${members.length}`;
           membersList.appendChild(titleDiv);
 
-          members.forEach(member => {
+          members.forEach((member, idx) => {
             const item = document.createElement("div");
-            item.className = "member-item";
+            item.className = "member-item member-anim";
+            item.style.animationDelay = `${idx * 30}ms`;
 
             const avatar = document.createElement("div");
             avatar.className = "avatar-placeholder";
@@ -3216,6 +3315,17 @@
 
         document.getElementById("serverListScreen").classList.add("hidden");
         appContainer.classList.remove("hidden");
+        appContainer.style.animation = "fadeIn 0.2s ease both";
+
+        // ニックネームヘッダーを表示
+        const hdr = document.getElementById("globalAppHeader");
+        const hdrAvatar = document.getElementById("headerUserAvatar");
+        const hdrTitle = document.getElementById("headerTitle");
+        if (hdr) {
+          hdrTitle.textContent = `${userNickname || ""}`;
+          hdrAvatar.textContent = (userNickname || "?").charAt(0).toUpperCase();
+          hdr.classList.add("server-mode");
+        }
 
         // サーバーヘッダー更新
         document.getElementById("serverNameDisplay").textContent = serverData.name || serverId;
@@ -3265,6 +3375,9 @@
 
         appContainer.classList.add("hidden");
         document.getElementById("serverListScreen").classList.remove("hidden");
+
+        // ニックネームヘッダーを非表示
+        document.getElementById("globalAppHeader")?.classList.remove("server-mode");
       }
 
       // サーバー存在確認
@@ -3394,7 +3507,7 @@
             const room = docSnap.data();
             roomNames[docSnap.id] = room.name;
             const div = document.createElement("div");
-            div.className = "flex items-center justify-between p-3 mb-2 bg-gray-50 hover:bg-gray-200 rounded-lg cursor-pointer";
+            div.className = "flex items-center justify-between p-3 mb-2 bg-gray-50 hover:bg-gray-200 rounded-lg cursor-pointer room-list-anim room-item-animate";
             div.id = `room-item-${docSnap.id}`;
             div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
@@ -3508,8 +3621,12 @@
                       const msgData = change.doc.data();
                       if(msgData.senderId !== userId) {
                           const isMentioned = msgData.text && msgData.text.includes(`@${userNickname}`);
+                          if (isMentioned) {
+                            showMentionToast(msgData.senderNickname || "ユーザー");
+                          }
                           if (!document.hasFocus() || isMentioned) {
-                              showNotification("チャット通知", `${msgData.senderNickname}: ${msgData.text || "画像・ファイルを送信しました"}`, currentRoomId);
+                            const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
+                            showNotification(notifTitle, `${msgData.senderNickname}: ${msgData.text || "画像・ファイルを送信しました"}`, currentRoomId);
                           }
                       }
                   }
@@ -3764,6 +3881,17 @@
 
         loadingOverlay.classList.remove("hidden");
         try {
+          // 作成上限チェック（自分が作成したサーバーは累計3つまで）
+          if (!isAdmin) {
+            const myServersSnap = await getDocs(
+              query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+            );
+            const myCreated = myServersSnap.docs.filter(d => d.data().createdBy === userId).length;
+            if (myCreated >= 3) {
+              msgEl.textContent = "サーバーの作成は1アカウントにつき3つまでです";
+              return;
+            }
+          }
           const available = await checkServerIdAvailable(rawId);
           if (!available) { msgEl.textContent = "このIDは既に使われています"; return; }
           await createServer(name, rawId, pass);
@@ -3851,6 +3979,14 @@
         if (!currentServerId) return;
         document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
         document.getElementById("serverSettingsMessage").textContent = "";
+
+        // 削除ボタンはオーナーかグローバル管理者のみ表示
+        const isOwner = currentServerData?.createdBy === userId;
+        const deleteBtn = document.getElementById("deleteServerBtn");
+        if (deleteBtn) {
+          deleteBtn.style.display = (isOwner || isAdmin) ? "" : "none";
+        }
+
         openModal(serverSettingsModal);
         switchSsTab("rooms");
         await loadServerSettingsRooms();
@@ -3879,7 +4015,7 @@
         });
         listEl.querySelectorAll(".del-room-btn").forEach(btn => {
           btn.addEventListener("click", async () => {
-            if (!confirm(`「${btn.dataset.roomName}」を削除しますか？`)) return;
+            if (!await showCustomConfirm(`「${btn.dataset.roomName}」を削除しますか？`, "削除")) return;
             loadingOverlay.classList.remove("hidden");
             try {
               await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, btn.dataset.roomId));
@@ -3969,7 +4105,7 @@
         });
         listEl.querySelectorAll(".kick-btn").forEach(btn => {
           btn.addEventListener("click", async () => {
-            if (!confirm("このメンバーをキックしますか？")) return;
+            if (!await showCustomConfirm("このメンバーをキックしますか？", "キック")) return;
             const targetUid = btn.dataset.uid;
             try {
               await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
@@ -4018,7 +4154,7 @@
         });
         listEl.querySelectorAll(".disable-invite-btn").forEach(btn => {
           btn.addEventListener("click", async () => {
-            if (!confirm("このコードを無効化しますか？")) return;
+            if (!await showCustomConfirm("このコードを無効化しますか？", "無効化")) return;
             await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, btn.dataset.code), { disabled: true });
             await loadInviteCodes();
           });
@@ -4078,7 +4214,9 @@
       });
 
       document.getElementById("deleteServerBtn").addEventListener("click", async () => {
-        if (!confirm(`「${currentServerData?.name || currentServerId}」を削除しますか？この操作は取り消せません。`)) return;
+        if (!await showCustomConfirm(`「${currentServerData?.name || currentServerId}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
+        // オーナーかグローバル管理者のみ削除可
+        if (currentServerData?.createdBy !== userId && !isAdmin) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
         loadingOverlay.classList.remove("hidden");
         try {
           await deleteDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
@@ -4604,6 +4742,60 @@
           }, 2800);
       }
 
+      function showMentionToast(fromNickname) {
+        const box = document.createElement("div");
+        box.className = "fixed top-4 right-4 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium mention-toast";
+        box.style.cssText += "animation: slideUpFade 0.22s ease both;";
+        box.innerHTML = `<span class="mention-toast-badge">@メンション</span><span>${escapeHtml(fromNickname)}さんにメンションされました</span>`;
+        document.body.appendChild(box);
+        setTimeout(() => {
+          box.style.animation = "fadeIn 0.2s ease reverse forwards";
+          setTimeout(() => box.remove(), 200);
+        }, 3500);
+      }
+
+      function showCustomConfirm(message, okText = "確認", cancelText = "キャンセル", subMessage = "") {
+        return new Promise(resolve => {
+          const modal = document.getElementById("customConfirmModal");
+          document.getElementById("customConfirmMessage").textContent = message;
+          document.getElementById("customConfirmOk").textContent = okText;
+          document.getElementById("customConfirmCancel").textContent = cancelText;
+          const subEl = document.getElementById("customConfirmSub");
+          if (subMessage) { subEl.textContent = subMessage; subEl.classList.remove("hidden"); }
+          else { subEl.classList.add("hidden"); }
+
+          openModal(modal);
+
+          const okBtn = document.getElementById("customConfirmOk");
+          const cancelBtn = document.getElementById("customConfirmCancel");
+
+          function onOk()     { cleanup(); resolve(true); }
+          function onCancel() { cleanup(); resolve(false); }
+          function cleanup() {
+            modal.classList.add("hidden");
+            okBtn.removeEventListener("click", onOk);
+            cancelBtn.removeEventListener("click", onCancel);
+          }
+          okBtn.addEventListener("click", onOk);
+          cancelBtn.addEventListener("click", onCancel);
+        });
+      }
+
+      function showCustomAlert(message) {
+        return new Promise(resolve => {
+          const modal = document.getElementById("customAlertModal");
+          document.getElementById("customAlertMessage").textContent = message;
+          openModal(modal);
+          const okBtn = document.getElementById("customAlertOk");
+          function onOk() {
+            modal.classList.add("hidden");
+            okBtn.removeEventListener("click", onOk);
+            resolve();
+          }
+          okBtn.addEventListener("click", onOk);
+        });
+      }
+
 
       // --- 検索機能 ---
       toggleSearchButton.addEventListener("click", () => {
@@ -4969,7 +5161,7 @@
               });
             } catch(e) {
               console.error("Failed to enqueue notification", e);
-              alert("通知の表示に失敗しました:\n" + (e?.message || e));
+              alertMessage("通知の表示に失敗しました", "error");
             }
           }
         } else if ('Notification' in window) {
@@ -5095,7 +5287,7 @@
         } catch (error) {
           console.error('Update check failed:', error);
           const errorDetail = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-          alert("アップデートの確認中にエラーが発生しました。\nネットワーク接続を確認するか、しばらく待ってから再度お試しください。\n\n【エラー詳細】\n" + errorDetail);
+          showCustomAlert("アップデートの確認中にエラーが発生しました。\nネットワーク接続を確認するか、しばらく待ってから再度お試しください。").catch(() => {});
         }
         return false;
       }
@@ -5187,7 +5379,7 @@
           deferredPrompt = null;
         } else if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
           // iOS Safariの場合
-          alert("Safariの「共有」ボタンから「ホーム画面に追加」を選択してください。\\n追加すると通知を受け取れるようになります。");
+          showCustomAlert("Safariの「共有」ボタンから「ホーム画面に追加」を選択してください。\n追加すると通知を受け取れるようになります。");
         }
       });
 
@@ -5204,7 +5396,7 @@
       // ===== 通知位置ピッカー（メインウィンドウ内ドラッグ式） =====
       function startInAppPositionPicker() {
         if (!isTauri || !window.__TAURI__?.core?.invoke) {
-          alert('この機能は Windows アプリ版でのみ使えます');
+          alertMessage('この機能は Windows アプリ版でのみ使えます', 'error');
           return;
         }
         const overlay = document.getElementById('posPickerOverlay');
@@ -5294,7 +5486,7 @@
             alertMessage && alertMessage('通知位置を保存しました', 'success');
           } catch (e) {
             console.error('[PosPicker] save error', e);
-            alert('保存失敗: ' + (e?.message || JSON.stringify(e)));
+            alertMessage('通知位置の保存に失敗しました', 'error');
           }
         };
 
@@ -5335,7 +5527,7 @@
               const path = await window.__TAURI__.core.invoke('open_log_dir');
               console.log('[Log] dir opened:', path);
             } catch(e) {
-              alert('ログフォルダを開けませんでした: ' + (e?.message || e));
+              alertMessage('ログフォルダを開けませんでした', 'error');
             }
           });
           // バージョン表示（最新かどうか確認するため）
