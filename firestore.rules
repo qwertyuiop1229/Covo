@@ -60,9 +60,11 @@ service cloud.firestore {
       // ============================================================
 
       match /servers/{serverId} {
-        // 認証済みユーザーは全サーバーのメタ情報（名前・ID・パスワードハッシュ）を読める
-        // （参加検証のため）
-        allow read: if isAuthenticated();
+        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
+        allow get: if isAuthenticated();
+        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
 
         // サーバー作成: 自分をcreatedBy・serverAdmins・joinedUsersに含める必要がある
         allow create: if isAuthenticated() &&
