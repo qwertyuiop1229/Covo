@@ -1032,13 +1032,13 @@
       .server-card-meta { font-size: 0.73rem; color: #6b7280; }
       .server-card-admin-badge {
         display: inline-block;
-        background: #fef3c7;
-        color: #92400e;
+        background: #e5e7eb;
+        color: #374151;
         font-size: 0.63rem;
         font-weight: 700;
         padding: 2px 7px;
         border-radius: 99px;
-        border: 1px solid #fde68a;
+        border: 1px solid #d1d5db;
       }
       .server-list-empty {
         text-align: center;
@@ -1524,7 +1524,7 @@
             <div class="p-8 py-6 bg-gray-50 flex justify-between items-center gap-4 border-t">
                 <button
                   id="logoutButtonInModal"
-                  class="flex-1 bg-white hover:bg-red-50 text-red-500 font-bold py-3 px-4 rounded-xl border border-gray-200 transition-all"
+                  class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-xl transition-all"
                 >
                   ログアウト
                 </button>
@@ -2047,16 +2047,16 @@
                   ></span>
                   <button
                     id="clearFileButton"
-                    class="ml-2 w-6 h-6 flex items-center justify-center text-green-500 hover:text-green-700 hover:bg-green-100 rounded-full text-xs flex-shrink-0"
+                    class="ml-2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full text-xs flex-shrink-0"
                   >
                     <i class="fas fa-times"></i>
                   </button>
                 </div>
                 <div id="uploadProgressBar" class="hidden mt-1.5">
-                  <div class="w-full bg-green-100 rounded-full h-1.5">
-                    <div id="uploadProgressFill" class="bg-green-500 h-1.5 rounded-full transition-all" style="width:0%"></div>
+                  <div class="w-full bg-gray-200 rounded-full h-1.5">
+                    <div id="uploadProgressFill" class="bg-gray-700 h-1.5 rounded-full transition-all" style="width:0%"></div>
                   </div>
-                  <span id="uploadProgressText" class="text-xs text-green-700 mt-0.5 block">アップロード中... 0%</span>
+                  <span id="uploadProgressText" class="text-xs text-gray-500 mt-0.5 block">アップロード中... 0%</span>
                 </div>
               </div>
               <!-- メンションポップアップ -->
@@ -3231,7 +3231,7 @@
             updateUserPanelUI();
             await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
             settingsMessage.textContent = "アイコンをリセットしました";
-            settingsMessage.className = "text-center mt-2 text-sm text-green-600";
+            settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
         } catch (e) {
             console.error(e);
             settingsMessage.textContent = "リセットに失敗しました";
@@ -3276,7 +3276,7 @@
             await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
 
             settingsMessage.textContent = "保存しました";
-            settingsMessage.className = "text-center mt-2 text-sm text-green-600";
+            settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
             closeCropModal();
             setTimeout(() => settingsModal.classList.add("hidden"), 1000);
         } catch(e) {
@@ -4189,7 +4189,7 @@
           const available = await checkServerIdAvailable(val.toLowerCase());
           if (available) {
             availEl.textContent = "✓ 使用可能";
-            availEl.className = "text-xs mt-1 ml-1 text-green-600";
+            availEl.className = "text-xs mt-1 ml-1 text-gray-600";
           } else {
             availEl.textContent = "✗ このIDは使われています";
             availEl.className = "text-xs mt-1 ml-1 text-red-500";
@@ -5166,7 +5166,7 @@
           const box = document.createElement("div");
           let colorClass = "bg-gray-800 text-white";
           if (type === "error") colorClass = "bg-red-600 text-white";
-          else if (type === "success") colorClass = "bg-green-700 text-white";
+          else if (type === "success") colorClass = "bg-gray-800 text-white";
           box.className = `fixed bottom-5 right-5 px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium ${colorClass}`;
           box.style.cssText += "animation: slideUpFade 0.22s ease both;";
           box.textContent = msg;
