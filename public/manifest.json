@@ -1,6 +1,6 @@
 {
-  "name": "SimpleChat",
-  "short_name": "SimpleChat",
+  "name": "Covo",
+  "short_name": "Covo",
   "description": "A simple and fast chat application.",
   "start_url": "./index.html",
   "display": "standalone",
@@ -8,6 +8,11 @@
   "theme_color": "#3b82f6",
   "gcm_sender_id": "103953800507",
   "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
     {
       "src": "icon-192x192.png",
       "sizes": "192x192",

@@ -2,15 +2,16 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chat App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Covo</title>
     <!-- ここにnoindexメタタグを追加してGoogle検索からのインデックス登録を防ぎます -->
     <meta name="robots" content="noindex, nofollow" />
     <link rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#3b82f6" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="icon" type="image/png" href="icon-192x192.png" />
-    <link rel="apple-touch-icon" href="icon-192x192.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -51,8 +52,8 @@
         flex-direction: column;
         width: 100%;
         max-width: none;
-        height: 100vh;
-        min-height: 100vh;
+        height: 100dvh;
+        min-height: 100dvh;
         margin: 0;
         padding: 0;
         border-radius: 0;
@@ -145,10 +146,12 @@
         word-break: break-word;
         overflow-y: auto;
         resize: none;
-        min-height: 44px;
+        min-height: 0;
         max-height: 200px;
         background-color: transparent;
         border: none;
+        font-size: 16px;
+        line-height: 1.5;
         
         /* ★スクロールバーを非表示にする設定 */
         -ms-overflow-style: none;  /* IE and Edge */
@@ -404,6 +407,7 @@
         /* スマホで入力欄を画面下部に固定 */
         #messageInputArea {
           border-top: 1px solid #e5e7eb;
+          padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
         }
 
         /* iPhoneでの勝手なズーム拡大を防止 */
@@ -589,16 +593,18 @@
         cursor: not-allowed;
       }
       .send-btn {
-        background-color: #374151;
+        background-color: #374151 !important;
         color: white !important;
-        border-radius: 10px;
+        border-color: #374151 !important;
       }
       .send-btn:hover:not(:disabled) {
         background-color: #1f2937 !important;
+        border-color: #1f2937 !important;
         color: white !important;
       }
       .send-btn:disabled {
         background-color: #e5e7eb !important;
+        border-color: #e5e7eb !important;
         color: #9ca3af !important;
       }
       #messageInputInner {
@@ -608,13 +614,51 @@
         background: #ffffff;
         border: 1.5px solid #e5e7eb;
         border-radius: 14px;
-        padding: 4px 4px 4px 8px;
+        padding: 0 0 0 10px;
         transition: border-color 0.2s, box-shadow 0.2s;
         box-shadow: 0 1px 4px rgba(0,0,0,0.04);
       }
       #messageInputInner:focus-within {
         border-color: #9ca3af;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      }
+      /* 独立アクションボタン（ファイル添付・メンション） */
+      .input-side-btn {
+        background: #ffffff;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 14px;
+        width: 40px;
+        height: 40px;
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 1rem;
+        transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      }
+      .input-side-btn:hover:not(:disabled) {
+        color: #374151;
+        background-color: #f3f4f6;
+        border-color: #d1d5db;
+      }
+      .input-side-btn:disabled {
+        color: #d1d5db;
+        cursor: not-allowed;
+        background: #fafafa;
+        border-color: #f3f4f6;
+      }
+      /* 設定モーダルのスクロールバーを非表示 */
+      #settingsModal,
+      #settingsScrollContent {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      #settingsModal::-webkit-scrollbar,
+      #settingsScrollContent::-webkit-scrollbar {
+        display: none;
       }
       /* メンションポップアップ */
       #mentionPopup {
@@ -1177,7 +1221,7 @@
         z-index: 9998;
         background: linear-gradient(135deg, #1e293b, #334155);
         color: white;
-        padding: 14px 16px;
+        padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0));
         align-items: center;
         gap: 12px;
         box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
@@ -1248,7 +1292,7 @@
     <div id="pwaInstallBanner">
       <div class="pwa-banner-icon"><i class="fas fa-comment-dots"></i></div>
       <div class="pwa-banner-text">
-        <strong>SimpleChatをインストール</strong>
+        <strong>Covoをインストール</strong>
         <span id="pwaInstallHint">ホーム画面に追加して通知を受け取ろう</span>
       </div>
       <button class="pwa-banner-btn" id="pwaInstallButton">インストール</button>
@@ -1268,7 +1312,7 @@
         <div class="pp-title">通知位置を設定</div>
         <div class="pp-body">
           下のサンプル通知をドラッグして好きな位置に置き、「✓ 決定」を押してください。<br>
-          別のモニターに置きたい場合は、まず SimpleChat ウィンドウを移動してから設定してください。
+          別のモニターに置きたい場合は、まず Covo ウィンドウを移動してから設定してください。
         </div>
         <div class="pp-buttons">
           <button id="posPickerCancel" type="button">キャンセル</button>
@@ -1570,7 +1614,7 @@
             </div>
 
             <!-- コンテンツ -->
-            <div class="flex-1 overflow-y-auto">
+            <div id="settingsScrollContent" class="flex-1 overflow-y-auto">
 
               <!-- 許可リストタブ -->
               <div id="adminTabAllowedContent" class="p-6">
@@ -1610,8 +1654,16 @@
 
             </div>
 
-            <!-- フッター（ステータス） -->
-            <div id="adminMessage" class="px-6 py-3 text-center text-sm text-gray-500 min-h-[2.5rem] border-t border-gray-50 flex-shrink-0"></div>
+            <!-- フッター（ステータス + 全サーバー削除） -->
+            <div class="border-t border-gray-100 flex-shrink-0">
+              <div id="adminMessage" class="px-6 py-3 text-center text-sm text-gray-500 min-h-[2.5rem]"></div>
+              <div class="px-6 pb-5 admin-only-section hidden">
+                <button id="deleteAllServersBtn"
+                  class="w-full px-4 py-2.5 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 text-sm font-semibold rounded-xl transition-colors border border-gray-200 hover:border-red-200">
+                  <i class="fas fa-trash mr-1.5"></i>全サーバーを削除
+                </button>
+              </div>
+            </div>
 
           </div>
         </div>
@@ -1781,7 +1833,7 @@
         <!-- サーバー一覧画面 -->
         <div id="serverListScreen" class="hidden">
           <div class="server-list-header">
-            <div class="server-list-title"><i class="fas fa-layer-group mr-2"></i>SimpleChat</div>
+            <div class="server-list-title"><i class="fas fa-layer-group mr-2"></i>Covo</div>
             <div class="server-list-actions">
               <button id="joinServerBtn"><i class="fas fa-sign-in-alt mr-1"></i>参加</button>
               <button id="createServerBtn"><i class="fas fa-plus mr-1"></i>新規作成</button>
@@ -2016,10 +2068,10 @@
               <div
                 id="replyingToContainer"
                 class="w-full px-3 py-2 mb-2 rounded-lg flex items-center justify-between hidden"
-                style="background:#eff6ff;border-left:3px solid #818cf8"
+                style="background:#f9fafb;border-left:3px solid #d1d5db"
               >
                 <div class="flex-1 overflow-hidden">
-                  <div class="text-xs text-indigo-500 font-semibold">
+                  <div class="text-xs text-gray-500 font-semibold">
                     返信先: <span id="replyingToNickname"></span>
                   </div>
                   <div
@@ -2029,7 +2081,7 @@
                 </div>
                 <button
                   id="cancelReplyButton"
-                  class="ml-2 w-6 h-6 flex items-center justify-center text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 rounded-full text-xs flex-shrink-0"
+                  class="ml-2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full text-xs flex-shrink-0"
                 >
                   <i class="fas fa-times"></i>
                 </button>
@@ -2038,7 +2090,7 @@
               <div
                 id="filePreviewContainer"
                 class="w-full px-3 py-2 mb-2 rounded-lg hidden"
-                style="background:#f0fdf4;border-left:3px solid #4ade80"
+                style="background:#f9fafb;border-left:3px solid #d1d5db"
               >
                 <div class="flex items-center justify-between">
                   <span
@@ -2061,18 +2113,21 @@
               </div>
               <!-- メンションポップアップ -->
               <div id="mentionPopup" class="hidden"></div>
-              <div id="messageInputInner">
-                <button id="fileAttachButton" class="input-action-btn" title="ファイルを添付"><i class="fas fa-paperclip"></i></button>
-                <button id="mentionButton" class="input-action-btn" title="メンション"><i class="fas fa-at"></i></button>
+              <div class="flex items-end gap-1.5">
+                <button id="fileAttachButton" class="input-side-btn" title="ファイルを添付" disabled><i class="fas fa-paperclip"></i></button>
+                <button id="mentionButton" class="input-side-btn" title="メンション"><i class="fas fa-at"></i></button>
                 <input type="file" id="fileAttachInput" class="hidden" />
-                <textarea
-                  id="messageInput"
-                  placeholder="メッセージを入力"
-                  class="flex-1 py-2 px-1 w-full focus:outline-none"
-                  rows="1"
-                  disabled
-                ></textarea>
-                <button id="sendMessageButton" class="input-action-btn send-btn mr-0.5" title="送信 (Enter)" disabled><i class="fas fa-paper-plane text-sm"></i></button>
+                <div id="messageInputInner" style="flex:1;min-width:0;">
+                  <textarea
+                    id="messageInput"
+                    placeholder="メッセージを入力"
+                    class="flex-1 w-full focus:outline-none"
+                    style="padding: 8px 10px 8px 2px;"
+                    rows="1"
+                    disabled
+                  ></textarea>
+                </div>
+                <button id="sendMessageButton" class="input-side-btn send-btn" title="送信 (Enter)" disabled><svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
               </div>
             </div>
           </div>
@@ -2150,6 +2205,7 @@
         limit,
         arrayUnion,
         arrayRemove,
+        increment,
       } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
       import {
         getMessaging,
@@ -2518,6 +2574,7 @@
                 showServerList();
                 startPresenceSystem();
                 initializeFCM();
+                setTimeout(() => setupGlobalNotificationListeners(), 2000);
               } else {
                 authContainer.classList.add("hidden");
                 appContainer.classList.add("hidden");
@@ -2782,13 +2839,32 @@
 
       openAdminModalButton.addEventListener("click", () => {
           if (!isAdmin && !isListAdmin) return;
-          // リスト管理者には全体管理者専用タブを隠す
+          // リスト管理者には全体管理者専用タブ・セクションを隠す
           document.querySelectorAll(".admin-only-tab").forEach(el => {
               el.style.display = isAdmin ? "" : "none";
+          });
+          document.querySelectorAll(".admin-only-section").forEach(el => {
+              el.classList.toggle("hidden", !isAdmin);
           });
           switchAdminTab("allowed");
           loadAdminPanelData();
           openModal(adminModal);
+      });
+
+      document.getElementById("deleteAllServersBtn").addEventListener("click", async () => {
+          if (!isAdmin) return;
+          if (!await showCustomConfirm("全てのサーバーを削除しますか？", "全削除", "キャンセル", "この操作は取り消せません。全サーバーのデータが失われます。")) return;
+          adminMessage.textContent = "削除中...";
+          try {
+              const snap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+              for (const d of snap.docs) {
+                  await deleteServerCascade(d.id);
+              }
+              adminMessage.textContent = `${snap.size}件のサーバーを削除しました`;
+          } catch(e) {
+              console.error(e);
+              adminMessage.textContent = "削除に失敗しました: " + e.message;
+          }
       });
 
       closeAdminModalButton.addEventListener("click", () => {
@@ -3642,7 +3718,19 @@
               ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
               ${isAdmin && !isMine ? '<span class="server-card-admin-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe"><i class="fas fa-shield-alt mr-1"></i>全体管理者</span>' : ''}
             `;
-            card.addEventListener("click", () => enterServer(server.id, server));
+            let lpTimer, lpTriggered = false;
+            card.addEventListener("click", () => { if (lpTriggered) { lpTriggered = false; return; } enterServer(server.id, server); });
+            card.addEventListener("contextmenu", (e) => { e.preventDefault(); showServerContextMenu(server, e.clientX, e.clientY); });
+            card.addEventListener("touchstart", (e) => {
+              lpTriggered = false;
+              lpTimer = setTimeout(() => {
+                lpTriggered = true;
+                const t = e.touches[0];
+                showServerContextMenu(server, t.clientX, t.clientY);
+              }, 300);
+            }, { passive: true });
+            card.addEventListener("touchend", () => clearTimeout(lpTimer), { passive: true });
+            card.addEventListener("touchmove", () => clearTimeout(lpTimer), { passive: true });
             serverGrid.appendChild(card);
           });
         });
@@ -3894,11 +3982,14 @@
               if (roomId !== currentRoomId && msgData.senderId !== userId) {
                 unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1;
                 updateUnreadBadge(roomId);
+                const serverName = currentServerData?.name || 'Covo';
+                const roomName = roomNames[roomId] || 'room';
+                const sender = msgData.senderNickname || 'Unknown';
+                const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
+                // アプリ内通知（アプリにフォーカスがある場合も表示）
+                showInAppNotification(serverName, roomName, sender, text,
+                  currentServerId, currentServerData, roomId, roomName);
                 if (isTauri) {
-                  const serverName = currentServerData?.name || 'SimpleChat';
-                  const roomName = roomNames[roomId] || 'room';
-                  const sender = msgData.senderNickname || 'Unknown';
-                  const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
                   showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
                 }
               }
@@ -4212,19 +4303,20 @@
 
         loadingOverlay.classList.remove("hidden");
         try {
-          // 作成上限チェック（自分が作成したサーバーは累計3つまで）
+          // 作成上限チェック（全体管理者は無制限、それ以外は同時に2つまで）
           if (!isAdmin) {
             const myServersSnap = await getDocs(
               query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
             );
             const myCreated = myServersSnap.docs.filter(d => d.data().createdBy === userId).length;
-            if (myCreated >= 3) {
-              msgEl.textContent = "サーバーの作成は1アカウントにつき3つまでです";
+            if (myCreated >= 2) {
+              msgEl.textContent = "サーバーは同時に2つまで作成できます";
+              loadingOverlay.classList.add("hidden");
               return;
             }
           }
           const available = await checkServerIdAvailable(rawId);
-          if (!available) { msgEl.textContent = "このIDは既に使われています"; return; }
+          if (!available) { msgEl.textContent = "このIDは既に使われています"; loadingOverlay.classList.add("hidden"); return; }
           await createServer(name, rawId, pass);
           document.getElementById("createServerModal").classList.add("hidden");
         } catch(e) {
@@ -4311,8 +4403,9 @@
         document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
         document.getElementById("serverSettingsMessage").textContent = "";
 
-        // 削除ボタンはオーナーかグローバル管理者のみ表示
-        const isOwner = currentServerData?.createdBy === userId;
+        // 削除ボタンはオーナー（またはserverAdmins所属）かグローバル管理者のみ表示
+        const isOwner = currentServerData?.createdBy === userId ||
+          (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
         const deleteBtn = document.getElementById("deleteServerBtn");
         if (deleteBtn) {
           deleteBtn.style.display = (isOwner || isAdmin) ? "" : "none";
@@ -4552,8 +4645,9 @@
 
       document.getElementById("deleteServerBtn").addEventListener("click", async () => {
         if (!await showCustomConfirm(`「${currentServerData?.name || currentServerId}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
-        // オーナーかグローバル管理者のみ削除可
-        if (currentServerData?.createdBy !== userId && !isAdmin) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
+        const canDelete = currentServerData?.createdBy === userId ||
+          (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || isAdmin;
+        if (!canDelete) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
         loadingOverlay.classList.remove("hidden");
         try {
           await deleteServerCascade(currentServerId);
@@ -4611,7 +4705,7 @@
                       const serverData = serverSnap.data();
                       const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
                       if (receiverIds.length > 0) {
-                          const serverName = serverData.name || 'SimpleChat';
+                          const serverName = serverData.name || 'Covo';
                           const roomName = roomNames[currentRoomId] || 'room';
                           fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
                               method: "POST",
@@ -5019,25 +5113,32 @@
       window.addEventListener("focus", () => { if (!document.hidden) updateReadReceiptForCurrentUser(); });
 
       let longPressTimer;
+      let longPressTriggered = false;
       messagesDisplay.addEventListener("touchstart", (e) => {
           const bubble = e.target.closest(".message-bubble");
-          if (!bubble) return;
+          const row = e.target.closest(".message-row");
+          const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+          if (!targetBubble) return;
           const touch = e.touches[0];
           const clientX = touch.clientX;
           const clientY = touch.clientY;
-          
+          longPressTriggered = false;
           longPressTimer = setTimeout(() => {
-              showContextMenu(bubble, clientX, clientY);
-              // 長押し時にテキスト選択を解除して、選択UIが邪魔しないようにする
-              if (window.getSelection) {
-                  window.getSelection().removeAllRanges();
-              }
-          }, 600);
+              longPressTriggered = true;
+              showContextMenu(targetBubble, clientX, clientY);
+              if (window.getSelection) window.getSelection().removeAllRanges();
+          }, 300);
       }, { passive: true });
 
-      messagesDisplay.addEventListener("touchend", () => clearTimeout(longPressTimer));
-      messagesDisplay.addEventListener("touchmove", () => clearTimeout(longPressTimer));
-      messagesDisplay.addEventListener("touchcancel", () => clearTimeout(longPressTimer));
+      messagesDisplay.addEventListener("touchend", (e) => {
+          clearTimeout(longPressTimer);
+          if (longPressTriggered) {
+              longPressTriggered = false;
+              e.preventDefault();
+          }
+      });
+      messagesDisplay.addEventListener("touchmove", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
+      messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
 
       function showContextMenu(bubble, clientX, clientY) {
           const msgData = lastMessagesData.find(m => m.id === bubble.dataset.messageId);
@@ -5067,8 +5168,10 @@
       messagesDisplay.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           const bubble = e.target.closest(".message-bubble");
-          if(bubble) {
-              showContextMenu(bubble, e.clientX, e.clientY);
+          const row = e.target.closest(".message-row");
+          const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+          if(targetBubble) {
+              showContextMenu(targetBubble, e.clientX, e.clientY);
           } else {
               messageContextMenu.classList.add("hidden");
           }
@@ -5094,8 +5197,10 @@
 
       messagesDisplay.addEventListener("dblclick", (e) => {
           const bubble = e.target.closest(".message-bubble");
-          if(bubble) {
-              const m = lastMessagesData.find(msg => msg.id === bubble.dataset.messageId);
+          const row = e.target.closest(".message-row");
+          const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+          if(targetBubble) {
+              const m = lastMessagesData.find(msg => msg.id === targetBubble.dataset.messageId);
               if(m) {
                   replyingToMessage = m;
                   replyingToNickname.textContent = m.senderNickname;
@@ -5217,6 +5322,176 @@
         await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
         await batchDeleteCollection(collection(db, `${base}/secrets`));
         await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+      }
+
+      // ===== アプリ内通知スタック =====
+      function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+        const stack = document.getElementById("notifStack");
+        const notif = document.createElement("div");
+        notif.className = "bg-white rounded-xl shadow-lg overflow-hidden w-72";
+        notif.style.cssText = "border-left:3px solid #1f2937;pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+        const meta = escapeHtml(`${serverName} · #${roomName}`);
+        const body = escapeHtml(`${senderName}: ${text}`);
+        notif.innerHTML = `
+          <div class="notif-row flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-comment-dots text-white text-xs"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-xs text-gray-400 truncate">${meta}</div>
+              <div class="text-sm text-gray-800 font-medium truncate leading-snug">${body}</div>
+            </div>
+            <button class="notif-x w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 flex-shrink-0">
+              <i class="fas fa-times text-xs"></i>
+            </button>
+          </div>`;
+        const navData = { serverId, serverData, roomId, roomName };
+        function dismissNotif() {
+          notif.style.animation = "fadeIn 0.2s ease reverse forwards";
+          setTimeout(() => notif.remove(), 200);
+        }
+        notif.querySelector(".notif-row").addEventListener("click", async (e) => {
+          if (e.target.closest(".notif-x")) return;
+          dismissNotif();
+          if (currentServerId !== navData.serverId) {
+            await enterServer(navData.serverId, navData.serverData);
+            setTimeout(() => selectRoom(navData.roomId, navData.roomName), 600);
+          } else {
+            selectRoom(navData.roomId, navData.roomName);
+          }
+        });
+        notif.querySelector(".notif-x").addEventListener("click", (e) => {
+          e.stopPropagation();
+          dismissNotif();
+        });
+        stack.appendChild(notif);
+        setTimeout(dismissNotif, 5000);
+      }
+
+      // ===== グローバル右クリック無効 =====
+      document.addEventListener("contextmenu", (e) => {
+        if (!e.target.closest(".message-bubble") && !e.target.closest(".server-card") && !e.target.closest(".message-row")) {
+          e.preventDefault();
+        }
+      });
+
+      // ===== サーバーカードコンテキストメニュー =====
+      let serverCtxData = null;
+
+      function showServerContextMenu(server, x, y) {
+        serverCtxData = server;
+        const menu = document.getElementById("serverContextMenu");
+        const isSvAdmin = server.serverAdmins && server.serverAdmins.includes(userId);
+        const isOwner = server.createdBy === userId;
+        const isJoined = server.joinedUsers && server.joinedUsers.includes(userId);
+        // 権限ごとに表示切り替え
+        document.getElementById("serverCtxSettings").style.display = (isAdmin || isSvAdmin) ? "" : "none";
+        document.getElementById("serverCtxLeave").style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
+        document.getElementById("serverCtxDeleteSep").style.display = (isAdmin || isOwner) ? "" : "none";
+        document.getElementById("serverCtxDelete").style.display = (isAdmin || isOwner) ? "" : "none";
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.classList.remove("hidden");
+        requestAnimationFrame(() => {
+          const r = menu.getBoundingClientRect();
+          if (r.right > window.innerWidth - 8) menu.style.left = `${x - r.width}px`;
+          if (r.bottom > window.innerHeight - 8) menu.style.top = `${y - r.height}px`;
+        });
+      }
+
+      document.getElementById("serverCtxEnter").addEventListener("click", () => {
+        if (serverCtxData) enterServer(serverCtxData.id, serverCtxData);
+        document.getElementById("serverContextMenu").classList.add("hidden");
+      });
+
+      document.getElementById("serverCtxSettings").addEventListener("click", async () => {
+        const sv = serverCtxData;
+        document.getElementById("serverContextMenu").classList.add("hidden");
+        if (!sv) return;
+        await enterServer(sv.id, sv);
+        setTimeout(() => openServerSettings(), 600);
+      });
+
+      document.getElementById("serverCtxLeave").addEventListener("click", async () => {
+        const sv = serverCtxData;
+        document.getElementById("serverContextMenu").classList.add("hidden");
+        if (!sv) return;
+        if (!await showCustomConfirm(`「${sv.name || sv.id}」を退出しますか？`, "退出する", "キャンセル")) return;
+        loadingOverlay.classList.remove("hidden");
+        try {
+          await updateDoc(doc(db, `artifacts/${appId}/servers`, sv.id), {
+            joinedUsers: arrayRemove(userId),
+            serverAdmins: arrayRemove(userId),
+            memberCount: increment(-1)
+          });
+          alertMessage("サーバーを退出しました", "success");
+        } catch(e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
+        finally { loadingOverlay.classList.add("hidden"); }
+      });
+
+      document.getElementById("serverCtxDelete").addEventListener("click", async () => {
+        const sv = serverCtxData;
+        document.getElementById("serverContextMenu").classList.add("hidden");
+        if (!sv) return;
+        if (!await showCustomConfirm(`「${sv.name || sv.id}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
+        loadingOverlay.classList.remove("hidden");
+        try {
+          await deleteServerCascade(sv.id);
+          alertMessage("サーバーを削除しました", "success");
+        } catch(e) { alertMessage("削除に失敗しました: " + e.message, "error"); }
+        finally { loadingOverlay.classList.add("hidden"); }
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#serverContextMenu")) {
+          document.getElementById("serverContextMenu").classList.add("hidden");
+        }
+      });
+
+      // 他サーバーのメッセージを監視するグローバルリスナー
+      let globalNotifListeners = {};
+
+      async function setupGlobalNotificationListeners() {
+        Object.values(globalNotifListeners).forEach(unsub => unsub());
+        globalNotifListeners = {};
+        try {
+          const serversSnap = await getDocs(
+            query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+          );
+          for (const serverDoc of serversSnap.docs) {
+            const svId = serverDoc.id;
+            const svData = serverDoc.data();
+            if (svId === currentServerId) continue;
+            const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${svId}/rooms`));
+            roomsSnap.forEach(roomDoc => {
+              const rmId = roomDoc.id;
+              const rmName = roomDoc.data().name;
+              const q = query(
+                collection(db, `artifacts/${appId}/servers/${svId}/rooms/${rmId}/messages`),
+                orderBy("timestamp", "desc"),
+                limit(1)
+              );
+              let isFirst = true;
+              const unsub = onSnapshot(q, snapshot => {
+                if (isFirst) { isFirst = false; return; }
+                snapshot.docChanges().forEach(change => {
+                  if (change.type === "added") {
+                    const msgData = change.doc.data();
+                    if (msgData.senderId !== userId) {
+                      showInAppNotification(
+                        svData.name || svId, rmName,
+                        msgData.senderNickname || 'ユーザー',
+                        msgData.text || '（ファイル）',
+                        svId, svData, rmId, rmName
+                      );
+                    }
+                  }
+                });
+              });
+              globalNotifListeners[`${svId}/${rmId}`] = unsub;
+            });
+          }
+        } catch(e) { console.error("globalNotifListeners error:", e); }
       }
 
       function showMentionToast(fromNickname) {
@@ -5524,7 +5799,7 @@
           // フォアグラウンドメッセージ受信（data + notification 両対応）
           onMessage(messaging, (payload) => {
             console.log('Foreground message received:', payload);
-            const title = payload.data?.title || payload.notification?.title || 'SimpleChat';
+            const title = payload.data?.title || payload.notification?.title || 'Covo';
             const body = payload.data?.body || payload.notification?.body || '新しいメッセージ';
             const roomId = payload.data?.roomId || null;
             showNotification(title, body, roomId);
@@ -5833,15 +6108,15 @@
       const pwaInstallBtn = document.getElementById('pwaInstallButton');
       const pwaCloseBtn = document.getElementById('pwaInstallClose');
 
+      const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+        || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
       window.addEventListener('beforeinstallprompt', (e) => {
-        // デフォルトのプロンプトを防止
         e.preventDefault();
         deferredPrompt = e;
-        
-        // すでにPWAとして起動しているかチェック
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-        
-        if (!isStandalone && !isTauri) {
+        // スマホのみバナー表示
+        if (!isStandalone && !isTauri && isMobileDevice) {
           pwaBanner.classList.add('show');
         }
       });
@@ -5864,10 +6139,10 @@
         pwaBanner.classList.remove('show');
       });
 
-      // iOS向けヒント表示
-      if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !window.navigator.standalone) {
+      // iOS向けヒント表示（スマホのみ）
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !window.navigator.standalone && !isTauri) {
         document.getElementById('pwaInstallHint').textContent = "共有ボタンから「ホーム画面に追加」してください";
-        if (!isTauri) pwaBanner.classList.add('show');
+        pwaBanner.classList.add('show');
       }
       
       // ===== 通知位置ピッカー（メインウィンドウ内ドラッグ式） =====
@@ -6212,5 +6487,26 @@
       </div>
     </div>
   </div>
+
+  <!-- アプリ内通知スタック -->
+  <div id="notifStack" class="fixed bottom-5 right-5 z-[9997] flex flex-col gap-2 items-end" style="pointer-events:none; bottom: max(20px, calc(12px + env(safe-area-inset-bottom, 0)));"></div>
+
+  <!-- サーバーカードコンテキストメニュー -->
+  <div id="serverContextMenu" class="hidden fixed bg-white rounded-xl border border-gray-100 py-1.5 z-[9999] min-w-44" style="box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+    <div id="serverCtxEnter" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+      <i class="fas fa-door-open text-gray-400 w-4 text-center text-xs"></i>サーバーに入る
+    </div>
+    <div id="serverCtxSettings" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+      <i class="fas fa-cog text-gray-400 w-4 text-center text-xs"></i>サーバー設定
+    </div>
+    <div id="serverCtxLeave" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-500 cursor-pointer transition-colors">
+      <i class="fas fa-sign-out-alt text-gray-400 w-4 text-center text-xs"></i>退出する
+    </div>
+    <div id="serverCtxDeleteSep" class="border-t border-gray-100 my-1"></div>
+    <div id="serverCtxDelete" class="flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 cursor-pointer transition-colors">
+      <i class="fas fa-trash w-4 text-center text-xs"></i>削除する
+    </div>
+  </div>
+
   </body>
 </html>
