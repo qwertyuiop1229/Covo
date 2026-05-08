@@ -148,16 +148,20 @@ service cloud.firestore {
           // 既読レシート
           match /readReceipts/{receiptUserId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) &&
+            allow create, update: if isJoinedServer(appId, serverId) &&
               request.auth.uid == receiptUserId;
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
         }
 
         // サーバー別プロフィール
         match /profiles/{profileUserId} {
           allow read: if isJoinedServer(appId, serverId);
-          allow write: if isJoinedServer(appId, serverId) &&
+          allow create, update: if isJoinedServer(appId, serverId) &&
             request.auth.uid == profileUserId;
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
         }
 
         // 招待コード

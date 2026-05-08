@@ -1003,6 +1003,7 @@
         background: #1f2937;
         color: white;
         padding: 0.875rem 1.25rem;
+        padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1158,6 +1159,7 @@
         background: #374151;
         color: white;
         padding: 0.45rem 1rem;
+        padding-top: calc(0.45rem + env(safe-area-inset-top, 0px));
         font-size: 0.8rem;
         font-weight: 600;
         letter-spacing: 0.01em;
@@ -2503,6 +2505,9 @@
               userId = user.uid;
               userAuthEmail = user.email;
               isAuthReady = true;
+
+              // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
+              await user.getIdToken();
 
               try {
                 // Firestoreの adminList から自身のメールアドレスがあるかチェック
@@ -4654,7 +4659,7 @@
           serverSettingsModal.classList.add("hidden");
           leaveServerView();
           alertMessage("サーバーを削除しました", "success");
-        } catch(e) { alertMessage("削除に失敗しました", "error"); }
+        } catch(e) { console.error("deleteServer error:", e); alertMessage("削除に失敗しました", "error"); }
         finally { loadingOverlay.classList.add("hidden"); }
       });
 
