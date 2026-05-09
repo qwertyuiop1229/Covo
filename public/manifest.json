@@ -2,6 +2,7 @@
   "name": "Covo",
   "short_name": "Covo",
   "description": "A simple and fast chat application.",
+  "id": "/",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",

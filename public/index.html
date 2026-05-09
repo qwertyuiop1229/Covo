@@ -8,10 +8,10 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#3b82f6" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <link rel="icon" type="image/png" href="icon-192x192.png" />
-    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=2" />
+    <link rel="icon" type="image/png" href="icon-192x192.png?v=2" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -70,13 +70,31 @@
         word-wrap: break-word;
         -webkit-touch-callout: none; /* iOS長押しメニュー防止 */
       }
+      .msg-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #374151;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+        flex-shrink: 0;
+        cursor: pointer;
+        overflow: hidden;
+        transition: opacity 0.15s;
+      }
+      .msg-avatar:hover { opacity: 0.85; }
+      .msg-avatar img { width: 100%; height: 100%; object-fit: cover; }
       .my-message {
         background-color: #e0e0e0; /* 薄いグレー */
-        border-bottom-right-radius: 0.25rem;
+        border-top-right-radius: 0.25rem;
       }
       .other-message {
         background-color: #f0f0f0; /* 非常に薄いグレー */
-        border-bottom-left-radius: 0.25rem;
+        border-top-left-radius: 0.25rem;
       }
       .scrollable {
         overflow-y: auto;
@@ -628,7 +646,7 @@
         border: 1.5px solid #e5e7eb;
         border-radius: 14px;
         width: 40px;
-        height: 40px;
+        height: 43px;
         color: #9ca3af;
         cursor: pointer;
         display: flex;
@@ -1048,6 +1066,39 @@
         gap: 14px;
         padding: 1.25rem;
       }
+      .server-section-label {
+        grid-column: 1 / -1;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #9ca3af;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0 2px 2px;
+        border-bottom: 1px solid #f3f4f6;
+        margin-bottom: 2px;
+        margin-top: 4px;
+      }
+      .server-section-label:first-child { margin-top: 0; }
+      .admin-join-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 12px; border-radius: 12px;
+        background: white; border: 1px solid #f3f4f6;
+        cursor: pointer; width: 100%; text-align: left;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .admin-join-item:hover { background: #f9fafb; border-color: #e5e7eb; }
+      .admin-join-icon {
+        width: 40px; height: 40px; border-radius: 10px;
+        background: #1f2937; display: flex; align-items: center;
+        justify-content: center; color: white; flex-shrink: 0; font-size: 0.85rem;
+      }
+      .admin-join-name { font-size: 0.9rem; font-weight: 600; color: #111827; }
+      .admin-join-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 1px; }
+      .admin-join-badge {
+        font-size: 0.72rem; font-weight: 700;
+        background: #e0e7ff; color: #3730a3;
+        padding: 3px 9px; border-radius: 8px; flex-shrink: 0;
+      }
       .server-card {
         background: white;
         border: 1px solid #e5e7eb;
@@ -1094,7 +1145,7 @@
       .server-list-empty i { font-size: 2.5rem; margin-bottom: 1rem; color: #d1d5db; }
       /* === モーダルアニメーション === */
       /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-      .modal-box { /* placeholder */ }
+      /* .modal-box { placeholder } */
       .modal-opening {
         animation: scaleInFade 0.22s ease both;
       }
@@ -1917,6 +1968,20 @@
           </div>
         </div>
 
+        <!-- 管理者向け全サーバー参加モーダル -->
+        <div id="adminJoinModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+          <div class="bg-white rounded-2xl shadow-xl w-full max-w-md modal-box" style="display:flex;flex-direction:column;max-height:80vh">
+            <div class="bg-gray-800 text-white px-6 py-4 rounded-t-2xl flex-shrink-0">
+              <p class="text-white/70 text-xs font-bold uppercase tracking-wider">全体管理者</p>
+              <p class="font-bold text-lg">サーバーに参加</p>
+            </div>
+            <div id="adminJoinList" class="flex-1 overflow-y-auto p-3" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div class="p-4 border-t border-gray-100 flex-shrink-0">
+              <button id="cancelAdminJoinBtn" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">閉じる</button>
+            </div>
+          </div>
+        </div>
+
         <!-- サーバー設定モーダル -->
         <div id="serverSettingsModal" class="fixed inset-0 modal-overlay overflow-y-auto z-50 hidden">
           <div class="flex min-h-full items-center justify-center p-6">
@@ -2319,6 +2384,7 @@
       let currentServerData = null;
       let serverListUnsubscribe = null;
       let currentServerNickname = null;
+      let allServersCache = [];
 
       let awayTimer = null;
       const AWAY_TIMEOUT = 5 * 60 * 1000;
@@ -3594,6 +3660,8 @@
                 avatarImg.src = member.avatarUrl;
                 avatarImg.alt = member.nickname || "";
                 avatar.appendChild(avatarImg);
+                avatar.style.cursor = "pointer";
+                avatar.addEventListener("click", () => openAvatarLightbox(member.avatarUrl));
             } else {
                 avatar.textContent = (member.nickname || " ").charAt(0).toUpperCase();
             }
@@ -3692,52 +3760,85 @@
           ? query(collection(db, `artifacts/${appId}/servers`))
           : query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId));
 
+        function appendServerCard(server, idx) {
+          const card = document.createElement("div");
+          card.className = "server-card anim-card";
+          card.style.animationDelay = `${idx * 55}ms`;
+          const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+          const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
+          card.innerHTML = `
+            <div class="server-card-icon"><i class="fas fa-server"></i></div>
+            <div class="server-card-name">${escapeHtml(server.name || server.id)}</div>
+            <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div>
+            ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+            ${isAdmin && !isMine && (server.joinedUsers || []).includes(userId) ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+          `;
+          let lpTimer, lpTriggered = false;
+          card.addEventListener("click", () => { if (lpTriggered) { lpTriggered = false; return; } enterServer(server.id, server); });
+          card.addEventListener("contextmenu", (e) => { e.preventDefault(); showServerContextMenu(server, e.clientX, e.clientY); });
+          card.addEventListener("touchstart", (e) => {
+            lpTriggered = false;
+            lpTimer = setTimeout(() => {
+              lpTriggered = true;
+              const t = e.touches[0];
+              showServerContextMenu(server, t.clientX, t.clientY);
+            }, 300);
+          }, { passive: true });
+          card.addEventListener("touchend", () => clearTimeout(lpTimer), { passive: true });
+          card.addEventListener("touchmove", () => clearTimeout(lpTimer), { passive: true });
+          serverGrid.appendChild(card);
+        }
+
+        function appendSectionLabel(text) {
+          const el = document.createElement("p");
+          el.className = "server-section-label";
+          el.textContent = text;
+          serverGrid.appendChild(el);
+        }
+
         serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
           serverGrid.innerHTML = "";
           const servers = [];
           snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
+          allServersCache = servers;
 
-          const visible = servers;
+          if (!isAdmin) {
+            if (servers.length === 0) {
+              serverGrid.appendChild(Object.assign(document.createElement("div"), {
+                className: "server-list-empty",
+                style: "grid-column:1/-1",
+                innerHTML: `<i class="fas fa-server" style="display:block;font-size:2.5rem;margin-bottom:1rem;color:#d1d5db"></i>
+                  <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
+                  <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>`
+              }));
+              return;
+            }
+            servers.forEach((s, i) => appendServerCard(s, i));
+            return;
+          }
 
-          if (visible.length === 0) {
+          // 管理者：参加済み / 未参加 に分けて表示
+          const joined = servers.filter(s => (s.joinedUsers || []).includes(userId));
+          const notJoined = servers.filter(s => !(s.joinedUsers || []).includes(userId));
+
+          if (joined.length === 0 && notJoined.length === 0) {
             serverGrid.appendChild(Object.assign(document.createElement("div"), {
               className: "server-list-empty",
               style: "grid-column:1/-1",
               innerHTML: `<i class="fas fa-server" style="display:block;font-size:2.5rem;margin-bottom:1rem;color:#d1d5db"></i>
-                <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
-                <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>`
+                <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>`
             }));
             return;
           }
 
-          visible.forEach((server, idx) => {
-            const card = document.createElement("div");
-            card.className = "server-card anim-card";
-            card.style.animationDelay = `${idx * 55}ms`;
-            const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
-            const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
-            card.innerHTML = `
-              <div class="server-card-icon"><i class="fas fa-server"></i></div>
-              <div class="server-card-name">${escapeHtml(server.name || server.serverId)}</div>
-              <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div>
-              ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
-              ${isAdmin && !isMine ? '<span class="server-card-admin-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe"><i class="fas fa-shield-alt mr-1"></i>全体管理者</span>' : ''}
-            `;
-            let lpTimer, lpTriggered = false;
-            card.addEventListener("click", () => { if (lpTriggered) { lpTriggered = false; return; } enterServer(server.id, server); });
-            card.addEventListener("contextmenu", (e) => { e.preventDefault(); showServerContextMenu(server, e.clientX, e.clientY); });
-            card.addEventListener("touchstart", (e) => {
-              lpTriggered = false;
-              lpTimer = setTimeout(() => {
-                lpTriggered = true;
-                const t = e.touches[0];
-                showServerContextMenu(server, t.clientX, t.clientY);
-              }, 300);
-            }, { passive: true });
-            card.addEventListener("touchend", () => clearTimeout(lpTimer), { passive: true });
-            card.addEventListener("touchmove", () => clearTimeout(lpTimer), { passive: true });
-            serverGrid.appendChild(card);
-          });
+          if (joined.length > 0) {
+            appendSectionLabel("参加済みのサーバー");
+            joined.forEach((s, i) => appendServerCard(s, i));
+          }
+          if (notJoined.length > 0) {
+            appendSectionLabel("未参加のサーバー");
+            notJoined.forEach((s, i) => appendServerCard(s, joined.length + i));
+          }
         });
       }
 
@@ -3916,14 +4017,73 @@
         enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
       }
 
+      // 管理者向け：パスワードなしでサーバーに参加
+      async function adminJoinServer(serverId, serverData) {
+        const list = document.getElementById("adminJoinList");
+        if ((serverData.joinedUsers || []).includes(userId)) {
+          document.getElementById("adminJoinModal").classList.add("hidden");
+          enterServer(serverId, serverData);
+          return;
+        }
+        loadingOverlay.classList.remove("hidden");
+        try {
+          await updateDoc(doc(db, `artifacts/${appId}/servers`, serverId), {
+            joinedUsers: arrayUnion(userId),
+            memberCount: (serverData.memberCount || 0) + 1
+          });
+          await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId), {
+            nickname: userNickname,
+            avatarUrl: userAvatarUrl || null,
+            joinedAt: serverTimestamp()
+          });
+          document.getElementById("adminJoinModal").classList.add("hidden");
+          enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+        } catch(e) {
+          console.error("adminJoinServer error:", e);
+          alertMessage("参加に失敗しました", "error");
+        } finally {
+          loadingOverlay.classList.add("hidden");
+        }
+      }
+
+      // 管理者向け参加モーダルを開く
+      function openAdminJoinModal() {
+        const list = document.getElementById("adminJoinList");
+        const notJoined = allServersCache.filter(s => !(s.joinedUsers || []).includes(userId));
+        list.innerHTML = "";
+        if (notJoined.length === 0) {
+          list.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:2rem 0;font-size:0.875rem">未参加のサーバーはありません</p>`;
+        } else {
+          notJoined.forEach(s => {
+            const memberCount = Number.isFinite(s.memberCount) ? s.memberCount : (s.joinedUsers ? s.joinedUsers.length : 0);
+            const item = document.createElement("button");
+            item.className = "admin-join-item";
+            item.innerHTML = `
+              <div class="admin-join-icon"><i class="fas fa-server"></i></div>
+              <div style="flex:1;min-width:0">
+                <div class="admin-join-name">${escapeHtml(s.name || s.id)}</div>
+                <div class="admin-join-meta"><i class="fas fa-users" style="margin-right:3px"></i>${memberCount} メンバー</div>
+              </div>
+              <span class="admin-join-badge">参加</span>
+            `;
+            item.addEventListener("click", () => adminJoinServer(s.id, s));
+            list.appendChild(item);
+          });
+        }
+        openModal(document.getElementById("adminJoinModal"));
+      }
+
       // =========================================================================
       // Room Features (Server-based)
       // =========================================================================
-      function loadServerRooms(serverId) {
+      function loadServerRooms(serverId, _retry = 0) {
         const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
         if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
 
-        loadServerRooms._unsub = onSnapshot(roomsQuery, (snapshot) => {
+        let hasLoaded = false;
+
+        function renderRooms(snapshot) {
+          hasLoaded = true;
           roomList.innerHTML = "";
           const currentRoomIds = new Set();
           snapshot.forEach((docSnap) => {
@@ -3963,7 +4123,25 @@
               delete unreadCounts[rid];
             }
           });
+        }
+
+        loadServerRooms._unsub = onSnapshot(roomsQuery, renderRooms, async (error) => {
+          console.error("loadServerRooms error:", error);
+          if (_retry < 3 && currentServerId === serverId) {
+            try { await auth.currentUser?.getIdToken(true); } catch(_) {}
+            setTimeout(() => loadServerRooms(serverId, _retry + 1), 1200 * (_retry + 1));
+          }
         });
+
+        // フォールバック: 3秒後にまだ表示されていなければ getDocs で強制取得
+        setTimeout(async () => {
+          if (!hasLoaded && currentServerId === serverId) {
+            try {
+              const snap = await getDocs(roomsQuery);
+              if (!hasLoaded && currentServerId === serverId) renderRooms(snap);
+            } catch(e) { console.error("loadServerRooms fallback error:", e); }
+          }
+        }, 3000);
 
         document.addEventListener("click", (e) => {
           if (!e.target.closest(".dropdown-container")) {
@@ -3979,11 +4157,24 @@
           limit(1)
         );
         let isFirst = true;
+        let lastNotifiedTs = 0;
         unreadListeners[roomId] = onSnapshot(q, (snapshot) => {
-          if (isFirst) { isFirst = false; return; }
+          if (isFirst) {
+            isFirst = false;
+            // 初回スナップショットのタイムスタンプを記録（過去メッセージで通知しない）
+            snapshot.forEach(doc => {
+              const ts = doc.data().timestamp?.toMillis?.() || 0;
+              if (ts > lastNotifiedTs) lastNotifiedTs = ts;
+            });
+            return;
+          }
           snapshot.docChanges().forEach(change => {
             if (change.type === "added") {
               const msgData = change.doc.data();
+              const msgTs = msgData.timestamp?.toMillis?.() || Date.now();
+              // 削除により浮上した古いメッセージは無視
+              if (msgTs <= lastNotifiedTs) return;
+              lastNotifiedTs = msgTs;
               if (roomId !== currentRoomId && msgData.senderId !== userId) {
                 unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1;
                 updateUnreadBadge(roomId);
@@ -3991,7 +4182,6 @@
                 const roomName = roomNames[roomId] || 'room';
                 const sender = msgData.senderNickname || 'Unknown';
                 const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
-                // アプリ内通知（アプリにフォーカスがある場合も表示）
                 showInAppNotification(serverName, roomName, sender, text,
                   currentServerId, currentServerData, roomId, roomName);
                 if (isTauri) {
@@ -4053,7 +4243,7 @@
                           }
                           if (!document.hasFocus() || isMentioned) {
                             const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
-                            showNotification(notifTitle, `${msgData.senderNickname}: ${msgData.text || "画像・ファイルを送信しました"}`, currentRoomId);
+                            showNotification(notifTitle, `${msgData.senderNickname}: ${msgData.text || "（ファイル）"}`, currentRoomId);
                           }
                       }
                   }
@@ -4075,8 +4265,11 @@
               renderMessagesWithReadReceipts();
               
               if (isInitialMessageLoad) {
-                  messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
                   isInitialMessageLoad = false;
+                  // 画像など非同期コンテンツを考慮して複数タイミングでスクロール
+                  messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+                  requestAnimationFrame(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; });
+                  setTimeout(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; }, 300);
               } else if (isScrollingUpLoad) {
                   // スクロールで過去を読み込んだ場合、位置をキープする
                   messagesDisplay.scrollTop = messagesDisplay.scrollHeight - oldScrollHeight;
@@ -4334,11 +4527,19 @@
 
       // サーバー参加ボタン
       document.getElementById("joinServerBtn").addEventListener("click", () => {
+        if (isAdmin) {
+          openAdminJoinModal();
+          return;
+        }
         document.getElementById("joinServerId").value = "";
         document.getElementById("joinServerPassword").value = "";
         document.getElementById("joinInviteCode").value = "";
         document.getElementById("joinServerMessage").textContent = "";
         openModal(document.getElementById("joinServerModal"));
+      });
+
+      document.getElementById("cancelAdminJoinBtn").addEventListener("click", () => {
+        document.getElementById("adminJoinModal").classList.add("hidden");
       });
 
       document.getElementById("cancelJoinServerBtn").addEventListener("click", () => {
@@ -4933,10 +5134,35 @@
         return escapedText;
       }
       
+      function openAvatarLightbox(url) {
+        const lb = document.getElementById("avatarLightbox");
+        document.getElementById("avatarLightboxImg").src = url;
+        lb.style.display = "flex";
+      }
+
       function displayMessage(message, messageId, readByCount = 0) {
         const isMyMessage = message.senderId === userId;
         const messageRow = document.createElement("div");
-        messageRow.className = "message-row w-full flex " + (isMyMessage ? "justify-end" : "justify-start");
+        messageRow.className = "message-row w-full flex " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+
+        // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
+        if (!isMyMessage) {
+          const senderUser = cachedUsers.find(u => u.id === message.senderId);
+          const avatarDiv = document.createElement("div");
+          avatarDiv.className = "msg-avatar";
+          if (senderUser?.avatarUrl) {
+            const img = document.createElement("img");
+            img.src = senderUser.avatarUrl;
+            img.alt = message.senderNickname || "";
+            avatarDiv.appendChild(img);
+            avatarDiv.addEventListener("click", () => openAvatarLightbox(senderUser.avatarUrl));
+          } else {
+            avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
+          }
+          messageRow.appendChild(avatarDiv);
+        }
+        const bubbleContainer = messageRow;
+
         const messageElement = document.createElement("div");
         messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col`;
         messageElement.dataset.messageId = messageId;
@@ -5053,7 +5279,7 @@
           }
           messageElement.appendChild(readSpan);
         }
-        messageRow.appendChild(messageElement);
+        bubbleContainer.appendChild(messageElement);
         messagesDisplay.appendChild(messageRow);
       }
 
@@ -5119,6 +5345,7 @@
 
       let longPressTimer;
       let longPressTriggered = false;
+      let menuJustShown = false;
       messagesDisplay.addEventListener("touchstart", (e) => {
           const bubble = e.target.closest(".message-bubble");
           const row = e.target.closest(".message-row");
@@ -5149,7 +5376,8 @@
           const msgData = lastMessagesData.find(m => m.id === bubble.dataset.messageId);
           if(!msgData) return;
           selectedMessageForContext = msgData;
-          
+          menuJustShown = true;
+
           messageContextMenu.classList.remove("hidden");
           
           let menuWidth = messageContextMenu.offsetWidth;
@@ -5181,7 +5409,10 @@
               messageContextMenu.classList.add("hidden");
           }
       });
-      document.addEventListener("click", (e) => { if(!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden"); });
+      document.addEventListener("click", (e) => {
+          if (menuJustShown) { menuJustShown = false; return; }
+          if (!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden");
+      });
       
       copyMessageButton.addEventListener("click", () => {
           if(selectedMessageForContext && selectedMessageForContext.text) {
@@ -5273,14 +5504,14 @@
       }
 
       function alertMessage(msg, type="info") {
+          const stack = document.getElementById("notifStack");
           const box = document.createElement("div");
           let colorClass = "bg-gray-800 text-white";
           if (type === "error") colorClass = "bg-red-600 text-white";
-          else if (type === "success") colorClass = "bg-gray-800 text-white";
-          box.className = `fixed bottom-5 right-5 px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium ${colorClass}`;
-          box.style.cssText += "animation: slideUpFade 0.22s ease both;";
+          box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass}`;
+          box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
           box.textContent = msg;
-          document.body.appendChild(box);
+          stack.appendChild(box);
           setTimeout(() => {
             box.style.animation = "fadeIn 0.2s ease reverse forwards";
             setTimeout(() => box.remove(), 200);
@@ -5331,6 +5562,8 @@
 
       // ===== アプリ内通知スタック =====
       function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+        const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+        if (soundEnabled) playNotificationSound();
         const stack = document.getElementById("notifStack");
         const notif = document.createElement("div");
         notif.className = "bg-white rounded-xl shadow-lg overflow-hidden w-72";
@@ -5477,12 +5710,25 @@
                 limit(1)
               );
               let isFirst = true;
+              let lastNotifTs = 0;
               const unsub = onSnapshot(q, snapshot => {
-                if (isFirst) { isFirst = false; return; }
+                if (isFirst) {
+                  isFirst = false;
+                  snapshot.forEach(doc => {
+                    const ts = doc.data().timestamp?.toMillis?.() || 0;
+                    if (ts > lastNotifTs) lastNotifTs = ts;
+                  });
+                  return;
+                }
                 snapshot.docChanges().forEach(change => {
                   if (change.type === "added") {
                     const msgData = change.doc.data();
-                    if (msgData.senderId !== userId) {
+                    const msgTs = msgData.timestamp?.toMillis?.() || Date.now();
+                    // 削除により浮上した古いメッセージは無視
+                    if (msgTs <= lastNotifTs) return;
+                    lastNotifTs = msgTs;
+                    // 既に currentServerId のルームは setupUnreadListener が担当
+                    if (msgData.senderId !== userId && svId !== currentServerId) {
                       showInAppNotification(
                         svData.name || svId, rmName,
                         msgData.senderNickname || 'ユーザー',
@@ -5634,13 +5880,14 @@
 
       membersSidebar.addEventListener("touchmove", (e) => {
           if (!isDraggingSheet) return;
+          e.preventDefault(); // ページ全体のスクロールを防ぐ
           touchCurrentY = e.touches[0].clientY;
           const deltaY = touchCurrentY - touchStartY;
           if (deltaY > 0) {
               // 下に引っ張っている時
               membersSidebar.style.transform = `translateY(${deltaY}px)`;
           }
-      }, { passive: true });
+      }, { passive: false });
 
       membersSidebar.addEventListener("touchend", () => {
           if (!isDraggingSheet) return;
@@ -5784,6 +6031,7 @@
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
               try {
+                // iOS 18+対策: SW が完全に有効化されるまで待つ
                 const swReg = await navigator.serviceWorker.ready;
                 const token = await getToken(messaging, {
                     vapidKey: "BCe5ICJmyyuurq1DsPBXY6AsQcSsIDuXPieZ-c4L1_5zcNwyq2HC3DBhMBND0g9oTwPmEzUhiLqsAjLrnmVlxj0",
@@ -5793,22 +6041,27 @@
                   console.log('FCM Token obtained:', token.substring(0, 20) + '...');
                   currentFcmToken = token;
                   const userRef = doc(db, `artifacts/${appId}/users`, userId);
+                  // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
+                  const prevToken = localStorage.getItem('covo_fcm_token');
+                  if (prevToken && prevToken !== token) {
+                    console.log('FCM Token rotated, removing old token');
+                    try { await updateDoc(userRef, { fcmTokens: arrayRemove(prevToken) }); } catch(_) {}
+                  }
                   await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
+                  localStorage.setItem('covo_fcm_token', token);
+                } else if (!token) {
+                  console.warn('FCM Token not obtained — push notifications may not work on this device');
                 }
               } catch (tokenErr) {
-                console.error('FCM Token error:', tokenErr);
+                console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
               }
             }
           }
 
-          // フォアグラウンドメッセージ受信（data + notification 両対応）
-          onMessage(messaging, (payload) => {
-            console.log('Foreground message received:', payload);
-            const title = payload.data?.title || payload.notification?.title || 'Covo';
-            const body = payload.data?.body || payload.notification?.body || '新しいメッセージ';
-            const roomId = payload.data?.roomId || null;
-            showNotification(title, body, roomId);
-          });
+          // フォアグラウンドメッセージ受信
+          // アプリ内通知・サウンドはFirestoreリスナー（setupUnreadListener/globalNotifListeners）が担当。
+          // ここで showNotification を呼ぶと重複するため何もしない。
+          onMessage(messaging, () => {});
         } catch (error) {
           console.error('FCM Initialization Error:', error);
         }
@@ -6428,6 +6681,11 @@
     </div>
   </div>
 
+  <!-- アバターライトボックス -->
+  <div id="avatarLightbox" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" style="display:none" onclick="document.getElementById('avatarLightbox').style.display='none'">
+    <img id="avatarLightboxImg" src="" alt="" style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:3px solid white;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+  </div>
+
   <!-- PDFライトボックス -->
   <div id="pdfLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none" onclick="if(event.target===this)closePdfLightbox()">
     <div class="relative flex flex-col items-center p-4 w-full max-w-4xl mx-auto" onclick="event.stopPropagation()">
@@ -6470,7 +6728,7 @@
         <div class="flex items-center gap-3 w-full px-2">
           <i class="fas fa-search-minus text-gray-400 text-xs"></i>
           <input type="range" id="avatarZoomSlider" min="0.5" max="3" step="0.01" value="1"
-            class="flex-1 accent-gray-700" style="-webkit-appearance:auto;">
+            class="flex-1 accent-gray-700" style="-webkit-appearance:auto; appearance:auto;">
           <i class="fas fa-search-plus text-gray-400 text-xs"></i>
         </div>
       </div>
