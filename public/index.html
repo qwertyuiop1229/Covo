@@ -1680,6 +1680,22 @@
       padding: 4px;
       flex-shrink: 0;
     }
+    /* 過去メッセージ読み込みスピナー */
+    #topLoadingSpinner {
+      display: none;
+    }
+    .top-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #6b7280;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <!-- Google tag (gtag.js) -->
@@ -2403,6 +2419,11 @@
           <div id="pinnedMessagesArea" class="hidden flex-shrink-0"></div>
 
           <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2">
+            <!-- 過去メッセージ読み込みスピナー -->
+            <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full" style="display: none;">
+              <div class="top-spinner"></div>
+              <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
+            </div>
             <!-- メッセージはここに動的に追加されます -->
           </div>
 
@@ -2671,6 +2692,13 @@
     let _lastSentReadMessageId = null;
     let messageLimit = 20;
     let isScrollingUpLoad = false;
+    // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
+    let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
+    let isLoadingOlderMessages = false; // 二重ローディング防止
+    let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
+    // onAuthStateChanged の再入防止
+    let _authHandlerBusy = false;
+    let _lastAuthUserId = null; // 同一ユーザーの重複初期化防止
 
     // DOM Elements
     const loadingOverlay = document.getElementById("loadingOverlay");
@@ -2835,9 +2863,18 @@
         }
 
         onAuthStateChanged(auth, async (user) => {
+          // 再入防止: 前回の処理が終わっていない場合はスキップ
+          if (_authHandlerBusy) return;
+          _authHandlerBusy = true;
           loadingOverlay.classList.add("hidden");
+          try {
 
           if (user) {
+            // 同一ユーザーIDで既に初期化済みならスキップ（FCM再登録等の無駄な処理を防止）
+            if (_lastAuthUserId === user.uid && userNickname) {
+              _authHandlerBusy = false;
+              return;
+            }
             userId = user.uid;
             userAuthEmail = user.email;
             isAuthReady = true;
@@ -2915,6 +2952,15 @@
               showServerList();
               startPresenceSystem();
               initializeFCM();
+              _lastAuthUserId = user.uid;
+              // SW にuserIdを通知（自分のメッセージへの通知バグ防止）
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(reg => {
+                  if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId });
+                }).catch(() => {});
+              }
+              // FCMが有効な場合はFirestoreグローバルリスナーは不要（FCMが通知を担当）
+              // Tauriのみ或いはFCMトークン取得失敗時はFirestoreリスナーをフォールバック
               setTimeout(() => setupGlobalNotificationListeners(), 2000);
             } else {
               authContainer.classList.add("hidden");
@@ -2925,6 +2971,13 @@
             }
           } else {
             // Cleanup on logout
+            // SW にuserIdクリアを通知
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.ready.then(reg => {
+                if (reg.active) reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+              }).catch(() => {});
+            }
+            _lastAuthUserId = null;
             userId = null; userNickname = null; isAdmin = false; isListAdmin = false; isAuthReady = false;
             currentRoomId = null; currentServerId = null; currentServerData = null;
             headerTitle.textContent = "";
@@ -2941,6 +2994,11 @@
             nicknameContainer.classList.add("hidden");
             membersSidebar.classList.add("hidden");
           }
+        } catch (authErr) {
+          console.error('[Auth] onAuthStateChanged handler error:', authErr);
+        } finally {
+          _authHandlerBusy = false;
+        }
         });
       } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -3739,7 +3797,7 @@
         appContainer.classList.remove("hidden");
         loadRooms();
         startPresenceSystem();
-        initializeFCM();
+        // ★ initializeFCM() は onAuthStateChanged で既に呼ばれるためここからは削除
       } catch (error) {
         nicknameMessage.textContent = `エラー: ${error.message}`;
       } finally {
@@ -3920,8 +3978,7 @@
 
         members.forEach((member, idx) => {
           const item = document.createElement("div");
-          item.className = "member-item member-anim";
-          item.style.animationDelay = `${idx * 30}ms`;
+          item.className = "member-item";
 
           const avatar = document.createElement("div");
           avatar.className = "avatar-placeholder";
@@ -4445,6 +4502,7 @@
             // 削除により浮上した古いメッセージは無視
             if (msgTs <= lastNotifiedTs) return;
             lastNotifiedTs = msgTs;
+            // ★ setupUnreadListener は currentRoomId 以外のルームのみで通知を出す
             if (roomId !== currentRoomId && msgData.senderId !== userId) {
               unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1;
               updateUnreadBadge(roomId);
@@ -4454,7 +4512,15 @@
               const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
               showInAppNotification(serverName, roomName, sender, text,
                 currentServerId, currentServerData, roomId, roomName);
+              
+              // Tauri(Windows) の場合は直接OS通知を呼ぶ
+              // Web(PWA) の場合、FCMトークンがあればSWに任せるためここでは呼ばない
+              // トークンがない(ブラウザ通知無効化)場合は呼ばない
               if (isTauri) {
+                showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
+              } else if (!currentFcmToken) {
+                // FCMが未取得/未登録の場合のフォールバックとして showNotification を呼ぶ
+                // showNotification内部で browserEnabled チェックは行われる
                 showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
               }
             }
@@ -4495,16 +4561,84 @@
       badge.style.display = (count > 0 && roomId !== currentRoomId) ? "flex" : "none";
     }
 
+    async function loadOlderMessages() {
+      if (isLoadingOlderMessages || !hasMoreOlderMessages || !allLoadedMessages.length) return;
+      
+      isLoadingOlderMessages = true;
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) spinner.style.display = 'flex';
+      
+      const prevScrollHeight = messagesDisplay.scrollHeight;
+      
+      try {
+        // 現在読み込まれている最も古いメッセージの timestamp または ID を基準にする
+        const oldestMsg = allLoadedMessages[0];
+        
+        // Firestoreからさらに古い20件を取得
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAfter(oldestMsg.timestamp || 0), // カーソル
+          limit(20)
+        );
+        
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) {
+          hasMoreOlderMessages = false;
+        }
+        
+        if (!snap.empty) {
+          const olderMessages = [];
+          snap.forEach(doc => {
+            const d = doc.data(); d.id = doc.id;
+            olderMessages.push(d);
+          });
+          // 取得した古いメッセージ（新しい順）を反転して古い順にする
+          olderMessages.reverse();
+          
+          // allLoadedMessagesの先頭に追加
+          allLoadedMessages = [...olderMessages, ...allLoadedMessages];
+          lastMessagesData = [...allLoadedMessages]; // 表示用に同期
+          
+          // messagesIndexMap再構築
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          
+          renderMessagesWithReadReceipts(); // 全体再描画
+          
+          // スクロール位置を補正して「位置ズレ」を防ぐ
+          const newScrollHeight = messagesDisplay.scrollHeight;
+          messagesDisplay.scrollTop = newScrollHeight - prevScrollHeight;
+        }
+      } catch (e) {
+        console.error("Failed to load older messages:", e);
+      } finally {
+        isLoadingOlderMessages = false;
+        if (spinner) spinner.style.display = 'none';
+      }
+    }
+
     function subscribeToMessages() {
       if (unsubscribeMessages) unsubscribeMessages();
 
-      const oldScrollHeight = messagesDisplay.scrollHeight;
-      // 最新のメッセージから limit 件取得するために desc を使用
-      const q = query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy("timestamp", "desc"), limit(messageLimit));
+      // 初期化
+      allLoadedMessages = [];
+      hasMoreOlderMessages = true;
+      isLoadingOlderMessages = false;
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) spinner.style.display = 'none';
+
+      // 最新20件だけをリアルタイム監視（定数制限）
+      const q = query(
+        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+        orderBy("timestamp", "desc"),
+        limit(20)
+      );
 
       unsubscribeMessages = onSnapshot(q, (snapshot) => {
+        // --- メンション・通知処理 ---
         snapshot.docChanges().forEach(change => {
-          if (change.type === "added" && !isInitialMessageLoad && !isScrollingUpLoad) {
+          if (change.type === "added" && !isInitialMessageLoad) {
             const msgData = change.doc.data();
             if (msgData.senderId !== userId) {
               const isMentioned = msgData.text && msgData.text.includes(`@${userNickname}`);
@@ -4519,18 +4653,32 @@
           }
         });
 
-        messagesDisplay.innerHTML = "";
-        const newMessages = [];
+        // --- データ更新処理 ---
+        // 常に snapshot 全件から最新20件を取得し、allLoadedMessages とマージ・更新する
+        const latestDocs = [];
         snapshot.forEach(doc => {
           const d = doc.data(); d.id = doc.id;
-          newMessages.push(d);
+          latestDocs.push(d);
         });
-        // 取得したリスト（新しい順）を反転させて、古い順（通常表示）にする
-        lastMessagesData = newMessages.reverse();
+        const latestMessages = latestDocs.reverse(); // 古い順に反転
+        
+        if (isInitialMessageLoad) {
+          allLoadedMessages = [...latestMessages];
+        } else {
+          // 既存のリストから、今回取得した最新20件に含まれるものを除去し、新しい最新20件を結合する
+          // これにより、追加読み込みした古いメッセージを維持しつつ、最新部分は更新・追加される
+          const latestIds = new Set(latestMessages.map(m => m.id));
+          const olderKeptMessages = allLoadedMessages.filter(m => !latestIds.has(m.id));
+          allLoadedMessages = [...olderKeptMessages, ...latestMessages];
+        }
 
+        lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
 
+        // UI描画
+        const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollHeight - messagesDisplay.clientHeight <= messagesDisplay.scrollTop + 50);
+        
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
 
@@ -4540,10 +4688,8 @@
           messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
           requestAnimationFrame(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; });
           setTimeout(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; }, 300);
-        } else if (isScrollingUpLoad) {
-          // スクロールで過去を読み込んだ場合、位置をキープする
-          messagesDisplay.scrollTop = messagesDisplay.scrollHeight - oldScrollHeight;
-          isScrollingUpLoad = false;
+        } else if (wasScrolledToBottom) {
+          messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
         }
         updateReadReceiptForCurrentUser();
       });
@@ -4588,7 +4734,9 @@
       setTypingStatus(false);
 
       isInitialMessageLoad = true;
-      isScrollingUpLoad = false;
+      allLoadedMessages = [];
+      hasMoreOlderMessages = true;
+      isLoadingOlderMessages = false;
 
       subscribeToMessages();
 
@@ -4624,11 +4772,10 @@
     }
 
     // スクロールを検知して過去のメッセージを読み込むリスナー
-    messagesDisplay.addEventListener("scroll", () => {
-      if (messagesDisplay.scrollTop === 0 && lastMessagesData.length >= messageLimit) {
-        messageLimit += 20;
-        isScrollingUpLoad = true;
-        subscribeToMessages();
+    messagesDisplay.addEventListener("scroll", async () => {
+      // 一番上から300px以内に到達したら追加読み込みを発火
+      if (messagesDisplay.scrollTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
+        await loadOlderMessages();
       }
     });
 
@@ -5410,7 +5557,7 @@
       lb.style.display = "flex";
     }
 
-    function displayMessage(message, messageId, readByCount = 0) {
+    function createMessageElement(message, messageId, readByCount = 0) {
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
       messageRow.className = "message-row w-full flex " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
@@ -5550,12 +5697,22 @@
         messageElement.appendChild(readSpan);
       }
       bubbleContainer.appendChild(messageElement);
-      messagesDisplay.appendChild(messageRow);
+      return messageRow;
     }
 
     function renderMessagesWithReadReceipts() {
       const isScrolledToBottom = messagesDisplay.scrollHeight - messagesDisplay.clientHeight <= messagesDisplay.scrollTop + 1;
-      messagesDisplay.innerHTML = "";
+
+      // 上部スピナーの確保（メッセージ群の直前）
+      let spinner = document.getElementById('topLoadingSpinner');
+      if (!spinner) {
+        spinner = document.createElement('div');
+        spinner.id = 'topLoadingSpinner';
+        spinner.className = 'flex-shrink-0 items-center justify-center py-3 w-full';
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">読み込み中...</span>';
+        messagesDisplay.prepend(spinner);
+      }
+      spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
 
       const filteredMessages = lastMessagesData.filter(msg => {
         if (!searchQuery) return true;
@@ -5563,10 +5720,50 @@
           (msg.senderNickname && msg.senderNickname.toLowerCase().includes(searchQuery));
       });
 
+      // 既存のDOMとの差分同期（innerHTML = "" によるカクつき防止）
+      const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
+      const existingRowsMap = new Map();
+      existingRows.forEach(row => {
+        const bubble = row.querySelector('.message-bubble');
+        if (bubble && bubble.dataset.messageId) {
+          existingRowsMap.set(bubble.dataset.messageId, row);
+        }
+      });
+
+      let currentChild = spinner.nextSibling;
+
       filteredMessages.forEach((msg) => {
         const idx = messagesIndexMap[msg.id];
         const readCount = computeReadByCount(msg, idx);
-        displayMessage(msg, msg.id, readCount);
+        
+        let row = existingRowsMap.get(msg.id);
+        if (row) {
+          // 既存行があれば既読状態のみ更新
+          const readSpan = row.querySelector('.read-receipt');
+          if (readSpan) {
+            if (readCount > 0) {
+              readSpan.textContent = `既読${readCount > 1 ? `（${readCount}）` : ""}`;
+              readSpan.style.display = "";
+            } else {
+              readSpan.style.display = "none";
+            }
+          }
+          existingRowsMap.delete(msg.id);
+          // 順序が違えば移動
+          if (currentChild !== row) {
+            messagesDisplay.insertBefore(row, currentChild);
+          }
+          currentChild = row.nextSibling;
+        } else {
+          // 新規メッセージ要素作成
+          row = createMessageElement(msg, msg.id, readCount);
+          messagesDisplay.insertBefore(row, currentChild);
+        }
+      });
+
+      // 削除されたメッセージ要素を取り除く
+      existingRowsMap.forEach(row => {
+        row.remove();
       });
 
       // 検索中でなければ、一番下までスクロールを維持
@@ -5693,8 +5890,25 @@
     });
     deleteMessageButton.addEventListener("click", async () => {
       if (selectedMessageForContext && (selectedMessageForContext.senderId === userId || isAdmin || (currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId)))) {
-        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id));
-        alertMessage("削除しました", "success");
+        try {
+          await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id));
+          
+          // 古いメッセージ（onSnapshot監視外）を削除した場合、ローカルのキャッシュからも削除して再描画
+          allLoadedMessages = allLoadedMessages.filter(m => m.id !== selectedMessageForContext.id);
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          
+          // スクロール位置を維持して再描画
+          const prevScrollHeight = messagesDisplay.scrollHeight;
+          const prevScrollTop = messagesDisplay.scrollTop;
+          renderMessagesWithReadReceipts();
+          messagesDisplay.scrollTop = prevScrollTop - (prevScrollHeight - messagesDisplay.scrollHeight);
+          
+          alertMessage("削除しました", "success");
+        } catch (e) {
+          alertMessage("削除に失敗しました", "error");
+        }
       } else {
         alertMessage("権限がありません", "warning");
       }
@@ -5962,6 +6176,14 @@
     async function setupGlobalNotificationListeners() {
       Object.values(globalNotifListeners).forEach(unsub => unsub());
       globalNotifListeners = {};
+      
+      // FCMトークンが取得できている（プッシュ通知が有効な）Web/PWA環境の場合
+      // FCMがバックグラウンドで通知を担当するため、グローバルリスナー（他サーバーのポーリング）は不要
+      if (!isTauri && currentFcmToken) {
+        console.log('[GlobalNotif] FCM active — skipping Firestore global listeners');
+        return;
+      }
+      
       try {
         const serversSnap = await getDocs(
           query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))

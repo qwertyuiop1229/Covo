@@ -13,11 +13,26 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
+// ログイン中ユーザーIDをキャッシュ（自分への通知を防ぐ）
+// メインスクリプトから postMessage({ type: 'SET_USER_ID', userId }) で設定
+self._cachedUserId = null;
+
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+  if (event.data.type === 'SET_USER_ID') {
+    self._cachedUserId = event.data.userId || null;
+    console.log('[SW] userId cached:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+  } else if (event.data.type === 'CLEAR_USER_ID') {
+    self._cachedUserId = null;
+    console.log('[SW] userId cleared');
+  }
+});
+
 // バックグラウンドメッセージ処理（data + notification 両対応）
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
 
-  let title = 'SimpleChat';
+  let title = 'Covo';
   let body = '新しいメッセージがあります';
   let data = {};
 
@@ -31,11 +46,18 @@ messaging.onBackgroundMessage((payload) => {
     data = payload.data;
   }
 
+  // ★ 自分が送ったメッセージへの通知は表示しない
+  // Cloudflare Worker が payload.data.senderId に送信者 UID を含めて送信する
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('[SW] Skipping own message notification (senderId match)');
+    return;
+  }
+
   const notificationOptions = {
     body: body,
     icon: '/icon-192x192.png?v=4',
     badge: '/icon-192x192.png?v=4',
-    tag: data.roomId || 'simplechat-notification',
+    tag: data.roomId || 'covo-notification',
     renotify: true,
     data: data,
     actions: [
