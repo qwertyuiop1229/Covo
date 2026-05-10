@@ -53,6 +53,14 @@ messaging.onBackgroundMessage((payload) => {
     return;
   }
 
+  // もし payload.notification が存在する場合、FCMのブラウザSDKが自動でプッシュ通知を表示するため、
+  // ここで showNotification を呼ぶと二重に通知が出てしまいます。
+  if (payload.notification) {
+    console.log('[SW] Notification payload present, letting browser handle it automatically.');
+    return;
+  }
+
+  // 自動表示されないデータメッセージの場合のみ、独自に通知を作成する
   const notificationOptions = {
     body: body,
     icon: '/icon-192x192.png?v=4',

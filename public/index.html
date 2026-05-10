@@ -65,6 +65,10 @@
       box-shadow: none;
     }
 
+    .flipped {
+      transform: scaleY(-1);
+    }
+
     .message-bubble {
       max-width: 75%;
       padding: 0.75rem 1rem;
@@ -2418,9 +2422,9 @@
           </div>
           <div id="pinnedMessagesArea" class="hidden flex-shrink-0"></div>
 
-          <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2">
+          <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped">
             <!-- 過去メッセージ読み込みスピナー -->
-            <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full" style="display: none;">
+            <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
               <div class="top-spinner"></div>
               <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
             </div>
@@ -2561,6 +2565,7 @@
       getDocs,
       writeBatch,
       limit,
+      startAfter,
       arrayUnion,
       arrayRemove,
       increment,
@@ -2691,7 +2696,7 @@
     let readReceiptDebounceTimer = null;
     let _lastSentReadMessageId = null;
     let messageLimit = 20;
-    let isScrollingUpLoad = false;
+    let allowPagination = false;
     // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
     let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
     let isLoadingOlderMessages = false; // 二重ローディング防止
@@ -4568,23 +4573,30 @@
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) spinner.style.display = 'flex';
       
-      const prevScrollHeight = messagesDisplay.scrollHeight;
-      
       try {
-        // 現在読み込まれている最も古いメッセージの timestamp または ID を基準にする
         const oldestMsg = allLoadedMessages[0];
+        if (!oldestMsg || !oldestMsg.timestamp) {
+          hasMoreOlderMessages = false;
+          return;
+        }
         
-        // Firestoreからさらに古い20件を取得
+        // Firestoreからさらに古い20件を取得 (timestampを使って正確にページネーション)
         const q = query(
           collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
           orderBy("timestamp", "desc"),
-          startAfter(oldestMsg.timestamp || 0), // カーソル
+          startAfter(oldestMsg.timestamp), // タイムスタンプをカーソルにする
           limit(20)
         );
         
         const snap = await getDocs(q);
         if (snap.empty || snap.docs.length < 20) {
           hasMoreOlderMessages = false;
+        }
+        if (snap.empty) {
+          const endMsg = document.createElement('div');
+          endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0';
+          endMsg.textContent = 'これ以上過去のメッセージはありません';
+          messagesDisplay.prepend(endMsg);
         }
         
         if (!snap.empty) {
@@ -4593,7 +4605,6 @@
             const d = doc.data(); d.id = doc.id;
             olderMessages.push(d);
           });
-          // 取得した古いメッセージ（新しい順）を反転して古い順にする
           olderMessages.reverse();
           
           // allLoadedMessagesの先頭に追加
@@ -4605,15 +4616,12 @@
           lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
           
           renderMessagesWithReadReceipts(); // 全体再描画
-          
-          // スクロール位置を補正して「位置ズレ」を防ぐ
-          const newScrollHeight = messagesDisplay.scrollHeight;
-          messagesDisplay.scrollTop = newScrollHeight - prevScrollHeight;
         }
       } catch (e) {
         console.error("Failed to load older messages:", e);
       } finally {
         isLoadingOlderMessages = false;
+        const spinner = document.getElementById('topLoadingSpinner');
         if (spinner) spinner.style.display = 'none';
       }
     }
@@ -4660,6 +4668,7 @@
           const d = doc.data(); d.id = doc.id;
           latestDocs.push(d);
         });
+
         const latestMessages = latestDocs.reverse(); // 古い順に反転
         
         if (isInitialMessageLoad) {
@@ -4677,19 +4686,27 @@
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
 
         // UI描画
-        const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollHeight - messagesDisplay.clientHeight <= messagesDisplay.scrollTop + 50);
+        // 反転されているため、scrollTopが0に近い状態が「最新を見ている」状態になる
+        const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollTop <= 50);
         
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
 
         if (isInitialMessageLoad) {
           isInitialMessageLoad = false;
-          // 画像など非同期コンテンツを考慮して複数タイミングでスクロール
-          messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
-          requestAnimationFrame(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; });
-          setTimeout(() => { messagesDisplay.scrollTop = messagesDisplay.scrollHeight; }, 300);
+          // DOM順が逆になり scaleY(-1) のため、scrollTop = 0 が最新メッセージ位置
+          messagesDisplay.scrollTop = 0;
+          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
+          setTimeout(() => { 
+            messagesDisplay.scrollTop = 0; 
+            allowPagination = true;
+            // 画面に余白がある（スクロールバーが出ない）場合は自動で追加読み込み
+            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+               loadOlderMessages();
+            }
+          }, 500);
         } else if (wasScrolledToBottom) {
-          messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+          messagesDisplay.scrollTop = 0;
         }
         updateReadReceiptForCurrentUser();
       });
@@ -4773,8 +4790,11 @@
 
     // スクロールを検知して過去のメッセージを読み込むリスナー
     messagesDisplay.addEventListener("scroll", async () => {
-      // 一番上から300px以内に到達したら追加読み込みを発火
-      if (messagesDisplay.scrollTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
+      // 初期化が終わるまでは発火させない
+      if (!allowPagination) return;
+      // 反転されているため、一番上（過去のメッセージ）は scrollTop の最大値付近になる
+      const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
+      if (scrollDistanceToTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
         await loadOlderMessages();
       }
     });
@@ -5413,6 +5433,22 @@
       }, 3000);
     });
 
+    messageInput.addEventListener("blur", () => {
+      clearTimeout(typingTimeout);
+      if (isCurrentlyTyping) {
+        isCurrentlyTyping = false;
+        setTypingStatus(false);
+      }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && isCurrentlyTyping) {
+        clearTimeout(typingTimeout);
+        isCurrentlyTyping = false;
+        setTypingStatus(false);
+      }
+    });
+
     messageInput.addEventListener("paste", (e) => {
       const items = (e.clipboardData || e.originalEvent.clipboardData).items;
       for (let i = 0; i < items.length; i++) {
@@ -5560,7 +5596,7 @@
     function createMessageElement(message, messageId, readByCount = 0) {
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
-      messageRow.className = "message-row w-full flex " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRow.className = "message-row w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
 
       // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
       if (!isMyMessage) {
@@ -5701,19 +5737,6 @@
     }
 
     function renderMessagesWithReadReceipts() {
-      const isScrolledToBottom = messagesDisplay.scrollHeight - messagesDisplay.clientHeight <= messagesDisplay.scrollTop + 1;
-
-      // 上部スピナーの確保（メッセージ群の直前）
-      let spinner = document.getElementById('topLoadingSpinner');
-      if (!spinner) {
-        spinner = document.createElement('div');
-        spinner.id = 'topLoadingSpinner';
-        spinner.className = 'flex-shrink-0 items-center justify-center py-3 w-full';
-        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">読み込み中...</span>';
-        messagesDisplay.prepend(spinner);
-      }
-      spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
-
       const filteredMessages = lastMessagesData.filter(msg => {
         if (!searchQuery) return true;
         return (msg.text && msg.text.toLowerCase().includes(searchQuery)) ||
@@ -5730,15 +5753,18 @@
         }
       });
 
-      let currentChild = spinner.nextSibling;
+      // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
+      const reversedMessages = [...filteredMessages].reverse();
 
-      filteredMessages.forEach((msg) => {
+      let currentChild = messagesDisplay.firstElementChild;
+
+      reversedMessages.forEach((msg) => {
         const idx = messagesIndexMap[msg.id];
         const readCount = computeReadByCount(msg, idx);
         
         let row = existingRowsMap.get(msg.id);
         if (row) {
-          // 既存行があれば既読状態のみ更新
+          // 既存行があれば既読状態やテキスト、送信時間を更新
           const readSpan = row.querySelector('.read-receipt');
           if (readSpan) {
             if (readCount > 0) {
@@ -5748,6 +5774,24 @@
               readSpan.style.display = "none";
             }
           }
+
+          // 送信時間（送信中... からの更新）
+          const timestampSpan = row.querySelector('.text-xs.text-gray-500.mt-1');
+          if (timestampSpan) {
+            if (msg.timestamp && msg.timestamp.toDate) {
+              const date = msg.timestamp.toDate();
+              timestampSpan.textContent = `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+            } else {
+              timestampSpan.textContent = "送信中...";
+            }
+          }
+
+          // メッセージテキスト（編集された場合の対応）
+          const textSpan = row.querySelector('.message-content');
+          if (textSpan && msg.text) {
+             textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          }
+
           existingRowsMap.delete(msg.id);
           // 順序が違えば移動
           if (currentChild !== row) {
@@ -5766,9 +5810,15 @@
         row.remove();
       });
 
-      // 検索中でなければ、一番下までスクロールを維持
-      if (isScrolledToBottom && !searchQuery) {
-        messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+      // スピナーや終端メッセージは過去のメッセージの「さらに上」（DOM上は最後尾）に配置
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) {
+        messagesDisplay.appendChild(spinner);
+        spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
+      }
+      const endMsg = document.getElementById('endOfMessagesIndicator');
+      if (endMsg) {
+        messagesDisplay.appendChild(endMsg);
       }
     }
 
@@ -5898,12 +5948,8 @@
           lastMessagesData = [...allLoadedMessages];
           messagesIndexMap = {};
           lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-          
-          // スクロール位置を維持して再描画
-          const prevScrollHeight = messagesDisplay.scrollHeight;
-          const prevScrollTop = messagesDisplay.scrollTop;
+          // 再描画
           renderMessagesWithReadReceipts();
-          messagesDisplay.scrollTop = prevScrollTop - (prevScrollHeight - messagesDisplay.scrollHeight);
           
           alertMessage("削除しました", "success");
         } catch (e) {
@@ -6704,8 +6750,15 @@
           }
         }
       }
-      // Web/PWA版: OS通知はService Worker (FCM) に完全に任せる。
-      // フロントJSからnew Notification()を呼ぶと二重通知になるため、ここでは何もしない。
+      // Web/PWA版: OS通知は原則として Service Worker (FCM) に完全に任せる。
+      // フロントJSからnew Notification()を呼ぶと二重通知になるため基本は何もしないが、
+      // FCMが無効・非対応な環境（Safariなど）のためにフォールバックを用意する。
+      if (!isTauri && !currentFcmToken && "Notification" in window && Notification.permission === "granted") {
+        try {
+          const n = new Notification(title, { body, icon: '/icon-192x192.png?v=4' });
+          n.onclick = () => { window.focus(); n.close(); };
+        } catch (e) { }
+      }
     }
 
     // --- ブロッキングアップデートチェック ---
