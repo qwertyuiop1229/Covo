@@ -33,8 +33,8 @@ messaging.onBackgroundMessage((payload) => {
 
   const notificationOptions = {
     body: body,
-    icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png',
+    icon: '/icon-192x192.png?v=4',
+    badge: '/icon-192x192.png?v=4',
     tag: data.roomId || 'simplechat-notification',
     renotify: true,
     data: data,
