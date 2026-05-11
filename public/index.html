@@ -2308,17 +2308,9 @@
               </button>
               <div class="settings-nav-divider"></div>
               <div id="adminPanelContainer" class="hidden">
-                <button id="openAdminModalButton" class="w-full flex items-center justify-between px-4 py-4 bg-white border-b border-gray-50 active:bg-gray-50">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
-                      <i class="fas fa-shield-alt text-lg"></i>
-                    </div>
-                    <div class="text-left">
-                      <div class="text-sm font-bold text-gray-900">管理者パネル</div>
-                      <div class="text-xs text-gray-500">システム設定と管理</div>
-                    </div>
-                  </div>
-                  <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                <div class="settings-nav-label">管理</div>
+                <button class="settings-nav-item" id="openAdminModalButton">
+                  <i class="fas fa-shield-alt fa-fw"></i>管理者パネル
                 </button>
               </div>
               <button class="settings-nav-item danger" id="logoutButtonInModal">
@@ -3396,13 +3388,19 @@
               const snavAdmin = document.getElementById("snav-admin-container");
               if (snavAdmin) snavAdmin.classList.remove("hidden");
               const mobileAdminSec = document.getElementById("mobileAdminRowSection");
-              if (mobileAdminSec) mobileAdminSec.style.display = "";
+              if (mobileAdminSec) {
+                mobileAdminSec.style.display = "";
+                mobileAdminSec.classList.remove("hidden");
+              }
             } else {
               if (adminPanelContainer) adminPanelContainer.classList.add("hidden");
               const snavAdmin = document.getElementById("snav-admin-container");
               if (snavAdmin) snavAdmin.classList.add("hidden");
               const mobileAdminSec = document.getElementById("mobileAdminRowSection");
-              if (mobileAdminSec) mobileAdminSec.style.display = "none";
+              if (mobileAdminSec) {
+                mobileAdminSec.style.display = "none";
+                mobileAdminSec.classList.add("hidden");
+              }
             }
 
             const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
@@ -6046,10 +6044,12 @@
       const frame = document.getElementById('pdfLightboxFrame');
       const openLink = document.getElementById('pdfLightboxOpen');
       
-      // iframeで直接表示する方式に変更（Google Docs Viewerはエラーが多いため）
-      frame.src = pdfUrl;
-      openLink.href = pdfUrl;
+      // 外部のPDFをブラウザ上で安全に表示するためのプロキシを使用
+      // これにより「ページが動作していません」を回避しやすくなります
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
+      frame.src = viewerUrl;
       
+      openLink.href = pdfUrl;
       pdfLb.style.display = 'flex';
     };
 
@@ -7803,8 +7803,11 @@
   <div id="pdfLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none"
     onclick="if(event.target===this)window.closePdfLightbox()">
     <div class="relative flex flex-col items-center p-4 w-full max-w-4xl mx-auto" onclick="event.stopPropagation()">
-      <div class="absolute inset-0 flex items-center justify-center text-white -z-10">プレビューを読み込み中...</div>
-      <iframe id="pdfLightboxFrame" src="" class="w-full rounded-lg bg-white z-10" style="height:80vh;border:none;"></iframe>
+      <div class="absolute inset-0 flex items-center justify-center text-white -z-10 flex-col gap-2">
+        <i class="fas fa-spinner fa-spin text-2xl"></i>
+        <span>プレビューを読み込み中...</span>
+      </div>
+      <iframe id="pdfLightboxFrame" src="" class="w-full rounded-lg bg-white z-10 overflow-hidden" style="height:75vh; border:none; -webkit-overflow-scrolling:touch;"></iframe>
       <div class="flex gap-3 mt-4 z-10">
         <button onclick="window.downloadPdfLightbox()"
           class="px-4 py-2 bg-white text-gray-800 rounded-lg font-semibold text-sm shadow hover:bg-gray-100 flex items-center gap-2">
@@ -7939,16 +7942,12 @@
       </div>
     </div>
     <div id="mobileAdminRowSection" class="hidden">
+      <div class="mobile-settings-label">管理</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937">
-            <i class="fas fa-shield-alt text-lg"></i>
-          </div>
-          <div class="text-left flex-1">
-            <div class="text-sm font-bold text-gray-900">管理者パネル</div>
-            <div class="text-xs text-gray-500">システム設定と管理</div>
-          </div>
-          <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-shield-alt"></i></div>
+          <span class="mobile-settings-row-text">管理者パネル</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
     </div>
