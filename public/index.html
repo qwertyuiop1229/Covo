@@ -571,6 +571,29 @@
         flex-shrink: 0;
       }
 
+      /* スマホ版 管理者パネルの全画面・左上戻るボタン化 */
+      #adminModal { padding: 0 !important; }
+      #adminModal .modal-box {
+        max-width: 100% !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        animation: slideInFromRight 0.22s ease both !important;
+      }
+      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 {
+        background: #1f2937 !important;
+        color: white !important;
+        padding-top: calc(0.875rem + env(safe-area-inset-top, 0px)) !important;
+        padding-bottom: 0.875rem !important;
+        border-bottom: none !important;
+      }
+      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .text-gray-900 { color: white !important; }
+      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .bg-gray-100 { background: rgba(255,255,255,0.1) !important; color: white !important; }
+      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .text-gray-500 { color: white !important; }
+      #adminModal #closeAdminModalButton { color: white !important; transition: background 0.15s; }
+      #adminModal #closeAdminModalButton:active { background: rgba(255,255,255,0.2) !important; }
+      #adminModal #closeAdminModalButton i::before { content: "\f053"; } /* fa-chevron-left (戻る矢印) */
+
       #bottomSheetHandle::after {
         content: "";
         width: 40px;
@@ -1697,16 +1720,6 @@
       animation: spin 0.7s linear infinite;
     }
 
-    }
-    .top-spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e5e7eb;
-      border-top-color: #6b7280;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -1760,10 +1773,21 @@
     body.has-mobile-nav #serverListScreen,
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
     }
     body.has-mobile-nav .container {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    }
+    body.has-mobile-nav .server-grid {
+      padding-bottom: calc(85px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
     }
 
     /* Mobile full-screen pages */
@@ -4252,6 +4276,7 @@
     });
 
     logoutButtonInModal.addEventListener("click", async () => {
+      if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
       closeCropModal();
       settingsModal.classList.add("hidden");
       loadingOverlay.classList.remove("hidden");
@@ -7846,7 +7871,7 @@
     <div class="mobile-settings-section" id="mobileAdminRowSection" style="display:none">
       <div class="mobile-settings-label">管理</div>
       <div class="mobile-settings-group">
-        <div class="mobile-settings-row" onclick="openMobileDetail('admin')">
+        <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
           <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-shield"></i></div>
           <span class="mobile-settings-row-text">管理者パネル</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
@@ -7911,22 +7936,7 @@
     </div>
   </div>
 
-  <!-- Mobile Detail: Admin -->
-  <div class="mobile-settings-detail" id="mobileDetailAdmin">
-    <div class="mobile-detail-header">
-      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdmin')"><i class="fas fa-chevron-left"></i></div>
-      <span class="mobile-detail-title">管理者パネル</span>
-    </div>
-    <div style="padding:1rem">
-      <div class="mobile-settings-group">
-        <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click();closeMobileDetail('mobileDetailAdmin')">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-shield"></i></div>
-          <span class="mobile-settings-row-text">管理者パネルを開く</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-      </div>
-    </div>
-  </div>
+
 
   <!-- ===== Mobile Notifications Screen ===== -->
   <div id="mobileNotifScreen">
