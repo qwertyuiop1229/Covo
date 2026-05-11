@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -1697,8 +1697,447 @@
       animation: spin 0.7s linear infinite;
     }
 
+    }
+    .top-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #6b7280;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    /* =============================================
+       Mobile Bottom Navigation
+    ============================================= */
+    #mobileBottomNav {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(56px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: #1f2937;
+      z-index: 200;
+      flex-direction: row;
+      align-items: stretch;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .mobile-nav-tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      cursor: pointer;
+      color: rgba(255,255,255,0.45);
+      border: none;
+      background: transparent;
+      transition: color 0.15s;
+      padding-bottom: 2px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-nav-tab.active {
+      color: rgba(255,255,255,0.95);
+    }
+    .mobile-nav-tab i {
+      font-size: 1.15rem;
+      line-height: 1;
+    }
+    .mobile-nav-tab span {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    /* Body padding for BottomNav when visible */
+    body.has-mobile-nav #serverListScreen,
+    body.has-mobile-nav #mobileProfileScreen,
+    body.has-mobile-nav #mobileNotifScreen {
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    }
+    body.has-mobile-nav .container {
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Mobile full-screen pages */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 100;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+    }
+
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }
+
+    /* =============================================
+       Server list-view toggle
+    ============================================= */
+    #viewToggleBtn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      border-radius: 7px;
+      color: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
+
+    /* List view overrides */
+    .server-grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 1rem;
+    }
+    .server-grid.list-view .server-section-label {
+      margin-top: 8px;
+    }
+    .server-grid.list-view .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .server-grid.list-view .server-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 13px;
+      padding: 11px 14px;
+    }
+    .server-grid.list-view .server-card-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-name {
+      font-size: 0.92rem;
+    }
+    .server-grid.list-view .server-card-meta {
+      font-size: 0.72rem;
+    }
+    .server-grid.list-view .server-card-admin-badge {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    /* =============================================
+       PC Discord-style Settings Modal (2-column)
+    ============================================= */
+    #settingsModal .settings-discord-layout {
+      display: flex;
+      min-height: 520px;
+      height: calc(100vh - 5rem);
+      max-height: 700px;
+    }
+    #settingsModal .settings-sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: #111827;
+      padding: 1.25rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+    #settingsModal .settings-sidebar-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px 14px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    #settingsModal .settings-sidebar-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    #settingsModal .settings-sidebar-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    #settingsModal .settings-sidebar-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: white;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #settingsModal .settings-nav-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.35);
+      padding: 8px 8px 4px;
+    }
+    #settingsModal .settings-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+    #settingsModal .settings-nav-item:hover {
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.85);
+    }
+    #settingsModal .settings-nav-item.active {
+      background: rgba(255,255,255,0.14);
+      color: white;
+    }
+    #settingsModal .settings-nav-item.danger {
+      color: #f87171;
+    }
+    #settingsModal .settings-nav-item.danger:hover {
+      background: rgba(239,68,68,0.15);
+      color: #f87171;
+    }
+    #settingsModal .settings-nav-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 6px 0;
+    }
+    #settingsModal .settings-content {
+      flex: 1;
+      background: white;
+      overflow-y: auto;
+      padding: 1.75rem 2rem;
+      position: relative;
+    }
+    #settingsModal .settings-content-section {
+      display: none;
+    }
+    #settingsModal .settings-content-section.active {
+      display: block;
+    }
+    #settingsModal .settings-section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    #settingsModal .settings-close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: #f3f4f6;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      font-size: 0.9rem;
+      transition: background 0.12s;
+    }
+    #settingsModal .settings-close-btn:hover { background: #e5e7eb; }
+
+    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
+    @media (max-width: 768px) {
+      #settingsModal {
+        display: none !important;
+      }
+      #mobileBottomNav {
+        display: flex;
+      }
     }
   </style>
 </head>
@@ -1812,152 +2251,118 @@
         </div>
       </div>
 
-      <!-- 設定モーダル (マイページ / 設定) -->
-      <div id="settingsModal" class="fixed inset-0 modal-overlay overflow-y-auto z-50 hidden">
-        <div class="flex min-h-full items-center justify-center p-8">
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md relative flex flex-col overflow-hidden modal-box">
-            <!-- 閉じるボタン -->
-            <button id="closeSettingsButton"
-              class="absolute top-3.5 right-4 text-white/60 hover:text-white z-10 transition-colors">
-              <i class="fas fa-times text-lg"></i>
-            </button>
-
-            <!-- モーダルヘッダー -->
-            <div class="h-12 bg-gray-800 flex-shrink-0 flex items-center px-6">
-              <span class="text-white/80 text-sm font-bold tracking-wide">プロフィール・設定</span>
+      <!-- 設定モーダル (PC: Discord風2カラム) -->
+      <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="height:min(700px,calc(100vh - 3rem))">
+          <div class="settings-discord-layout">
+            <!-- 左サイドバー -->
+            <div class="settings-sidebar">
+              <!-- ユーザー情報 -->
+              <div class="settings-sidebar-user">
+                <div class="settings-sidebar-avatar" id="sidebarAvatar"></div>
+                <span class="settings-sidebar-name" id="sidebarName"></span>
+              </div>
+              <!-- ナビ -->
+              <div class="settings-nav-label">アカウント</div>
+              <button class="settings-nav-item active" id="snav-profile" onclick="switchDiscordSettingsTab('profile')">
+                <i class="fas fa-user-circle fa-fw"></i>プロフィール
+              </button>
+              <button class="settings-nav-item" id="snav-settings" onclick="switchDiscordSettingsTab('settings')">
+                <i class="fas fa-bell fa-fw"></i>通知・設定
+              </button>
+              <div id="snav-admin-container" class="hidden">
+                <button class="settings-nav-item" id="snav-admin" onclick="switchDiscordSettingsTab('admin')">
+                  <i class="fas fa-user-shield fa-fw"></i>管理者パネル
+                </button>
+              </div>
+              <div class="settings-nav-divider"></div>
+              <button class="settings-nav-item danger" id="logoutButtonInModal">
+                <i class="fas fa-sign-out-alt fa-fw"></i>ログアウト
+              </button>
             </div>
+            <!-- 右コンテンツエリア -->
+            <div class="settings-content">
+              <!-- 閉じるボタン -->
+              <button class="settings-close-btn" id="closeSettingsButton"><i class="fas fa-times"></i></button>
 
-            <!-- タブヘッダー (pill style) -->
-            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100">
-              <button id="tabProfile"
-                class="flex-1 py-2 text-sm font-bold rounded-xl bg-gray-800 text-white transition-all">プロフィール</button>
-              <button id="tabSettings"
-                class="flex-1 py-2 text-sm font-bold rounded-xl bg-transparent text-gray-500 hover:bg-gray-100 transition-all">設定</button>
-            </div>
-
-            <!-- コンテンツエリア -->
-            <div class="p-8 pt-6">
-
-              <!-- プロフィールタブ -->
-              <div id="profileSection">
-                <div class="flex flex-col items-center mb-6">
-                  <div
-                    class="w-24 h-24 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center text-4xl font-bold mb-3 relative cursor-pointer group"
-                    id="avatarUploadTrigger">
+              <!-- プロフィールセクション -->
+              <div id="profileSection" class="settings-content-section active">
+                <div class="settings-section-title">プロフィール</div>
+                <div class="flex items-center gap-5 mb-6">
+                  <div class="w-20 h-20 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center text-3xl font-bold relative cursor-pointer group flex-shrink-0" id="avatarUploadTrigger">
                     <span id="settingsAvatarText"></span>
-                    <img id="settingsAvatarPreview" src=""
-                      class="absolute inset-0 w-full h-full object-cover rounded-full hidden" />
-                    <div
-                      class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded-full flex items-center justify-center">
+                    <img id="settingsAvatarPreview" src="" class="absolute inset-0 w-full h-full object-cover rounded-full hidden" />
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded-full flex items-center justify-center">
                       <i class="fas fa-camera opacity-0 group-hover:opacity-100 text-white text-xl transition-all"></i>
                     </div>
-                    <div
-                      class="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm shadow-lg z-10 pointer-events-none border-2 border-white">
+                    <div class="absolute bottom-0 right-0 bg-gray-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs shadow-lg z-10 pointer-events-none border-2 border-white">
                       <i class="fas fa-pencil-alt"></i>
                     </div>
                     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden" />
                   </div>
-                  <p class="text-xs text-gray-400">クリックしてアイコンを変更</p>
-                  <button id="resetAvatarButton"
-                    class="mt-3 px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-full transition-all hidden">
-                    <i class="fas fa-undo mr-1"></i>アイコンをリセット
-                  </button>
+                  <div>
+                    <p class="text-sm font-bold text-gray-800">アイコン</p>
+                    <p class="text-xs text-gray-400 mt-0.5">クリックして変更</p>
+                    <button id="resetAvatarButton" class="mt-2 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-full transition-all hidden">
+                      <i class="fas fa-undo mr-1"></i>リセット
+                    </button>
+                  </div>
                 </div>
-
                 <div class="space-y-4">
                   <div>
-                    <label class="block text-gray-500 text-xs font-bold uppercase tracking-wider mb-2"
-                      for="settingsNicknameInput">
-                      ニックネーム
-                    </label>
-                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム"
-                      class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all" />
+                    <label class="block text-gray-500 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム</label>
+                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all" />
                   </div>
+                </div>
+                <div id="settingsMessage" class="mt-4 text-sm font-medium text-center"></div>
+                <div class="mt-6">
+                  <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm font-bold rounded-xl transition-all">保存</button>
                 </div>
               </div>
 
-              <!-- 設定タブ -->
-              <div id="settingsSection" class="hidden space-y-6">
-                <!-- 管理者設定 (管理者のみ表示) -->
-                <div id="adminPanelContainer" class="hidden">
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">管理者オプション</h3>
-                  <button id="openAdminModalButton"
-                    class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-user-shield"></i> 管理者パネルを開く
-                  </button>
-                </div>
-
-                <!-- 通知設定 -->
+              <!-- 設定セクション -->
+              <div id="settingsSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">通知・設定</div>
                 <div>
                   <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">通知</h3>
                   <div class="bg-gray-50 rounded-2xl p-4 space-y-1">
                     <div class="setting-row">
                       <div class="setting-label"><i class="fas fa-volume-up"></i> 通知音</div>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="toggleNotifSound" checked>
-                        <span class="toggle-slider"></span>
-                      </label>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleNotifSound" checked><span class="toggle-slider"></span></label>
                     </div>
                     <div class="setting-row" id="browserNotifRow">
                       <div class="setting-label"><i class="fas fa-bell"></i> ブラウザ通知</div>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="toggleBrowserNotif" checked>
-                        <span class="toggle-slider"></span>
-                      </label>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
                     </div>
                     <div class="setting-row hidden" id="desktopNotifRow">
                       <div class="setting-label"><i class="fas fa-comment-dots"></i> デスクトップ通知 (Tauri)</div>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="toggleDesktopNotif" checked>
-                        <span class="toggle-slider"></span>
-                      </label>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleDesktopNotif" checked><span class="toggle-slider"></span></label>
                     </div>
                   </div>
                 </div>
-
-                <!-- アプリ設定 (Windows版のみ表示) -->
                 <div id="desktopSettingsContainer" class="hidden">
                   <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">アプリ動作</h3>
                   <div class="bg-gray-50 rounded-2xl p-4 space-y-1">
                     <div class="setting-row">
                       <div class="setting-label"><i class="fas fa-rocket"></i> PC起動時に自動実行</div>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="toggleAutoStart">
-                        <span class="toggle-slider"></span>
-                      </label>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleAutoStart"><span class="toggle-slider"></span></label>
                     </div>
                   </div>
-                  <div class="mt-3 text-center text-xs text-gray-400"
-                    style="font-family: ui-monospace, Consolas, monospace;">
-                    インストール済み: <span id="installedVersion">読み込み中...</span>
-                  </div>
+                  <div class="mt-3 text-center text-xs text-gray-400" style="font-family:ui-monospace,Consolas,monospace;">インストール済み: <span id="installedVersion">読み込み中...</span></div>
                 </div>
-
-
-
-                <!-- ショートカットキー -->
                 <div id="shortcutInfoContainer" class="hidden">
                   <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">ショートカット</h3>
-                  <div class="bg-blue-50 text-blue-700 p-4 rounded-xl text-sm leading-relaxed">
+                  <div class="bg-blue-50 text-blue-700 p-4 rounded-xl text-sm">
                     <div class="flex items-start gap-3">
                       <i class="fas fa-keyboard mt-1 flex-shrink-0"></i>
                       <div class="flex-1">
                         <p class="font-bold mb-2">クイックアクセス</p>
-                        <p class="text-xs opacity-80 mb-3">
-                          <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd>
-                          + <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd>
-                          + <kbd id="shortcutKeyDisplay"
-                            class="bg-blue-200 px-1.5 rounded border border-blue-300 font-bold">S</kbd>
-                        </p>
+                        <p class="text-xs opacity-80 mb-3"><kbd class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd> + <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd> + <kbd id="shortcutKeyDisplay" class="bg-blue-200 px-1.5 rounded border border-blue-300 font-bold">S</kbd></p>
                         <p class="text-xs opacity-70 mb-3">アプリを最前面に表示し、メッセージ入力欄にフォーカスします。</p>
                         <div class="flex items-center gap-2">
                           <span class="text-xs opacity-70">キーを変更:</span>
-                          <span class="text-xs opacity-70"><kbd
-                              class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd> + <kbd
-                              class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd> +</span>
-                          <input type="text" id="shortcutKeyInput" maxlength="1"
-                            class="w-10 text-center bg-white text-blue-800 font-bold text-sm rounded border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 py-0.5 uppercase"
-                            placeholder="S" />
+                          <span class="text-xs opacity-70"><kbd class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd> + <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd> +</span>
+                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white text-blue-800 font-bold text-sm rounded border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 py-0.5 uppercase" placeholder="S" />
                         </div>
                       </div>
                     </div>
@@ -1965,23 +2370,18 @@
                 </div>
               </div>
 
-              <div id="settingsMessage" class="text-center mt-4 text-sm font-medium"></div>
-            </div>
-
-            <!-- フッターアクション -->
-            <div class="p-8 py-6 bg-gray-50 flex justify-between items-center gap-4 border-t">
-              <button id="logoutButtonInModal"
-                class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-xl transition-all">
-                ログアウト
-              </button>
-              <button id="saveSettingsButton"
-                class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all">
-                保存
-              </button>
+              <!-- 管理者セクション -->
+              <div id="adminNavSection" class="settings-content-section">
+                <div class="settings-section-title">管理者パネル</div>
+                <button id="openAdminModalButton" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all flex items-center gap-2">
+                  <i class="fas fa-user-shield"></i>管理者パネルを開く
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
 
       <!-- 管理者モーダル (Admin Panel) -->
       <div id="adminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
@@ -2165,6 +2565,7 @@
           <div class="server-list-actions">
             <button id="joinServerBtn"><i class="fas fa-sign-in-alt mr-1"></i>参加</button>
             <button id="createServerBtn"><i class="fas fa-plus mr-1"></i>新規作成</button>
+            <button id="viewToggleBtn" title="表示切り替え"><i class="fas fa-list"></i></button>
             <button id="serverListUserBtn" class="server-list-user-btn" title="プロフィール・設定"></button>
           </div>
         </div>
@@ -2935,9 +3336,17 @@
 
             // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
             if (isAdmin || isListAdmin) {
-              adminPanelContainer.classList.remove("hidden");
+              if (adminPanelContainer) adminPanelContainer.classList.remove("hidden");
+              const snavAdmin = document.getElementById("snav-admin-container");
+              if (snavAdmin) snavAdmin.classList.remove("hidden");
+              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+              if (mobileAdminSec) mobileAdminSec.style.display = "";
             } else {
-              adminPanelContainer.classList.add("hidden");
+              if (adminPanelContainer) adminPanelContainer.classList.add("hidden");
+              const snavAdmin = document.getElementById("snav-admin-container");
+              if (snavAdmin) snavAdmin.classList.add("hidden");
+              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+              if (mobileAdminSec) mobileAdminSec.style.display = "none";
             }
 
             const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
@@ -3412,31 +3821,104 @@
       }
     };
 
-    const tabProfile = document.getElementById("tabProfile");
-    const tabSettings = document.getElementById("tabSettings");
-    const profileSection = document.getElementById("profileSection");
-    const settingsSection = document.getElementById("settingsSection");
+    // ============ Discord-style settings tab ============
+    window.switchDiscordSettingsTab = function(tab) {
+      document.querySelectorAll('#settingsModal .settings-nav-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#settingsModal .settings-content-section').forEach(s => s.classList.remove('active'));
+      const nb = document.getElementById('snav-' + tab);
+      if (nb) nb.classList.add('active');
+      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection' };
+      const sec = document.getElementById(smap[tab] || 'profileSection');
+      if (sec) sec.classList.add('active');
+    };
 
-    function switchSettingsTab(tab) {
-      if (tab === "profile") {
-        tabProfile.classList.add("bg-gray-800", "text-white");
-        tabProfile.classList.remove("bg-transparent", "text-gray-500");
-        tabSettings.classList.add("bg-transparent", "text-gray-500");
-        tabSettings.classList.remove("bg-gray-800", "text-white");
-        profileSection.classList.remove("hidden");
-        settingsSection.classList.add("hidden");
-      } else {
-        tabSettings.classList.add("bg-gray-800", "text-white");
-        tabSettings.classList.remove("bg-transparent", "text-gray-500");
-        tabProfile.classList.add("bg-transparent", "text-gray-500");
-        tabProfile.classList.remove("bg-gray-800", "text-white");
-        settingsSection.classList.remove("hidden");
-        profileSection.classList.add("hidden");
-      }
+    function switchSettingsTab(tab) { switchDiscordSettingsTab(tab === 'settings' ? 'settings' : 'profile'); }
+
+    function updateSettingsSidebar() {
+      const sa = document.getElementById('sidebarAvatar');
+      const sn = document.getElementById('sidebarName');
+      if (!sa || !sn) return;
+      sn.textContent = userNickname || '';
+      if (userAvatarUrl) { sa.innerHTML = '<img src="' + userAvatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
+      else { sa.textContent = (userNickname || '?').charAt(0).toUpperCase(); }
     }
 
-    tabProfile.addEventListener("click", () => switchSettingsTab("profile"));
-    tabSettings.addEventListener("click", () => switchSettingsTab("settings"));
+    // ============ Mobile Bottom Nav ============
+    if (window.matchMedia('(max-width: 768px)').matches) { document.body.classList.add('has-mobile-nav'); }
+
+    window.switchMobileTab = function(tab) {
+      document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
+      const tb = document.getElementById('mobileTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+      if (tb) tb.classList.add('active');
+      document.getElementById('mobileProfileScreen').classList.remove('active');
+      document.getElementById('mobileNotifScreen').classList.remove('active');
+      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); }
+      else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
+    };
+
+    window.openMobileDetail = function(type) {
+      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin' };
+      const el = document.getElementById(m[type]);
+      if (el) el.classList.add('active');
+    };
+
+    window.closeMobileDetail = function(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    };
+
+    function updateMobileProfileScreen() {
+      const ne = document.getElementById('mobileProfileName');
+      const ae = document.getElementById('mobileProfileAvatar');
+      const at = document.getElementById('mobileAvatarText');
+      const ap = document.getElementById('mobileAvatarPreview');
+      const ni = document.getElementById('mobileNicknameInput');
+      if (ne) ne.textContent = userNickname || '';
+      if (ae) { if (userAvatarUrl) ae.innerHTML = '<img src="' + userAvatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; else ae.textContent = (userNickname||'?').charAt(0).toUpperCase(); }
+      if (at) at.textContent = (userNickname||'?').charAt(0).toUpperCase();
+      if (ap) { if (userAvatarUrl) { ap.src = userAvatarUrl; ap.style.display = ''; } else { ap.style.display = 'none'; } }
+      if (ni) ni.value = userNickname || '';
+      if (isAdmin || isListAdmin) { const as2 = document.getElementById('mobileAdminRowSection'); if (as2) as2.style.display = ''; }
+    }
+
+    window.mobileProfileSave = async function() {
+      const inp = document.getElementById('mobileNicknameInput');
+      const msg = document.getElementById('mobileSettingsMessage');
+      if (!inp || !inp.value.trim()) return;
+      const pcIn = document.getElementById('settingsNicknameInput');
+      if (pcIn) pcIn.value = inp.value.trim();
+      document.getElementById('saveSettingsButton').click();
+      if (msg) { msg.textContent = '保存しました'; msg.style.color = '#059669'; setTimeout(() => { msg.textContent = ''; }, 2000); }
+    };
+
+    const atm = document.getElementById('avatarUploadTriggerMobile');
+    if (atm) atm.addEventListener('click', () => document.getElementById('avatarUploadInput').click());
+
+    const tnsm = document.getElementById('toggleNotifSoundMobile');
+    const tnbm = document.getElementById('toggleBrowserNotifMobile');
+    const tnsp = document.getElementById('toggleNotifSound');
+    const tnbp = document.getElementById('toggleBrowserNotif');
+    if (tnsm && tnsp) { tnsm.checked = tnsp.checked; tnsm.addEventListener('change', () => { tnsp.checked = tnsm.checked; tnsp.dispatchEvent(new Event('change')); }); }
+    if (tnbm && tnbp) { tnbm.checked = tnbp.checked; tnbm.addEventListener('change', () => { tnbp.checked = tnbm.checked; tnbp.dispatchEvent(new Event('change')); }); }
+
+    // serverListUserBtn on mobile → go to "you" tab
+    document.getElementById('serverListUserBtn')?.addEventListener('click', (e) => {
+      if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); switchMobileTab('you'); }
+    }, true);
+
+    // ============ Server View Toggle ============
+    const viewToggleBtn = document.getElementById('viewToggleBtn');
+    const serverGridEl = document.getElementById('serverGrid');
+    let currentServerView = localStorage.getItem('covo_server_view') || 'grid';
+    function applyServerView(v) {
+      if (v === 'list') { serverGridEl.classList.add('list-view'); viewToggleBtn.innerHTML = '<i class="fas fa-th"></i>'; viewToggleBtn.title = 'グリッド表示'; }
+      else { serverGridEl.classList.remove('list-view'); viewToggleBtn.innerHTML = '<i class="fas fa-list"></i>'; viewToggleBtn.title = 'リスト表示'; }
+    }
+    if (viewToggleBtn && serverGridEl) {
+      applyServerView(currentServerView);
+      viewToggleBtn.addEventListener('click', () => { currentServerView = currentServerView === 'grid' ? 'list' : 'grid'; localStorage.setItem('covo_server_view', currentServerView); applyServerView(currentServerView); });
+    }
+
 
     let pendingAvatarUrl = null;
     const avatarUploadTrigger = document.getElementById("avatarUploadTrigger");
@@ -3644,7 +4126,7 @@
 
     function openSettingsModal(tab) {
       if (!userNickname) return;
-      switchSettingsTab(tab || "profile");
+      switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
       settingsNicknameInput.value = userNickname;
       settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
       pendingAvatarUrl = null;
@@ -3657,6 +4139,7 @@
         resetAvatarButton.classList.add("hidden");
       }
       settingsMessage.textContent = "";
+      updateSettingsSidebar();
       openModal(settingsModal);
     }
 
@@ -3955,7 +4438,17 @@
         : users;
 
       const processedUsers = filtered.map(u => {
-        const computedState = u.state || 'offline';
+        let computedState = u.state || 'offline';
+        
+        // 15分（900,000ミリ秒）以上更新がない場合は自動的にオフライン扱いにする
+        if (computedState === 'online' || computedState === 'away') {
+          if (u.last_changed && u.last_changed.toDate) {
+            const timeDiff = Date.now() - u.last_changed.toDate().getTime();
+            if (timeDiff > 15 * 60 * 1000) {
+              computedState = 'offline';
+            }
+          }
+        }
 
         // update own UI status indicator here
         if (u.id === userId) {
@@ -4100,8 +4593,8 @@
         const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
         card.innerHTML = `
             <div class="server-card-icon"><i class="fas fa-server"></i></div>
-            <div class="server-card-name">${escapeHtml(server.name || server.id)}</div>
-            <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div>
+            <div class="server-card-info"><div class="server-card-name">${escapeHtml(server.name || server.id)}</div>
+            <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div></div>
             ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
             ${isAdmin && !isMine && (server.joinedUsers || []).includes(userId) ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
           `;
@@ -4133,6 +4626,8 @@
         const servers = [];
         snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
         allServersCache = servers;
+        // 最近開いた順ソート
+        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
 
         if (!isAdmin) {
           if (servers.length === 0) {
@@ -4178,6 +4673,7 @@
     async function enterServer(serverId, serverData) {
       currentServerId = serverId;
       currentServerData = serverData;
+      try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); rm[serverId] = Date.now(); localStorage.setItem('covo_recent_servers', JSON.stringify(rm)); } catch(e) {}
 
       document.getElementById("serverListScreen").classList.add("hidden");
       appContainer.classList.remove("hidden");
@@ -4465,15 +4961,12 @@
         }
       });
 
-      // フォールバック: 3秒後にまだ表示されていなければ getDocs で強制取得
-      setTimeout(async () => {
+      // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
+      getDocs(roomsQuery).then(snap => {
         if (!hasLoaded && currentServerId === serverId) {
-          try {
-            const snap = await getDocs(roomsQuery);
-            if (!hasLoaded && currentServerId === serverId) renderRooms(snap);
-          } catch (e) { console.error("loadServerRooms fallback error:", e); }
+          renderRooms(snap);
         }
-      }, 3000);
+      }).catch(e => console.error("loadServerRooms kickstart error:", e));
 
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".dropdown-container")) {
@@ -4571,12 +5064,25 @@
       
       isLoadingOlderMessages = true;
       const spinner = document.getElementById('topLoadingSpinner');
-      if (spinner) spinner.style.display = 'flex';
+      if (spinner) {
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">読み込み中...</span>';
+        spinner.style.display = 'flex';
+      }
+      
+      let isTimeout = false;
+      const timeoutId = setTimeout(() => {
+        isTimeout = true;
+        if (spinner) {
+          spinner.innerHTML = `<span class="text-xs text-red-500 cursor-pointer p-2 rounded hover:bg-red-50 transition-colors font-semibold" onclick="loadOlderMessagesRetry()">読み込みに時間がかかっています。[再読み込み]</span>`;
+        }
+        isLoadingOlderMessages = false;
+      }, 3000);
       
       try {
         const oldestMsg = allLoadedMessages[0];
         if (!oldestMsg || !oldestMsg.timestamp) {
           hasMoreOlderMessages = false;
+          clearTimeout(timeoutId);
           return;
         }
         
@@ -4589,14 +5095,20 @@
         );
         
         const snap = await getDocs(q);
+        clearTimeout(timeoutId);
+        if (isTimeout) return; // タイムアウト後であれば無視
+        
         if (snap.empty || snap.docs.length < 20) {
           hasMoreOlderMessages = false;
         }
         if (snap.empty) {
-          const endMsg = document.createElement('div');
-          endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0';
-          endMsg.textContent = 'これ以上過去のメッセージはありません';
-          messagesDisplay.prepend(endMsg);
+          if (!document.getElementById('endOfMessagesIndicator')) {
+            const endMsg = document.createElement('div');
+            endMsg.id = 'endOfMessagesIndicator';
+            endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0 flipped';
+            endMsg.textContent = 'これ以上過去のメッセージはありません';
+            messagesDisplay.appendChild(endMsg);
+          }
         }
         
         if (!snap.empty) {
@@ -4619,12 +5131,24 @@
         }
       } catch (e) {
         console.error("Failed to load older messages:", e);
+        clearTimeout(timeoutId);
+        if (spinner) {
+          spinner.innerHTML = `<span class="text-xs text-red-500 cursor-pointer p-2 rounded hover:bg-red-50 transition-colors font-semibold" onclick="loadOlderMessagesRetry()">エラーが発生しました。[再試行]</span>`;
+        }
       } finally {
-        isLoadingOlderMessages = false;
-        const spinner = document.getElementById('topLoadingSpinner');
-        if (spinner) spinner.style.display = 'none';
+        if (!isTimeout) {
+          isLoadingOlderMessages = false;
+          if (spinner && spinner.innerHTML.includes('top-spinner')) {
+            spinner.style.display = 'none';
+          }
+        }
       }
     }
+
+    window.loadOlderMessagesRetry = () => {
+      isLoadingOlderMessages = false;
+      loadOlderMessages();
+    };
 
     function subscribeToMessages() {
       if (unsubscribeMessages) unsubscribeMessages();
@@ -7237,6 +7761,141 @@
     <div id="serverCtxDelete"
       class="flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 cursor-pointer transition-colors">
       <i class="fas fa-trash w-4 text-center text-xs"></i>削除する
+    </div>
+  </div>
+  <!-- ===== Mobile Bottom Navigation ===== -->
+  <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
+    <button class="mobile-nav-tab active" id="mobileTabHome" onclick="switchMobileTab('home')" aria-label="ホーム">
+      <i class="fas fa-home"></i>
+      <span>ホーム</span>
+    </button>
+    <button class="mobile-nav-tab" id="mobileTabNotif" onclick="switchMobileTab('notif')" aria-label="通知">
+      <i class="fas fa-bell"></i>
+      <span>通知</span>
+    </button>
+    <button class="mobile-nav-tab" id="mobileTabYou" onclick="switchMobileTab('you')" aria-label="あなた">
+      <i class="fas fa-user"></i>
+      <span>あなた</span>
+    </button>
+  </nav>
+
+  <!-- ===== Mobile Profile Screen ===== -->
+  <div id="mobileProfileScreen">
+    <div class="mobile-profile-header">
+      <div class="mobile-profile-avatar" id="mobileProfileAvatar"></div>
+      <div>
+        <div class="mobile-profile-name" id="mobileProfileName">...</div>
+        <div class="mobile-profile-sub">アカウント設定</div>
+      </div>
+    </div>
+    <div class="mobile-settings-section">
+      <div class="mobile-settings-label">アカウント</div>
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row" onclick="openMobileDetail('profile')">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-circle"></i></div>
+          <span class="mobile-settings-row-text">プロフィール編集</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('notif')">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-bell"></i></div>
+          <span class="mobile-settings-row-text">通知設定</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+      </div>
+    </div>
+    <div class="mobile-settings-section" id="mobileAdminRowSection" style="display:none">
+      <div class="mobile-settings-label">管理</div>
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row" onclick="openMobileDetail('admin')">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-shield"></i></div>
+          <span class="mobile-settings-row-text">管理者パネル</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+      </div>
+    </div>
+    <div class="mobile-settings-section">
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row danger" onclick="document.getElementById('logoutButtonInModal').click()">
+          <div class="mobile-settings-row-icon" style="background:#fef2f2;color:#ef4444"><i class="fas fa-sign-out-alt"></i></div>
+          <span class="mobile-settings-row-text">ログアウト</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: Profile -->
+  <div class="mobile-settings-detail" id="mobileDetailProfile">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailProfile')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">プロフィール編集</span>
+    </div>
+    <div style="padding:1.25rem">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:1.5rem">
+        <div id="avatarUploadTriggerMobile" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#374151,#111827);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:700;color:white;position:relative;cursor:pointer;flex-shrink:0">
+          <span id="mobileAvatarText"></span>
+          <img id="mobileAvatarPreview" src="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;display:none" />
+          <div style="position:absolute;bottom:0;right:0;background:#4b5563;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:0.7rem;border:2px solid white;z-index:10"><i class="fas fa-pencil-alt"></i></div>
+        </div>
+        <div>
+          <p style="font-size:0.85rem;font-weight:700;color:#111827">アイコン</p>
+          <p style="font-size:0.75rem;color:#6b7280;margin-top:2px">タップして変更</p>
+          <button id="mobileResetAvatarBtn" style="display:none;margin-top:6px;padding:4px 10px;background:#f3f4f6;border:none;border-radius:99px;font-size:0.72rem;font-weight:700;color:#6b7280;cursor:pointer"><i class="fas fa-undo" style="margin-right:3px"></i>リセット</button>
+        </div>
+      </div>
+      <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px">ニックネーム</label>
+      <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" style="width:100%;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;font-size:0.9rem;outline:none;box-sizing:border-box" />
+      <div id="mobileSettingsMessage" style="margin-top:10px;font-size:0.85rem;text-align:center;color:#6b7280"></div>
+      <button onclick="mobileProfileSave()" style="margin-top:14px;width:100%;padding:13px;background:#1f2937;color:white;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer">保存</button>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: Notifications -->
+  <div class="mobile-settings-detail" id="mobileDetailNotif">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailNotif')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">通知設定</span>
+    </div>
+    <div style="padding:1rem">
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-volume-up"></i></div>
+          <span class="mobile-settings-row-text">通知音</span>
+          <label class="toggle-switch"><input type="checkbox" id="toggleNotifSoundMobile"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="mobile-settings-row" id="mobileBrowserNotifRow">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-bell"></i></div>
+          <span class="mobile-settings-row-text">ブラウザ通知</span>
+          <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotifMobile"><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: Admin -->
+  <div class="mobile-settings-detail" id="mobileDetailAdmin">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdmin')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">管理者パネル</span>
+    </div>
+    <div style="padding:1rem">
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click();closeMobileDetail('mobileDetailAdmin')">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-shield"></i></div>
+          <span class="mobile-settings-row-text">管理者パネルを開く</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Mobile Notifications Screen ===== -->
+  <div id="mobileNotifScreen">
+    <div class="mobile-detail-header" style="padding-top:calc(0.875rem + env(safe-area-inset-top,0px))">
+      <span class="mobile-detail-title" style="font-size:1rem">通知</span>
+    </div>
+    <div style="padding:1rem">
+      <p id="mobileNotifEmpty" style="text-align:center;color:#9ca3af;font-size:0.85rem;padding:2rem 0">通知はありません</p>
+      <div id="mobileNotifList"></div>
     </div>
   </div>
 
