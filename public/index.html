@@ -2307,7 +2307,7 @@
                 <i class="fas fa-bell fa-fw"></i>通知・設定
               </button>
               <div class="settings-nav-divider"></div>
-              <div id="adminPanelLink" class="hidden">
+              <div id="adminPanelContainer" class="hidden">
                 <button id="openAdminModalButton" class="w-full flex items-center justify-between px-4 py-4 bg-white border-b border-gray-50 active:bg-gray-50">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
@@ -6036,33 +6036,36 @@
       }
     });
 
-    function openPdfLightbox(pdfUrl, fileName) {
+    let currentPdfUrl = '';
+    let currentPdfName = '';
+
+    window.openPdfLightbox = function(pdfUrl, fileName) {
+      currentPdfUrl = pdfUrl;
+      currentPdfName = fileName;
       const pdfLb = document.getElementById('pdfLightbox');
       const frame = document.getElementById('pdfLightboxFrame');
       const openLink = document.getElementById('pdfLightboxOpen');
-      const downloadLink = document.getElementById('pdfLightboxDownload');
       
-      // Google Docs Viewerを使用してスマホや制限された環境でも確実にプレビュー表示させる
-      frame.src = `https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
-      
-      // 元のURLでブラウザの別タブで開く
+      // iframeで直接表示する方式に変更（Google Docs Viewerはエラーが多いため）
+      frame.src = pdfUrl;
       openLink.href = pdfUrl;
       
-      // Cloudinaryの機能を利用して強制ダウンロードリンクを生成
-      if (downloadLink) {
-        const downloadUrl = pdfUrl.replace('/upload/', '/upload/fl_attachment/');
-        downloadLink.href = downloadUrl;
-        downloadLink.download = fileName;
-      }
-      
       pdfLb.style.display = 'flex';
-    }
-    function closePdfLightbox() {
+    };
+
+    window.closePdfLightbox = function() {
       const pdfLb = document.getElementById('pdfLightbox');
       const frame = document.getElementById('pdfLightboxFrame');
       frame.src = '';
       pdfLb.style.display = 'none';
-    }
+    };
+
+    window.downloadPdfLightbox = function() {
+      if (currentPdfUrl && currentPdfName) {
+        // 既存のダウンロード機能を使い、確実にファイルを保存させる
+        downloadFile(currentPdfUrl, currentPdfName, 'application/pdf');
+      }
+    };
 
     messageInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -7798,20 +7801,20 @@
 
   <!-- PDFライトボックス -->
   <div id="pdfLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none"
-    onclick="if(event.target===this)closePdfLightbox()">
+    onclick="if(event.target===this)window.closePdfLightbox()">
     <div class="relative flex flex-col items-center p-4 w-full max-w-4xl mx-auto" onclick="event.stopPropagation()">
       <div class="absolute inset-0 flex items-center justify-center text-white -z-10">プレビューを読み込み中...</div>
       <iframe id="pdfLightboxFrame" src="" class="w-full rounded-lg bg-white z-10" style="height:80vh;border:none;"></iframe>
       <div class="flex gap-3 mt-4 z-10">
-        <a id="pdfLightboxDownload" href="#" target="_blank"
+        <button onclick="window.downloadPdfLightbox()"
           class="px-4 py-2 bg-white text-gray-800 rounded-lg font-semibold text-sm shadow hover:bg-gray-100 flex items-center gap-2">
           <i class="fas fa-download"></i> ダウンロード
-        </a>
+        </button>
         <a id="pdfLightboxOpen" href="#" target="_blank"
           class="px-4 py-2 bg-white/20 text-white rounded-lg font-semibold text-sm hover:bg-white/30 flex items-center gap-2">
-          <i class="fas fa-external-link-alt"></i> ブラウザで開く
+          <i class="fas fa-external-link-alt"></i> 別タブで開く
         </a>
-        <button onclick="closePdfLightbox()"
+        <button onclick="window.closePdfLightbox()"
           class="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold text-sm hover:bg-red-600 transition-colors">
           閉じる
         </button>
@@ -7935,7 +7938,7 @@
         </div>
       </div>
     </div>
-    <div id="adminPanelMobileLink" class="hidden">
+    <div id="mobileAdminRowSection" class="hidden">
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
           <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937">
