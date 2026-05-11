@@ -587,12 +587,11 @@
         padding-bottom: 0.875rem !important;
         border-bottom: none !important;
       }
-      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .text-gray-900 { color: white !important; }
-      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .bg-gray-100 { background: rgba(255,255,255,0.1) !important; color: white !important; }
-      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 .text-gray-500 { color: white !important; }
+      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .text-gray-900 { color: white !important; }
+      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .bg-gray-100 { background: rgba(255,255,255,0.1) !important; color: white !important; }
+      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .text-gray-500 { color: white !important; }
       #adminModal #closeAdminModalButton { color: white !important; transition: background 0.15s; }
       #adminModal #closeAdminModalButton:active { background: rgba(255,255,255,0.2) !important; }
-      #adminModal #closeAdminModalButton i::before { content: "\f053"; } /* fa-chevron-left (戻る矢印) */
 
       #bottomSheetHandle::after {
         content: "";
@@ -1559,6 +1558,9 @@
     }
 
     /* === カスタム確認ダイアログ === */
+    #customConfirmModal {
+      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
+    }
     #customConfirmModal .confirm-box {
       text-align: left;
     }
@@ -1918,6 +1920,13 @@
     @keyframes slideInFromRight {
       from { transform: translateX(100%); opacity: 0.7; }
       to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
     }
     .mobile-detail-header {
       background: #1f2937;
@@ -2412,15 +2421,19 @@
         <div class="bg-white rounded-2xl w-full max-w-lg flex flex-col modal-box" style="max-height:88vh;">
 
           <!-- ヘッダー -->
-          <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
-            <div class="flex items-center gap-3">
+          <div class="flex items-center px-6 py-5 border-b border-gray-100 flex-shrink-0">
+            <button id="closeAdminModalButton"
+              class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors mr-3 md:hidden">
+              <i class="fas fa-chevron-left text-sm"></i>
+            </button>
+            <div class="flex items-center gap-3 flex-1">
               <div class="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center">
                 <i class="fas fa-shield-alt text-gray-500 text-sm"></i>
               </div>
               <span class="text-base font-bold text-gray-900">管理者パネル</span>
             </div>
-            <button id="closeAdminModalButton"
-              class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+            <button id="closeAdminModalButtonPC" onclick="document.getElementById('closeAdminModalButton').click()"
+              class="hidden md:flex w-8 h-8 items-center justify-center rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
               <i class="fas fa-times text-sm"></i>
             </button>
           </div>
@@ -3889,7 +3902,12 @@
 
     window.closeMobileDetail = function(id) {
       const el = document.getElementById(id);
-      if (el) el.classList.remove('active');
+      if (el) {
+        el.classList.add('closing');
+        setTimeout(() => {
+          el.classList.remove('active', 'closing');
+        }, 200); // アニメーション時間に合わせて待機
+      }
     };
 
     function updateMobileProfileScreen() {
@@ -5328,9 +5346,11 @@
       unreadCounts[roomId] = 0;
       updateUnreadBadge(roomId);
 
-      // スマホ: サイドバーを隠してチャットを表示
+      // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
       if (window.innerWidth < 768) {
         sidebar.classList.add("mobile-hidden");
+        const bottomNav = document.getElementById("mobileBottomNav");
+        if (bottomNav) bottomNav.style.display = "none";
       }
 
       if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
@@ -5387,6 +5407,14 @@
         await loadOlderMessages();
       }
     });
+
+    // PCでのマウスホイールによるスクロール方向逆転の修正
+    messagesDisplay.addEventListener("wheel", (e) => {
+      // flipped (scaleY(-1)) されているため、デフォルトのスクロール方向が逆になる。
+      // これをキャンセルし、自力で正しい方向にスクロール位置を加算・減算する。
+      e.preventDefault();
+      messagesDisplay.scrollTop -= e.deltaY;
+    }, { passive: false });
 
     // 旧ルーム作成ボタンは無効化（サーバー設定から管理）
     if (document.getElementById("promptCreateRoomButton")) {
@@ -6958,6 +6986,9 @@
     mobileBackButton.addEventListener("click", () => {
       sidebar.classList.remove("mobile-hidden");
       currentRoomHeader.classList.add("hidden");
+      // ボトムナビを再表示
+      const bottomNav = document.getElementById("mobileBottomNav");
+      if (bottomNav) bottomNav.style.display = "flex";
 
       // ルーム退出処理（開いている判定を解除する）
       currentRoomId = null;
