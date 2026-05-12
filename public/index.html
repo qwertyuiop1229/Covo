@@ -126,8 +126,12 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    /* ブラウザデフォルトのスクロールバーを隠す (独自スクロールバー以外) */
+    ::-webkit-scrollbar { display: none; }
+    .scrollable { -ms-overflow-style: auto; scrollbar-width: thin; }
     /* カスタムスクロールバー */
     .scrollable::-webkit-scrollbar {
+      display: block;
       width: 6px;
     }
 
@@ -574,27 +578,7 @@
         flex-shrink: 0;
       }
 
-      /* スマホ版 管理者パネルの全画面・左上戻るボタン化 */
-      #adminModal { padding: 0 !important; }
-      #adminModal .modal-box {
-        max-width: 100% !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
-        border-radius: 0 !important;
-        animation: slideInFromRight 0.22s ease both !important;
-      }
-      #adminModal > .modal-box > .flex.items-center.justify-between.px-6.py-5 {
-        background: #1f2937 !important;
-        color: white !important;
-        padding-top: calc(0.875rem + env(safe-area-inset-top, 0px)) !important;
-        padding-bottom: 0.875rem !important;
-        border-bottom: none !important;
-      }
-      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .text-gray-900 { color: white !important; }
-      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .bg-gray-100 { background: rgba(255,255,255,0.1) !important; color: white !important; }
-      #adminModal > .modal-box > .flex.items-center.px-6.py-5 .text-gray-500 { color: white !important; }
-      #adminModal #closeAdminModalButton { color: white !important; transition: background 0.15s; }
-      #adminModal #closeAdminModalButton:active { background: rgba(255,255,255,0.2) !important; }
+      
 
       #bottomSheetHandle::after {
         content: "";
@@ -626,6 +610,7 @@
       width: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
+      overscroll-behavior: none !important;
     }
 
     .container {
@@ -2189,6 +2174,13 @@
 </script>
 
 <body>
+  <script>
+    // iPadのみ全体スクロールを完全に固定する
+    if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+      document.body.style.setProperty('overflow', 'hidden', 'important');
+    }
+  </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
     <div class="update-card">
@@ -2358,6 +2350,15 @@
               </div>
 
               <!-- 設定セクション -->
+
+              <!-- 管理者セクション -->
+              <div id="adminNavSection" class="settings-content-section space-y-6 h-full" style="padding-bottom: 2rem;">
+                <div class="settings-section-title">管理者パネル</div>
+                <div id="pcAdminContainer" class="h-full">
+                  <!-- 共有コンテンツはここに挿入される -->
+                </div>
+              </div>
+              
               <div id="settingsSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">通知・設定</div>
                 <div>
@@ -2415,96 +2416,50 @@
 
 
       <!-- 管理者モーダル (Admin Panel) -->
-      <div id="adminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg flex flex-col modal-box" style="max-height:88vh;">
-
-          <!-- ヘッダー -->
-          <div class="flex items-center px-4 py-4 border-b border-gray-100 flex-shrink-0 bg-white">
-            <button id="closeAdminModalButton"
-              class="w-10 h-10 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 transition-colors mr-2">
-              <i class="fas fa-chevron-left text-lg"></i>
-            </button>
-            <div class="flex items-center gap-3 flex-1">
-              <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
-                <i class="fas fa-shield-alt text-sm"></i>
-              </div>
-              <span class="text-lg font-bold text-gray-900">管理者パネル</span>
-            </div>
-          </div>
-
-          <!-- タブ -->
-          <div class="flex border-b border-gray-100 px-6 flex-shrink-0">
-            <button id="adminTabAllowedBtn"
-              class="py-3 px-3 text-sm font-semibold border-b-2 border-gray-900 text-gray-900 transition-colors mr-2">
-              <i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト
-            </button>
-            <button id="adminTabAdminsBtn"
-              class="admin-only-tab py-3 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2">
-              <i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者
-            </button>
-            <button id="adminTabListAdminsBtn"
-              class="admin-only-tab py-3 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors">
-              <i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者
-            </button>
-          </div>
-
-          <!-- コンテンツ -->
-          <div id="settingsScrollContent" class="flex-1 overflow-y-auto">
-
-            <!-- 許可リストタブ -->
-            <div id="adminTabAllowedContent" class="p-6">
-              <p class="text-xs text-gray-400 mb-4 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
-              <div class="flex gap-2 mb-4">
-                <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..."
-                  class="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-gray-400 transition-colors" />
-                <button id="addAllowedEmailButton"
-                  class="px-4 py-2.5 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap">追加</button>
-              </div>
-              <div id="allowedEmailsList" class="space-y-2"></div>
-            </div>
-
-            <!-- 管理者タブ -->
-            <div id="adminTabAdminsContent" class="p-6 hidden">
-              <p class="text-xs text-gray-400 mb-4 leading-relaxed">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
-              <div class="flex gap-2 mb-4">
-                <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..."
-                  class="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-gray-400 transition-colors" />
-                <button id="addAdminEmailButton"
-                  class="px-4 py-2.5 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap">追加</button>
-              </div>
-              <div id="adminEmailsList" class="space-y-2"></div>
-            </div>
-
-            <!-- リスト管理者タブ -->
-            <div id="adminTabListAdminsContent" class="p-6 hidden">
-              <p class="text-xs text-gray-400 mb-4 leading-relaxed">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
-              <div class="flex gap-2 mb-4">
-                <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..."
-                  class="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-gray-400 transition-colors" />
-                <button id="addListAdminEmailButton"
-                  class="px-4 py-2.5 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap">追加</button>
-              </div>
-              <div id="listAdminEmailsList" class="space-y-2"></div>
-            </div>
-
-          </div>
-
-          <!-- フッター（ステータス + 全サーバー削除） -->
-          <div class="border-t border-gray-100 flex-shrink-0">
-            <div id="adminMessage" class="px-6 py-3 text-center text-sm text-gray-500 min-h-[2.5rem]"></div>
-            <div class="px-6 pb-5 admin-only-section hidden">
-              <button id="deleteAllServersBtn"
-                class="w-full px-4 py-2.5 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 text-sm font-semibold rounded-xl transition-colors border border-gray-200 hover:border-red-200">
-                <i class="fas fa-trash mr-1.5"></i>全サーバーを削除
-              </button>
-            </div>
-          </div>
-
+      
+  <!-- 共有管理者コンテンツ -->
+  <div id="adminPanelSharedContent" class="flex flex-col h-full hidden">
+    <div class="flex border-b border-gray-100 mb-4 flex-shrink-0">
+      <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 text-gray-900 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
+      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
+      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
+    </div>
+    
+    <div class="flex-1 overflow-y-auto pr-2">
+      <div id="adminTabAllowedContent" class="space-y-4">
+        <p class="text-xs text-gray-400 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
+        <div class="flex gap-2">
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
+          <button id="addAllowedEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
         </div>
+        <div id="allowedEmailsList" class="space-y-2"></div>
       </div>
+      <div id="adminTabAdminsContent" class="space-y-4 hidden">
+        <p class="text-xs text-gray-400 leading-relaxed">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
+        <div class="flex gap-2">
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
+          <button id="addAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
+        </div>
+        <div id="adminEmailsList" class="space-y-2"></div>
+      </div>
+      <div id="adminTabListAdminsContent" class="space-y-4 hidden">
+        <p class="text-xs text-gray-400 leading-relaxed">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
+        <div class="flex gap-2">
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
+          <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
+        </div>
+        <div id="listAdminEmailsList" class="space-y-2"></div>
+      </div>
+    </div>
+    
+    <div class="mt-4 pt-4 border-t border-gray-100 flex-shrink-0">
+      <div id="adminMessage" class="text-center text-sm text-gray-500 mb-4 min-h-[1.5rem]"></div>
+      <div class="admin-only-section hidden">
+      </div>
+    </div>
+  </div>
 
-
-      <!-- 各種モーダル -->
+  <!-- 各種モーダル -->
       <div id="createRoomPasswordModal"
         class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
@@ -2597,6 +2552,7 @@
             <button id="joinServerBtn"><i class="fas fa-sign-in-alt mr-1"></i>参加</button>
             <button id="createServerBtn"><i class="fas fa-plus mr-1"></i>新規作成</button>
             <button id="viewToggleBtn" title="表示切り替え"><i class="fas fa-list"></i></button>
+            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="unread-badge" style="display:none;position:absolute;top:-5px;right:-5px;">0</span></button>
             <button id="serverListUserBtn" class="server-list-user-btn" title="プロフィール・設定"></button>
           </div>
         </div>
@@ -2609,7 +2565,21 @@
         </div>
       </div>
 
-      <!-- サーバー作成モーダル -->
+      
+      <!-- 通知モーダル (PC) -->
+      <div id="pcNotifModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md modal-box" style="height: 60vh; display: flex; flex-direction: column;">
+          <div class="flex justify-between items-center p-4 border-b border-gray-100">
+            <h2 class="text-lg font-bold text-gray-800"><i class="fas fa-bell mr-2"></i>通知</h2>
+            <button onclick="document.getElementById('pcNotifModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-times text-lg"></i></button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-4 scrollable">
+            <p id="pcNotifEmpty" style="text-align:center;color:#9ca3af;font-size:0.85rem;padding:2rem 0">通知はありません</p>
+            <div id="pcNotifList" class="space-y-2"></div>
+          </div>
+        </div>
+      </div>
+<!-- サーバー作成モーダル -->
       <div id="createServerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md modal-box">
           <h2 class="text-xl font-bold text-gray-800 mb-6"><i class="fas fa-plus-circle mr-2"></i>新しいサーバーを作成</h2>
@@ -3193,8 +3163,7 @@
     const openAdminModalButton = document.getElementById("openAdminModalButton");
 
     // Admin Modal
-    const adminModal = document.getElementById("adminModal");
-    const closeAdminModalButton = document.getElementById("closeAdminModalButton");
+        const closeAdminModalButton = document.getElementById("closeAdminModalButton");
     const newAllowedEmailInput = document.getElementById("newAllowedEmailInput");
     const addAllowedEmailButton = document.getElementById("addAllowedEmailButton");
     const allowedEmailsList = document.getElementById("allowedEmailsList");
@@ -3706,7 +3675,6 @@
 
     openAdminModalButton.addEventListener("click", () => {
       if (!isAdmin && !isListAdmin) return;
-      // リスト管理者には全体管理者専用タブ・セクションを隠す
       document.querySelectorAll(".admin-only-tab").forEach(el => {
         el.style.display = isAdmin ? "" : "none";
       });
@@ -3715,27 +3683,11 @@
       });
       switchAdminTab("allowed");
       loadAdminPanelData();
-      openModal(adminModal);
-    });
-
-    document.getElementById("deleteAllServersBtn").addEventListener("click", async () => {
-      if (!isAdmin) return;
-      if (!await showCustomConfirm("全てのサーバーを削除しますか？", "全削除", "キャンセル", "この操作は取り消せません。全サーバーのデータが失われます。")) return;
-      adminMessage.textContent = "削除中...";
-      try {
-        const snap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-        for (const d of snap.docs) {
-          await deleteServerCascade(d.id);
-        }
-        adminMessage.textContent = `${snap.size}件のサーバーを削除しました`;
-      } catch (e) {
-        console.error(e);
-        adminMessage.textContent = "削除に失敗しました: " + e.message;
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        openMobileDetail('admin');
+      } else {
+        switchDiscordSettingsTab('admin');
       }
-    });
-
-    closeAdminModalButton.addEventListener("click", () => {
-      adminModal.classList.add("hidden");
     });
 
     // 許可リスト追加
@@ -3884,6 +3836,14 @@
       const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection' };
       const sec = document.getElementById(smap[tab] || 'profileSection');
       if (sec) sec.classList.add('active');
+      if (tab === 'admin') {
+         const container = document.getElementById('pcAdminContainer');
+         const shared = document.getElementById('adminPanelSharedContent');
+         if (container && shared) {
+           container.appendChild(shared);
+           shared.classList.remove('hidden');
+         }
+      }
     };
 
     function switchSettingsTab(tab) { switchDiscordSettingsTab(tab === 'settings' ? 'settings' : 'profile'); }
@@ -3906,14 +3866,67 @@
       if (tb) tb.classList.add('active');
       document.getElementById('mobileProfileScreen').classList.remove('active');
       document.getElementById('mobileNotifScreen').classList.remove('active');
-      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); }
+      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); }
       else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
+    };
+
+    
+    window.openNotifModal = function() {
+      document.getElementById('pcNotifModal').classList.remove('hidden');
+      updateGlobalNotifUI();
+    };
+    function updateGlobalNotifUI() {
+      let count = 0;
+      let htmlStr = '';
+      Object.keys(unreadCounts).forEach(rid => {
+         const c = unreadCounts[rid] || 0;
+         if (c > 0) {
+            count += c;
+            const rName = roomNames[rid] || rid;
+            htmlStr += `<div class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer" onclick="goToRoom('${rid}')">
+               <div class="text-sm font-bold text-indigo-900 mb-1"># ${rName}</div>
+               <div class="text-xs text-indigo-700">${c}件の新着メッセージがあります</div>
+            </div>`;
+         }
+      });
+      const badge = document.getElementById('globalUnreadBadge');
+      if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+      }
+      
+      const mList = document.getElementById('mobileNotifList');
+      const pList = document.getElementById('pcNotifList');
+      if (mList) mList.innerHTML = htmlStr;
+      if (pList) pList.innerHTML = htmlStr;
+      
+      const me = document.getElementById('mobileNotifEmpty');
+      const pe = document.getElementById('pcNotifEmpty');
+      if (me) me.style.display = count > 0 ? 'none' : 'block';
+      if (pe) pe.style.display = count > 0 ? 'none' : 'block';
+    }
+    window.goToRoom = function(rid) {
+      const pModal = document.getElementById('pcNotifModal');
+      if (pModal) pModal.classList.add('hidden');
+      switchMobileTab('home');
+      const rItem = document.getElementById('room-item-' + rid);
+      if (rItem) rItem.click();
     };
 
     window.openMobileDetail = function(type) {
       const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin' };
       const el = document.getElementById(m[type]);
-      if (el) el.classList.add('active');
+      if (el) {
+        if (type === 'admin') {
+           const container = document.getElementById('mobileAdminContainer');
+           const shared = document.getElementById('adminPanelSharedContent');
+           if (container && shared) {
+             container.appendChild(shared);
+             shared.classList.remove('hidden');
+           }
+        }
+        el.classList.add('active');
+      }
     };
 
     window.closeMobileDetail = function(id) {
@@ -4717,11 +4730,11 @@
         serverGrid.appendChild(el);
       }
 
-      serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
+
+      window.renderServerList = function() {
+        if (!allServersCache) return;
         serverGrid.innerHTML = "";
-        const servers = [];
-        snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
-        allServersCache = servers;
+        const servers = [...allServersCache];
         // 最近開いた順ソート
         try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
 
@@ -4762,6 +4775,13 @@
           appendSectionLabel("未参加のサーバー");
           notJoined.forEach((s, i) => appendServerCard(s, joined.length + i));
         }
+      };
+
+      serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
+        const servers = [];
+        snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
+        allServersCache = servers;
+        window.renderServerList();
       });
     }
 
@@ -4837,6 +4857,7 @@
 
       // ニックネームヘッダーを非表示
       document.getElementById("globalAppHeader")?.classList.remove("server-mode");
+      if (window.renderServerList) window.renderServerList();
     }
 
     // サーバー存在確認
@@ -5062,7 +5083,7 @@
 
       // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
       getDocs(roomsQuery).then(snap => {
-        if (!hasLoaded && currentServerId === serverId) {
+        if (currentServerId === serverId && snap.size > 0 && roomList.children.length === 0) {
           renderRooms(snap);
         }
       }).catch(e => console.error("loadServerRooms kickstart error:", e));
@@ -5101,7 +5122,7 @@
             lastNotifiedTs = msgTs;
             // ★ setupUnreadListener は currentRoomId 以外のルームのみで通知を出す
             if (roomId !== currentRoomId && msgData.senderId !== userId) {
-              unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1;
+              unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1; updateGlobalNotifUI();
               updateUnreadBadge(roomId);
               const serverName = currentServerData?.name || 'Covo';
               const roomName = roomNames[roomId] || 'room';
@@ -5142,7 +5163,7 @@
         const snap = await getDocs(q);
         const unread = snap.docs.filter(d => d.data().senderId !== userId).length;
         if (unread > 0) {
-          unreadCounts[roomId] = unread;
+          unreadCounts[roomId] = unread; updateGlobalNotifUI();
           updateUnreadBadge(roomId);
         }
       } catch (e) {
@@ -5359,7 +5380,7 @@
       cancelReply();
 
       // 未読バッジをクリア
-      unreadCounts[roomId] = 0;
+      unreadCounts[roomId] = 0; updateGlobalNotifUI();
       updateUnreadBadge(roomId);
 
       // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
@@ -6040,17 +6061,17 @@
     window.openPdfLightbox = function(pdfUrl, fileName) {
       currentPdfUrl = pdfUrl;
       currentPdfName = fileName;
-      const pdfLb = document.getElementById('pdfLightbox');
-      const frame = document.getElementById('pdfLightboxFrame');
-      const openLink = document.getElementById('pdfLightboxOpen');
-      
-      // 外部のPDFをブラウザ上で安全に表示するためのプロキシを使用
-      // これにより「ページが動作していません」を回避しやすくなります
-      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
-      frame.src = viewerUrl;
-      
-      openLink.href = pdfUrl;
-      pdfLb.style.display = 'flex';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.open(pdfUrl, '_blank');
+      } else {
+        const pdfLb = document.getElementById('pdfLightbox');
+        const frame = document.getElementById('pdfLightboxFrame');
+        const openLink = document.getElementById('pdfLightboxOpen');
+        frame.src = pdfUrl;
+        openLink.href = pdfUrl;
+        pdfLb.style.display = 'flex';
+      }
     };
 
     window.closePdfLightbox = function() {
@@ -7941,7 +7962,7 @@
         </div>
       </div>
     </div>
-    <div id="mobileAdminRowSection" class="hidden">
+    <div id="mobileAdminRowSection" class="mobile-settings-section hidden">
       <div class="mobile-settings-label">管理</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
@@ -8009,6 +8030,17 @@
     </div>
   </div>
 
+  <!-- Mobile Detail: Admin -->
+  <div class="mobile-settings-detail" id="mobileDetailAdmin">
+    <div class="mobile-detail-header flex-shrink-0">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdmin')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">管理者パネル</span>
+    </div>
+    <div id="mobileAdminContainer" style="padding:1rem; height: calc(100% - 60px); display: flex; flex-direction: column; overflow: hidden;">
+    </div>
+  </div>
+
+
 
 
   <!-- ===== Mobile Notifications Screen ===== -->
@@ -8022,6 +8054,13 @@
     </div>
   </div>
 
+
+  <script>
+    if (!window.__TAURI__) {
+      const dNotif = document.getElementById('desktopNotifRow');
+      if (dNotif) { dNotif.style.display = 'none'; }
+    }
+  </script>
 </body>
 
 </html>
