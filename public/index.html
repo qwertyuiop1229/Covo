@@ -662,7 +662,7 @@
 
     /* 未読バッジ */
     .unread-badge {
-      background-color: #ef4444;
+      background-color: #1f2937;
       color: white;
       font-size: 0.7rem;
       font-weight: 700;
@@ -2160,7 +2160,29 @@
         display: flex;
       }
     }
-  </style>
+    @media (max-width: 640px) {
+      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
+      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
+      
+      #joinServerBtn, #createServerBtn {
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: white !important;
+        font-size: 0.82rem !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex-shrink: 0 !important;
+        min-width: unset !important;
+      }
+      #joinServerBtn:hover, #createServerBtn:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+      }
+    }
+</style>
 </head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG"></script>
@@ -2549,10 +2571,10 @@
         <div class="server-list-header">
           <div class="server-list-title"><i class="fas fa-layer-group mr-2"></i>Covo</div>
           <div class="server-list-actions">
-            <button id="joinServerBtn"><i class="fas fa-sign-in-alt mr-1"></i>参加</button>
-            <button id="createServerBtn"><i class="fas fa-plus mr-1"></i>新規作成</button>
+            <button id="joinServerBtn"><i class="fas fa-sign-in-alt sm:mr-1"></i><span class="btn-text">参加</span></button>
+            <button id="createServerBtn"><i class="fas fa-plus sm:mr-1"></i><span class="btn-text">新規作成</span></button>
             <button id="viewToggleBtn" title="表示切り替え"><i class="fas fa-list"></i></button>
-            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="unread-badge" style="display:none;position:absolute;top:-5px;right:-5px;">0</span></button>
+            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="unread-badge" style="display:none;position:absolute;top:-5px;right:-5px;width:12px;height:12px;padding:0;color:transparent;overflow:hidden;">!</span></button>
             <button id="serverListUserBtn" class="server-list-user-btn" title="プロフィール・設定"></button>
           </div>
         </div>
@@ -2567,16 +2589,14 @@
 
       
       <!-- 通知モーダル (PC) -->
-      <div id="pcNotifModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md modal-box" style="height: 60vh; display: flex; flex-direction: column;">
-          <div class="flex justify-between items-center p-4 border-b border-gray-100">
-            <h2 class="text-lg font-bold text-gray-800"><i class="fas fa-bell mr-2"></i>通知</h2>
-            <button onclick="document.getElementById('pcNotifModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-times text-lg"></i></button>
-          </div>
-          <div class="flex-1 overflow-y-auto p-4 scrollable">
-            <p id="pcNotifEmpty" style="text-align:center;color:#9ca3af;font-size:0.85rem;padding:2rem 0">通知はありません</p>
-            <div id="pcNotifList" class="space-y-2"></div>
-          </div>
+      <div id="pcNotifModal" style="position: absolute; top: 60px; right: 10px; width: 320px; max-height: 400px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 100; flex-direction: column; overflow: hidden; border: 1px solid #e5e7eb; transform-origin: top right; animation: scaleIn 0.15s ease-out; display: none;">
+        <div class="flex justify-between items-center p-3 border-b border-gray-100 bg-gray-50">
+          <h2 class="text-sm font-bold text-gray-800"><i class="fas fa-bell mr-2 text-gray-800"></i>通知</h2>
+          <button onclick="document.getElementById('pcNotifModal').style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-times text-lg"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2 scrollable">
+          <p id="pcNotifEmpty" style="text-align:center;color:#9ca3af;font-size:0.8rem;padding:1.5rem 0">通知はありません</p>
+          <div id="pcNotifList" class="space-y-1"></div>
         </div>
       </div>
 <!-- サーバー作成モーダル -->
@@ -3085,6 +3105,8 @@
     let lastMessagesData = [];
     let attachedFile = null;
     let replyingToMessage = null;
+    let currentPdfUrl = "";
+    let currentPdfName = "";
 
     let readReceiptsUnsubscribe = null;
     let roomReadReceipts = {};
@@ -3872,7 +3894,8 @@
 
     
     window.openNotifModal = function() {
-      document.getElementById('pcNotifModal').classList.remove('hidden');
+      const pm = document.getElementById('pcNotifModal');
+      pm.style.display = pm.style.display === 'none' ? 'flex' : 'none';
       updateGlobalNotifUI();
     };
     function updateGlobalNotifUI() {
@@ -3907,7 +3930,7 @@
     }
     window.goToRoom = function(rid) {
       const pModal = document.getElementById('pcNotifModal');
-      if (pModal) pModal.classList.add('hidden');
+      if (pModal) pModal.style.display = 'none';
       switchMobileTab('home');
       const rItem = document.getElementById('room-item-' + rid);
       if (rItem) rItem.click();
@@ -5047,33 +5070,65 @@
           nameDiv.className = "flex-1 truncate";
           nameDiv.textContent = `# ${room.name}`;
 
+          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+          const lastRead = rm[docSnap.id] || 0;
+          const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
+          const isUnread = (lastMsgAt > lastRead) && (docSnap.id !== currentRoomId);
+          unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+          
           const badgeSpan = document.createElement("span");
           badgeSpan.className = "unread-badge";
           badgeSpan.id = `unread-badge-${docSnap.id}`;
-          const count = unreadCounts[docSnap.id] || 0;
-          badgeSpan.textContent = count > 99 ? "99+" : count;
-          badgeSpan.style.display = (count > 0 && docSnap.id !== currentRoomId) ? "flex" : "none";
+          badgeSpan.textContent = "!";
+          badgeSpan.style.width = "12px"; badgeSpan.style.height = "12px"; badgeSpan.style.padding = "0"; badgeSpan.style.color = "transparent"; badgeSpan.style.overflow = "hidden";
+          badgeSpan.style.display = isUnread ? "flex" : "none";
 
           div.appendChild(nameDiv);
           div.appendChild(badgeSpan);
           roomList.appendChild(div);
 
           if (!unreadListeners[docSnap.id]) {
-            setupUnreadListener(serverId, docSnap.id);
-            checkInitialUnread(serverId, docSnap.id);
+            
+            
           }
         });
-        // 削除されたルームのリスナーを解除
-        Object.keys(unreadListeners).forEach(rid => {
-          if (!currentRoomIds.has(rid)) {
-            unreadListeners[rid]();
-            delete unreadListeners[rid];
-            delete unreadCounts[rid];
-          }
-        });
+
       }
 
-      loadServerRooms._unsub = onSnapshot(roomsQuery, renderRooms, async (error) => {
+      let isRoomsFirst = true;
+      function onRoomsChanged(snapshot) {
+         renderRooms(snapshot);
+         if (!isRoomsFirst) {
+            snapshot.docChanges().forEach(change => {
+               if (change.type === "modified") {
+                  const room = change.doc.data();
+                  const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
+                  const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+                  const lastRead = rm[change.doc.id] || 0;
+                  if (lastMsgAt > lastRead && change.doc.id !== currentRoomId && room.lastMessageSender && room.lastMessageSender !== userId) {
+                     updateGlobalNotifUI();
+                     const serverName = currentServerData?.name || 'Covo';
+                     const roomName = room.name || 'room';
+                     const text = room.lastMessageText || '新着メッセージ';
+                     
+                     // In-app Notification
+                     if (typeof showInAppNotification === 'function') {
+                        showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
+                     }
+                     // Push Notification
+                     if (isTauri) {
+                        if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                     } else if (!currentFcmToken) {
+                        if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                     }
+                  }
+               }
+            });
+         }
+         isRoomsFirst = false;
+      }
+      
+      loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
         console.error("loadServerRooms error:", error);
         if (_retry < 3 && currentServerId === serverId) {
           try { await auth.currentUser?.getIdToken(true); } catch (_) { }
@@ -5092,83 +5147,11 @@
         if (!e.target.closest(".dropdown-container")) {
           document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
         }
-      });
-    }
-
-    function setupUnreadListener(serverId, roomId) {
-      const q = query(
-        collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
-        orderBy("timestamp", "desc"),
-        limit(1)
-      );
-      let isFirst = true;
-      let lastNotifiedTs = 0;
-      unreadListeners[roomId] = onSnapshot(q, (snapshot) => {
-        if (isFirst) {
-          isFirst = false;
-          // 初回スナップショットのタイムスタンプを記録（過去メッセージで通知しない）
-          snapshot.forEach(doc => {
-            const ts = doc.data().timestamp?.toMillis?.() || 0;
-            if (ts > lastNotifiedTs) lastNotifiedTs = ts;
-          });
-          return;
+        if (!e.target.closest("#pcNotifModal") && !e.target.closest("#serverListNotifBtn")) {
+          const pm = document.getElementById('pcNotifModal');
+          if (pm) pm.style.display = 'none';
         }
-        snapshot.docChanges().forEach(change => {
-          if (change.type === "added") {
-            const msgData = change.doc.data();
-            const msgTs = msgData.timestamp?.toMillis?.() || Date.now();
-            // 削除により浮上した古いメッセージは無視
-            if (msgTs <= lastNotifiedTs) return;
-            lastNotifiedTs = msgTs;
-            // ★ setupUnreadListener は currentRoomId 以外のルームのみで通知を出す
-            if (roomId !== currentRoomId && msgData.senderId !== userId) {
-              unreadCounts[roomId] = (unreadCounts[roomId] || 0) + 1; updateGlobalNotifUI();
-              updateUnreadBadge(roomId);
-              const serverName = currentServerData?.name || 'Covo';
-              const roomName = roomNames[roomId] || 'room';
-              const sender = msgData.senderNickname || 'Unknown';
-              const text = msgData.text || (msgData.fileType ? '（ファイル）' : '');
-              showInAppNotification(serverName, roomName, sender, text,
-                currentServerId, currentServerData, roomId, roomName);
-              
-              // Tauri(Windows) の場合は直接OS通知を呼ぶ
-              // Web(PWA) の場合、FCMトークンがあればSWに任せるためここでは呼ばない
-              // トークンがない(ブラウザ通知無効化)場合は呼ばない
-              if (isTauri) {
-                showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
-              } else if (!currentFcmToken) {
-                // FCMが未取得/未登録の場合のフォールバックとして showNotification を呼ぶ
-                // showNotification内部で browserEnabled チェックは行われる
-                showNotification(`${serverName} › #${roomName}`, `${sender}: ${text}`, roomId);
-              }
-            }
-          }
-        });
       });
-    }
-
-    // アプリ起動時の過去の未読メッセージチェック
-    async function checkInitialUnread(serverId, roomId) {
-      try {
-        const receiptRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/readReceipts`, userId);
-        const receiptSnap = await getDoc(receiptRef);
-        if (!receiptSnap.exists()) return;
-        const { lastReadAt } = receiptSnap.data();
-        if (!lastReadAt) return;
-
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
-          where("timestamp", ">", lastReadAt)
-        );
-        const snap = await getDocs(q);
-        const unread = snap.docs.filter(d => d.data().senderId !== userId).length;
-        if (unread > 0) {
-          unreadCounts[roomId] = unread; updateGlobalNotifUI();
-          updateUnreadBadge(roomId);
-        }
-      } catch (e) {
-        console.error("checkInitialUnread error:", e);
-      }
     }
 
     function updateUnreadBadge(roomId) {
@@ -5366,6 +5349,13 @@
 
       if (currentRoomId === roomId) return;
       currentRoomId = roomId;
+      try {
+        const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+        rm[roomId] = Date.now() + 60000;
+        localStorage.setItem('covo_last_read', JSON.stringify(rm));
+        const badge = document.getElementById('unread-badge-' + roomId);
+        if (badge) badge.style.display = 'none';
+      } catch(e) {}
       updateUserStatus('online'); // Sync room selection for notifications
       currentRoomTitleText.textContent = roomName;
       currentRoomHeader.classList.remove("hidden");
@@ -5994,6 +5984,11 @@
           data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
         }
         await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), { 
+          lastMessageAt: data.timestamp, 
+          lastMessageSender: userId, 
+          lastMessageText: text || (attachedFile ? '（ファイル）' : '') 
+        });
 
         // FCMプッシュ通知（サーバーメンバー全員に送信）
         try {
@@ -6055,38 +6050,7 @@
       }
     });
 
-    let currentPdfUrl = '';
-    let currentPdfName = '';
 
-    window.openPdfLightbox = function(pdfUrl, fileName) {
-      currentPdfUrl = pdfUrl;
-      currentPdfName = fileName;
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        window.open(pdfUrl, '_blank');
-      } else {
-        const pdfLb = document.getElementById('pdfLightbox');
-        const frame = document.getElementById('pdfLightboxFrame');
-        const openLink = document.getElementById('pdfLightboxOpen');
-        frame.src = pdfUrl;
-        openLink.href = pdfUrl;
-        pdfLb.style.display = 'flex';
-      }
-    };
-
-    window.closePdfLightbox = function() {
-      const pdfLb = document.getElementById('pdfLightbox');
-      const frame = document.getElementById('pdfLightboxFrame');
-      frame.src = '';
-      pdfLb.style.display = 'none';
-    };
-
-    window.downloadPdfLightbox = function() {
-      if (currentPdfUrl && currentPdfName) {
-        // 既存のダウンロード機能を使い、確実にファイルを保存させる
-        downloadFile(currentPdfUrl, currentPdfName, 'application/pdf');
-      }
-    };
 
     messageInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -6368,7 +6332,7 @@
           pdfLabel.appendChild(safeName);
           pdfWrapper.appendChild(thumbImg);
           pdfWrapper.appendChild(pdfLabel);
-          pdfWrapper.addEventListener('click', () => openPdfLightbox(message.fileData, message.fileName));
+          pdfWrapper.addEventListener('click', () => downloadFile(message.fileData, message.fileName, 'application/pdf'));
           messageElement.appendChild(pdfWrapper);
         } else {
           const fileAttachmentDiv = document.createElement("div");
@@ -6665,7 +6629,7 @@
     function downloadFile(fileData, fileName, mimeType) {
       if (fileData && fileData.startsWith('http')) {
         // fetchでblobとして取得→ローカルURLでダウンロード（ファイル名を正しく保持）
-        fetch(fileData)
+        fetch(fileData, { mode: 'cors' })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.blob();
@@ -6763,6 +6727,7 @@
     }
 
     // ===== アプリ内通知スタック =====
+        
     function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
       if (soundEnabled) playNotificationSound();
@@ -6937,7 +6902,7 @@
                   // 削除により浮上した古いメッセージは無視
                   if (msgTs <= lastNotifTs) return;
                   lastNotifTs = msgTs;
-                  // 既に currentServerId のルームは setupUnreadListener が担当
+                  // 既に currentServerId のルームは dummyUnreadListener が担当
                   if (msgData.senderId !== userId && svId !== currentServerId) {
                     showInAppNotification(
                       svData.name || svId, rmName,
@@ -7221,7 +7186,7 @@
       if (fcmInitialized) return;
       // Tauri 版は FCM/Service Worker を使わない:
       //   - WebView2 では Web Push の配信が安定しない
-      //   - 代わりに setupUnreadListener が Firestore 経由で新着を検知し、
+      //   - 代わりに dummyUnreadListener が Firestore 経由で新着を検知し、
       //     show_notification_window で独自UI（LINE風）の通知を出す
       if (isTauri) {
         fcmInitialized = true;
@@ -7272,7 +7237,7 @@
         }
 
         // フォアグラウンドメッセージ受信
-        // アプリ内通知・サウンドはFirestoreリスナー（setupUnreadListener/globalNotifListeners）が担当。
+        // アプリ内通知・サウンドはFirestoreリスナー（dummyUnreadListener/globalNotifListeners）が担当。
         // ここで showNotification を呼ぶと重複するため何もしない。
         onMessage(messaging, () => { });
       } catch (error) {
@@ -7821,33 +7786,10 @@
   </div>
 
   <!-- PDFライトボックス -->
-  <div id="pdfLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none"
-    onclick="if(event.target===this)window.closePdfLightbox()">
-    <div class="relative flex flex-col items-center p-4 w-full max-w-4xl mx-auto" onclick="event.stopPropagation()">
-      <div class="absolute inset-0 flex items-center justify-center text-white -z-10 flex-col gap-2">
-        <i class="fas fa-spinner fa-spin text-2xl"></i>
-        <span>プレビューを読み込み中...</span>
-      </div>
-      <iframe id="pdfLightboxFrame" src="" class="w-full rounded-lg bg-white z-10 overflow-hidden" style="height:75vh; border:none; -webkit-overflow-scrolling:touch;"></iframe>
-      <div class="flex gap-3 mt-4 z-10">
-        <button onclick="window.downloadPdfLightbox()"
-          class="px-4 py-2 bg-white text-gray-800 rounded-lg font-semibold text-sm shadow hover:bg-gray-100 flex items-center gap-2">
-          <i class="fas fa-download"></i> ダウンロード
-        </button>
-        <a id="pdfLightboxOpen" href="#" target="_blank"
-          class="px-4 py-2 bg-white/20 text-white rounded-lg font-semibold text-sm hover:bg-white/30 flex items-center gap-2">
-          <i class="fas fa-external-link-alt"></i> 別タブで開く
-        </a>
-        <button onclick="window.closePdfLightbox()"
-          class="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold text-sm hover:bg-red-600 transition-colors">
-          閉じる
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- アバター調整モーダル -->
-  <div id="avatarCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[200] hidden p-3">
+  <div id="avatarCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3" style="z-index: 9999;">
     <div class="bg-white rounded-2xl shadow-2xl w-full flex flex-col modal-box"
       style="max-width:340px;max-height:calc(100dvh - 24px);overflow-y:auto;">
       <div class="h-12 bg-gray-800 flex-shrink-0 flex items-center px-5 rounded-t-2xl sticky top-0 z-10">
@@ -8061,6 +8003,9 @@
       if (dNotif) { dNotif.style.display = 'none'; }
     }
   </script>
+
+      
+
 </body>
 
 </html>
