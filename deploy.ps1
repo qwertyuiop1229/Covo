@@ -65,7 +65,7 @@ node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/styles.css --m
 
 # Write new version to public/version.json
 $versionJsonContent = "{`n  `"version`": `"$newVersion`"`n}`n"
-$versionJsonContent | Set-Content $versionJsonPath -Encoding utf8 -NoNewline
+[System.IO.File]::WriteAllText($versionJsonPath, $versionJsonContent, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "[1/5] Updated version.json to $newVersion" -ForegroundColor Green
 
