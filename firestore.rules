@@ -83,7 +83,8 @@ service cloud.firestore {
       match /calls/{callId} {
         allow read, update: if isAuthenticated() &&
           (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid);
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid);
         allow create: if isAuthenticated() &&
           request.resource.data.caller.uid == request.auth.uid;
         match /callerCandidates/{candId} {
