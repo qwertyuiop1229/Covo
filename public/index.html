@@ -457,6 +457,7 @@
         height: 100dvh;
         padding: 0;
         border-radius: 0;
+        background-color: #f3f4f6;
       }
 
       .container>div {
@@ -1733,6 +1734,35 @@
     }
     .call-btn-circle.mute.active { background: rgba(255,255,255,0.28); }
 
+    #callEndedToast {
+      position: fixed;
+      bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #e2e8f0;
+      border-radius: 100px;
+      padding: 10px 22px;
+      font-size: 0.83rem;
+      font-weight: 500;
+      z-index: 100002;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #callEndedToast.show {
+      animation: callToastAnim 3.6s ease forwards;
+    }
+    @keyframes callToastAnim {
+      0%   { opacity:0; transform:translateX(-50%) translateY(10px); }
+      12%  { opacity:1; transform:translateX(-50%) translateY(0); }
+      78%  { opacity:1; transform:translateX(-50%) translateY(0); }
+      100% { opacity:0; transform:translateX(-50%) translateY(0); }
+    }
+
     #callButton {
       background: none;
       border: none;
@@ -2007,10 +2037,9 @@
     }
 
     /* Body padding for BottomNav when visible */
-    body.has-mobile-nav #serverListScreen,
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
     }
     body.has-mobile-nav .server-grid {
       padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
@@ -3513,13 +3542,17 @@
     let _callDoc = null, _callId = null, _peerConnection = null;
     let _localStream = null, _callTimerInterval = null, _callTimeoutHandle = null;
     let _callUnsubOffer = null, _callEndUnsub = null, _callIncomingUnsub = null;
-    let _isMuted = false, _callRole = null;
-    let _ringRepeatHandle = null, _ringCtx = null;
+    let _isMuted = false, _callRole = null, _pendingCallerData = null;
+    let _ringRepeatHandle = null, _ringCtx = null, _prewarmPC = null;
     const CALL_TIMEOUT_MS = 30000;
-    const STUN_CONFIG = { iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]};
+    const STUN_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 4,
+      bundlePolicy: 'max-bundle'
+    };
     let messageLimit = 20;
     let allowPagination = false;
     // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
@@ -3830,6 +3863,7 @@
             messageInput.disabled = true;
             sendMessageButton.disabled = true;
             document.getElementById('callButton').disabled = true;
+            stopPrewarmPC();
             if (_callId) endCall(false);
             if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
             stopPresenceSystem();
@@ -5075,6 +5109,24 @@
     // 通話関数をグローバルに公開（type="module" スコープから onclick で呼ぶため）
     window.openCallPicker = openCallPicker;
     window.closeCallPicker = closeCallPicker;
+    function showCallEndedReason(reason) {
+      const msgs = {
+        declined:        '通話が拒否されました',
+        remoteEnded:     '相手が通話を終了しました',
+        callerCancelled: '発信者がキャンセルしました',
+        connectionLost:  '接続が切れました',
+        micDenied:       'マイクへのアクセスが拒否されました',
+      };
+      const msg = msgs[reason] || reason;
+      const toast = document.getElementById('callEndedToast');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.remove('show');
+      void toast.offsetWidth;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3700);
+    }
+
     window.acceptCall = acceptCall;
     window.declineCall = declineCall;
     window.endCall = endCall;
@@ -5098,6 +5150,8 @@
       if (mobileToggle) mobileToggle.checked = isDark;
     }
     window.setDarkServerTheme = setDarkServerTheme;
+    window.prewarmPeerConnection = prewarmPeerConnection;
+    window.stopPrewarmPC = stopPrewarmPC;
 
     let unsubscribeStatusArray = [];
 
@@ -5965,6 +6019,7 @@
       fileAttachButton.disabled = false;
       mentionButton.disabled = false;
       document.getElementById('callButton').disabled = false;
+      prewarmPeerConnection();
       sendMessageButton.disabled = false;
       messageLimit = 20; // ルームに入り直したらリミットをリセット
       clearAttachedFile();
@@ -8364,8 +8419,17 @@
       if (_ringCtx) { try { _ringCtx.close(); } catch(_) {} _ringCtx = null; }
     }
 
+    function prewarmPeerConnection() {
+      if (_prewarmPC || _callId) return;
+      try { _prewarmPC = new RTCPeerConnection(STUN_CONFIG); } catch(_) {}
+    }
+    function stopPrewarmPC() {
+      if (_prewarmPC) { try { _prewarmPC.close(); } catch(_) {} _prewarmPC = null; }
+    }
+
     function setupPeerConnection(role) {
-      _peerConnection = new RTCPeerConnection(STUN_CONFIG);
+      _peerConnection = _prewarmPC || new RTCPeerConnection(STUN_CONFIG);
+      _prewarmPC = null;
 
       if (_localStream) {
         _localStream.getTracks().forEach(track => _peerConnection.addTrack(track, _localStream));
@@ -8391,9 +8455,11 @@
         const state = _peerConnection?.connectionState;
         if (state === 'connected') {
           if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+          const lbl = document.getElementById('callStatusLabel');
+          if (lbl) lbl.textContent = '通話中';
           startCallTimer();
         } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          endCall(true);
+          endCall(true, 'connectionLost');
         }
       };
     }
@@ -8470,61 +8536,73 @@
 
     async function startCall(uid, name, avatar) {
       if (_callId) return;
-      const { addDoc, collection, serverTimestamp, updateDoc, doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-
       _callRole = 'caller';
+
+      // ① UIを即時表示（マイク取得前でもユーザーに即フィードバック）
+      showCallOverlay('active', { name, avatar, status: '発信中' });
+
+      const { addDoc, collection, serverTimestamp, doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+
       try {
         _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch(e) {
+        endCall(false);
         alert('マイクへのアクセスが拒否されました。設定を確認してください。');
         return;
       }
 
       const myUser = cachedUsers.find(u => u.id === userId) || {};
+
+      // ② prewarmしたPeerConnectionを再利用 → ICE候補が既に収集済み
+      setupPeerConnection('caller');
+
+      // ③ offerを先に作成
+      const offer = await _peerConnection.createOffer();
+      await _peerConnection.setLocalDescription(offer);
+
+      // ④ Firestore書き込みを1回にまとめる（offer込みで初回書き込み → ~300ms節約）
       const callData = {
         caller: { uid: userId, nickname: myUser.nickname || myUser.displayName || '', avatarUrl: myUser.avatarUrl || '' },
         callee: { uid, nickname: name, avatarUrl: avatar },
         calleeUid: uid,
         status: 'ringing',
+        offer: { type: offer.type, sdp: offer.sdp },
         createdAt: serverTimestamp()
       };
       const callRef = await addDoc(collection(db, 'artifacts', appId, 'calls'), callData);
       _callId = callRef.id;
       _callDoc = callRef;
 
-      setupPeerConnection('caller');
-
-      const offer = await _peerConnection.createOffer();
-      await _peerConnection.setLocalDescription(offer);
-      await updateDoc(callRef, { offer: { type: offer.type, sdp: offer.sdp } });
-
-      showCallOverlay('active', { name, avatar, status: '発信中' });
-
-      // 着信通知を送る
-      try {
-        await fetch(`${WORKER_BASE_URL}/api/sendCallNotification`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            calleeId: uid,
-            callerNickname: myUser.nickname || myUser.displayName || '',
-            callerAvatarUrl: myUser.avatarUrl || '',
-            callId: _callId,
-            appId
-          })
-        });
-      } catch(_) {}
+      // ⑤ FCM通知はfire-and-forget（awaitしない → ~1s節約）
+      fetch(`${WORKER_BASE_URL}/api/sendCallNotification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          calleeId: uid,
+          callerNickname: myUser.nickname || myUser.displayName || '',
+          callerAvatarUrl: myUser.avatarUrl || '',
+          callId: _callId,
+          appId
+        })
+      }).catch(() => {});
 
       // answerを待つ
       const unsubAnswer = onSnapshot(callRef, async (snap) => {
         const d = snap.data();
         if (!d) return;
-        if (d.status === 'declined' || d.status === 'ended' || d.status === 'missed') {
+        if (d.status === 'declined') {
+          unsubAnswer();
+          endCall(true, 'declined');
+          return;
+        }
+        if (d.status === 'ended' || d.status === 'missed') {
           unsubAnswer();
           endCall(true);
           return;
         }
         if (d.answer && _peerConnection && !_peerConnection.currentRemoteDescription) {
+          const lbl = document.getElementById('callStatusLabel');
+          if (lbl) lbl.textContent = '接続中';
           await _peerConnection.setRemoteDescription(new RTCSessionDescription(d.answer));
           listenForRemoteCandidates('caller').then(unsub => {
             if (_callId) { _callUnsubOffer = unsub; } else { unsub(); }
@@ -8536,7 +8614,7 @@
               const d2 = snap2.data();
               if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
                 if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
-                if (_callId) endCall(true);
+                if (_callId) endCall(true, 'remoteEnded');
               }
             });
           }
@@ -8557,6 +8635,7 @@
       if (_callId) return;
       _callId = callId;
       _callRole = 'callee';
+      _pendingCallerData = callerData;
 
       playCallRingSound();
       showCallOverlay('incoming', { name: callerData.nickname || '不明', avatar: callerData.avatarUrl || '' });
@@ -8565,11 +8644,11 @@
       const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
       const unsub = onSnapshot(doc(db, 'artifacts', appId, 'calls', callId), (snap) => {
         const d = snap.data();
-        if (!d) { unsub(); endCall(true); return; }
-        if (d.status === 'ended' || d.status === 'missed' || d.status === 'declined' || d.status === 'active') {
+        if (!d) { unsub(); endCall(true, 'callerCancelled'); return; }
+        if (d.status === 'ended' || d.status === 'missed') {
           unsub();
           stopCallRingSound();
-          endCall(true);
+          endCall(true, 'callerCancelled');
         }
       });
       _callUnsubOffer = unsub;
@@ -8579,7 +8658,16 @@
       if (!_callId || _callRole !== 'callee') return;
       stopCallRingSound();
 
-      // iOS Safari の自動再生ポリシー対応: ユーザージェスチャー内で audio を unlock
+      // ① UIを即時切り替えてユーザーに即フィードバック
+      const callerName = _pendingCallerData?.nickname || '不明';
+      const callerAvatar = _pendingCallerData?.avatarUrl || '';
+      showCallOverlay('active', { name: callerName, avatar: callerAvatar, status: '接続中' });
+      document.getElementById('callTimeoutDisplay').style.display = 'none';
+
+      // ② 着信監視リスナーを即時解除
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+
+      // ③ iOS Safari 自動再生ポリシー対応：ユーザージェスチャー内で audio をunlock
       const remoteAudioEl = document.getElementById('remoteAudio');
       if (remoteAudioEl) {
         remoteAudioEl.muted = true;
@@ -8588,24 +8676,37 @@
         remoteAudioEl.muted = false;
       }
 
-      try {
-        _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch(e) {
-        alert('マイクへのアクセスが拒否されました。');
-        endCall(false);
-        return;
-      }
-
-      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
-
+      // ④ Firebase import・getUserMedia・getDoc を並列実行して速度改善
       const { doc, getDoc, updateDoc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
       const callRef = doc(db, 'artifacts', appId, 'calls', _callId);
-      const snap = await getDoc(callRef);
-      const callData = snap.data();
+      let stream, callData;
+      try {
+        const [streamResult, snapResult] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+          getDoc(callRef)
+        ]);
+        stream = streamResult;
+        callData = snapResult.data();
+      } catch(e) {
+        const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
+        if (isMicError) {
+          alert('マイクへのアクセスが拒否されました。');
+          endCall(false, 'micDenied');
+        } else {
+          endCall(false);
+        }
+        return;
+      }
+      _localStream = stream;
 
+      // ⑤ Peer接続とリモートSDP設定
       setupPeerConnection('callee');
       await _peerConnection.setRemoteDescription(new RTCSessionDescription(callData.offer));
 
+      // ⑥ 発信側のICE candidateをすぐ受信開始（速度改善）
+      _callUnsubOffer = await listenForRemoteCandidates('callee');
+
+      // ⑦ answerを作成して送信
       const answer = await _peerConnection.createAnswer();
       await _peerConnection.setLocalDescription(answer);
       await updateDoc(callRef, {
@@ -8613,19 +8714,12 @@
         status: 'active'
       });
 
-      _callUnsubOffer = await listenForRemoteCandidates('callee');
-
-      const callerData = callData.caller || {};
-      showCallOverlay('active', { name: callerData.nickname || '不明', avatar: callerData.avatarUrl || '', status: '接続中' });
-      // callee にタイムアウトはないので非表示
-      document.getElementById('callTimeoutDisplay').style.display = 'none';
-
-      // 通話確立後、発信者が終了したら検知する
+      // ⑧ 通話確立後、発信者が終了したら検知する
       _callEndUnsub = onSnapshot(callRef, (snap2) => {
         const d2 = snap2.data();
         if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
           if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
-          if (_callId) endCall(true);
+          if (_callId) endCall(true, 'remoteEnded');
         }
       });
     }
@@ -8640,10 +8734,13 @@
       endCall(true);
     }
 
-    async function endCall(skipFirestore) {
+    async function endCall(skipFirestore, reason) {
+      const overlay = document.getElementById('callOverlay');
+      if (!_callId && !_peerConnection && !_localStream && !(overlay?.classList.contains('show'))) return;
       const callIdCopy = _callId;
       _callId = null;
       _callRole = null;
+      _pendingCallerData = null;
 
       stopCallRingSound();
       stopCallTimer();
@@ -8679,6 +8776,7 @@
       document.getElementById('muteLabel').textContent = 'ミュート';
 
       hideCallOverlay();
+      if (reason) showCallEndedReason(reason);
     }
 
     function toggleMute() {
@@ -9290,6 +9388,8 @@
 
   <!-- リモート音声 -->
   <audio id="remoteAudio" autoplay playsinline style="display:none"></audio>
+  <!-- 通話終了理由トースト -->
+  <div id="callEndedToast"></div>
 
   <!-- アプリ内通知スタック -->
   <div id="notifStack" class="fixed bottom-5 right-5 z-[9997] flex flex-col gap-2 items-end"

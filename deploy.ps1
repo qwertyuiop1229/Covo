@@ -73,7 +73,8 @@ Write-Host "[1/5] Updated version.json to $newVersion" -ForegroundColor Green
 $tauriConfPath = Join-Path $PSScriptRoot "src-tauri\tauri.conf.json"
 if (Test-Path $tauriConfPath) {
     $tauriConfRaw = Get-Content $tauriConfPath -Raw
-    $tauriConfRaw = $tauriConfRaw -replace [regex]::Escape("""version"": ""$currentVersion"""), """version"": ""$newVersion"""
+    # 既存のバージョン値に関係なく常に置換（version.jsonとのズレに強い）
+    $tauriConfRaw = $tauriConfRaw -replace '"version":\s*"[\d.]+"', """version"": ""$newVersion"""
     $tauriConfRaw | Set-Content $tauriConfPath -NoNewline
     Write-Host "       Synced tauri.conf.json to $newVersion" -ForegroundColor Green
 }
