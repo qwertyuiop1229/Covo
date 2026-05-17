@@ -7,7 +7,12 @@ const corsHeaders = {
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      const origin = request.headers.get("Origin") || "*";
+      return new Response(null, { headers: {
+        ...corsHeaders,
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+      }});
     }
 
     const url = new URL(request.url);
@@ -1013,26 +1018,34 @@ async function verifyFirebaseIdToken(idToken, env) {
 }
 
 async function handleSetOffline(request, env) {
+  // sendBeaconはcredentials=includeで送るためAccess-Control-Allow-Origin: *が使えない
+  // リクエスト元のOriginをそのまま返すことでCORSを通す
+  const origin = request.headers.get("Origin") || "*";
+  const corsSetOffline = {
+    ...corsHeaders,
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+  };
+
   try {
     const bodyText = await request.text();
     const data = JSON.parse(bodyText);
     const { userId, appId, idToken } = data;
 
     if (!userId || !appId || !idToken) {
-      return new Response("Missing fields", { status: 400, headers: corsHeaders });
+      return new Response("Missing fields", { status: 400, headers: corsSetOffline });
     }
 
     const verifiedUid = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUid || verifiedUid !== userId) {
-      return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      return new Response("Unauthorized", { status: 401, headers: corsSetOffline });
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response("Worker Auth failed", { status: 500, headers: corsHeaders });
+    if (!workerToken) return new Response("Worker Auth failed", { status: 500, headers: corsSetOffline });
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
-    // state を直接 offline に設定
     const docUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/status/${userId}?updateMask.fieldPaths=state&updateMask.fieldPaths=last_changed`;
     await fetch(docUrl, {
       method: "PATCH",
@@ -1048,9 +1061,9 @@ async function handleSetOffline(request, env) {
       })
     });
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsSetOffline });
   } catch (error) {
     console.error("setOffline Error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsSetOffline });
   }
 }
