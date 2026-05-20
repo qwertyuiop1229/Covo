@@ -331,6 +331,35 @@ fn open_devtools_for_container(app_handle: tauri::AppHandle) {
     }
 }
 
+// デスクトップにショートカットを作成
+#[tauri::command]
+fn create_desktop_shortcut() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe failed: {}", e))?;
+    let exe_str = exe.to_string_lossy().to_string();
+    let exe_escaped = exe_str.replace('\'', "''");
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let ps_script = format!(
+            "$t='{}';$s=New-Object -COM WScript.Shell;$sc=$s.CreateShortcut(\"$env:USERPROFILE\\Desktop\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
+            exe_escaped
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("powershell failed: {}", e))?;
+        if !status.success() {
+            return Err("shortcut creation failed".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 // ログディレクトリをエクスプローラーで開く
 #[tauri::command]
 fn open_log_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
@@ -617,6 +646,7 @@ pub fn run() {
             open_devtools_for_picker,
             open_devtools_for_container,
             open_log_dir,
+            create_desktop_shortcut,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -657,7 +687,7 @@ pub fn run() {
             let _ = app.global_shortcut().register(ctrl_shift_s);
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show SimpleChat", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show Covo", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()

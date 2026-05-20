@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "simplechat",
-  "version": "1.0.102",
+  "productName": "Covo",
+  "version": "1.0.103",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "simplechat",
+        "title": "Covo",
         "width": 800,
         "height": 600,
         "resizable": true,

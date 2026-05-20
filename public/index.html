@@ -2421,6 +2421,7 @@
       flex: 1;
       background: white;
       overflow-y: auto;
+      scrollbar-gutter: stable;
       padding: 1.75rem 2rem;
       position: relative;
     }
@@ -2735,6 +2736,10 @@
                     <div class="flex justify-between items-center">
                       <button id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
                       <span id="pcCheckUpdateStatus" style="font-size:0.8rem;color:#6b7280"></span>
+                    </div>
+                    <div class="flex justify-between items-center" id="pcCreateShortcutRow" style="display:none!important">
+                      <button id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">デスクトップにショートカットを作成</button>
+                      <span id="pcCreateShortcutStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
                   </div>
                 </div>
@@ -9267,6 +9272,34 @@
       }
     };
 
+    // デスクトップショートカット作成（設定のアプリ情報から呼ばれる）
+    window.createDesktopShortcut = async function(btnId, statusId) {
+      const btn = document.getElementById(btnId);
+      const statusEl = statusId ? document.getElementById(statusId) : null;
+      if (!btn || btn.dataset.creating === '1') return;
+      btn.dataset.creating = '1';
+      const origText = btn.tagName === 'BUTTON' ? btn.textContent : null;
+      if (origText) { btn.disabled = true; btn.textContent = '作成中…'; }
+      if (statusEl) { statusEl.textContent = '作成中…'; statusEl.style.color = '#6b7280'; }
+
+      const reset = () => {
+        if (btn) { btn.dataset.creating = '0'; if (origText) { btn.disabled = false; btn.textContent = origText; } }
+      };
+
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri unavailable');
+        await invoke('create_desktop_shortcut');
+        if (statusEl) { statusEl.textContent = 'ショートカットを作成しました'; statusEl.style.color = '#22c55e'; }
+        reset();
+        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+      } catch (e) {
+        console.warn('[createDesktopShortcut] failed:', e);
+        if (statusEl) { statusEl.textContent = '作成に失敗しました'; statusEl.style.color = '#ef4444'; }
+        reset();
+      }
+    };
+
     // アップデート実行（HTMLのonclickから呼ばれる）
     window.performUpdate = async function () {
       if (!pendingUpdate) return;
@@ -9381,6 +9414,11 @@
         document.getElementById('desktopNotifRow').classList.remove('hidden');
         document.getElementById('shortcutInfoContainer').classList.remove('hidden');
         document.getElementById('browserNotifRow').classList.add('hidden');
+        // デスクトップショートカット作成ボタン（Tauri専用）
+        const pcRow = document.getElementById('pcCreateShortcutRow');
+        if (pcRow) pcRow.style.setProperty('display', 'flex', 'important');
+        const mobileRow = document.getElementById('mobileCreateShortcutBtn');
+        if (mobileRow) mobileRow.style.display = 'flex';
 
         // ログフォルダボタンをdesktopSettingsContainer内に動的追加する代わりに、
         // notifPositionContainerが削除されたため openLogDirBtn は追加しない
@@ -9843,6 +9881,11 @@
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-sync-alt"></i></div>
           <span class="mobile-settings-row-text">アップデートを確認</span>
           <span id="mobileCheckUpdateStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
+        </div>
+        <div id="mobileCreateShortcutBtn" class="mobile-settings-row" style="display:none" onclick="createDesktopShortcut('mobileCreateShortcutBtn','mobileCreateShortcutStatus')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-desktop"></i></div>
+          <span class="mobile-settings-row-text">デスクトップにショートカットを作成</span>
+          <span id="mobileCreateShortcutStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
         </div>
       </div>
     </div>
