@@ -2012,10 +2012,10 @@
       bottom: 0;
       left: 0;
       right: 0;
-      /* iOSのhome indicator分は最小限のクリアランス（最大10px）で抑える。
+      /* iOSのhome indicator分は最小限のクリアランス（最大4px）で抑える。
          デバイスのsafe-areaが大きい場合の「無駄な縦余白」を防ぐ。 */
-      height: calc(56px + min(env(safe-area-inset-bottom, 0px), 10px));
-      padding-bottom: min(env(safe-area-inset-bottom, 0px), 10px);
+      height: calc(56px + min(env(safe-area-inset-bottom, 0px), 4px));
+      padding-bottom: min(env(safe-area-inset-bottom, 0px), 4px);
       background: #1f2937;
       z-index: 200;
       flex-direction: row;
@@ -2068,7 +2068,7 @@
        padding-bottom は padding box 内に可視空白を作るため使わない。
        container の height を削ることで flex:1 の #mainContent が自然に収まる。 */
     body.has-mobile-nav .container {
-      height: calc(100dvh - (56px + min(env(safe-area-inset-bottom, 0px), 10px))) !important;
+      height: calc(100dvh - (56px + min(env(safe-area-inset-bottom, 0px), 4px))) !important;
       min-height: 0 !important;
     }
     body.has-mobile-nav #mainContent {
@@ -2077,7 +2077,7 @@
     /* fixed全画面スクリーンはbottomをナビ上端に揃える */
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 calc(56px + min(env(safe-area-inset-bottom, 0px), 10px)) 0;
+      inset: 0 0 calc(56px + min(env(safe-area-inset-bottom, 0px), 4px)) 0;
     }
     /* === ダークモード全体 === */
     body.dark-server-theme { background: #111827; }
@@ -4148,11 +4148,7 @@
         userPanelId.textContent = `#${userId.substring(0, 4)}`;
 
         if (userAvatarUrl) {
-          userPanelAvatar.innerHTML = '';
-          const avatarImg = document.createElement('img');
-          avatarImg.src = userAvatarUrl;
-          avatarImg.className = 'w-full h-full rounded-full object-cover';
-          userPanelAvatar.appendChild(avatarImg);
+          __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
         } else {
           userPanelAvatar.innerHTML = userNickname.charAt(0).toUpperCase();
         }
@@ -4686,8 +4682,7 @@
       const sn = document.getElementById('sidebarName');
       if (!sa || !sn) return;
       sn.textContent = userNickname || '';
-      if (userAvatarUrl) { sa.innerHTML = '<img src="' + userAvatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
-      else { sa.textContent = (userNickname || '?').charAt(0).toUpperCase(); }
+      __setAvatarImg(sa, userAvatarUrl, userNickname);
     }
 
     // ============ Mobile Bottom Nav ============
@@ -4810,9 +4805,25 @@
       const ap = document.getElementById('mobileAvatarPreview');
       const ni = document.getElementById('mobileNicknameInput');
       if (ne) ne.textContent = userNickname || '';
-      if (ae) { if (userAvatarUrl) ae.innerHTML = '<img src="' + userAvatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; else ae.textContent = (userNickname||'?').charAt(0).toUpperCase(); }
+      if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname);
       if (at) at.textContent = (userNickname||'?').charAt(0).toUpperCase();
-      if (ap) { if (userAvatarUrl) { ap.src = userAvatarUrl; ap.style.display = ''; } else { ap.style.display = 'none'; } }
+      if (ap) {
+        if (userAvatarUrl) {
+          const _u = userAvatarUrl;
+          ap.dataset.retries = '0';
+          ap.onerror = function() {
+            const r = parseInt(ap.dataset.retries || '0', 10);
+            if (r < 2) {
+              ap.dataset.retries = String(r + 1);
+              setTimeout(() => { try { const sep = _u.indexOf('?') >= 0 ? '&' : '?'; ap.src = _u + sep + '_r=' + Date.now(); } catch(_) {} }, 800 * (r + 1));
+            } else { try { ap.style.display = 'none'; } catch(_) {} }
+          };
+          ap.src = userAvatarUrl;
+          ap.style.display = '';
+        } else {
+          ap.style.display = 'none';
+        }
+      }
       if (ni) ni.value = userNickname || '';
       if (isAdmin || isListAdmin) { const as2 = document.getElementById('mobileAdminRowSection'); if (as2) as2.style.display = ''; }
     }
@@ -5067,6 +5078,22 @@
       settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
       pendingAvatarUrl = null;
       if (userAvatarUrl) {
+        const _u = userAvatarUrl;
+        settingsAvatarPreview.dataset.retries = '0';
+        settingsAvatarPreview.onerror = function() {
+          const r = parseInt(settingsAvatarPreview.dataset.retries || '0', 10);
+          if (r < 2) {
+            settingsAvatarPreview.dataset.retries = String(r + 1);
+            setTimeout(() => {
+              try {
+                const sep = _u.indexOf('?') >= 0 ? '&' : '?';
+                settingsAvatarPreview.src = _u + sep + '_r=' + Date.now();
+              } catch(_) {}
+            }, 800 * (r + 1));
+          } else {
+            try { settingsAvatarPreview.classList.add('hidden'); } catch(_) {}
+          }
+        };
         settingsAvatarPreview.src = userAvatarUrl;
         settingsAvatarPreview.classList.remove("hidden");
         resetAvatarButton.classList.remove("hidden");
@@ -5095,12 +5122,7 @@
       const btn = document.getElementById("serverListUserBtn");
       if (!btn || !userNickname) return;
       btn.title = `${userNickname} — プロフィール・設定`;
-      if (userAvatarUrl) {
-        btn.innerHTML = `<img src="${userAvatarUrl}" class="w-full h-full rounded-full object-cover" alt="" style="border-radius:50%">`;
-      } else {
-        btn.innerHTML = '';
-        btn.textContent = userNickname.charAt(0).toUpperCase();
-      }
+      __setAvatarImg(btn, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: 'border-radius:50%' });
     }
     document.getElementById("serverListUserBtn").addEventListener("click", () => {
       openSettingsModal("profile");
@@ -5560,8 +5582,24 @@
           avatar.className = "avatar-placeholder";
           if (member.avatarUrl) {
             const avatarImg = document.createElement("img");
-            avatarImg.src = member.avatarUrl;
             avatarImg.alt = member.nickname || "";
+            avatarImg.dataset.retries = '0';
+            const _u = member.avatarUrl;
+            avatarImg.onerror = function() {
+              const r = parseInt(avatarImg.dataset.retries || '0', 10);
+              if (r < 2) {
+                avatarImg.dataset.retries = String(r + 1);
+                setTimeout(() => {
+                  try {
+                    const sep = _u.indexOf('?') >= 0 ? '&' : '?';
+                    avatarImg.src = _u + sep + '_r=' + Date.now();
+                  } catch(_) {}
+                }, 800 * (r + 1));
+              } else {
+                try { avatarImg.remove(); avatar.insertBefore(document.createTextNode((member.nickname || " ").charAt(0).toUpperCase()), avatar.firstChild); } catch(_) {}
+              }
+            };
+            avatarImg.src = member.avatarUrl;
             avatar.appendChild(avatarImg);
             avatar.style.cursor = "pointer";
             avatar.addEventListener("click", () => openAvatarLightbox(member.avatarUrl));
@@ -5624,6 +5662,39 @@
     // =========================================================================
     // Server Features
     // =========================================================================
+
+    // アバター画像を安全にセット（失敗時に2回リトライ→イニシャル文字フォールバック）
+    // Cloudinaryの一時的な配信エラーやキャッシュ問題に対応。
+    function __setAvatarImg(container, url, name, opts) {
+      if (!container) return;
+      opts = opts || {};
+      const styleStr = opts.style || 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+      const className = opts.className || '';
+      const initial = ((name || '?').charAt(0) || '?').toUpperCase();
+      try { container.innerHTML = ''; } catch(_) {}
+      if (!url) { try { container.textContent = initial; } catch(_) {} return; }
+      const img = document.createElement('img');
+      img.alt = '';
+      if (className) img.className = className;
+      if (styleStr) img.style.cssText = styleStr;
+      img.dataset.retries = '0';
+      img.onerror = function() {
+        const r = parseInt(img.dataset.retries || '0', 10);
+        if (r < 2) {
+          img.dataset.retries = String(r + 1);
+          setTimeout(() => {
+            try {
+              const sep = url.indexOf('?') >= 0 ? '&' : '?';
+              img.src = url + sep + '_r=' + Date.now();
+            } catch(_) {}
+          }, 800 * (r + 1));
+        } else {
+          try { container.innerHTML = ''; container.textContent = initial; } catch(_) {}
+        }
+      };
+      img.src = url;
+      try { container.appendChild(img); } catch(_) {}
+    }
 
     // HTMLエスケープ（XSS対策: innerHTML に埋め込む全ての文字列に適用する）
     function escapeHtml(s) {
@@ -7259,10 +7330,7 @@
         const avatarDiv = document.createElement("div");
         avatarDiv.className = "msg-avatar";
         if (senderUser?.avatarUrl) {
-          const img = document.createElement("img");
-          img.src = senderUser.avatarUrl;
-          img.alt = message.senderNickname || "";
-          avatarDiv.appendChild(img);
+          __setAvatarImg(avatarDiv, senderUser.avatarUrl, message.senderNickname, { style: '' });
           avatarDiv.addEventListener("click", () => openAvatarLightbox(senderUser.avatarUrl));
         } else {
           avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
@@ -8643,11 +8711,7 @@
     // --- P2P Voice Call ---
 
     function renderCallAvatar(el, name, url) {
-      if (url) {
-        el.innerHTML = `<img src="${escapeHtml(url)}" alt="" onerror="this.parentElement.textContent='${escapeHtml((name||'?')[0].toUpperCase())}'" />`;
-      } else {
-        el.textContent = (name || '?')[0].toUpperCase();
-      }
+      __setAvatarImg(el, url, name, { style: '' });
     }
 
     function showCallOverlay(mode, opts) {
@@ -8907,15 +8971,16 @@
       } else {
         for (const uid of memberIds) {
           const user = cachedUsers.find(u => u.id === uid) || {};
-          const name = escapeHtml(user.nickname || user.displayName || uid.slice(0, 8));
-          const avatarInitial = escapeHtml((user.nickname || user.displayName || '?')[0].toUpperCase());
-          const avatar = user.avatarUrl ? `<img src="${escapeHtml(user.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='${avatarInitial}'" />` : avatarInitial;
+          const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
+          const name = escapeHtml(nameRaw);
           const div = document.createElement('div');
           div.className = 'call-picker-item';
-          div.innerHTML = `<div class="call-picker-avatar">${avatar}</div><div><div class="call-picker-name">${name}</div></div>`;
+          div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${name}</div></div>`;
+          const avatarEl = div.querySelector('.call-picker-avatar');
+          __setAvatarImg(avatarEl, user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
           div.onclick = () => {
             closeCallPicker();
-            startCall(uid, user.nickname || user.displayName || uid.slice(0, 8), user.avatarUrl || '');
+            startCall(uid, nameRaw, user.avatarUrl || '');
           };
           list.appendChild(div);
         }
