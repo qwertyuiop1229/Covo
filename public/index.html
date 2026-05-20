@@ -127,26 +127,27 @@
       -webkit-overflow-scrolling: touch;
     }
 
-    /* ブラウザデフォルトのスクロールバーを隠す (独自スクロールバー以外) */
-    ::-webkit-scrollbar { display: none; }
-    .scrollable { -ms-overflow-style: auto; scrollbar-width: thin; }
-    /* カスタムスクロールバー */
-    .scrollable::-webkit-scrollbar {
-      display: block;
-      width: 6px;
+    /* ===== カスタムスクロールバー（全要素共通）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
     }
-
-    .scrollable::-webkit-scrollbar-track {
+    *::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    *::-webkit-scrollbar-track {
       background: transparent;
     }
-
-    .scrollable::-webkit-scrollbar-thumb {
-      background: #ccc;
-      border-radius: 10px;
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
     }
-
-    .scrollable::-webkit-scrollbar-thumb:hover {
-      background: #999;
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
     }
 
     /* モーダル背景 */
@@ -823,16 +824,6 @@
     }
 
     /* 設定モーダルのスクロールバーを非表示 */
-    #settingsModal,
-    #settingsScrollContent {
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
-
-    #settingsModal::-webkit-scrollbar,
-    #settingsScrollContent::-webkit-scrollbar {
-      display: none;
-    }
 
     /* メンションポップアップ */
     #mentionPopup {
@@ -1813,22 +1804,32 @@
       display: none;
       align-items: flex-end;
       justify-content: center;
-      background: rgba(0,0,0,0.55);
-      padding: 0 0 env(safe-area-inset-bottom, 0px) 0;
+      background: rgba(0,0,0,0.6);
     }
     #callPickerModal.show { display: flex; }
+    @keyframes slideUpSheet {
+      from { transform: translateY(100%); opacity: 0.6; }
+      to   { transform: translateY(0);    opacity: 1;   }
+    }
     .call-picker-box {
-      background: #1f2937;
-      border-radius: 1.25rem 1.25rem 0 0;
+      background: #1e293b;
+      border-radius: 1.5rem 1.5rem 0 0;
       width: 100%;
       max-width: 480px;
-      max-height: 70vh;
+      max-height: 75vh;
       overflow-y: auto;
-      padding: 20px 0 24px;
-      animation: scaleInFade 0.22s ease both;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      animation: slideUpSheet 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    .call-picker-handle {
+      width: 36px;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 100px;
+      margin: 12px auto 6px;
     }
     .call-picker-header {
-      padding: 0 20px 16px;
+      padding: 10px 20px 14px;
       font-size: 1rem;
       font-weight: 700;
       color: white;
@@ -1841,15 +1842,15 @@
       display: flex;
       align-items: center;
       gap: 14px;
-      padding: 12px 20px;
+      padding: 13px 20px;
       cursor: pointer;
       transition: background 0.12s;
       -webkit-tap-highlight-color: transparent;
     }
-    .call-picker-item:hover { background: rgba(255,255,255,0.06); }
+    .call-picker-item:hover, .call-picker-item:active { background: rgba(255,255,255,0.07); }
     .call-picker-avatar {
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
       background: #4b5563;
       color: white;
@@ -1860,11 +1861,11 @@
       justify-content: center;
       overflow: hidden;
       flex-shrink: 0;
-      border: 1.5px solid rgba(255,255,255,0.1);
+      border: 1.5px solid rgba(255,255,255,0.12);
     }
     .call-picker-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .call-picker-name { font-size: 0.95rem; color: white; font-weight: 500; }
-    .call-picker-status { font-size: 0.75rem; color: rgba(255,255,255,0.45); }
+    .call-picker-name { font-size: 0.95rem; color: #f1f5f9; font-weight: 500; }
+    .call-picker-status { font-size: 0.75rem; color: rgba(255,255,255,0.4); margin-top: 1px; }
 
     /* === ルームリストアイテムアニメーション === */
     @keyframes roomSlideIn {
@@ -2061,9 +2062,15 @@
       box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
     }
 
-    /* BottomNav分だけ mainContent を縮める（paddingではなく高さ制限でナビとの重なりを防ぐ） */
+    /* BottomNav分だけ .container 自体を縮める
+       padding-bottom は padding box 内に可視空白を作るため使わない。
+       container の height を削ることで flex:1 の #mainContent が自然に収まる。 */
+    body.has-mobile-nav .container {
+      height: calc(100dvh - (56px + env(safe-area-inset-bottom, 0px))) !important;
+      min-height: 0 !important;
+    }
     body.has-mobile-nav #mainContent {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: 0;
     }
     /* fixed全画面スクリーンはbottomをナビ上端に揃える */
     body.has-mobile-nav #mobileProfileScreen,
@@ -2218,8 +2225,15 @@
     /* リサイザー / スクロールバー */
     body.dark-server-theme #resizer { background-color: rgba(255,255,255,0.05); }
     body.dark-server-theme #resizer:hover { background-color: rgba(255,255,255,0.1); }
-    body.dark-server-theme .scrollable::-webkit-scrollbar-thumb { background: #374151; }
-    body.dark-server-theme .scrollable::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
 
     /* 設定モーダル（コンテンツエリア）*/
     body.dark-server-theme #settingsModal .settings-content {
@@ -9886,9 +9900,10 @@
   <!-- 通話相手選択モーダル -->
   <div id="callPickerModal" onclick="closeCallPicker()">
     <div class="call-picker-box" onclick="event.stopPropagation()">
+      <div class="call-picker-handle"></div>
       <div class="call-picker-header">
         <span>通話する相手を選択</span>
-        <button onclick="closeCallPicker()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1.2rem;padding:0;"><i class="fas fa-times"></i></button>
+        <button onclick="closeCallPicker()" style="background:none;border:none;color:rgba(255,255,255,0.45);cursor:pointer;font-size:1.1rem;padding:4px;line-height:1;border-radius:6px;"><i class="fas fa-times"></i></button>
       </div>
       <div id="callPickerList"></div>
     </div>
