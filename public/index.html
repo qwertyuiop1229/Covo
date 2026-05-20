@@ -2012,8 +2012,10 @@
       bottom: 0;
       left: 0;
       right: 0;
-      height: calc(56px + env(safe-area-inset-bottom, 0px));
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      /* iOSのhome indicator分は最小限のクリアランス（最大10px）で抑える。
+         デバイスのsafe-areaが大きい場合の「無駄な縦余白」を防ぐ。 */
+      height: calc(56px + min(env(safe-area-inset-bottom, 0px), 10px));
+      padding-bottom: min(env(safe-area-inset-bottom, 0px), 10px);
       background: #1f2937;
       z-index: 200;
       flex-direction: row;
@@ -2066,7 +2068,7 @@
        padding-bottom は padding box 内に可視空白を作るため使わない。
        container の height を削ることで flex:1 の #mainContent が自然に収まる。 */
     body.has-mobile-nav .container {
-      height: calc(100dvh - (56px + env(safe-area-inset-bottom, 0px))) !important;
+      height: calc(100dvh - (56px + min(env(safe-area-inset-bottom, 0px), 10px))) !important;
       min-height: 0 !important;
     }
     body.has-mobile-nav #mainContent {
@@ -2075,7 +2077,7 @@
     /* fixed全画面スクリーンはbottomをナビ上端に揃える */
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 calc(56px + env(safe-area-inset-bottom, 0px)) 0;
+      inset: 0 0 calc(56px + min(env(safe-area-inset-bottom, 0px), 10px)) 0;
     }
     /* === ダークモード全体 === */
     body.dark-server-theme { background: #111827; }
@@ -2683,17 +2685,6 @@
       input[type="password"],
       textarea {
         font-size: max(16px, 1em) !important;
-      }
-      /* ナビ下のsafe area分だけ補填（html/bodyのdark背景がoverscrollを処理） */
-      #mobileBottomNav::after {
-        content: '';
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 100%;
-        height: env(safe-area-inset-bottom, 4px);
-        background: #1f2937;
-        pointer-events: none;
       }
       /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
     }
