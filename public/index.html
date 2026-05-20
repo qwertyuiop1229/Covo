@@ -2004,80 +2004,75 @@
     }
 
     /* =============================================
-       Mobile Bottom Navigation
+       Mobile Bottom Navigation (作り直し v3:
+       - position:fixed をやめ、.container の最下子要素としてflexで配置
+       - iOS PWA の bottom:0 / safe-area の解釈ゆれを完全回避
+       - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
+    :root {
+      --mnav-h: 48px;
+      /* ホームインジケータ用クリアランス（最大16pxで頭打ち、安全領域のないデバイスは0） */
+      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 16px);
+      --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
+    }
     #mobileBottomNav {
-      display: none;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      /* ホームインジケータ用のsafe-area余白は一切設けない（ユーザー要望）。
-         ナビ高さは固定56pxのみ。iOS home indicatorは視覚的に上に重なるが許容する。 */
-      height: 56px;
-      padding-bottom: 0;
+      display: none; /* JSがmobile時にflex化 */
+      flex: 0 0 var(--mnav-total);
+      width: 100%;
+      height: var(--mnav-total);
+      min-height: var(--mnav-total);
+      padding: 0 0 var(--mnav-safe) 0;
+      margin: 0;
       background: #1f2937;
-      z-index: 200;
       flex-direction: row;
       align-items: stretch;
       border-top: 1px solid rgba(255,255,255,0.07);
+      box-sizing: border-box;
     }
     .mobile-nav-tab {
-      flex: 1;
+      flex: 1 1 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
       cursor: pointer;
-      color: rgba(255,255,255,0.45);
+      color: rgba(255,255,255,0.5);
       border: none;
       background: transparent;
+      padding: 0;
+      margin: 0;
       transition: color 0.15s;
-      padding-bottom: 2px;
       -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-nav-tab.active {
-      color: rgba(255,255,255,0.95);
-    }
-    .mobile-nav-tab i {
-      font-size: 1.15rem;
+      position: relative;
       line-height: 1;
     }
+    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
+    .mobile-nav-tab i {
+      font-size: 1.1rem;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
     .mobile-nav-tab span {
-      font-size: 0.65rem;
+      font-size: 0.64rem;
       font-weight: 600;
       letter-spacing: 0.01em;
-    }
-    .mobile-nav-tab {
-      position: relative;
+      line-height: 1;
     }
     .mobile-notif-dot {
       position: absolute;
-      top: 8px;
+      top: 6px;
       right: calc(50% - 14px);
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: #1f2937;
-      border: 2px solid #1f2937;
-      box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+      background: #ef4444;
+      border: 1.5px solid #1f2937;
     }
 
-    /* BottomNav分だけ .container 自体を縮める
-       padding-bottom は padding box 内に可視空白を作るため使わない。
-       container の height を削ることで flex:1 の #mainContent が自然に収まる。 */
-    body.has-mobile-nav .container {
-      height: calc(100dvh - 56px) !important;
-      min-height: 0 !important;
-    }
-    body.has-mobile-nav #mainContent {
-      padding-bottom: 0;
-    }
-    /* fixed全画面スクリーンはbottomをナビ上端に揃える */
+    /* fixed全画面スクリーン (プロフィール・通知) はナビ上端までにとどめる */
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 56px 0;
+      inset: 0 0 var(--mnav-total) 0;
     }
     /* === ダークモード全体 === */
     body.dark-server-theme { background: #111827; }
@@ -4686,7 +4681,17 @@
     }
 
     // ============ Mobile Bottom Nav ============
-    if (window.matchMedia('(max-width: 768px)').matches) { document.body.classList.add('has-mobile-nav'); }
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      document.body.classList.add('has-mobile-nav');
+      // ナビを .container の最下子要素として移動（position:fixed をやめ、自然なflexで配置）
+      try {
+        const _mnav = document.getElementById('mobileBottomNav');
+        const _cont = document.querySelector('.container');
+        if (_mnav && _cont && _mnav.parentElement !== _cont) {
+          _cont.appendChild(_mnav);
+        }
+      } catch(_) {}
+    }
 
     window.switchMobileTab = function(tab) {
       document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
@@ -4810,6 +4815,8 @@
       if (ap) {
         if (userAvatarUrl) {
           const _u = userAvatarUrl;
+          try { ap.referrerPolicy = 'no-referrer'; } catch(_) {}
+          try { ap.decoding = 'async'; } catch(_) {}
           ap.dataset.retries = '0';
           ap.onerror = function() {
             const r = parseInt(ap.dataset.retries || '0', 10);
@@ -5079,6 +5086,8 @@
       pendingAvatarUrl = null;
       if (userAvatarUrl) {
         const _u = userAvatarUrl;
+        try { settingsAvatarPreview.referrerPolicy = 'no-referrer'; } catch(_) {}
+        try { settingsAvatarPreview.decoding = 'async'; } catch(_) {}
         settingsAvatarPreview.dataset.retries = '0';
         settingsAvatarPreview.onerror = function() {
           const r = parseInt(settingsAvatarPreview.dataset.retries || '0', 10);
@@ -5583,6 +5592,8 @@
           if (member.avatarUrl) {
             const avatarImg = document.createElement("img");
             avatarImg.alt = member.nickname || "";
+            avatarImg.referrerPolicy = 'no-referrer';
+            avatarImg.decoding = 'async';
             avatarImg.dataset.retries = '0';
             const _u = member.avatarUrl;
             avatarImg.onerror = function() {
@@ -5675,6 +5686,9 @@
       if (!url) { try { container.textContent = initial; } catch(_) {} return; }
       const img = document.createElement('img');
       img.alt = '';
+      img.decoding = 'async';
+      img.loading = 'eager';
+      img.referrerPolicy = 'no-referrer'; // CloudinaryのReferer制限を回避
       if (className) img.className = className;
       if (styleStr) img.style.cssText = styleStr;
       img.dataset.retries = '0';
