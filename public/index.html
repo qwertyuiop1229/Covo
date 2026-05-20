@@ -1637,37 +1637,57 @@
     }
 
     .call-status-label {
-      font-size: 0.85rem;
-      font-weight: 500;
-      letter-spacing: 0.12em;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
       text-transform: uppercase;
-      color: rgba(255,255,255,0.5);
+      color: rgba(255,255,255,0.45);
+      transition: color 0.3s;
     }
+    .call-status-label.reconnecting {
+      color: #f59e0b;
+      animation: reconnectPulse 1.2s ease-in-out infinite;
+    }
+    @keyframes reconnectPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    #callConnectionType {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+    #callConnectionType.p2p { color: #34d399; }
+    #callConnectionType.turn { color: #f59e0b; }
 
     .call-avatar-wrap {
       position: relative;
-      width: 100px;
-      height: 100px;
+      width: 128px;
+      height: 128px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .call-avatar-ring {
       position: absolute;
+      inset: -16px;
       border-radius: 50%;
-      border: 2px solid rgba(59,130,246,0.45);
-      animation: callPulse 1.6s ease-in-out infinite;
+      border: 1.5px solid rgba(99,179,237,0.3);
+      animation: callPulse 2s ease-in-out infinite;
+      pointer-events: none;
     }
-    .call-avatar-ring:nth-child(1) { inset: -14px; animation-delay: 0s; }
-    .call-avatar-ring:nth-child(2) { inset: -28px; animation-delay: 0.4s; }
-    .call-avatar-ring:nth-child(3) { inset: -42px; animation-delay: 0.8s; }
     .call-avatar {
-      width: 100px;
-      height: 100px;
+      width: 128px;
+      height: 128px;
       border-radius: 50%;
-      background: #4b5563;
+      background: #374151;
       color: white;
-      font-size: 2.2rem;
+      font-size: 2.8rem;
       font-weight: 700;
       display: flex;
       align-items: center;
@@ -1675,7 +1695,7 @@
       overflow: hidden;
       position: relative;
       z-index: 1;
-      border: 2px solid rgba(255,255,255,0.12);
+      border: 2.5px solid rgba(255,255,255,0.15);
     }
     .call-avatar img {
       width: 100%;
@@ -1683,23 +1703,24 @@
       object-fit: cover;
     }
     .call-name {
-      font-size: 1.5rem;
+      font-size: 1.6rem;
       font-weight: 700;
       color: white;
       letter-spacing: 0.01em;
     }
     .call-timer {
-      font-size: 1.1rem;
-      font-weight: 500;
-      color: rgba(255,255,255,0.6);
+      font-size: 1rem;
+      font-weight: 400;
+      color: rgba(255,255,255,0.5);
       font-variant-numeric: tabular-nums;
+      letter-spacing: 0.06em;
     }
 
     .call-btn-row {
       display: flex;
-      gap: 40px;
+      gap: 48px;
       align-items: center;
-      margin-top: 16px;
+      margin-top: 24px;
     }
     .call-btn-col {
       display: flex;
@@ -1708,13 +1729,14 @@
       gap: 10px;
     }
     .call-btn-label {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.55);
-      letter-spacing: 0.04em;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.05em;
     }
     .call-btn-circle {
-      width: 68px;
-      height: 68px;
+      width: 72px;
+      height: 72px;
       border-radius: 50%;
       border: none;
       cursor: pointer;
@@ -1723,36 +1745,38 @@
       justify-content: center;
       font-size: 1.4rem;
       color: white;
-      transition: transform 0.15s ease, filter 0.15s ease;
+      transition: transform 0.12s ease, opacity 0.12s ease;
       -webkit-tap-highlight-color: transparent;
     }
-    .call-btn-circle:active { transform: scale(0.9); filter: brightness(0.85); }
+    .call-btn-circle:active { transform: scale(0.88); opacity: 0.8; }
     .call-btn-circle.accept { background: #22c55e; }
     .call-btn-circle.decline, .call-btn-circle.hangup { background: #ef4444; }
     .call-btn-circle.mute {
-      background: rgba(255,255,255,0.12);
-      border: 1.5px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.2);
     }
-    .call-btn-circle.mute.active { background: rgba(255,255,255,0.28); }
+    .call-btn-circle.mute.active {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.4);
+    }
 
     #callEndedToast {
       position: fixed;
       bottom: calc(84px + env(safe-area-inset-bottom, 0px));
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(15, 23, 42, 0.92);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
+      background: #1e293b;
       color: #e2e8f0;
-      border-radius: 100px;
+      border-radius: 16px;
       padding: 10px 22px;
       font-size: 0.83rem;
       font-weight: 500;
       z-index: 100002;
-      white-space: nowrap;
+      white-space: normal;
+      max-width: min(340px, 90vw);
+      text-align: center;
       pointer-events: none;
       opacity: 0;
-      border: 1px solid rgba(255,255,255,0.1);
     }
     #callEndedToast.show {
       animation: callToastAnim 3.6s ease forwards;
@@ -2040,7 +2064,7 @@
     /* Body padding for BottomNav when visible */
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 8px));
     }
     body.has-mobile-nav .server-grid {
       padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
@@ -2067,6 +2091,7 @@
       position: fixed;
       inset: 0;
       background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
       z-index: 100;
       overflow-y: auto;
       flex-direction: column;
@@ -2180,6 +2205,7 @@
       z-index: 300;
       flex-direction: column;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .mobile-settings-detail.active {
       display: flex;
@@ -2301,7 +2327,7 @@
     #settingsModal .settings-discord-layout {
       display: flex;
       min-height: 520px;
-      height: calc(100vh - 5rem);
+      height: calc(100dvh - 5rem);
       max-height: 700px;
     }
     #settingsModal .settings-sidebar {
@@ -2442,19 +2468,31 @@
       #serverListNotifBtn {
         display: none !important;
       }
-      /* iOS PWA: safe-area-inset-bottomが0を返す場合にナビ下の白余白を防ぐ */
-      html {
-        background-color: #1f2937;
+      /* iOS PWA: 最下部に白余白が出ないよう html/body をナビ色で塗りつぶす */
+      html, body {
+        background-color: #1f2937 !important;
       }
+      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
+      input[type="text"],
+      input[type="email"],
+      input[type="password"],
+      textarea {
+        font-size: max(16px, 1em) !important;
+      }
+      /* ナビ下の隙間を確実に埋める（env()が0を返す場合も考慮） */
       #mobileBottomNav::after {
         content: '';
         position: absolute;
         left: 0;
         right: 0;
         top: 100%;
-        height: 60px;
+        height: 100px;
         background: #1f2937;
         pointer-events: none;
+      }
+      /* コンテナの白背景を上書きしてナビ色に合わせる */
+      .container {
+        background-color: #1f2937 !important;
       }
     }
     @media (max-width: 640px) {
@@ -2600,7 +2638,7 @@
 
       <!-- 設定モーダル (PC: Discord風2カラム) -->
       <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="height:min(700px,calc(100vh - 3rem))">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="height:min(700px,calc(100dvh - 3rem))">
           <div class="settings-discord-layout">
             <!-- 左サイドバー -->
             <div class="settings-sidebar">
@@ -2696,6 +2734,10 @@
                     <div class="flex justify-between items-center">
                       <span class="text-sm text-gray-500">バージョン</span>
                       <span class="text-sm font-mono font-bold text-gray-800" id="appInfoVersion">—</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                      <button id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
+                      <span id="pcCheckUpdateStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
                   </div>
                 </div>
@@ -3353,7 +3395,7 @@
     // バージョンはソースコード(version.json)から直接 fetch して使用する
     // localStorage には保存しない
     let _appVersion = null;
-    fetch('/version.json', { cache: 'no-cache' })
+    fetch('/version.json', { cache: 'default' })
       .then(r => r.json())
       .then(d => { _appVersion = d.version || null; })
       .catch(() => { _appVersion = null; });
@@ -3545,14 +3587,29 @@
     let _callUnsubOffer = null, _callEndUnsub = null, _callIncomingUnsub = null;
     let _isMuted = false, _callRole = null, _pendingCallerData = null;
     let _ringRepeatHandle = null, _ringCtx = null, _prewarmPC = null;
+    let _iceDisconnectTimer = null;
+    let _iceRestartTimer = null;
+    let _lastIceRestartAt = null;
+    let _usingTurnRelay = false;
     const CALL_TIMEOUT_MS = 30000;
     const STUN_CONFIG = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.relay.metered.ca:80' },
+        {
+          urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+            'turns:openrelay.metered.ca:443',
+          ],
+          username: 'openrelayproject',
+          credential: 'openrelayproject',
+        },
       ],
-      iceCandidatePoolSize: 4,
-      bundlePolicy: 'max-bundle'
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
     };
     let messageLimit = 20;
     let allowPagination = false;
@@ -4406,7 +4463,7 @@
             verEl.textContent = 'v' + _appVersion;
           } else {
             verEl.textContent = '読込中…';
-            fetch('/version.json', { cache: 'no-cache' })
+            fetch('/version.json', { cache: 'default' })
               .then(r => r.json())
               .then(d => { verEl.textContent = 'v' + (d.version || '—'); _appVersion = d.version; })
               .catch(() => { verEl.textContent = '—'; });
@@ -4525,7 +4582,7 @@
             if (_appVersion) {
               verEl.textContent = _appVersion;
             } else {
-              fetch('/version.json', { cache: 'no-cache' })
+              fetch('/version.json', { cache: 'default' })
                 .then(r => r.json())
                 .then(d => {
                   _appVersion = d.version || null;
@@ -5144,13 +5201,35 @@
     // 通話関数をグローバルに公開（type="module" スコープから onclick で呼ぶため）
     window.openCallPicker = openCallPicker;
     window.closeCallPicker = closeCallPicker;
+    function setCallReconnectStatus(isReconnecting) {
+      const lbl = document.getElementById('callStatusLabel');
+      if (!lbl) return;
+      if (isReconnecting) {
+        lbl.textContent = '再接続中...';
+        lbl.classList.add('reconnecting');
+      } else {
+        lbl.textContent = '通話中';
+        lbl.classList.remove('reconnecting');
+      }
+    }
+
+    function setCallConnectionType(type) {
+      const el = document.getElementById('callConnectionType');
+      if (!el) return;
+      if (!type) { el.style.display = 'none'; el.className = ''; el.innerHTML = ''; return; }
+      el.className = type;
+      el.style.display = 'inline-flex';
+      el.textContent = type === 'turn' ? 'TURN中継' : 'P2P直接接続';
+    }
+
     function showCallEndedReason(reason) {
       const msgs = {
-        declined:        '通話が拒否されました',
-        remoteEnded:     '相手が通話を終了しました',
-        callerCancelled: '発信者がキャンセルしました',
-        connectionLost:  '接続が切れました',
-        micDenied:       'マイクへのアクセスが拒否されました',
+        declined:         '通話が拒否されました',
+        remoteEnded:      '相手が通話を終了しました',
+        callerCancelled:  '発信者がキャンセルしました',
+        connectionLost:   '接続が切れました',
+        turnDisconnected: '中継サーバー経由の接続が切れました（制限の可能性）',
+        micDenied:        'マイクへのアクセスが拒否されました',
       };
       const msg = msgs[reason] || reason;
       const toast = document.getElementById('callEndedToast');
@@ -8465,6 +8544,8 @@
     }
 
     function setupPeerConnection(role) {
+      _usingTurnRelay = false;
+      setCallConnectionType(null);
       _peerConnection = _prewarmPC || new RTCPeerConnection(STUN_CONFIG);
       _prewarmPC = null;
 
@@ -8492,12 +8573,90 @@
         const state = _peerConnection?.connectionState;
         if (state === 'connected') {
           if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+          if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
           const lbl = document.getElementById('callStatusLabel');
           if (lbl) lbl.textContent = '通話中';
           startCallTimer();
-        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          // skipFirestore=false にしてFirestoreのstatusを更新 → 相手側も通話終了を検知できる
+          // TURN使用を検出（getStats）
+          _usingTurnRelay = false;
+          _peerConnection.getStats().then(stats => {
+            const candidates = {};
+            stats.forEach(r => { if (r.type === 'local-candidate') candidates[r.id] = r; });
+            stats.forEach(r => {
+              if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+                const lc = candidates[r.localCandidateId];
+                if (lc && lc.candidateType === 'relay') _usingTurnRelay = true;
+              }
+            });
+            setCallConnectionType(_usingTurnRelay ? 'turn' : 'p2p');
+          }).catch(() => {});
+        } else if (state === 'failed' || state === 'closed') {
           endCall(false, 'connectionLost');
+        }
+      };
+
+      _peerConnection.oniceconnectionstatechange = () => {
+        const iceState = _peerConnection?.iceConnectionState;
+        if (iceState === 'failed') {
+          endCall(false, 'connectionLost');
+        } else if (iceState === 'disconnected') {
+          setCallReconnectStatus(true);
+          if (_iceDisconnectTimer) return;
+          _iceDisconnectTimer = setTimeout(async () => {
+            _iceDisconnectTimer = null;
+            if (!_peerConnection || !_callId) return;
+            const cur = _peerConnection.iceConnectionState;
+            if (cur === 'connected' || cur === 'completed') return;
+            // callerのみICE restartを試みる（calleeは待機）
+            if (_callRole === 'caller') {
+              try {
+                const offer = await _peerConnection.createOffer({ iceRestart: true });
+                await _peerConnection.setLocalDescription(offer);
+                const { doc: fsDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                const restartAt = Date.now();
+                await updateDoc(fsDoc(db, 'artifacts', appId, 'calls', _callId), {
+                  offer: { type: offer.type, sdp: offer.sdp },
+                  iceRestartAt: restartAt,
+                });
+                _lastIceRestartAt = restartAt;
+                _iceRestartTimer = setTimeout(() => {
+                  _iceRestartTimer = null;
+                  const s = _peerConnection?.iceConnectionState;
+                  if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+                }, 10000);
+              } catch(e) {
+                console.warn('[ICE restart] failed:', e);
+                endCall(false, 'connectionLost');
+              }
+            } else {
+              // callee: caller が restart するまで最大8秒待つ
+              _iceRestartTimer = setTimeout(() => {
+                _iceRestartTimer = null;
+                const s = _peerConnection?.iceConnectionState;
+                if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+              }, 8000);
+            }
+          }, 2000);
+        } else if (iceState === 'connected' || iceState === 'completed') {
+          if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
+          if (_iceRestartTimer) { clearTimeout(_iceRestartTimer); _iceRestartTimer = null; }
+          setCallReconnectStatus(false);
+          // ICEリスタート後に経路が変わっている可能性があるので再チェック
+          if (_peerConnection) {
+            _peerConnection.getStats().then(stats => {
+              const candidates = {};
+              stats.forEach(r => { if (r.type === 'local-candidate') candidates[r.id] = r; });
+              let relay = false;
+              stats.forEach(r => {
+                if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+                  const lc = candidates[r.localCandidateId];
+                  if (lc && lc.candidateType === 'relay') relay = true;
+                }
+              });
+              _usingTurnRelay = relay;
+              setCallConnectionType(relay ? 'turn' : 'p2p');
+            }).catch(() => {});
+          }
         }
       };
     }
@@ -8650,13 +8809,21 @@
             if (_callId) { _callUnsubOffer = unsub; } else { unsub(); }
           });
           unsubAnswer();
-          // 通話確立後も相手が終了したら検知する
+          // 通話確立後も相手が終了 or ICE restart応答を検知する
           if (_callId) {
             _callEndUnsub = onSnapshot(newCallRef, (snap2) => {
               const d2 = snap2.data();
               if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
                 if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
                 if (_callId) endCall(true, 'remoteEnded');
+              } else if (d2.iceRestartAt && d2.iceRestartAt === _lastIceRestartAt && d2.answer && _peerConnection) {
+                // ICE restartに対するcalleeからのanswerを適用
+                const desc = d2.answer;
+                if (_peerConnection.signalingState === 'have-local-offer') {
+                  _peerConnection.setRemoteDescription(new RTCSessionDescription(desc)).catch(e => {
+                    console.warn('[ICE restart caller setRemote] failed:', e);
+                  });
+                }
               }
             });
           }
@@ -8756,12 +8923,21 @@
         status: 'active'
       });
 
-      // ⑧ 通話確立後、発信者が終了したら検知する
-      _callEndUnsub = onSnapshot(callRef, (snap2) => {
+      // ⑧ 通話確立後、発信者が終了 or ICE restartを検知する
+      _callEndUnsub = onSnapshot(callRef, async (snap2) => {
         const d2 = snap2.data();
         if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
           if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
           if (_callId) endCall(true, 'remoteEnded');
+        } else if (d2.iceRestartAt && d2.iceRestartAt !== _lastIceRestartAt && _peerConnection && d2.offer) {
+          _lastIceRestartAt = d2.iceRestartAt;
+          setCallReconnectStatus(true);
+          try {
+            await _peerConnection.setRemoteDescription(new RTCSessionDescription(d2.offer));
+            const newAnswer = await _peerConnection.createAnswer();
+            await _peerConnection.setLocalDescription(newAnswer);
+            await updateDoc(callRef, { answer: { type: newAnswer.type, sdp: newAnswer.sdp } });
+          } catch(e) { console.warn('[ICE restart callee] failed:', e); }
         }
       });
     }
@@ -8783,16 +8959,23 @@
       _callId = null;
       _callRole = null;
       _pendingCallerData = null;
+      if (reason === 'connectionLost' && _usingTurnRelay) reason = 'turnDisconnected';
+      _usingTurnRelay = false;
+      setCallConnectionType(null);
 
       stopCallRingSound();
       stopCallTimer();
 
       if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+      if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
+      if (_iceRestartTimer) { clearTimeout(_iceRestartTimer); _iceRestartTimer = null; }
+      _lastIceRestartAt = null;
       if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
       if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
 
       if (_peerConnection) {
         _peerConnection.onconnectionstatechange = null;
+        _peerConnection.oniceconnectionstatechange = null;
         _peerConnection.ontrack = null;
         _peerConnection.onicecandidate = null;
         _peerConnection.close();
@@ -9023,12 +9206,59 @@
         }
         console.log('No updates available.');
       } catch (error) {
-        console.error('Update check failed:', error);
-        const errorDetail = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-        showCustomAlert("アップデートの確認中にエラーが発生しました。\nネットワーク接続を確認するか、しばらく待ってから再度お試しください。").catch(() => { });
+        console.warn('Update check failed (will retry via manual check):', error);
       }
       return false;
     }
+
+    // 手動アップデート確認（設定のアプリ情報から呼ばれる）
+    window.manualCheckUpdate = async function(btnId, statusId) {
+      const btn = document.getElementById(btnId);
+      const statusEl = statusId ? document.getElementById(statusId) : null;
+      if (!btn || btn.dataset.checking === '1') return;
+      btn.dataset.checking = '1';
+      if (btn.tagName === 'BUTTON') { btn.disabled = true; btn.textContent = '確認中…'; }
+      if (statusEl) { statusEl.textContent = '確認中…'; statusEl.style.color = '#6b7280'; }
+
+      const resetBtn = () => {
+        if (btn) { btn.dataset.checking = '0'; if (btn.tagName === 'BUTTON') { btn.disabled = false; btn.textContent = 'アップデートを確認'; } }
+      };
+
+      if (!isTauri) {
+        if (statusEl) { statusEl.textContent = 'リロードすると最新版が適用されます'; statusEl.style.color = '#6b7280'; }
+        resetBtn();
+        return;
+      }
+
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri invoke unavailable');
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata) {
+          resetBtn();
+          if (statusEl) { statusEl.textContent = ''; }
+          // 既存のアップデートオーバーレイを使用して通常のアップデートフローへ
+          const result = await blockingUpdateCheck();
+          if (!result) {
+            const overlay = document.getElementById('updateOverlay');
+            const versionText = document.getElementById('updateVersionText');
+            const bodyText = document.getElementById('updateBodyText');
+            if (overlay && versionText) {
+              versionText.textContent = `v${metadata.version} が利用可能です`;
+              if (bodyText) bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+              overlay.classList.add('show');
+            }
+          }
+        } else {
+          if (statusEl) { statusEl.textContent = '最新バージョンです'; statusEl.style.color = '#22c55e'; }
+          resetBtn();
+        }
+      } catch (e) {
+        console.warn('[manualCheckUpdate] failed:', e);
+        if (statusEl) { statusEl.textContent = '確認に失敗しました'; statusEl.style.color = '#ef4444'; }
+        resetBtn();
+      }
+    };
 
     // アップデート実行（HTMLのonclickから呼ばれる）
     window.performUpdate = async function () {
@@ -9402,6 +9632,7 @@
         <div class="call-avatar" id="callActiveAvatar"></div>
       </div>
       <div class="call-name" id="callActiveName"></div>
+      <div id="callConnectionType" style="display:none"></div>
       <div class="call-timer" id="callTimerDisplay" style="display:none">00:00</div>
       <div class="call-timer" id="callTimeoutDisplay" style="color:rgba(255,255,255,0.4);font-size:0.82rem;">30秒後に自動終了</div>
       <div class="call-btn-row">
@@ -9539,7 +9770,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailProfile')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">プロフィール編集</span>
     </div>
-    <div style="padding:1.25rem">
+    <div style="padding:1.25rem;padding-bottom:calc(1.25rem + env(safe-area-inset-bottom, 20px))">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:1.5rem">
         <div id="avatarUploadTriggerMobile" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#374151,#111827);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:700;color:white;position:relative;cursor:pointer;flex-shrink:0">
           <span id="mobileAvatarText"></span>
@@ -9553,7 +9784,7 @@
         </div>
       </div>
       <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px">ニックネーム</label>
-      <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" style="width:100%;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;font-size:0.9rem;outline:none;box-sizing:border-box" />
+      <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" style="width:100%;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;font-size:16px;outline:none;box-sizing:border-box" />
       <div id="mobileSettingsMessage" style="margin-top:10px;font-size:0.85rem;text-align:center;color:#6b7280"></div>
       <button onclick="mobileProfileSave()" style="margin-top:14px;width:100%;padding:13px;background:#1f2937;color:white;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer">保存</button>
     </div>
@@ -9565,7 +9796,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailNotif')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">通知設定</span>
     </div>
-    <div style="padding:1rem">
+    <div style="padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom, 20px))">
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-volume-up"></i></div>
@@ -9587,7 +9818,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAppInfo')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">アプリ情報</span>
     </div>
-    <div style="padding:1.25rem">
+    <div style="padding:1.25rem;padding-bottom:calc(1.25rem + env(safe-area-inset-bottom, 20px))">
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:1.5rem 0 1.75rem;">
         <img src="icon-192x192.png" alt="Covo" style="width:72px;height:72px;border-radius:18px;box-shadow:0 2px 12px rgba(0,0,0,0.12);" onerror="this.style.display='none'">
         <div style="text-align:center;">
@@ -9600,6 +9831,11 @@
           <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-tag"></i></div>
           <span class="mobile-settings-row-text">バージョン</span>
           <span id="mobileAppInfoVersion" style="font-size:0.85rem;font-family:ui-monospace,Consolas,monospace;font-weight:700;color:#6b7280">—</span>
+        </div>
+        <div id="mobileCheckUpdateBtn" class="mobile-settings-row" onclick="manualCheckUpdate('mobileCheckUpdateBtn','mobileCheckUpdateStatus')">
+          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-sync-alt"></i></div>
+          <span class="mobile-settings-row-text">アップデートを確認</span>
+          <span id="mobileCheckUpdateStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
         </div>
       </div>
     </div>
