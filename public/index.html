@@ -520,10 +520,35 @@
         display: flex !important;
       }
 
-      /* スマホで入力欄を画面下部に固定 */
+      /* スマホで入力欄を画面下部に固定
+         入力欄の下に適度な余白を残す。背景はチャット背景と同色。 */
       #messageInputArea {
         border-top: 1px solid #e5e7eb;
-        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+        padding-bottom: 1.75rem !important;
+        background-color: #ffffff !important;
+      }
+      /* mobile: 入力フィールド・サイドボタンの影とborderを消す（影に見える線が出る指摘） */
+      #messageInputInner,
+      #messageInputInner:focus-within,
+      .input-side-btn,
+      .input-side-btn:hover,
+      .input-side-btn:active,
+      .input-side-btn:focus {
+        box-shadow: none !important;
+        border: none !important;
+      }
+      /* messageInputArea自体のborder-topも影に見える可能性があるので消す */
+      #messageInputArea {
+        border-top: none !important;
+      }
+      /* ダークモード時はチャット背景の#1a202cに合わせる */
+      body.dark-server-theme #messageInputArea {
+        background-color: #1a202c !important;
+      }
+      /* mobile: userPanel上の境界線を消し、背景をsidebarと同色にして影感を消す */
+      #userPanel {
+        border-top: none !important;
+        background-color: #f3f4f6 !important;
       }
 
       /* iPhoneでの勝手なズーム拡大を防止 */
@@ -2011,8 +2036,8 @@
     ============================================= */
     :root {
       --mnav-h: 48px;
-      /* ホームインジケータ用クリアランス（最大16pxで頭打ち、安全領域のないデバイスは0） */
-      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 16px);
+      /* ホームインジケータ用クリアランス（最大24pxで頭打ち、安全領域のないデバイスは0） */
+      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 24px);
       --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
     }
     #mobileBottomNav {
@@ -2026,7 +2051,8 @@
       background: #1f2937;
       flex-direction: row;
       align-items: stretch;
-      border-top: 1px solid rgba(255,255,255,0.07);
+      border-top: none;
+      box-shadow: none;
       box-sizing: border-box;
     }
     .mobile-nav-tab {
@@ -2673,6 +2699,16 @@
       /* iOS PWA: 最下部に白余白が出ないよう html/body をナビ色で塗りつぶす */
       html, body {
         background-color: #1f2937 !important;
+      }
+      /* チャット画面時はチャット背景(白)と揃え、ダークネイビーの余白を消す */
+      body.in-chat-view,
+      html:has(body.in-chat-view) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード+チャット時 */
+      body.in-chat-view.dark-server-theme,
+      html:has(body.in-chat-view.dark-server-theme) {
+        background-color: #1a202c !important;
       }
       /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
       input[type="text"],
@@ -6440,6 +6476,7 @@
         sidebar.classList.add("mobile-hidden");
         const bottomNav = document.getElementById("mobileBottomNav");
         if (bottomNav) bottomNav.style.display = "none";
+        document.body.classList.add('in-chat-view');
       }
 
       if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
@@ -8371,6 +8408,7 @@
       // ボトムナビを再表示
       const bottomNav = document.getElementById("mobileBottomNav");
       if (bottomNav) bottomNav.style.display = "flex";
+      document.body.classList.remove('in-chat-view');
 
       // ルーム退出処理（開いている判定を解除する）
       currentRoomId = null;
