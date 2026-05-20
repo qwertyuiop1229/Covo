@@ -2070,12 +2070,203 @@
     body.has-mobile-nav #mobileNotifScreen {
       inset: 0 0 calc(56px + env(safe-area-inset-bottom, 0px)) 0;
     }
-    body.dark-server-theme #serverListScreen {
-      background: #1f2937;
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
     }
-    body.dark-server-theme #mobileNotifScreen {
-      background: #1f2937;
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
     }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032;
+      border-top-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #userPanel:hover { background-color: #1e2f42; }
+    body.dark-server-theme .user-panel-name { color: #e2e8f0; }
+    body.dark-server-theme .user-panel-id { color: #64748b; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #e2e8f0;
+      background: rgba(255,255,255,0.08);
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+    body.dark-server-theme .reply-quote {
+      background: rgba(255,255,255,0.07) !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme .reply-quote-nickname { color: #94a3b8; }
+    body.dark-server-theme .reply-quote-text { color: #cbd5e1; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer { background-color: rgba(255,255,255,0.05); }
+    body.dark-server-theme #resizer:hover { background-color: rgba(255,255,255,0.1); }
+    body.dark-server-theme .scrollable::-webkit-scrollbar-thumb { background: #374151; }
+    body.dark-server-theme .scrollable::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme #settingsModal .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme #settingsModal .settings-section-title { color: #e2e8f0 !important; }
+    body.dark-server-theme #settingsModal .settings-content .bg-gray-50,
+    body.dark-server-theme #settingsModal .settings-content .bg-gray-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme #settingsModal .settings-content .text-gray-800,
+    body.dark-server-theme #settingsModal .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme #settingsModal .settings-content .text-gray-600,
+    body.dark-server-theme #settingsModal .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #settingsModal .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme #settingsModal .settings-content .border-gray-200,
+    body.dark-server-theme #settingsModal .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #settingsModal .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme #settingsModal .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme #settingsModal .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme #settingsModal .settings-content input[type="text"],
+    body.dark-server-theme #settingsModal .settings-content input[type="email"],
+    body.dark-server-theme #settingsModal .settings-content input[type="password"] {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
 
     /* === スムーズなアニメーション（UIの触り心地向上） === */
     button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
@@ -2327,8 +2518,7 @@
     ============================================= */
     #settingsModal .settings-discord-layout {
       display: flex;
-      min-height: 400px;
-      max-height: min(700px, calc(100dvh - 3rem));
+      height: 100%;
     }
     #settingsModal .settings-sidebar {
       width: 210px;
@@ -2636,7 +2826,7 @@
 
       <!-- 設定モーダル (PC: Discord風2カラム) -->
       <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="max-height:min(700px,calc(100dvh - 3rem))">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="height:min(700px,calc(100dvh - 3rem))">
           <div class="settings-discord-layout">
             <!-- 左サイドバー -->
             <div class="settings-sidebar">
@@ -2755,11 +2945,11 @@
                       <label class="toggle-switch"><input type="checkbox" id="toggleNotifSound" checked><span class="toggle-slider"></span></label>
                     </div>
                     <div class="setting-row" id="browserNotifRow">
-                      <div class="setting-label"><i class="fas fa-bell"></i> ブラウザ通知</div>
+                      <div class="setting-label"><i class="fas fa-bell"></i> プッシュ通知</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
                     </div>
                     <div class="setting-row hidden" id="desktopNotifRow">
-                      <div class="setting-label"><i class="fas fa-comment-dots"></i> デスクトップ通知 (Tauri)</div>
+                      <div class="setting-label"><i class="fas fa-comment-dots"></i> デスクトップ通知</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleDesktopNotif" checked><span class="toggle-slider"></span></label>
                     </div>
                   </div>
@@ -2768,7 +2958,7 @@
                   <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">外観</h3>
                   <div class="bg-gray-50 rounded-2xl p-4 space-y-1">
                     <div class="setting-row">
-                      <div class="setting-label"><i class="fas fa-moon"></i> ダークサーバーリスト</div>
+                      <div class="setting-label"><i class="fas fa-moon"></i> ダークモード</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleDarkServer" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
                     </div>
                   </div>
@@ -3250,7 +3440,7 @@
         <div id="resizer"></div>
 
         <!-- チャットエリア -->
-        <div class="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
+        <div id="chatArea" class="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
           <div id="currentRoomHeader"
             class="bg-gray-200 p-3 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center">
             <button id="mobileBackButton"
@@ -9784,7 +9974,7 @@
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-moon"></i></div>
-          <span class="mobile-settings-row-text">ダークサーバーリスト</span>
+          <span class="mobile-settings-row-text">ダークモード</span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleDarkServerMobile" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
         </div>
       </div>
@@ -9850,7 +10040,7 @@
         </div>
         <div class="mobile-settings-row" id="mobileBrowserNotifRow">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bell"></i></div>
-          <span class="mobile-settings-row-text">ブラウザ通知</span>
+          <span class="mobile-settings-row-text">プッシュ通知</span>
           <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotifMobile"><span class="toggle-slider"></span></label>
         </div>
       </div>
