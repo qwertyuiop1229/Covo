@@ -2064,10 +2064,10 @@
     /* Body padding for BottomNav when visible */
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 8px));
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
     }
     body.has-mobile-nav .server-grid {
-      padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
     }
     body.dark-server-theme #serverListScreen {
       background: #1f2937;
@@ -2423,12 +2423,16 @@
       overflow-y: auto;
       padding: 1.75rem 2rem;
       position: relative;
+      display: flex;
+      flex-direction: column;
     }
     #settingsModal .settings-content-section {
       display: none;
     }
     #settingsModal .settings-content-section.active {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
     }
     #settingsModal .settings-section-title {
       font-size: 1.15rem;
@@ -2479,21 +2483,18 @@
       textarea {
         font-size: max(16px, 1em) !important;
       }
-      /* ナビ下の隙間を確実に埋める（env()が0を返す場合も考慮） */
+      /* ナビ下のsafe area分だけ補填（html/bodyのdark背景がoverscrollを処理） */
       #mobileBottomNav::after {
         content: '';
         position: absolute;
         left: 0;
         right: 0;
         top: 100%;
-        height: 100px;
+        height: env(safe-area-inset-bottom, 4px);
         background: #1f2937;
         pointer-events: none;
       }
-      /* コンテナの白背景を上書きしてナビ色に合わせる */
-      .container {
-        background-color: #1f2937 !important;
-      }
+      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
     }
     @media (max-width: 640px) {
       #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
@@ -9225,8 +9226,18 @@
       };
 
       if (!isTauri) {
-        if (statusEl) { statusEl.textContent = 'リロードすると最新版が適用されます'; statusEl.style.color = '#6b7280'; }
-        resetBtn();
+        if (statusEl) { statusEl.textContent = 'キャッシュをクリアして再読み込み中...'; statusEl.style.color = '#6b7280'; }
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+        } catch(e) { console.warn('[manualCheckUpdate] cache clear failed:', e); }
+        location.reload();
         return;
       }
 
@@ -9718,17 +9729,17 @@
       <div class="mobile-settings-label">アカウント</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="openMobileDetail('profile')">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-user-circle"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-user-circle"></i></div>
           <span class="mobile-settings-row-text">プロフィール編集</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
         <div class="mobile-settings-row" onclick="openMobileDetail('notif')">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-bell"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bell"></i></div>
           <span class="mobile-settings-row-text">通知設定</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
         <div class="mobile-settings-row" onclick="openMobileDetail('appinfo')">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-info-circle"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-info-circle"></i></div>
           <span class="mobile-settings-row-text">アプリ情報</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
@@ -9738,7 +9749,7 @@
       <div class="mobile-settings-label">外観</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-moon"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-moon"></i></div>
           <span class="mobile-settings-row-text">ダークサーバーリスト</span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleDarkServerMobile" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
         </div>
@@ -9748,7 +9759,7 @@
       <div class="mobile-settings-label">管理</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-shield-alt"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-shield-alt"></i></div>
           <span class="mobile-settings-row-text">管理者パネル</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
@@ -9799,12 +9810,12 @@
     <div style="padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom, 20px))">
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-volume-up"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-volume-up"></i></div>
           <span class="mobile-settings-row-text">通知音</span>
           <label class="toggle-switch"><input type="checkbox" id="toggleNotifSoundMobile"><span class="toggle-slider"></span></label>
         </div>
         <div class="mobile-settings-row" id="mobileBrowserNotifRow">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-bell"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bell"></i></div>
           <span class="mobile-settings-row-text">ブラウザ通知</span>
           <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotifMobile"><span class="toggle-slider"></span></label>
         </div>
@@ -9828,12 +9839,12 @@
       </div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" style="cursor:default;">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-tag"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-tag"></i></div>
           <span class="mobile-settings-row-text">バージョン</span>
           <span id="mobileAppInfoVersion" style="font-size:0.85rem;font-family:ui-monospace,Consolas,monospace;font-weight:700;color:#6b7280">—</span>
         </div>
         <div id="mobileCheckUpdateBtn" class="mobile-settings-row" onclick="manualCheckUpdate('mobileCheckUpdateBtn','mobileCheckUpdateStatus')">
-          <div class="mobile-settings-row-icon" style="background:#f3f4f6;color:#1f2937"><i class="fas fa-sync-alt"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-sync-alt"></i></div>
           <span class="mobile-settings-row-text">アップデートを確認</span>
           <span id="mobileCheckUpdateStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
         </div>
