@@ -2061,13 +2061,14 @@
       box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
     }
 
-    /* Body padding for BottomNav when visible */
-    body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen {
+    /* BottomNav分だけ mainContent を縮める（paddingではなく高さ制限でナビとの重なりを防ぐ） */
+    body.has-mobile-nav #mainContent {
       padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
     }
-    body.has-mobile-nav .server-grid {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+    /* fixed全画面スクリーンはbottomをナビ上端に揃える */
+    body.has-mobile-nav #mobileProfileScreen,
+    body.has-mobile-nav #mobileNotifScreen {
+      inset: 0 0 calc(56px + env(safe-area-inset-bottom, 0px)) 0;
     }
     body.dark-server-theme #serverListScreen {
       background: #1f2937;
@@ -2326,9 +2327,8 @@
     ============================================= */
     #settingsModal .settings-discord-layout {
       display: flex;
-      min-height: 520px;
-      height: calc(100dvh - 5rem);
-      max-height: 700px;
+      min-height: 400px;
+      max-height: min(700px, calc(100dvh - 3rem));
     }
     #settingsModal .settings-sidebar {
       width: 210px;
@@ -2423,16 +2423,12 @@
       overflow-y: auto;
       padding: 1.75rem 2rem;
       position: relative;
-      display: flex;
-      flex-direction: column;
     }
     #settingsModal .settings-content-section {
       display: none;
     }
     #settingsModal .settings-content-section.active {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
+      display: block;
     }
     #settingsModal .settings-section-title {
       font-size: 1.15rem;
@@ -2639,7 +2635,7 @@
 
       <!-- 設定モーダル (PC: Discord風2カラム) -->
       <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="height:min(700px,calc(100dvh - 3rem))">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box" style="max-height:min(700px,calc(100dvh - 3rem))">
           <div class="settings-discord-layout">
             <!-- 左サイドバー -->
             <div class="settings-sidebar">
