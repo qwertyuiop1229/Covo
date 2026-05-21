@@ -520,14 +520,18 @@
         display: flex !important;
       }
 
-      /* スマホで入力欄を画面下部に固定
-         入力欄の下に適度な余白を残す。背景はチャット背景と同色。 */
+      /* スマホ入力欄:
+         - 区切り線・背景コントラスト除去
+         - 下余白も削除（ユーザー指示） */
       #messageInputArea {
-        border-top: 1px solid #e5e7eb;
-        padding-bottom: 1.75rem !important;
+        border-top: 0 none !important;
+        border-top-width: 0 !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0 !important;
         background-color: #ffffff !important;
+        box-shadow: none !important;
       }
-      /* mobile: 入力フィールド・サイドボタンの影とborderを消す（影に見える線が出る指摘） */
+      /* mobile: 入力フィールド・サイドボタンの影だけ消す（borderは元の見た目に戻す） */
       #messageInputInner,
       #messageInputInner:focus-within,
       .input-side-btn,
@@ -535,11 +539,6 @@
       .input-side-btn:active,
       .input-side-btn:focus {
         box-shadow: none !important;
-        border: none !important;
-      }
-      /* messageInputArea自体のborder-topも影に見える可能性があるので消す */
-      #messageInputArea {
-        border-top: none !important;
       }
       /* ダークモード時はチャット背景の#1a202cに合わせる */
       body.dark-server-theme #messageInputArea {
@@ -642,19 +641,25 @@
     }
 
     .container {
+      /* iOS PWAでは 100dvh が viewport を埋めきれず下に body が透けて見える
+         （nav の下に「無駄なネイビー帯」として可視化される）ことがあるため、
+         position:fixed + inset:0 で物理的に viewport 全体を覆い、隙間を構造的に消す。 */
+      position: fixed !important;
+      inset: 0 !important;
       width: 100% !important;
       max-width: none !important;
-      height: 100dvh !important;
-      min-height: 100dvh !important;
+      height: auto !important;
+      min-height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
       border-radius: 0 !important;
       box-shadow: none !important;
     }
 
-    /* iOS safe-area: 画面サイズ問わず入力欄がホームインジケータに被らないよう */
+    /* 旧 safe-area 計算の padding-bottom はユーザー指示で完全撤去（モバイルは @media 内で 0 固定）。
+       デスクトップは下行で 1rem に明示。 */
     #messageInputArea {
-      padding-bottom: max(1rem, calc(0.75rem + env(safe-area-inset-bottom, 0px)));
+      padding-bottom: 1rem;
     }
 
     /* --- 追加機能用スタイル --- */
@@ -1278,7 +1283,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 14px;
-      padding: 1.25rem;
+      padding: 1.25rem 1.25rem 0 1.25rem;
     }
 
     .server-section-label {
@@ -2036,24 +2041,23 @@
     ============================================= */
     :root {
       --mnav-h: 48px;
-      /* ホームインジケータ用クリアランス（最大24pxで頭打ち、安全領域のないデバイスは0） */
-      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 24px);
-      --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
+      --mnav-total: calc(48px + env(safe-area-inset-bottom, 0px));
     }
     #mobileBottomNav {
       display: none; /* JSがmobile時にflex化 */
-      flex: 0 0 var(--mnav-total);
+      flex: 0 0 auto !important;
       width: 100%;
-      height: var(--mnav-total);
-      min-height: var(--mnav-total);
-      padding: 0 0 var(--mnav-safe) 0;
-      margin: 0;
+      height: auto !important;
+      min-height: 48px !important;
+      padding: 0 !important;
+      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+      margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
-      align-items: stretch;
-      border-top: none;
-      box-shadow: none;
-      box-sizing: border-box;
+      align-items: flex-start !important;
+      border-top: none !important;
+      box-shadow: none !important;
+      box-sizing: content-box !important;
     }
     .mobile-nav-tab {
       flex: 1 1 0;
@@ -2061,6 +2065,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      height: 48px !important;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
@@ -2512,7 +2517,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      padding: 1rem;
+      padding: 1rem 1rem 0 1rem;
     }
     .server-grid.list-view .server-section-label {
       margin-top: 8px;
