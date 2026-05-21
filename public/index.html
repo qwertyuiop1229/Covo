@@ -2711,6 +2711,28 @@
       html:has(body.in-chat-view.dark-server-theme) {
         background-color: #1a202c !important;
       }
+      /* iOS ホームインジケーター領域（safe-area-inset-bottom）を
+         ナビ色で完全に塗りつぶす固定フィル */
+      body.has-mobile-nav::after {
+        content: '';
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-bottom, 0px);
+        background: #1f2937;
+        z-index: 88;
+        pointer-events: none;
+      }
+      body.has-mobile-nav.in-chat-view::after {
+        background: #ffffff;
+      }
+      body.has-mobile-nav.in-chat-view.dark-server-theme::after {
+        background: #1a202c;
+      }
+      body.has-mobile-nav.dark-server-theme:not(.in-chat-view)::after {
+        background: #1f2937;
+      }
       /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
       input[type="text"],
       input[type="email"],
