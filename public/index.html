@@ -641,15 +641,8 @@
     }
 
     .container {
-      /* iOS PWAでは 100dvh が viewport を埋めきれず下に body が透けて見える
-         （nav の下に「無駄なネイビー帯」として可視化される）ことがあるため、
-         position:fixed + inset:0 で物理的に viewport 全体を覆い、隙間を構造的に消す。 */
-      position: fixed !important;
-      inset: 0 !important;
       width: 100% !important;
       max-width: none !important;
-      height: auto !important;
-      min-height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
       border-radius: 0 !important;
@@ -2041,23 +2034,21 @@
     ============================================= */
     :root {
       --mnav-h: 48px;
-      --mnav-total: calc(48px + env(safe-area-inset-bottom, 0px));
+      --mnav-total: 48px;
     }
     #mobileBottomNav {
       display: none; /* JSがmobile時にflex化 */
-      flex: 0 0 auto !important;
+      flex: 0 0 48px !important;
       width: 100%;
-      height: auto !important;
-      min-height: 48px !important;
+      height: 48px !important;
       padding: 0 !important;
-      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
-      align-items: flex-start !important;
+      align-items: stretch;
       border-top: none !important;
       box-shadow: none !important;
-      box-sizing: content-box !important;
+      box-sizing: border-box;
     }
     .mobile-nav-tab {
       flex: 1 1 0;
@@ -2065,7 +2056,6 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 48px !important;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
@@ -2701,11 +2691,17 @@
       #serverListNotifBtn {
         display: none !important;
       }
-      /* iOS PWA: 最下部に白余白が出ないよう html/body をナビ色で塗りつぶす */
+      /* iOS PWA: body/htmlをコンテナ・サーバーリストと同じ色にし、
+         ギャップがあっても「ダークネイビーの帯」として見えなくする */
       html, body {
+        background-color: #f3f4f6 !important;
+      }
+      /* ダークモード（ホーム）: サーバーリスト背景と合わせてダーク */
+      body.dark-server-theme,
+      html:has(body.dark-server-theme) {
         background-color: #1f2937 !important;
       }
-      /* チャット画面時はチャット背景(白)と揃え、ダークネイビーの余白を消す */
+      /* チャット画面時はチャット背景(白)と揃える */
       body.in-chat-view,
       html:has(body.in-chat-view) {
         background-color: #ffffff !important;
