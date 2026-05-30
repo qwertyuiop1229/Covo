@@ -57,10 +57,10 @@
     .container {
       display: flex;
       flex-direction: column;
+      position: fixed; /* iOS PWA: dvh/fill-available に依存しない確実な全画面表示 */
+      inset: 0;        /* top/right/bottom/left = 0 → viewport全体を覆う */
       width: 100%;
       max-width: none;
-      height: 100dvh;
-      min-height: 100dvh;
       margin: 0;
       padding: 0;
       border-radius: 0;
@@ -456,7 +456,7 @@
       }
 
       .container {
-        height: 100dvh;
+        /* height: fixed + inset:0 で全画面固定済み。100dvh 上書きは不要 */
         padding: 0;
         border-radius: 0;
         background-color: #f3f4f6;
@@ -2033,17 +2033,19 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      --mnav-h: 48px;
-      --mnav-total: calc(48px + env(safe-area-inset-bottom, 0px));
+      --mnav-h: 40px;
+      /* ホームインジケータ(端末下部のシステムバー)用の余白。
+         フル値(iPhoneで約34px)は大きすぎるので0.4倍に抑える。棒の無い端末では自動的に0 */
+      --mnav-safe: calc(env(safe-area-inset-bottom, 0px) * 0.4);
+      --mnav-total: calc(40px + var(--mnav-safe)); /* アイコン40px + 控えめなsafe-area */
     }
     #mobileBottomNav {
       display: none; /* JSがmobile時にflex化 */
-      flex: 0 0 auto !important;
+      flex: 0 0 var(--mnav-total) !important;
       width: 100%;
-      min-height: 48px;
-      height: auto !important;
-      padding: 0 !important;
-      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+      height: var(--mnav-total) !important;
+      /* 下端だけ控えめにsafe-area分を確保（アイコン列は常に40px。box-sizingで内側に確保） */
+      padding: 0 0 var(--mnav-safe) 0 !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
@@ -2693,12 +2695,13 @@
       #serverListNotifBtn {
         display: none !important;
       }
-      /* iOS PWA: body/htmlをコンテナ・サーバーリストと同じ色にし、
-         ギャップがあっても「ダークネイビーの帯」として見えなくする */
+      /* iOS PWA: body/htmlを常にナビバー色(#1f2937)にする。
+         コンテナ外・safe-area領域・zoom時にボディが見えても
+         ナビと同色なので白い余白として見えなくなる。 */
       html, body {
-        background-color: #f3f4f6 !important;
+        background-color: #1f2937 !important;
       }
-      /* ダークモード（ホーム）: サーバーリスト背景と合わせてダーク */
+      /* ダークモード（ホーム）: 同じナビ色なので変更なし */
       body.dark-server-theme,
       html:has(body.dark-server-theme) {
         background-color: #1f2937 !important;
@@ -2721,6 +2724,14 @@
         font-size: max(16px, 1em) !important;
       }
       /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
+
+      /* ローディング中の2層問題を解消:
+         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
+         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
+      body.dark-server-theme #mainContent,
+      body.dark-server-theme .container {
+        background-color: #1f2937 !important;
+      }
     }
     @media (max-width: 640px) {
       #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
@@ -2763,6 +2774,10 @@
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
       document.documentElement.style.setProperty('overflow', 'hidden', 'important');
       document.body.style.setProperty('overflow', 'hidden', 'important');
+    }
+    // ダークテーマを最初のレンダリング前に適用（window.onload 待ちだとつなぎ目が見える）
+    if (localStorage.getItem('covo_dark_server') === 'true') {
+      document.body.classList.add('dark-server-theme');
     }
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
@@ -3580,6 +3595,21 @@
 
       </div>
     </div>
+    <!-- ===== Mobile Bottom Navigation (コンテナ内flex子要素として配置) ===== -->
+    <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
+      <button class="mobile-nav-tab active" id="mobileTabHome" onclick="switchMobileTab('home')" aria-label="ホーム">
+        <i class="fas fa-home"></i>
+        <span>ホーム</span>
+      </button>
+      <button class="mobile-nav-tab" id="mobileTabNotif" onclick="switchMobileTab('notif')" aria-label="通知">
+        <i class="fas fa-bell"></i>
+        <span>通知</span>
+      </button>
+      <button class="mobile-nav-tab" id="mobileTabYou" onclick="switchMobileTab('you')" aria-label="あなた">
+        <i class="fas fa-user"></i>
+        <span>あなた</span>
+      </button>
+    </nav>
   </div>
 
   <!-- カスタム確認ダイアログ -->
@@ -4731,6 +4761,11 @@
         }
       } catch(_) {}
     }
+
+    // ボトムナビ高さ: アイコン40px + --mnav-safe(= safe-area-inset-bottom * 0.4)。
+    // CSS変数 --mnav-total / --mnav-safe (:root) で一元管理。iPhoneの34px全量ではなく
+    // 約0.4倍に抑えることで、ホームインジケータ用の余白を最小限にしている。
+    // 棒の無い端末では env() が 0 になり余白も自動的に消える。
 
     window.switchMobileTab = function(tab) {
       document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
@@ -10050,22 +10085,6 @@
       <i class="fas fa-trash w-4 text-center text-xs"></i>削除する
     </div>
   </div>
-  <!-- ===== Mobile Bottom Navigation ===== -->
-  <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
-    <button class="mobile-nav-tab active" id="mobileTabHome" onclick="switchMobileTab('home')" aria-label="ホーム">
-      <i class="fas fa-home"></i>
-      <span>ホーム</span>
-    </button>
-    <button class="mobile-nav-tab" id="mobileTabNotif" onclick="switchMobileTab('notif')" aria-label="通知">
-      <i class="fas fa-bell"></i>
-      <span>通知</span>
-    </button>
-    <button class="mobile-nav-tab" id="mobileTabYou" onclick="switchMobileTab('you')" aria-label="あなた">
-      <i class="fas fa-user"></i>
-      <span>あなた</span>
-    </button>
-  </nav>
-
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
     <div class="mobile-profile-header">
