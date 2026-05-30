@@ -93,9 +93,9 @@ git commit -m "Release v$newVersion"
 Write-Host "[3/5] Creating tag $tagName..." -ForegroundColor Green
 git tag $tagName
 
-# [4/5] Firebase Hosting + Cloudflare Worker deploy
-Write-Host "[4/5] Deploying to Firebase Hosting + Cloudflare Worker..." -ForegroundColor Green
-firebase deploy --only hosting
+# [4/5] Firebase Hosting + Firestore Rules + Cloudflare Worker deploy
+Write-Host "[4/5] Deploying to Firebase Hosting + Firestore Rules + Cloudflare Worker..." -ForegroundColor Green
+firebase deploy --only hosting,firestore:rules
 
 # [5/5] git push → GitHub Actions が Windows インストーラーをビルドする
 Write-Host "[5/5] Pushing to GitHub..." -ForegroundColor Green

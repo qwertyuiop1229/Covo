@@ -73,6 +73,11 @@ service cloud.firestore {
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
+      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
       // 3. グローバルオンライン状態
       match /status/{userId} {
         allow read: if isAuthenticated();
@@ -168,6 +173,14 @@ service cloud.firestore {
               request.auth.uid == receiptUserId;
             allow delete: if isJoinedServer(appId, serverId) &&
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
+          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
+          // 書き込みも参加メンバーに許可（鍵の配布・後参加メンバーへの補完のため）。
+          // 中身は公開鍵で暗号化されており、対応する秘密鍵が無ければ復号できないので安全。
+          match /roomKeys/{keyId} {
+            allow read, write: if isJoinedServer(appId, serverId);
           }
         }
 

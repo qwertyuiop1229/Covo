@@ -242,6 +242,30 @@
       text-align: left;
     }
 
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
     /* カスタムコンテキストメニュー */
     .custom-context-menu {
       position: absolute;
@@ -2034,18 +2058,14 @@
     ============================================= */
     :root {
       --mnav-h: 40px;
-      /* ホームインジケータ(端末下部のシステムバー)用の余白。
-         フル値(iPhoneで約34px)は大きすぎるので0.4倍に抑える。棒の無い端末では自動的に0 */
-      --mnav-safe: calc(env(safe-area-inset-bottom, 0px) * 0.4);
-      --mnav-total: calc(40px + var(--mnav-safe)); /* アイコン40px + 控えめなsafe-area */
+      --mnav-total: 40px; /* navアイコン高さのみ。コンテンツエリアはむしろ広くなる */
     }
     #mobileBottomNav {
       display: none; /* JSがmobile時にflex化 */
-      flex: 0 0 var(--mnav-total) !important;
+      flex: 0 0 40px !important;
       width: 100%;
-      height: var(--mnav-total) !important;
-      /* 下端だけ控えめにsafe-area分を確保（アイコン列は常に40px。box-sizingで内側に確保） */
-      padding: 0 0 var(--mnav-safe) 0 !important;
+      height: 40px !important;
+      padding: 0 !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
@@ -3715,6 +3735,364 @@
 
     const appId = "simplechat-65a0d";
 
+    /* =====================================================================
+       E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
+       ---------------------------------------------------------------------
+       設計方針（最重要：壊れてもアプリを止めない）
+       - 暗号化は「最善努力」。鍵が用意できない/失敗したら必ず平文で送る
+         （= 送れない・固まる、を絶対に起こさない）。
+       - 復号は常に安全。平文(プレフィックス無し)はそのまま表示。暗号文で
+         復号失敗した時だけプレースホルダを返す。チャットは決して白画面に
+         しない。
+       - 鍵は localStorage(JWK) に保存。プライベートブラウズ等で書き込み
+         禁止でも try-catch でメモリ(_e2ee.mem)に保持して動作継続。
+       - Firestore に秘密鍵(本人のみ)・公開鍵・ルーム鍵をバックアップし、
+         キャッシュ消去後も自動復元する。
+       ===================================================================== */
+    const E2EE_PREFIX = "enc::v1::";       // 暗号文の目印（過去の平文と区別する）
+    const E2EE_LS_PRIV = "covo_e2ee_priv"; // localStorageキー（秘密鍵JWK）
+    const E2EE_LS_PUB  = "covo_e2ee_pub";  // localStorageキー（公開鍵JWK）
+
+    const _e2ee = {
+      ready: false,
+      privateKey: null,   // CryptoKey (RSA-OAEP decrypt)
+      publicKey: null,    // CryptoKey (RSA-OAEP encrypt)
+      publicKeyJwk: null, // JWK (Firestore保存・他者配布用)
+      mem: {},            // localStorage不可時のメモリ退避
+      roomKeyCache: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
+      pubKeyCache: {},    // userId -> CryptoKey(public) インポート済みキャッシュ
+    };
+
+    const _subtleOK = !!(window.crypto && window.crypto.subtle);
+    const _td = new TextDecoder(), _te = new TextEncoder();
+
+    function _abToB64(buf) {
+      const bytes = new Uint8Array(buf);
+      let bin = "";
+      const CH = 0x8000;
+      for (let i = 0; i < bytes.length; i += CH) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+      }
+      return btoa(bin);
+    }
+    function _b64ToAb(b64) {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out.buffer;
+    }
+
+    // localStorage 安全アクセス（プライベートブラウズ等で例外でも落ちない）
+    function _lsGet(key) {
+      try { const v = localStorage.getItem(key); if (v != null) return v; } catch (e) {}
+      return (key in _e2ee.mem) ? _e2ee.mem[key] : null;
+    }
+    function _lsSet(key, val) {
+      _e2ee.mem[key] = val; // 常にメモリにも保持
+      try { localStorage.setItem(key, val); } catch (e) {}
+    }
+
+    async function _genUserKeyPair() {
+      return await window.crypto.subtle.generateKey(
+        { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+        true, ["encrypt", "decrypt"]
+      );
+    }
+    async function _importPriv(jwk) {
+      return await window.crypto.subtle.importKey("jwk", jwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+    }
+    async function _importPub(jwk) {
+      return await window.crypto.subtle.importKey("jwk", jwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+    }
+
+    // ユーザー鍵の初期化：ローカル→Firestore→新規生成 の順で自動復元/作成
+    async function ensureE2EEKeys() {
+      if (!_subtleOK || !userId) return false;
+      if (_e2ee.ready) return true;
+      try {
+        // 1) ローカル(JWK)から復元
+        const privStr = _lsGet(E2EE_LS_PRIV);
+        const pubStr = _lsGet(E2EE_LS_PUB);
+        if (privStr && pubStr) {
+          const privJwk = JSON.parse(privStr), pubJwk = JSON.parse(pubStr);
+          _e2ee.privateKey = await _importPriv(privJwk);
+          _e2ee.publicKey = await _importPub(pubJwk);
+          _e2ee.publicKeyJwk = pubJwk;
+          _e2ee.ready = true;
+          // Firestoreに公開鍵が無ければバックアップ（端末間共有のため）
+          _backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
+          return true;
+        }
+
+        // 2) Firestoreの本人専用ドキュメントから復元
+        try {
+          const privRef = doc(db, `artifacts/${appId}/users/${userId}/private/keys`);
+          const privSnap = await getDoc(privRef);
+          if (privSnap.exists() && privSnap.data().privateKeyJwk) {
+            const privJwk = privSnap.data().privateKeyJwk;
+            const pubJwk = privSnap.data().publicKeyJwk;
+            _e2ee.privateKey = await _importPriv(privJwk);
+            _e2ee.publicKey = await _importPub(pubJwk);
+            _e2ee.publicKeyJwk = pubJwk;
+            _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+            _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+            _e2ee.ready = true;
+            return true;
+          }
+        } catch (e) { /* Firestore読取失敗→新規生成へ */ }
+
+        // 3) 新規生成して保存（ローカル＋Firestoreバックアップ）
+        const pair = await _genUserKeyPair();
+        const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
+        const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
+        _e2ee.privateKey = pair.privateKey;
+        _e2ee.publicKey = pair.publicKey;
+        _e2ee.publicKeyJwk = pubJwk;
+        _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+        _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+        _e2ee.ready = true;
+        await _backupKeysToFirestore(privJwk, pubJwk);
+        return true;
+      } catch (e) {
+        console.warn("[E2EE] 鍵初期化に失敗（平文モードで継続）:", e);
+        return false;
+      }
+    }
+
+    async function _backupKeysToFirestore(privJwk, pubJwk) {
+      if (!userId) return;
+      // 公開鍵を users/{uid} に（全員が読めてOK）
+      try {
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}`), { publicKeyJwk: pubJwk }, { merge: true });
+      } catch (e) {}
+      // 秘密鍵を本人専用サブドキュメントに（ルールで本人のみ読み書き）
+      try {
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/private/keys`),
+          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+      } catch (e) {}
+    }
+
+    // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き）。無ければnull。
+    async function _getUserPublicKey(uid) {
+      if (_e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
+      try {
+        const snap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}`));
+        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        if (!jwk) return null;
+        const key = await _importPub(jwk);
+        _e2ee.pubKeyCache[uid] = key;
+        return key;
+      } catch (e) { return null; }
+    }
+
+    // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
+    async function _getEscrowPublicKey() {
+      try {
+        const snap = await getDoc(doc(db, `artifacts/${appId}/settings/escrowKey`));
+        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        if (!jwk) return null;
+        return await _importPub(jwk);
+      } catch (e) { return null; }
+    }
+
+    // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
+    // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に保存。
+    // 既に存在すれば何もしない。管理者以外・失敗時は黙ってスキップ（アプリは止めない）。
+    async function ensureEscrowKey() {
+      if (!_subtleOK || !userId || !isAdmin) return;
+      try {
+        const escrowRef = doc(db, `artifacts/${appId}/settings/escrowKey`);
+        const snap = await getDoc(escrowRef);
+        if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
+        const pair = await _genUserKeyPair();
+        const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
+        const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
+        // 管理者本人の private に秘密鍵を保管（本人のみ読める）
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`),
+          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+        // 公開鍵を全体設定に（合鍵の公開部分）
+        await setDoc(escrowRef, { publicKeyJwk: pubJwk, createdBy: userId, updatedAt: serverTimestamp() }, { merge: true });
+        console.log("[E2EE] エスクロー鍵を生成しました");
+      } catch (e) {
+        console.warn("[E2EE] エスクロー鍵の生成に失敗（スキップ）:", e);
+      }
+    }
+
+    // ルーム共通鍵(AES-GCM)を取得。無ければ生成し、全メンバー＋エスクローへ配布。
+    // 取得・生成いずれも失敗したら null（呼び出し側は平文で送る）。
+    async function getOrCreateRoomKey(serverId, roomId, memberIds) {
+      if (!_subtleOK) return null;
+      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      const ok = await ensureE2EEKeys();
+      if (!ok) {
+        console.warn(`[E2EE] ユーザー鍵が未初期化のためルーム鍵を取得できません (room=${roomId})`);
+        return null;
+      }
+
+      // 1) 自分宛のwrapped room keyがFirestoreにあるかをまずチェック
+      try {
+        const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
+        const myWrapSnap = await getDoc(myWrapRef);
+        if (myWrapSnap.exists() && myWrapSnap.data().wrappedKey) {
+          const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(myWrapSnap.data().wrappedKey));
+          const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+          _e2ee.roomKeyCache[roomId] = key;
+          return key;
+        }
+      } catch (e) {
+        // 自分宛wrapを復号できない（鍵が変わった等）。再生成すると既存メッセージが読めなくなるので平文継続。
+        console.error(`[E2EE] 自分宛ルーム鍵の復号に失敗（平文で継続。鍵が再生成された可能性） (room=${roomId}):`, e);
+        return null;
+      }
+
+      // 2) 無ければ新規生成して配布
+      try {
+        const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+        const raw = await window.crypto.subtle.exportKey("raw", key);
+        await _distributeRoomKey(serverId, roomId, raw, memberIds);
+        _e2ee.roomKeyCache[roomId] = key;
+        return key;
+      } catch (e) {
+        console.warn("[E2EE] ルーム鍵の生成/配布に失敗（平文で継続）:", e);
+        return null;
+      }
+    }
+
+    // 送信用: ルーム鍵を「最大 maxWaitMs ミリ秒だけ待って」取得する。
+    // 入室直後など鍵準備が間に合っていない時でも、少し待つことで最初の1通も
+    // 暗号化できる確率を上げる。待っても取れなければ null（呼び出し側は平文送信）。
+    async function getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500) {
+      if (!_subtleOK) return null;
+      // 既にキャッシュにあれば即返す（待ち時間ゼロ）
+      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      const deadline = Date.now() + maxWaitMs;
+      let attempt = 0;
+      while (true) {
+        const key = await getOrCreateRoomKey(serverId, roomId, memberIds);
+        if (key) return key;
+        if (Date.now() >= deadline) return null; // タイムアウト→平文送信へ
+        // 少し待ってから再試行（指数的に: 150ms, 300ms, ...）
+        const delay = Math.min(150 * Math.pow(2, attempt++), 500);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+
+    // 生のルーム鍵を、各メンバーの公開鍵＋エスクロー公開鍵で暗号化して保存
+    async function _distributeRoomKey(serverId, roomId, rawKey, memberIds) {
+      const ids = Array.from(new Set([...(memberIds || []), userId]));
+      const writes = [];
+      for (const uid of ids) {
+        const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
+        if (!pub) continue; // 公開鍵未登録のメンバーはスキップ（その人は後で自動補完）
+        try {
+          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+          writes.push(setDoc(
+            doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+            { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true }
+          ));
+        } catch (e) {}
+      }
+      // 管理者エスクロー（合鍵）
+      const escrowPub = await _getEscrowPublicKey();
+      if (escrowPub) {
+        try {
+          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
+          writes.push(setDoc(
+            doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
+            { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true }
+          ));
+        } catch (e) {}
+      }
+      await Promise.all(writes);
+    }
+
+    // メンバー補完: 自分がルーム鍵を持っている場合、まだ wrapped key を持たない
+    // 参加メンバー（後から参加した人など）の分を生成して配布する。
+    // これにより「メンバー追加時に鍵を再配布」を、誰かが入室するたびに自動で満たす。
+    async function backfillRoomKeysForMembers(serverId, roomId, memberIds) {
+      if (!_subtleOK || !userId) return;
+      try {
+        const roomKey = _e2ee.roomKeyCache[roomId];
+        if (!roomKey) return; // 自分が鍵を持っていなければ補完できない
+        const rawKey = await window.crypto.subtle.exportKey("raw", roomKey);
+        const ids = Array.from(new Set(memberIds || []));
+        for (const uid of ids) {
+          try {
+            const ref = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`);
+            const snap = await getDoc(ref);
+            if (snap.exists() && snap.data().wrappedKey) continue; // 既に配布済み
+            const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
+            if (!pub) continue; // 公開鍵未登録（その人がまだログインE2EE初期化していない）
+            const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+            await setDoc(ref, { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true });
+          } catch (e) { /* 個別失敗は無視 */ }
+        }
+      } catch (e) {}
+    }
+
+    // テキストを暗号化。失敗したら null（呼び出し側は平文送信にフォールバック）。
+    async function encryptText(plaintext, roomKey) {
+      if (!_subtleOK || !roomKey || typeof plaintext !== "string" || plaintext.length === 0) return null;
+      try {
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const ct = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, roomKey, _te.encode(plaintext));
+        return E2EE_PREFIX + _abToB64(iv.buffer) + "::" + _abToB64(ct);
+      } catch (e) {
+        console.warn("[E2EE] 暗号化失敗（平文で送信）:", e);
+        return null;
+      }
+    }
+
+    // 文字列が暗号文か（過去の平文と自動判別）
+    function isEncrypted(text) {
+      return typeof text === "string" && text.startsWith(E2EE_PREFIX);
+    }
+
+    // メッセージ表示用に復号。平文ならそのまま返す。暗号文で失敗したらプレースホルダ。
+    // roomKey が無ければ取得を試みる。同期的に返せない場合のため Promise を返す。
+    async function decryptText(text, serverId, roomId, memberIds) {
+      if (!isEncrypted(text)) return text; // 過去の平文・通常テキストはそのまま
+      if (!_subtleOK) {
+        console.warn("[E2EE] Web Crypto 非対応のため暗号化メッセージを復号できません");
+        return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      }
+      try {
+        const roomKey = await getOrCreateRoomKey(serverId, roomId, memberIds || []);
+        if (!roomKey) {
+          console.warn(`[E2EE] ルーム鍵が無いため復号できません (room=${roomId})`);
+          return "（復号化エラー：鍵が見つかりません）";
+        }
+        const parts = text.split("::"); // ["enc","v1",iv,ct]
+        if (parts.length !== 4) {
+          console.warn(`[E2EE] 暗号文の形式が不正です (room=${roomId})`);
+          return "（復号化エラー：メッセージを解読できません）";
+        }
+        const iv = new Uint8Array(_b64ToAb(parts[2]));
+        const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKey, _b64ToAb(parts[3]));
+        return _td.decode(pt);
+      } catch (e) {
+        console.error(`[E2EE] メッセージの復号に失敗しました (room=${roomId}):`, e);
+        return "（復号化エラー：メッセージを解読できません）";
+      }
+    }
+
+    // メッセージ配列を一括復号（.text を平文へ置換。平文・復号済みはスキップ）。
+    // 1メッセージでも失敗して全体が止まらないよう、各々を独立に try/catch する。
+    async function decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
+      if (!_subtleOK || !Array.isArray(messages)) return;
+      for (const m of messages) {
+        if (!m || typeof m.text !== "string") continue;
+        if (m._decrypted) continue;            // 二重復号防止
+        if (!isEncrypted(m.text)) { m._decrypted = true; continue; } // 平文はそのまま
+        try {
+          m.text = await decryptText(m.text, serverId, roomId, memberIds);
+        } catch (e) {
+          m.text = "（復号化エラー：メッセージを解読できません）";
+        }
+        m._decrypted = true;
+      }
+    }
+
     // Cloudinary設定（要変更）
     const CLOUDINARY_CLOUD_NAME = "dhmsyvwjd";
     const CLOUDINARY_UPLOAD_PRESET = "simplechat_unsigned";
@@ -4002,6 +4380,11 @@
 
     let searchQuery = "";
     let isInitialMessageLoad = true;
+    // 未読の境界線用: 入室時点での最終既読時刻(ms)。これより新しい最初のメッセージの上に線を出す。
+    // 0 のときは線を表示しない（全既読 or 履歴なし）。
+    let unreadBoundaryAt = 0;
+    // 一度描画した区切り線が既読更新で消えないよう、確定した境界メッセージIDを保持する。
+    let unreadBoundaryMessageId = null;
     // Web Audio API による洗練された通知チャイム
     function playNotificationSound() {
       try {
@@ -4147,6 +4530,9 @@
               showServerList();
               startPresenceSystem();
               initializeFCM();
+              // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
+              // 続けて管理者ならエスクロー鍵（合鍵）も用意する
+              ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => {});
               _lastAuthUserId = user.uid;
               // SW にuserIdを通知（自分のメッセージへの通知バグ防止）
               if ('serviceWorker' in navigator) {
@@ -4762,10 +5148,9 @@
       } catch(_) {}
     }
 
-    // ボトムナビ高さ: アイコン40px + --mnav-safe(= safe-area-inset-bottom * 0.4)。
-    // CSS変数 --mnav-total / --mnav-safe (:root) で一元管理。iPhoneの34px全量ではなく
-    // 約0.4倍に抑えることで、ホームインジケータ用の余白を最小限にしている。
-    // 棒の無い端末では env() が 0 になり余白も自動的に消える。
+    // ボトムナビ高さ: 44px(アイコン) + min(safe-area-inset-bottom, 10px) で動的対応済み。
+    // min()でenv()を上限10pxに制限: iPhoneの34px全量を使わず適切な余白のみ確保。
+    // position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
 
     window.switchMobileTab = function(tab) {
       document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
@@ -6347,15 +6732,21 @@
             olderMessages.push(d);
           });
           olderMessages.reverse();
-          
+
+          // E2EE: 追加分を描画前に復号（失敗してもクラッシュさせない）
+          try {
+            const _members = (currentServerData && currentServerData.joinedUsers) || [];
+            await decryptMessagesInPlace(olderMessages, currentServerId, currentRoomId, _members);
+          } catch (e) {}
+
           // allLoadedMessagesの先頭に追加
           allLoadedMessages = [...olderMessages, ...allLoadedMessages];
           lastMessagesData = [...allLoadedMessages]; // 表示用に同期
-          
+
           // messagesIndexMap再構築
           messagesIndexMap = {};
           lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-          
+
           renderMessagesWithReadReceipts(); // 全体再描画
         }
       } catch (e) {
@@ -6402,14 +6793,24 @@
           if (change.type === "added" && !isInitialMessageLoad) {
             const msgData = change.doc.data();
             if (msgData.senderId !== userId) {
-              const isMentioned = msgData.text && msgData.text.includes(`@${userNickname}`);
-              if (isMentioned) {
-                showMentionToast(msgData.senderNickname || "ユーザー");
-              }
-              if (!document.hasFocus() || isMentioned) {
-                const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
-                showNotification(notifTitle, `${msgData.senderNickname}: ${msgData.text || "（ファイル）"}`, currentRoomId);
-              }
+              // E2EE: メンション判定・通知文は平文に対して行う（暗号文なら復号してから）
+              (async () => {
+                let bodyText = msgData.text;
+                try {
+                  if (isEncrypted(bodyText)) {
+                    const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                    bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
+                  }
+                } catch (e) {}
+                const isMentioned = bodyText && typeof bodyText === "string" && bodyText.includes(`@${userNickname}`);
+                if (isMentioned) {
+                  showMentionToast(msgData.senderNickname || "ユーザー");
+                }
+                if (!document.hasFocus() || isMentioned) {
+                  const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
+                  showNotification(notifTitle, `${msgData.senderNickname}: ${bodyText || "（ファイル）"}`, currentRoomId);
+                }
+              })();
             }
           }
         });
@@ -6441,9 +6842,15 @@
         // UI描画
         // 反転されているため、scrollTopが0に近い状態が「最新を見ている」状態になる
         const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollTop <= 50);
-        
-        renderPinnedMessages();
-        renderMessagesWithReadReceipts();
+
+        // E2EE: 描画前に暗号文を平文へ復号（失敗してもアプリは止めない）
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        decryptMessagesInPlace(allLoadedMessages, currentServerId, currentRoomId, _members)
+          .catch(() => {})
+          .finally(() => {
+            renderPinnedMessages();
+            renderMessagesWithReadReceipts();
+          });
 
         if (isInitialMessageLoad) {
           isInitialMessageLoad = false;
@@ -6475,8 +6882,16 @@
 
       if (currentRoomId === roomId) return;
       currentRoomId = roomId;
+      // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
+      unreadBoundaryAt = 0;
+      unreadBoundaryMessageId = null;
       try {
         const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+        // covo_last_read には「+60000/+10000」した先読み値が入るので、その分を引いて実際の既読時刻に戻す
+        const prevRead = rm[roomId];
+        if (typeof prevRead === 'number' && prevRead > 0) {
+          unreadBoundaryAt = prevRead - 60000;
+        }
         rm[roomId] = Date.now() + 60000;
         localStorage.setItem('covo_last_read', JSON.stringify(rm));
         const badge = document.getElementById('unread-badge-' + roomId);
@@ -6529,6 +6944,15 @@
       isLoadingOlderMessages = false;
 
       subscribeToMessages();
+
+      // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完（メンバー追加対応）
+      (async () => {
+        try {
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+          if (key) await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+        } catch (e) {}
+      })();
 
       const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
       readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
@@ -7095,7 +7519,39 @@
 
       if (!attachedFile && !attachedKvFile) loadingOverlay.classList.remove("hidden");
       try {
-        const data = { text, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+        // --- E2EE: 本文を暗号化（最善努力。鍵が無い/失敗時は平文のまま送る） ---
+        // 画面には「暗号化できなかった」とは出さない（ユーザーは意識しない設計）。
+        // ただし平文送信になった場合は必ず理由をコンソールに残す（運用・デバッグ用）。
+        let textToStore = text;
+        if (text) {
+          if (!_subtleOK) {
+            console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
+          } else {
+            try {
+              const members = (currentServerData && currentServerData.joinedUsers) || [];
+              // 鍵がまだ無ければ最大1.5秒待って取得（入室直後の最初の1通も暗号化しやすくする）。
+              // この待ち時間は「読み込み中…」オーバーレイの表示中に行う（ユーザーには通常の送信待ちに見える）。
+              const overlayWasHidden = loadingOverlay.classList.contains("hidden");
+              if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
+                loadingOverlay.classList.remove("hidden");
+              }
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
+              if (!roomKey) {
+                console.warn(`[E2EE] ルーム鍵を取得できなかったため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
+              } else {
+                const enc = await encryptText(text, roomKey);
+                if (enc) {
+                  textToStore = enc; // 暗号化できた時だけ置換
+                } else {
+                  console.warn(`[E2EE] 本文の暗号化に失敗したため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
+                }
+              }
+            } catch (e) {
+              console.error("[E2EE] 暗号化処理で例外が発生したため平文で送信します:", e);
+            }
+          }
+        }
+        const data = { text: textToStore, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
         if (attachedKvFile) {
           Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
         }
@@ -7124,10 +7580,12 @@
           data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
         }
         await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
-        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), { 
-          lastMessageAt: data.timestamp, 
-          lastMessageSender: userId, 
-          lastMessageText: text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')
+        // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
+        const wasEncrypted = isEncrypted(textToStore);
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+          lastMessageAt: data.timestamp,
+          lastMessageSender: userId,
+          lastMessageText: wasEncrypted ? '（メッセージ）' : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
 
         // FCMプッシュ通知（サーバーメンバー全員に送信）
@@ -7677,6 +8135,51 @@
       if (endMsg) {
         messagesDisplay.appendChild(endMsg);
       }
+
+      // 未読の境界線（検索中は出さない。filteredMessages は時系列昇順の filteredMessages を使う）
+      if (!searchQuery) {
+        const boundaryId = resolveUnreadBoundaryMessageId(filteredMessages);
+        renderUnreadDivider(boundaryId);
+      } else {
+        const existing = messagesDisplay.querySelector('.unread-divider');
+        if (existing) existing.remove();
+      }
+    }
+
+    // 入室時に確定した未読境界(unreadBoundaryAt)を元に、最初の未読メッセージIDを返す。
+    // 一度決まったら unreadBoundaryMessageId に固定し、既読更新で線が消えないようにする。
+    function resolveUnreadBoundaryMessageId(chronologicalMessages) {
+      // 既に確定済みで、その行がまだ存在するなら使い回す
+      if (unreadBoundaryMessageId && chronologicalMessages.some(m => m.id === unreadBoundaryMessageId)) {
+        return unreadBoundaryMessageId;
+      }
+      if (!unreadBoundaryAt) return null;
+      for (const msg of chronologicalMessages) {
+        // 自分の発言は未読の起点にしない
+        if (msg.senderId === userId) continue;
+        const ts = (msg.timestamp && msg.timestamp.toMillis) ? msg.timestamp.toMillis() : 0;
+        if (ts && ts > unreadBoundaryAt) {
+          unreadBoundaryMessageId = msg.id;
+          return unreadBoundaryMessageId;
+        }
+      }
+      return null;
+    }
+
+    // 区切り線を、境界メッセージの「視覚的に直上」に配置する。
+    // 表示は scaleY(-1) で反転しているため、DOM上は境界行の直後に入れると視覚的に直上になる。
+    function renderUnreadDivider(boundaryMessageId) {
+      const existing = messagesDisplay.querySelector('.unread-divider');
+      if (existing) existing.remove();
+      if (!boundaryMessageId) return;
+      const boundaryBubble = messagesDisplay.querySelector(`.message-bubble[data-message-id="${boundaryMessageId}"]`);
+      if (!boundaryBubble) return;
+      const boundaryRow = boundaryBubble.closest('.message-row');
+      if (!boundaryRow) return;
+      const divider = document.createElement('div');
+      divider.className = 'unread-divider flipped';
+      divider.innerHTML = '<span>ここから未読</span>';
+      messagesDisplay.insertBefore(divider, boundaryRow.nextSibling);
     }
 
     function computeReadByCount(message, msgIndex) {
