@@ -2998,6 +2998,10 @@
                       <span class="text-sm font-mono font-bold text-gray-800" id="appInfoVersion">—</span>
                     </div>
                     <div class="flex justify-between items-center">
+                      <span class="text-sm text-gray-500"><i class="fas fa-lock mr-1"></i>メッセージの暗号化</span>
+                      <span class="text-sm font-bold" id="appInfoE2EE" style="color:#6b7280">確認中…</span>
+                    </div>
+                    <div class="flex justify-between items-center">
                       <button id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
                       <span id="pcCheckUpdateStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
@@ -4093,6 +4097,29 @@
       }
     }
 
+    // 設定>アプリ情報 の「メッセージの暗号化」状態表示を更新する。
+    // ユーザーが自分で暗号化が効いているか確認できるようにする（実機での動作確認用）。
+    async function updateE2EEStatusUI() {
+      const el = document.getElementById('appInfoE2EE');
+      if (!el) return;
+      const set = (text, color) => { el.textContent = text; el.style.color = color; };
+      if (!_subtleOK) {
+        set('利用できません（端末非対応）', '#dc2626'); // 赤
+        return;
+      }
+      set('確認中…', '#6b7280');
+      try {
+        const ok = await ensureE2EEKeys();
+        if (ok && _e2ee.ready) {
+          set('有効（自動暗号化）', '#16a34a'); // 緑
+        } else {
+          set('準備中…（まだ鍵がありません）', '#d97706'); // オレンジ
+        }
+      } catch (e) {
+        set('準備中…', '#d97706');
+      }
+    }
+
     // Cloudinary設定（要変更）
     const CLOUDINARY_CLOUD_NAME = "dhmsyvwjd";
     const CLOUDINARY_UPLOAD_PRESET = "simplechat_unsigned";
@@ -5112,6 +5139,7 @@
               .catch(() => { verEl.textContent = '—'; });
           }
         }
+        updateE2EEStatusUI();
       }
       const sec = document.getElementById(smap[tab] || 'profileSection');
       if (sec) sec.classList.add('active');
