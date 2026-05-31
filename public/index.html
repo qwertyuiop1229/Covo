@@ -5703,7 +5703,7 @@
       if (tb) tb.classList.add('active');
       document.getElementById('mobileProfileScreen').classList.remove('active');
       document.getElementById('mobileNotifScreen').classList.remove('active');
-      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); }
+      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); scanAllUnreadAndRender(); }
       else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
     };
 
@@ -5712,6 +5712,7 @@
       const pm = document.getElementById('pcNotifModal');
       pm.style.display = pm.style.display === 'none' ? 'flex' : 'none';
       updateGlobalNotifUI();
+      if (pm.style.display !== 'none') scanAllUnreadAndRender();
     };
     function updateGlobalNotifUI() {
       let count = 0;
@@ -5762,6 +5763,109 @@
       if (pModal) pModal.style.display = 'none';
       switchMobileTab('home');
       const rItem = document.getElementById('room-item-' + rid);
+      if (rItem) rItem.click();
+    };
+
+    // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
+    // 現在開いているサーバー内だけでなく、他サーバーの未読も拾う。
+    let _scanUnreadBusy = false;
+    async function scanAllUnreadAndRender() {
+      if (_scanUnreadBusy || !userId) return;
+      _scanUnreadBusy = true;
+      try {
+        const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+        // 参加サーバー一覧（キャッシュ優先、無ければ取得）
+        let servers = (allServersCache && allServersCache.length)
+          ? allServersCache.filter(s => (s.joinedUsers || []).includes(userId))
+          : null;
+        if (!servers) {
+          const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId)));
+          servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+        const items = []; // {serverId, serverName, roomId, roomName, lastAt}
+        for (const sv of servers) {
+          let roomsSnap;
+          try { roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sv.id}/rooms`)); }
+          catch (e) { continue; }
+          roomsSnap.forEach(rd => {
+            const room = rd.data();
+            const lastAt = room.lastMessageAt?.toMillis?.() || 0;
+            if (!lastAt) return;
+            const lastRead = rm[rd.id] || 0;
+            // 自分の最後の発言で更新された分は未読にしない
+            const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+            // 今開いているルームは既読扱い
+            const isOpen = (sv.id === currentServerId && rd.id === currentRoomId);
+            if (lastAt > lastRead && !bySelf && !isOpen) {
+              items.push({ serverId: sv.id, serverName: sv.name || sv.id, roomId: rd.id, roomName: room.name || rd.id, lastAt });
+            }
+          });
+        }
+        items.sort((a, b) => b.lastAt - a.lastAt);
+        renderNotifList(items);
+      } catch (e) {
+        console.warn('[Notif] 未読スキャン失敗:', e);
+      } finally {
+        _scanUnreadBusy = false;
+      }
+    }
+
+    function renderNotifList(items) {
+      let html = '';
+      items.forEach(it => {
+        const sName = escapeHtml(it.serverName);
+        const rName = escapeHtml(it.roomName);
+        html += `<div class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+           <div class="text-xs text-indigo-500 mb-0.5">${sName}</div>
+           <div class="text-sm font-bold text-indigo-900"># ${rName}</div>
+           <div class="text-xs text-indigo-700 mt-0.5">新着メッセージがあります</div>
+        </div>`;
+      });
+      const count = items.length;
+      const mList = document.getElementById('mobileNotifList');
+      const pList = document.getElementById('pcNotifList');
+      if (mList) mList.innerHTML = html;
+      if (pList) pList.innerHTML = html;
+      const me = document.getElementById('mobileNotifEmpty');
+      const pe = document.getElementById('pcNotifEmpty');
+      if (me) me.style.display = count > 0 ? 'none' : 'block';
+      if (pe) pe.style.display = count > 0 ? 'none' : 'block';
+      // 通知タブのドット
+      const mobileNotifTab = document.getElementById('mobileTabNotif');
+      if (mobileNotifTab) {
+        let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
+        if (count > 0) {
+          if (!nb) { nb = document.createElement('span'); nb.className = 'mobile-notif-dot'; mobileNotifTab.appendChild(nb); }
+          nb.style.display = 'block';
+        } else if (nb) { nb.style.display = 'none'; }
+      }
+      const badge = document.getElementById('globalUnreadBadge');
+      if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+    }
+
+    // 他サーバーのルームへ移動する（通知一覧から）
+    window.goToServerRoom = async function(serverId, roomId) {
+      const pModal = document.getElementById('pcNotifModal');
+      if (pModal) pModal.style.display = 'none';
+      try {
+        if (serverId && serverId !== currentServerId && typeof enterServer === 'function') {
+          // サーバーデータを用意（キャッシュ優先、無ければ取得）
+          let sv = (allServersCache || []).find(s => s.id === serverId);
+          if (!sv) {
+            const sd = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+            if (sd.exists()) sv = { id: serverId, ...sd.data() };
+          }
+          if (sv) {
+            await enterServer(serverId, sv);
+            switchMobileTab('home');
+            setTimeout(() => { const ri = document.getElementById('room-item-' + roomId); if (ri) ri.click(); }, 700);
+            return;
+          }
+        }
+      } catch (e) { console.warn('[Notif] サーバー移動失敗:', e); }
+      // 同じサーバー内（またはフォールバック）
+      switchMobileTab('home');
+      const rItem = document.getElementById('room-item-' + roomId);
       if (rItem) rItem.click();
     };
 
@@ -6600,7 +6704,7 @@
 
           const avatar = document.createElement("div");
           avatar.className = "avatar-placeholder";
-          if (member.avatarUrl) {
+          if (isUsableAvatarUrl(member.avatarUrl)) {
             const avatarImg = document.createElement("img");
             avatarImg.alt = member.nickname || "";
             avatarImg.referrerPolicy = 'no-referrer';
