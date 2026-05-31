@@ -4671,16 +4671,33 @@
         const r = nav ? nav.getBoundingClientRect() : null;
         const docH = document.documentElement.clientHeight;
         const cs = getComputedStyle(document.documentElement);
+        const cont = document.querySelector('.container');
+        const cr = cont ? cont.getBoundingClientRect() : null;
+        const bodyCS = getComputedStyle(document.body);
+        // ナビ下端のすぐ下(余白部分)に何の要素があるかを実測
+        let belowNavInfo = '-';
+        if (r) {
+          const x = Math.round(r.left + r.width / 2);
+          const probes = [];
+          for (const dy of [1, 5, 12, 20]) {
+            const y = Math.round(r.bottom + dy);
+            const el = document.elementFromPoint(x, y);
+            probes.push(`+${dy}:${el ? (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')) : 'null'}`);
+          }
+          belowNavInfo = probes.join(' ');
+        }
         txt = [
           'safe-area-bottom=' + safeBottom,
           'nav: ' + (r ? `h=${Math.round(r.height)} top=${Math.round(r.top)} bottom=${Math.round(r.bottom)}` : 'なし'),
+          'navParent=' + (nav && nav.parentElement ? (nav.parentElement.tagName.toLowerCase() + (nav.parentElement.id ? '#' + nav.parentElement.id : '.' + nav.parentElement.className.split(' ')[0])) : '-'),
+          'container: ' + (cr ? `h=${Math.round(cr.height)} bottom=${Math.round(cr.bottom)}` : 'なし'),
+          'body bg=' + bodyCS.backgroundColor,
+          'in-chat-view=' + document.body.classList.contains('in-chat-view'),
           'navPadB=' + (nav ? getComputedStyle(nav).paddingBottom : '-'),
-          '--mnav-h=' + cs.getPropertyValue('--mnav-h').trim(),
-          '--mnav-safe=' + cs.getPropertyValue('--mnav-safe').trim(),
           '--mnav-total=' + cs.getPropertyValue('--mnav-total').trim(),
           'winH=' + window.innerHeight + ' docH=' + docH,
-          'visualViewport=' + (window.visualViewport ? Math.round(window.visualViewport.height) : '-'),
           'gapBelowNav=' + (r ? Math.round(docH - r.bottom) : '-'),
+          'belowNav要素=' + belowNavInfo,
           'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
         ].join('\n');
       } catch (e) { txt = 'err:' + (e && e.message); }
