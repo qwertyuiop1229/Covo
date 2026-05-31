@@ -10573,8 +10573,9 @@
        - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
        - 通話用の peerConnection とは完全に別系統（衝突しない）
        ===================================================================== */
-    const FS_CHUNK = 16 * 1024;          // 16KB チャンク
-    const FS_BUFFER_HIGH = 1 * 1024 * 1024; // 送信バッファ上限 1MB（超えたら待つ）
+    const FS_CHUNK = 256 * 1024;          // 256KB チャンク（大きいほど少ない回数で速く送れる）
+    const FS_BUFFER_HIGH = 16 * 1024 * 1024; // 送信バッファ上限 16MB（多く積めるほど速い）
+    const FS_BUFFER_LOW = 4 * 1024 * 1024;   // ここまで減ったら再開（bufferedamountlow用）
     let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
     let _fsUnsub = null, _fsCandUnsub = null;
     let _fsRecv = null; // { name, type, size, received, chunks[] }
@@ -10722,29 +10723,43 @@
             try { const m = JSON.parse(ev.data); if (m && m.__ack && _fsAckResolve) { const r = _fsAckResolve; _fsAckResolve = null; r(true); } } catch (e) {}
           }
         };
+        // 送信バッファが減ったら通知してもらう（setTimeoutポーリングより高速・低負荷）
+        _fsChannel.bufferedAmountLowThreshold = FS_BUFFER_LOW;
+        const waitBufferLow = () => new Promise(resolve => {
+          if (_fsChannel.bufferedAmount <= FS_BUFFER_HIGH) return resolve();
+          const onLow = () => { _fsChannel.removeEventListener('bufferedamountlow', onLow); resolve(); };
+          _fsChannel.addEventListener('bufferedamountlow', onLow);
+        });
+
         _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
         let offset = 0;
         if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
         const reader = file.stream().getReader();
+        let pending = null; // 前チャンクの端数を保持
+        const sendSlice = async (buf) => {
+          if (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) await waitBufferLow();
+          _fsChannel.send(buf);
+          offset += buf.byteLength;
+          _fsUpdateProgress(Math.round(offset / file.size * 100));
+        };
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          let chunk = value;
+          // streamのチャンクをそのまま（または256KB単位で）送る
+          let chunk = value; // Uint8Array
           for (let i = 0; i < chunk.length; i += FS_CHUNK) {
-            const slice = chunk.slice(i, i + FS_CHUNK);
-            while (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) { await new Promise(r => setTimeout(r, 20)); }
-            _fsChannel.send(slice);
-            offset += slice.byteLength;
-            _fsUpdateProgress(Math.round(offset / file.size * 100));
+            // subarrayはコピーを作らない（高速・省メモリ）。境界はsliceでバッファ確定
+            const end = Math.min(i + FS_CHUNK, chunk.length);
+            await sendSlice(chunk.subarray(i, end));
           }
         }
         // 全チャンクがバッファからはけきるまで待ってから __done を送る
         await _fsDrain(0);
         _fsChannel.send(JSON.stringify({ __done: true }));
         await _fsDrain(0);
-        // ここでは「送信完了」と即断せず、相手が受信し切るのを待つ（最大60秒）
+        // ここでは「送信完了」と即断せず、相手が受信し切るのを待つ（大容量対応で最大10分）
         _fsShowProgress('send', file.name, '相手が受信中…');
-        const acked = await _fsWaitForAck(60000);
+        const acked = await _fsWaitForAck(600000);
         if (acked) {
           _fsShowProgress('done', file.name, '送信完了');
           setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
