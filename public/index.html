@@ -550,9 +550,25 @@
       #messageInputArea {
         border-top: 0 none !important;
         border-top-width: 0 !important;
+        border-bottom: 0 none !important;
         padding-top: 0.5rem !important;
         padding-bottom: 0 !important;
         background-color: #ffffff !important;
+        box-shadow: none !important;
+      }
+      /* 入力欄とボトムナビの境目に出る影・線を完全に除去 */
+      #messageInputArea::before,
+      #messageInputArea::after {
+        display: none !important;
+        box-shadow: none !important;
+      }
+      #mobileBottomNav {
+        box-shadow: none !important;
+        border-top: 0 none !important;
+        border: 0 none !important;
+      }
+      /* チャットエリア下端の影も念のため消す */
+      #chatArea {
         box-shadow: none !important;
       }
       /* mobile: 入力フィールド・サイドボタンの影だけ消す（borderは元の見た目に戻す） */
@@ -2057,8 +2073,8 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ（タップしやすい44px・従来通り） */
-      --mnav-h: 44px;
+      /* アイコン行の高さ（少しコンパクトに 44px→38px） */
+      --mnav-h: 38px;
       /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
          （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
       --mnav-safe: 0px;
