@@ -2057,23 +2057,15 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ（タップしやすい44px） */
-      --mnav-h: 44px;
-      /* ホームインジケータ（端末下部の棒）用の余白。
-         iPhoneの safe-area-inset-bottom は約34pxと大きすぎるので min() で最大10pxに制限。
-         棒の無い端末（Android/旧iPhone/PC）では env() が 0 になり余白も自動的に消える。 */
-      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 10px);
-      /* ナビ全体の高さ = アイコン行 + 控えめな安全領域。画面側の余白計算にも使う */
-      --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
+      --mnav-h: 40px;
+      --mnav-total: 40px; /* navアイコン高さのみ。コンテンツエリアはむしろ広くなる */
     }
     #mobileBottomNav {
       display: none; /* JSがmobile時にflex化 */
-      flex: 0 0 var(--mnav-total) !important;
+      flex: 0 0 40px !important;
       width: 100%;
-      height: var(--mnav-total) !important;
-      /* 下端だけ控えめに安全領域分を確保。アイコン行は上側の44pxに収まり、
-         残り（最大10px）はナビ背景色のままホームインジケータ用クリアランスになる。 */
-      padding: 0 0 var(--mnav-safe) 0 !important;
+      height: 40px !important;
+      padding: 0 !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
@@ -5184,9 +5176,8 @@
       } catch(_) {}
     }
 
-    // ボトムナビ高さは :root の --mnav-total (= --mnav-h 44px + --mnav-safe) で一元管理。
-    // --mnav-safe = min(env(safe-area-inset-bottom), 10px) なので iPhone の34px全量ではなく
-    // 最大10pxだけホームインジケータ用に確保し、棒の無い端末では0になる。
+    // ボトムナビ高さ: 44px(アイコン) + min(safe-area-inset-bottom, 10px) で動的対応済み。
+    // min()でenv()を上限10pxに制限: iPhoneの34px全量を使わず適切な余白のみ確保。
     // position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
 
     window.switchMobileTab = function(tab) {
