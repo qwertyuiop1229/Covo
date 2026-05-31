@@ -4633,6 +4633,18 @@
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
     };
+    // ファイル共有専用: STUNのみ（TURN中継なし）。
+    // ファイル本体は大容量になり得るので、TURN(無料の中継サーバー)を経由させると
+    // 帯域制限にすぐ達する。そのため「P2P直結できる時だけ送れる／できなければ繋がらない」
+    // という方針にし、TURNは一切使わない（＝制限を食わない）。STUNはIPを教え合うだけで無通信に近い。
+    const STUN_ONLY_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      iceCandidatePoolSize: 4,
+      bundlePolicy: 'max-bundle',
+    };
     let messageLimit = 20;
     let allowPagination = false;
     // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
@@ -10619,7 +10631,7 @@
       _fsRole = 'sender';
       const { doc, setDoc, collection, serverTimestamp, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
       try {
-        _fsPC = new RTCPeerConnection(STUN_CONFIG);
+        _fsPC = new RTCPeerConnection(STUN_ONLY_CONFIG);
         const ref = doc(collection(db, 'artifacts', appId, 'fileshares'));
         _fsId = ref.id;
 
@@ -10628,6 +10640,17 @@
         _fsChannel.binaryType = 'arraybuffer';
         _fsChannel.onopen = () => _fsSendFileData(file);
         _fsChannel.onerror = () => {};
+
+        // TURN中継を使わない（STUNのみ）ので、P2P直結できないと接続できない。
+        // その場合に永遠に待たないよう、失敗を検出してユーザーに知らせる。
+        _fsPC.oniceconnectionstatechange = () => {
+          const st = _fsPC && _fsPC.iceConnectionState;
+          if (st === 'failed' || st === 'disconnected') {
+            if (_fsChannel && _fsChannel.readyState === 'open') return; // 既に繋がっていれば無視
+            _fsShowProgress('error', file.name, 'P2P接続できませんでした（相手と直接つながれない回線です）');
+            setTimeout(() => { _fsCloseProgress(); _fsCleanup(); }, 2500);
+          }
+        };
 
         // ICE候補を Firestore へ
         const candCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'senderCandidates');
@@ -10800,7 +10823,7 @@
       _fsRecv = { name: d.fileName, type: d.fileType, size: d.fileSize, received: 0, chunks: [] };
       const { doc, updateDoc, collection, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
       try {
-        _fsPC = new RTCPeerConnection(STUN_CONFIG);
+        _fsPC = new RTCPeerConnection(STUN_ONLY_CONFIG);
         const candCol = collection(db, 'artifacts', appId, 'fileshares', id, 'receiverCandidates');
         _fsPC.onicecandidate = e => { if (e.candidate) addDoc(candCol, e.candidate.toJSON()).catch(() => {}); };
         _fsPC.ondatachannel = e => {
