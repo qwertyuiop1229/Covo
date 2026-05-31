@@ -4533,20 +4533,24 @@
     const closeSearchBtn = document.getElementById("closeSearchBtn");
     const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
     const currentRoomTitleText = document.getElementById("currentRoomTitleText");
-    // 【診断用・一時機能】チャット画面でルーム名を長押しすると、入力欄とナビの境目を走査して
-    // 影/境界の犯人をクリップボードへコピー＋ダイアログ表示する。原因特定が済んだら削除予定。
-    (function attachShadowHunterLongPress() {
+    // 【検査モード・一時機能】チャット画面でルーム名を長押し(0.6秒)すると「検査モード」に入る。
+    // その状態で画面の気になる場所（例: 影の線）をタップすると、その地点にある要素と
+    // 影/境界/背景のスタイルを上から順に表示＆クリップボードへコピーする。
+    // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ。
+    let _inspectMode = false;
+    (function attachInspector() {
       const target = currentRoomTitleText;
       if (!target) return;
       let timer = null;
-      const fire = async () => {
-        const txt = (typeof runShadowHunter === 'function') ? runShadowHunter() : '(診断関数なし)';
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(txt);
-        } catch (e) {}
-        try { alertMessage('影診断結果（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
+      const enter = () => {
+        _inspectMode = true;
+        try { alertMessage('🔍 検査モードON\n調べたい場所（影の線など）をタップしてください。もう一度ルーム名を長押しで解除。', 'info'); } catch (e) {}
       };
-      const start = () => { timer = setTimeout(fire, 600); };
+      const toggle = () => {
+        if (_inspectMode) { _inspectMode = false; try { alertMessage('検査モードOFF', 'info'); } catch (e) {} }
+        else enter();
+      };
+      const start = () => { timer = setTimeout(toggle, 600); };
       const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
       target.addEventListener('touchstart', start, { passive: true });
       target.addEventListener('touchend', cancel);
@@ -4554,7 +4558,58 @@
       target.addEventListener('mousedown', start);
       target.addEventListener('mouseup', cancel);
       target.addEventListener('mouseleave', cancel);
+
+      // 検査モード中のタップを最優先で捕まえる（capture:true で他のハンドラより先に処理）
+      const onInspectTap = (ev) => {
+        if (!_inspectMode) return;
+        const t = ev.touches ? ev.touches[0] : ev;
+        const x = Math.round(t.clientX), y = Math.round(t.clientY);
+        // ルーム名自身のタップ（モード切替）は無視
+        if (ev.target === target) return;
+        ev.preventDefault(); ev.stopPropagation();
+        const txt = inspectPoint(x, y);
+        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
+        try { alertMessage('🔍 検査結果（コピー済み）@' + x + ',' + y + ':\n' + txt, 'info'); } catch (e) { alert(txt); }
+      };
+      document.addEventListener('touchstart', onInspectTap, { capture: true, passive: false });
+      document.addEventListener('click', onInspectTap, { capture: true });
     })();
+
+    // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
+    function inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
     const pinMessageButton = document.getElementById("pinMessageButton");
     const mobileBackButton = document.getElementById("mobileBackButton");
     const sidebar = document.getElementById("sidebar");
