@@ -4576,28 +4576,86 @@
     // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ＆オンスクリーンコンソール。
     let _inspectMode = false;
 
-    // 検査モードのON/OFF（設定のトグルから呼ばれる）
+    // 検査モードのON/OFF（設定のトグル、または専用バーの終了ボタンから呼ばれる）
     window.setInspectMode = function(on) {
       _inspectMode = !!on;
+      const bar = document.getElementById('inspectModeBar');
+      const cb = document.getElementById('toggleInspectMode');
+      if (cb) cb.checked = _inspectMode;
+      if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+      if (!_inspectMode) _clearInspectHighlight();
       if (_inspectMode) {
-        try { alertMessage('🔍 検査モードON\n設定を閉じて、調べたい場所（影の線など）をタップしてください。結果が表示＆コピーされます。', 'info'); } catch (e) {}
+        try { alertMessage('🔍 検査モードON\n通常の操作はそのまま使えます。調べたい場所を「長押し」すると、その要素を検査してコピーします。', 'info'); } catch (e) {}
       }
     };
 
-    // 検査モード中のタップを最優先で捕まえる（capture:true で他のUIより先に処理）
-    (function attachInspectorTapCatcher() {
-      const onInspectTap = (ev) => {
-        if (!_inspectMode) return;
-        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
-        const x = Math.round(t.clientX), y = Math.round(t.clientY);
-        if (typeof x !== 'number' || isNaN(x)) return;
-        ev.preventDefault(); ev.stopPropagation();
+    // ハイライト用オーバーレイ要素（タップした要素の範囲を枠で示す）
+    let _inspectHL = null;
+    function _clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+    function _showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+
+    // 検査モード中は「長押し(0.5秒)」で検査する。通常のタップ・スクロール・画面遷移は普通に動く。
+    // → 検査モードONのままでもアプリを普通に操作でき、調べたい時だけ長押しすればよい。
+    (function attachInspectorLongPress() {
+      let timer = null, sx = 0, sy = 0, fired = false;
+
+      const ignore = (target) => target && target.closest && target.closest('[data-inspect-ignore], #inspectModeBar, #devConsolePanel, #customAlertModal, #customConfirmModal');
+
+      const doInspect = (x, y) => {
+        fired = true;
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} } // 触覚フィードバック
+        try {
+          const top = (document.elementsFromPoint(x, y) || []).find(e => !ignore(e));
+          if (top) _showInspectHighlight(top.getBoundingClientRect());
+        } catch (e) {}
         const txt = inspectPoint(x, y);
         try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
         try { alertMessage('🔍 検査結果（コピー済み）@' + x + ',' + y + ':\n' + txt, 'info'); } catch (e) { alert(txt); }
       };
-      document.addEventListener('touchstart', onInspectTap, { capture: true, passive: false });
-      document.addEventListener('click', onInspectTap, { capture: true });
+
+      const start = (ev) => {
+        if (!_inspectMode) return;
+        if (ignore(ev.target)) return; // 検査UI上では通常動作
+        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+        sx = t.clientX; sy = t.clientY; fired = false;
+        timer = setTimeout(() => doInspect(Math.round(sx), Math.round(sy)), 500);
+      };
+      const move = (ev) => {
+        if (!timer) return;
+        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+        // 指が10px以上動いたらスクロール扱いで検査キャンセル
+        if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) { clearTimeout(timer); timer = null; }
+      };
+      const end = (ev) => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        // 長押しが発火していたら、その後の click（通常タップ動作）を1回だけ抑止
+        if (fired) {
+          fired = false;
+          const kill = (e) => { e.preventDefault(); e.stopPropagation(); document.removeEventListener('click', kill, true); };
+          document.addEventListener('click', kill, { capture: true, once: true });
+        }
+      };
+      document.addEventListener('touchstart', start, { capture: true, passive: true });
+      document.addEventListener('touchmove', move, { capture: true, passive: true });
+      document.addEventListener('touchend', end, { capture: true });
+      // マウス（PC）でも使えるように
+      document.addEventListener('mousedown', start, { capture: true });
+      document.addEventListener('mousemove', move, { capture: true });
+      document.addEventListener('mouseup', end, { capture: true });
     })();
 
     // レイアウト診断（safe-area・ナビ位置など）をダイアログ表示＋コピー
@@ -10857,6 +10915,12 @@
     </div>
   </div>
 
+  <!-- 検査モード中の常設バー（どの画面でも終了できる） -->
+  <div id="inspectModeBar" data-inspect-ignore="1" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:100001;align-items:center;gap:10px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:8px 10px 8px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);">
+    <span style="color:#93c5fd;font-size:0.78rem;font-weight:700;display:flex;align-items:center;gap:6px;"><i class="fas fa-crosshairs"></i>検査モード</span>
+    <button data-inspect-ignore="1" onclick="setInspectMode(false)" style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:999px;font-size:0.78rem;font-weight:700;">終了</button>
+  </div>
+
   <!-- 開発者コンソール パネル（オンスクリーン） -->
   <div id="devConsolePanel" style="display:none;position:fixed;left:0;right:0;bottom:0;height:45vh;background:#0b1220;color:#cbd5e1;z-index:99999;flex-direction:column;font-family:ui-monospace,Consolas,monospace;box-shadow:0 -8px 24px rgba(0,0,0,0.5);">
     <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#111827;border-bottom:1px solid #1f2937;flex-shrink:0;">
@@ -11009,23 +11073,23 @@
       <div class="mobile-settings-label">開発者ツール</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-crosshairs"></i></div>
-          <span class="mobile-settings-row-text">要素を検査（タップした場所を調べる）</span>
+          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
+          <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
         </div>
         <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-ruler-combined"></i></div>
-          <span class="mobile-settings-row-text">レイアウト診断を表示</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-clipboard-list"></i></div>
-          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
+          <div class="mobile-settings-row-icon" style="background:#e0e7ff;color:#4f46e5"><i class="fas fa-ruler-combined"></i></div>
+          <span class="mobile-settings-row-text">レイアウト診断</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
         <div class="mobile-settings-row" onclick="toggleDevConsole()">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-terminal"></i></div>
-          <span class="mobile-settings-row-text">コンソールを表示</span>
+          <div class="mobile-settings-row-icon" style="background:#111827;color:#34d399"><i class="fas fa-terminal"></i></div>
+          <span class="mobile-settings-row-text">コンソール</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
+          <div class="mobile-settings-row-icon" style="background:#dcfce7;color:#16a34a"><i class="fas fa-clipboard-list"></i></div>
+          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
