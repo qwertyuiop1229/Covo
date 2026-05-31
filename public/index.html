@@ -2111,9 +2111,8 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ。上側に少し余白を持たせるため 38→46px。
-         アイコンは .mobile-nav-tab で下寄せにしているので、増えた分は上側の余白になる。 */
-      --mnav-h: 46px;
+      /* アイコン行の高さ。上側に少し余白を持たせる。アイコンは下寄せなので増分は上側の余白になる。 */
+      --mnav-h: 50px;
       /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
          （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
       --mnav-safe: 0px;
@@ -5047,6 +5046,13 @@
               }
             }
 
+            // 管理者ツール（開発者向け診断）は「全体管理者(isAdmin)」のみ表示。リスト管理者には出さない。
+            const adminToolsSec = document.getElementById("mobileAdminToolsSection");
+            if (adminToolsSec) {
+              if (isAdmin) adminToolsSec.classList.remove("hidden");
+              else adminToolsSec.classList.add("hidden");
+            }
+
             const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             const userProfileSnap = await getDoc(userProfileRef);
 
@@ -5828,7 +5834,7 @@
     };
 
     window.openMobileDetail = function(type) {
-      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin', appinfo:'mobileDetailAppInfo' };
+      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin', appinfo:'mobileDetailAppInfo', admintools:'mobileDetailAdminTools' };
       const el = document.getElementById(m[type]);
       if (el) {
         if (type === 'admin') {
@@ -11297,27 +11303,13 @@
         </div>
       </div>
     </div>
-    <div class="mobile-settings-section">
-      <div class="mobile-settings-label">開発者ツール</div>
+    <!-- 管理者ツール（全体管理者のみ表示）。タップで詳細画面を開く -->
+    <div class="mobile-settings-section hidden" id="mobileAdminToolsSection">
+      <div class="mobile-settings-label">管理者ツール</div>
       <div class="mobile-settings-group">
-        <div class="mobile-settings-row">
-          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
-          <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
-          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
-          <div class="mobile-settings-row-icon" style="background:#e0e7ff;color:#4f46e5"><i class="fas fa-ruler-combined"></i></div>
-          <span class="mobile-settings-row-text">レイアウト診断</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="toggleDevConsole()">
-          <div class="mobile-settings-row-icon" style="background:#111827;color:#34d399"><i class="fas fa-terminal"></i></div>
-          <span class="mobile-settings-row-text">コンソール</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
-          <div class="mobile-settings-row-icon" style="background:#dcfce7;color:#16a34a"><i class="fas fa-clipboard-list"></i></div>
-          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
+        <div class="mobile-settings-row" onclick="openMobileDetail('admintools')">
+          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-screwdriver-wrench"></i></div>
+          <span class="mobile-settings-row-text">管理者ツール</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
@@ -11405,11 +11397,6 @@
           <span class="mobile-settings-row-text">メッセージの暗号化</span>
           <span id="mobileAppInfoE2EE" style="font-size:0.85rem;font-weight:700;color:#6b7280;margin-left:auto">確認中…</span>
         </div>
-        <div class="mobile-settings-row" style="cursor:default;">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-ruler-combined"></i></div>
-          <span class="mobile-settings-row-text">レイアウト診断</span>
-          <span id="mobileAppInfoLayoutDbg" style="font-size:0.7rem;font-family:ui-monospace,Consolas,monospace;color:#6b7280;margin-left:auto;text-align:right">—</span>
-        </div>
         <div id="mobileCheckUpdateBtn" class="mobile-settings-row" onclick="manualCheckUpdate('mobileCheckUpdateBtn','mobileCheckUpdateStatus')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-sync-alt"></i></div>
           <span class="mobile-settings-row-text">アップデートを確認</span>
@@ -11419,6 +11406,38 @@
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-desktop"></i></div>
           <span class="mobile-settings-row-text">デスクトップにショートカットを作成</span>
           <span id="mobileCreateShortcutStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: 管理者ツール（開発者向け診断ツール群。全体管理者のみ） -->
+  <div class="mobile-settings-detail" id="mobileDetailAdminTools">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdminTools')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">管理者ツール</span>
+    </div>
+    <div style="padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom, 0px))">
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row">
+          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
+          <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
+          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
+          <div class="mobile-settings-row-icon" style="background:#e0e7ff;color:#4f46e5"><i class="fas fa-ruler-combined"></i></div>
+          <span class="mobile-settings-row-text">レイアウト診断</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="toggleDevConsole()">
+          <div class="mobile-settings-row-icon" style="background:#111827;color:#34d399"><i class="fas fa-terminal"></i></div>
+          <span class="mobile-settings-row-text">コンソール</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
+          <div class="mobile-settings-row-icon" style="background:#dcfce7;color:#16a34a"><i class="fas fa-clipboard-list"></i></div>
+          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
     </div>
