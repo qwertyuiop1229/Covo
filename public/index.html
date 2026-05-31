@@ -2057,13 +2057,12 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ（タップしやすい44px） */
+      /* アイコン行の高さ（タップしやすい44px・従来通り） */
       --mnav-h: 44px;
-      /* ホームインジケータ（端末下部の棒）用の余白。
-         iPhoneの safe-area-inset-bottom は約34pxと大きすぎるので min() で最大10pxに制限。
-         棒の無い端末（Android/旧iPhone/PC）では env() が 0 になり余白も自動的に消える。 */
-      --mnav-safe: min(env(safe-area-inset-bottom, 0px), 10px);
-      /* ナビ全体の高さ = アイコン行 + 控えめな安全領域。画面側の余白計算にも使う */
+      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
+         （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
+      --mnav-safe: 0px;
+      /* ナビ全体の高さ = アイコン行 + 安全領域。画面側の余白計算にも使う */
       --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
     }
     #mobileBottomNav {
@@ -2071,8 +2070,7 @@
       flex: 0 0 var(--mnav-total) !important;
       width: 100%;
       height: var(--mnav-total) !important;
-      /* 下端だけ控えめに安全領域分を確保。アイコン行は上側の44pxに収まり、
-         残り（最大10px）はナビ背景色のままホームインジケータ用クリアランスになる。 */
+      /* 下部クリアランス。--mnav-safe=0 のときアイコン行がそのまま最下端に来る。 */
       padding: 0 0 var(--mnav-safe) 0 !important;
       margin: 0 !important;
       background: #1f2937;
