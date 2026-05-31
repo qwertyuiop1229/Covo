@@ -4744,11 +4744,14 @@
         // ★画面下半分にある box-shadow / gradient を持つ要素を全部洗い出す（黒いグラデの犯人探し）
         let shadowScan = [];
         try {
-          const half = window.innerHeight * 0.5;
-          document.querySelectorAll('#chatArea *, #messageInputArea, #messageInputArea *, #mobileBottomNav, #mobileBottomNav *, #mainContent').forEach(el => {
+          const half = window.innerHeight * 0.6;
+          document.querySelectorAll('body *').forEach(el => {
+            if (el.closest('[data-inspect-ignore], #devConsolePanel, #inspectModeBar, .mobile-settings-detail, #mobileProfileScreen')) return;
             const rc = el.getBoundingClientRect();
-            if (rc.bottom < half || rc.height === 0) return; // 画面下半分のみ
+            if (rc.bottom < half || rc.height === 0 || rc.width === 0) return; // 画面下60%以下のみ
+            if (rc.top > window.innerHeight) return; // 画面外は除外
             const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden') return;
             const tags = [];
             if (s.boxShadow && s.boxShadow !== 'none') tags.push('SH:' + s.boxShadow.replace(/rgba?\([^)]*\)/g, 'C').slice(0, 30));
             if (s.backgroundImage && s.backgroundImage.includes('gradient')) tags.push('GRAD');
