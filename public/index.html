@@ -4730,6 +4730,24 @@
           }
           belowNavInfo = probes.join(' ');
         }
+        // ★画面下半分にある box-shadow / gradient を持つ要素を全部洗い出す（黒いグラデの犯人探し）
+        let shadowScan = [];
+        try {
+          const half = window.innerHeight * 0.5;
+          document.querySelectorAll('#chatArea *, #messageInputArea, #messageInputArea *, #mobileBottomNav, #mobileBottomNav *, #mainContent').forEach(el => {
+            const rc = el.getBoundingClientRect();
+            if (rc.bottom < half || rc.height === 0) return; // 画面下半分のみ
+            const s = getComputedStyle(el);
+            const tags = [];
+            if (s.boxShadow && s.boxShadow !== 'none') tags.push('SH:' + s.boxShadow.replace(/rgba?\([^)]*\)/g, 'C').slice(0, 30));
+            if (s.backgroundImage && s.backgroundImage.includes('gradient')) tags.push('GRAD');
+            if (s.filter && s.filter !== 'none') tags.push('FIL:' + s.filter.slice(0, 16));
+            if (tags.length) {
+              const nm = el.tagName.toLowerCase() + (el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : ''));
+              shadowScan.push(nm + ' y' + Math.round(rc.top) + '-' + Math.round(rc.bottom) + ' ' + tags.join(','));
+            }
+          });
+        } catch (e) { shadowScan = ['scanErr:' + e.message]; }
         txt = [
           'safe-area-bottom=' + safeBottom,
           'nav: ' + (r ? `h=${Math.round(r.height)} top=${Math.round(r.top)} bottom=${Math.round(r.bottom)}` : 'なし'),
@@ -4742,6 +4760,7 @@
           'winH=' + window.innerHeight + ' docH=' + docH,
           'gapBelowNav=' + (r ? Math.round(docH - r.bottom) : '-'),
           'belowNav要素=' + belowNavInfo,
+          '影スキャン(下半分):\n' + (shadowScan.length ? shadowScan.join('\n') : '(影/グラデなし)'),
           'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
         ].join('\n');
       } catch (e) { txt = 'err:' + (e && e.message); }
