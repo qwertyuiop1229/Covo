@@ -4153,10 +4153,44 @@
         const varTotal = cs.getPropertyValue('--mnav-total').trim() || '-';
 
         const txt = `safe=${safeBottom} nav=${navH} padB=${navPadB} total=${varTotal} winH=${winH}`;
-        els.forEach(el => { el.textContent = txt; });
+        els.forEach(el => {
+          el.textContent = txt;
+          // タップでコピーできるようにする
+          el.style.cursor = 'pointer';
+          el.style.textDecoration = 'underline';
+          el.title = 'タップでコピー';
+          el.onclick = () => copyDebugText(txt, el);
+        });
       } catch (e) {
         els.forEach(el => { el.textContent = 'err'; });
       }
+    }
+
+    // 診断テキストをクリップボードにコピー（失敗時はフォールバック）。コピー後は一時的に「コピーしました」表示。
+    async function copyDebugText(txt, el) {
+      const original = el.textContent;
+      let ok = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(txt);
+          ok = true;
+        }
+      } catch (e) { /* 下のフォールバックへ */ }
+      if (!ok) {
+        // HTTPS以外や古い環境向けのフォールバック
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          ok = document.execCommand('copy');
+          ta.remove();
+        } catch (e) {}
+      }
+      el.textContent = ok ? 'コピーしました ✓' : 'コピー失敗（長押しで選択してね）';
+      el.style.color = ok ? '#16a34a' : '#dc2626';
+      setTimeout(() => { el.textContent = original; el.style.color = '#6b7280'; }, 1500);
     }
 
     // Cloudinary設定（要変更）
