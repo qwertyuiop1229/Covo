@@ -4147,47 +4147,82 @@
       }
     }
 
-    // レイアウト診断: 実機での safe-area 実値・ナビ高さ・画面高さを画面に出す（原因特定用）。
+    // 影ハンター本体: 入力欄とナビの境目付近を走査し、影/境界/グラデの容疑者テキストを返す純粋関数。
+    function runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+    // アプリ情報の診断行を更新（タップでコピー）。
     function updateLayoutDebugUI() {
       const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
       if (!els.length) return;
-      try {
-        // safe-area-inset-bottom の実値を計測（一時要素で env() を解決）
-        const probe = document.createElement('div');
-        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;pointer-events:none;';
-        document.body.appendChild(probe);
-        const safeBottom = Math.round(probe.getBoundingClientRect().height);
-        probe.remove();
-
-        const nav = document.getElementById('mobileBottomNav');
-        const r = nav ? nav.getBoundingClientRect() : null;
-        const navH = r ? Math.round(r.height) : 0;
-        const navTop = r ? Math.round(r.top) : 0;
-        const navBottom = r ? Math.round(r.bottom) : 0;
-        const navPadB = nav ? getComputedStyle(nav).paddingBottom : '-';
-        const winH = window.innerHeight;
-        const docH = document.documentElement.clientHeight;
-        const vvH = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-        // ナビの親(.container)の位置とサイズ
-        const cont = document.querySelector('.container');
-        const cr = cont ? cont.getBoundingClientRect() : null;
-        const contBottom = cr ? Math.round(cr.bottom) : '-';
-        const contH = cr ? Math.round(cr.height) : '-';
-        // ナビ下端から画面下端までの隙間（これが余白の正体かを判定）
-        const gapBelowNav = (r ? Math.round(docH - r.bottom) : '-');
-
-        const txt = `safe=${safeBottom} nav=${navH} navTop=${navTop} navBottom=${navBottom} padB=${navPadB} winH=${winH} docH=${docH} vvH=${vvH} contBottom=${contBottom} contH=${contH} gapBelowNav=${gapBelowNav}`;
-        els.forEach(el => {
-          el.textContent = txt;
-          // タップでコピーできるようにする
-          el.style.cursor = 'pointer';
-          el.style.textDecoration = 'underline';
-          el.title = 'タップでコピー';
-          el.onclick = () => copyDebugText(txt, el);
-        });
-      } catch (e) {
-        els.forEach(el => { el.textContent = 'err'; });
-      }
+      const txt = runShadowHunter();
+      const n = txt.split('\n').length;
+      els.forEach(el => {
+        el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+        el.style.cursor = 'pointer';
+        el.style.textDecoration = 'underline';
+        el.style.whiteSpace = 'normal';
+        el.title = 'タップでコピー';
+        el.onclick = () => copyDebugText(txt, el);
+      });
     }
 
     // 診断テキストをクリップボードにコピー（失敗時はフォールバック）。コピー後は一時的に「コピーしました」表示。
@@ -4498,6 +4533,28 @@
     const closeSearchBtn = document.getElementById("closeSearchBtn");
     const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
     const currentRoomTitleText = document.getElementById("currentRoomTitleText");
+    // 【診断用・一時機能】チャット画面でルーム名を長押しすると、入力欄とナビの境目を走査して
+    // 影/境界の犯人をクリップボードへコピー＋ダイアログ表示する。原因特定が済んだら削除予定。
+    (function attachShadowHunterLongPress() {
+      const target = currentRoomTitleText;
+      if (!target) return;
+      let timer = null;
+      const fire = async () => {
+        const txt = (typeof runShadowHunter === 'function') ? runShadowHunter() : '(診断関数なし)';
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(txt);
+        } catch (e) {}
+        try { alertMessage('影診断結果（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
+      };
+      const start = () => { timer = setTimeout(fire, 600); };
+      const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      target.addEventListener('touchstart', start, { passive: true });
+      target.addEventListener('touchend', cancel);
+      target.addEventListener('touchmove', cancel);
+      target.addEventListener('mousedown', start);
+      target.addEventListener('mouseup', cancel);
+      target.addEventListener('mouseleave', cancel);
+    })();
     const pinMessageButton = document.getElementById("pinMessageButton");
     const mobileBackButton = document.getElementById("mobileBackButton");
     const sidebar = document.getElementById("sidebar");
