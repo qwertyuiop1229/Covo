@@ -25,6 +25,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- FontAwesome for Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
     /* --- 全画面化用 --- */
     html,
@@ -600,22 +602,22 @@
       }
       /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー・同じ高さ」に統一。
          送信ボタン(.send-btn)は主要アクションなので対象外。 */
-      #fileAttachButton {
+      #fileAttachButton, #stickerButton {
         border: 0 none !important;
         background: #f3f4f6 !important;
         box-shadow: none !important;
         color: #6b7280 !important;
         height: 42px !important;
       }
-      #fileAttachButton:disabled {
+      #fileAttachButton:disabled, #stickerButton:disabled {
         background: #f3f4f6 !important;
         color: #c4c8ce !important;
       }
-      body.dark-server-theme #fileAttachButton {
+      body.dark-server-theme #fileAttachButton, body.dark-server-theme #stickerButton {
         background: #0f172a !important;
         color: #94a3b8 !important;
       }
-      body.dark-server-theme #fileAttachButton:disabled {
+      body.dark-server-theme #fileAttachButton:disabled, body.dark-server-theme #stickerButton:disabled {
         background: #0f172a !important;
         color: #475569 !important;
       }
@@ -896,6 +898,66 @@
       border-color: #9ca3af;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
+
+    /* ===== スタンプ ===== */
+    /* スタンプメッセージは吹き出しの背景・枠を消して絵文字だけ大きく見せる */
+    .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    .sticker-content { line-height: 1; }
+    .sticker-content img.emoji, .sticker-content { width: 96px; height: 96px; }
+    .sticker-content img.emoji { width: 96px !important; height: 96px !important; margin: 0 !important; display: block; }
+    /* 本文中のTwemoji絵文字は文字サイズに馴染ませる */
+    .message-content img.emoji { width: 1.3em; height: 1.3em; vertical-align: -0.25em; margin: 0 1px; }
+
+    /* スタンプピッカー */
+    #stickerPicker {
+      position: fixed; z-index: 99996; display: none;
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+      width: 340px; max-width: calc(100vw - 24px);
+      height: 380px; flex-direction: column; overflow: hidden;
+    }
+    #stickerPicker.show { display: flex; }
+    body.dark-server-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
+    .sticker-tabs {
+      display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid #f3f4f6;
+      overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
+    }
+    .sticker-tabs::-webkit-scrollbar { display: none; }
+    body.dark-server-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
+    .sticker-tab {
+      flex-shrink: 0; width: 34px; height: 34px; border: none; background: transparent;
+      border-radius: 9px; cursor: pointer; font-size: 1.1rem; display: flex;
+      align-items: center; justify-content: center; color: #9ca3af; transition: background 0.12s;
+    }
+    .sticker-tab.active { background: #eef2ff; }
+    body.dark-server-theme .sticker-tab.active { background: #334155; }
+    .sticker-tab img.emoji { width: 22px; height: 22px; }
+    .sticker-grid {
+      flex: 1; overflow-y: auto; padding: 10px;
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; align-content: start;
+    }
+    .sticker-cell {
+      aspect-ratio: 1; border: none; background: transparent; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s; position: relative; -webkit-tap-highlight-color: transparent;
+    }
+    .sticker-cell:active { background: #eef2ff; }
+    body.dark-server-theme .sticker-cell:active { background: #334155; }
+    .sticker-cell img.emoji { width: 40px; height: 40px; }
+    .sticker-cat-label {
+      grid-column: 1 / -1; font-size: 0.68rem; font-weight: 700; color: #9ca3af;
+      padding: 6px 4px 2px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .sticker-fav-star {
+      position: absolute; top: 2px; right: 2px; font-size: 0.6rem; color: #f59e0b; display: none;
+    }
+    .sticker-cell.is-fav .sticker-fav-star { display: block; }
+    .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
 
     /* 独立アクションボタン（ファイル添付・メンション） */
     .input-side-btn {
@@ -3763,6 +3825,7 @@
             <div class="flex items-end gap-1.5">
               <button id="fileAttachButton" class="input-side-btn" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
                   class="fas fa-paperclip"></i></button>
+              <button id="stickerButton" class="input-side-btn" title="スタンプ" disabled><i class="far fa-smile"></i></button>
               <input type="file" id="fileAttachInput" class="hidden" />
               <div id="messageInputInner" style="flex:1;min-width:0;">
                 <textarea id="messageInput" placeholder="メッセージを入力" class="flex-1 w-full focus:outline-none"
@@ -7599,6 +7662,7 @@
       lastMessagesData = [];
       messageInput.disabled = false;
       fileAttachButton.disabled = false;
+      { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
       if (mentionButton) mentionButton.disabled = false;
       document.getElementById('callButton').disabled = false;
       { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
@@ -8330,6 +8394,154 @@
         progressFill.style.width = "0%";
       }
     }
+    /* =====================================================================
+       スタンプ機能（Twemoji絵文字をLINE風スタンプとして送る）
+       - カテゴリ別の絵文字グリッド + よく使う(お気に入り) + 最近使った
+       - スタンプは message.sticker フィールドで送信し、受信側で大きく表示
+       - お気に入り/最近は localStorage に保存（端末ごと）
+       ===================================================================== */
+    const STICKER_CATEGORIES = [
+      { id: 'recent', icon: '🕘', label: '最近' },
+      { id: 'fav', icon: '⭐', label: 'よく使う' },
+      { id: 'smile', icon: '😀', label: '顔', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😌','😔','😪','😴','😷','🤒','🤕','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','💩','🤡','👻'] },
+      { id: 'gesture', icon: '👍', label: 'しぐさ', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','✊','👊','🤛','🤜','👏','🙌','👐','🤲','💪','🦾','🖕','✍️','💅','🤳'] },
+      { id: 'heart', icon: '❤️', label: 'ハート', emojis: ['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💋','💯','💢','💥','💫','💦','💨','✨','🌟','⭐','🔥'] },
+      { id: 'animal', icon: '🐶', label: '動物', emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦄','🐝','🦋','🐢','🐙','🐳','🐬','🐟','🦈','🐊','🦖','🐉'] },
+      { id: 'food', icon: '🍔', label: '食べ物', emojis: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🌽','🥕','🍞','🧀','🍔','🍟','🍕','🌭','🥪','🌮','🍣','🍱','🍜','🍡','🍦','🍰','🎂','🍫','🍬','🍭','🍩','🍪','☕','🍵','🍺','🍻','🥂','🍷'] },
+      { id: 'activity', icon: '⚽', label: '活動', emojis: ['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥅','⛳','🎣','🎮','🕹️','🎲','🎯','🎳','🎤','🎧','🎵','🎸','🎹','🥁','🎺','🎻','🎬','🏆','🥇','🥈','🥉','🎉','🎊','🎈','🎁','🎀'] },
+      { id: 'symbol', icon: '✅', label: '記号', emojis: ['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖'] },
+    ];
+    const SK_RECENT = 'covo_sticker_recent', SK_FAV = 'covo_sticker_fav';
+    let _stickerActiveCat = 'smile';
+
+    function _skLoad(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; } }
+    function _skSave(key, arr) { try { localStorage.setItem(key, JSON.stringify(arr.slice(0, 40))); } catch (e) {} }
+    function _skPushRecent(emoji) {
+      let r = _skLoad(SK_RECENT).filter(e => e !== emoji);
+      r.unshift(emoji); _skSave(SK_RECENT, r);
+    }
+    function _skToggleFav(emoji) {
+      let f = _skLoad(SK_FAV);
+      if (f.includes(emoji)) f = f.filter(e => e !== emoji);
+      else f.unshift(emoji);
+      _skSave(SK_FAV, f);
+      _skRenderGrid(_stickerActiveCat);
+    }
+
+    function _skRenderTabs() {
+      const tabs = document.getElementById('stickerTabs');
+      tabs.innerHTML = '';
+      STICKER_CATEGORIES.forEach(cat => {
+        const b = document.createElement('button');
+        b.className = 'sticker-tab' + (cat.id === _stickerActiveCat ? ' active' : '');
+        b.textContent = cat.icon;
+        b.title = cat.label;
+        b.onclick = () => { _stickerActiveCat = cat.id; _skRenderTabs(); _skRenderGrid(cat.id); };
+        tabs.appendChild(b);
+      });
+      if (window.twemoji) { try { twemoji.parse(tabs, { folder: 'svg', ext: '.svg' }); } catch (e) {} }
+    }
+
+    function _skRenderGrid(catId) {
+      const grid = document.getElementById('stickerGrid');
+      grid.innerHTML = '';
+      let emojis = [];
+      if (catId === 'recent') emojis = _skLoad(SK_RECENT);
+      else if (catId === 'fav') emojis = _skLoad(SK_FAV);
+      else { const cat = STICKER_CATEGORIES.find(c => c.id === catId); emojis = cat ? (cat.emojis || []) : []; }
+      if (emojis.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'sticker-empty';
+        empty.textContent = catId === 'recent' ? 'まだありません' : (catId === 'fav' ? 'スタンプを長押しでよく使うに追加' : '');
+        grid.appendChild(empty);
+      }
+      const favs = _skLoad(SK_FAV);
+      emojis.forEach(emoji => {
+        const cell = document.createElement('button');
+        cell.className = 'sticker-cell' + (favs.includes(emoji) ? ' is-fav' : '');
+        cell.innerHTML = `<span class="sk-em">${emoji}</span><span class="sticker-fav-star"><i class="fas fa-star"></i></span>`;
+        // タップで送信
+        let lp = null, lpFired = false;
+        const fire = () => { lpFired = true; _skToggleFav(emoji); if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {} };
+        cell.addEventListener('touchstart', () => { lpFired = false; lp = setTimeout(fire, 450); }, { passive: true });
+        cell.addEventListener('touchend', () => { if (lp) clearTimeout(lp); });
+        cell.addEventListener('touchmove', () => { if (lp) clearTimeout(lp); });
+        cell.onclick = () => { if (lpFired) { lpFired = false; return; } sendSticker(emoji); };
+        // PC: 右クリックでお気に入りトグル
+        cell.oncontextmenu = (e) => { e.preventDefault(); _skToggleFav(emoji); };
+        grid.appendChild(cell);
+      });
+      if (window.twemoji) { try { twemoji.parse(grid, { folder: 'svg', ext: '.svg' }); } catch (e) {} }
+    }
+
+    window.toggleStickerPicker = function() {
+      const p = document.getElementById('stickerPicker');
+      if (!p) return;
+      if (p.classList.contains('show')) { p.classList.remove('show'); return; }
+      // 最近があればそれを初期表示、無ければ顔カテゴリ
+      _stickerActiveCat = _skLoad(SK_RECENT).length ? 'recent' : 'smile';
+      _skRenderTabs();
+      _skRenderGrid(_stickerActiveCat);
+      // 位置決め: 入力欄の上に出す
+      const btn = document.getElementById('stickerButton');
+      const r = btn.getBoundingClientRect();
+      p.style.visibility = 'hidden'; p.classList.add('show');
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      let left = Math.min(Math.max(8, r.left - pw / 2 + r.width / 2), window.innerWidth - pw - 8);
+      let top = r.top - ph - 10;
+      if (top < 8) top = 8;
+      p.style.left = left + 'px'; p.style.top = top + 'px';
+      p.style.visibility = '';
+    };
+
+    async function sendSticker(emoji) {
+      if (!currentRoomId) return;
+      _skPushRecent(emoji);
+      document.getElementById('stickerPicker').classList.remove('show');
+      try {
+        const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+        if (replyingToMessage) {
+          data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+        }
+        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+          lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
+        });
+        cancelReply();
+        resetAwayTimer();
+        // 通知（スタンプ絵文字つき）
+        try {
+          const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+          if (serverSnap.exists()) {
+            const sd = serverSnap.data();
+            const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
+            if (receiverIds.length > 0) {
+              fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId })
+              }).catch(() => {});
+            }
+          }
+        } catch (e) {}
+      } catch (e) {
+        console.error('[Sticker] 送信失敗:', e);
+        alertMessage('スタンプの送信に失敗しました', 'error');
+      }
+    }
+
+    // スタンプボタン / 外側クリックで閉じる
+    document.addEventListener('DOMContentLoaded', () => {});
+    {
+      const sbtn = document.getElementById('stickerButton');
+      if (sbtn) sbtn.addEventListener('click', (e) => { e.stopPropagation(); if (!currentRoomId) return; toggleStickerPicker(); });
+      document.addEventListener('click', (e) => {
+        const p = document.getElementById('stickerPicker');
+        if (p && p.classList.contains('show') && !p.contains(e.target) && e.target.id !== 'stickerButton' && !e.target.closest('#stickerButton')) {
+          p.classList.remove('show');
+        }
+      });
+    }
+
     const imageLightbox = document.getElementById('imageLightbox');
     const lightboxImage = document.getElementById('lightboxImage');
     function closeLightbox() {
@@ -8587,6 +8799,15 @@
         replyQuoteDiv.appendChild(replyNicknameSpan);
         replyQuoteDiv.appendChild(replyTextSpan);
         messageElement.appendChild(replyQuoteDiv);
+      }
+      // スタンプメッセージ（絵文字をTwemojiで大きく表示。吹き出し背景なし）
+      if (message.sticker) {
+        messageElement.classList.add("sticker-bubble");
+        const stickerDiv = document.createElement("div");
+        stickerDiv.className = "sticker-content";
+        stickerDiv.textContent = message.sticker;
+        messageElement.appendChild(stickerDiv);
+        if (window.twemoji) { try { twemoji.parse(stickerDiv, { folder: 'svg', ext: '.svg' }); } catch (e) {} }
       }
       if (message.text) {
         const messageTextSpan = document.createElement("span");
@@ -9681,6 +9902,7 @@
       lastMessagesData = [];
       messageInput.disabled = true;
       fileAttachButton.disabled = true;
+      { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
       if (mentionButton) mentionButton.disabled = true;
       sendMessageButton.disabled = true;
       clearAttachedFile();
@@ -11641,6 +11863,12 @@
       </div>
       <div id="callPickerList"></div>
     </div>
+  </div>
+
+  <!-- スタンプピッカー -->
+  <div id="stickerPicker" data-inspect-ignore="1">
+    <div class="sticker-tabs" id="stickerTabs"></div>
+    <div class="sticker-grid" id="stickerGrid"></div>
   </div>
 
   <!-- リモート音声 -->
