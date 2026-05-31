@@ -4576,6 +4576,31 @@
     // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ＆オンスクリーンコンソール。
     let _inspectMode = false;
 
+    // 安全なクリップボードコピー（async拒否を必ず飲み込む＋execCommandフォールバック）。
+    // iOS PWAで clipboard.writeText が拒否されても unhandledrejection を出さない。
+    function safeCopy(txt) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          // .catch を必ず付けて未捕捉Promiseにしない
+          navigator.clipboard.writeText(txt).catch(() => _execCopyFallback(txt));
+          return;
+        }
+      } catch (e) {}
+      _execCopyFallback(txt);
+    }
+    function _execCopyFallback(txt) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+        ta.setAttribute('data-inspect-ignore', '1');
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      } catch (e) {}
+    }
+
     // 検査モードのON/OFF（設定のトグル、または専用バーの終了ボタンから呼ばれる）
     window.setInspectMode = function(on) {
       _inspectMode = !!on;
@@ -4623,7 +4648,7 @@
           if (top) _showInspectHighlight(top.getBoundingClientRect());
         } catch (e) {}
         const txt = inspectPoint(x, y);
-        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
+        safeCopy(txt);
         try { alertMessage('🔍 検査結果（コピー済み）@' + x + ',' + y + ':\n' + txt, 'info'); } catch (e) { alert(txt); }
       };
 
@@ -4701,7 +4726,7 @@
           'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
         ].join('\n');
       } catch (e) { txt = 'err:' + (e && e.message); }
-      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      safeCopy(txt);
       try { alertMessage('📐 レイアウト診断（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
     };
 
@@ -4753,7 +4778,7 @@
     };
     window.copyDevConsole = function() {
       const txt = (window._devConsoleLog || []).join('\n') || '(ログなし)';
-      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      safeCopy(txt);
       try { alertMessage('📋 コンソールログをコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件）', 'success'); } catch (e) { alert(txt); }
     };
 
@@ -4761,7 +4786,7 @@
     window.copyDiagnosticsBundle = function() {
       const logs = (window._devConsoleLog || []).join('\n');
       const txt = '=== Covo診断バンドル ===\nversion: ' + (_appVersion || '?') + '\nUA: ' + navigator.userAgent + '\n\n=== コンソールログ(最新' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件) ===\n' + (logs || '(なし)');
-      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      safeCopy(txt);
       try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
     };
 
