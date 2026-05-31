@@ -4365,17 +4365,34 @@
       return true;
     }
 
-    async function uploadToExternalService(file) {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('uploaderId', userId || '');
-      const res = await fetch(`${WORKER_BASE_URL}/api/uploadFile`, { method: 'POST', body: formData });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      return data.url;
+    // Cloudflare Worker(KV) へのアップロード。進捗対応(XHR)。
+    // uploadToCloudinary と同じ (file, onProgress, folder) で呼べるようにしている（folderは未使用）。
+    function uploadToExternalService(file, onProgress, _folder) {
+      return new Promise((resolve, reject) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('uploaderId', userId || '');
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${WORKER_BASE_URL}/api/uploadFile`);
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            try {
+              const d = JSON.parse(xhr.responseText);
+              d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+            } catch (e) { reject(new Error('応答の解析に失敗')); }
+          } else {
+            let msg = `HTTP ${xhr.status}`;
+            try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+            reject(new Error(msg));
+          }
+        });
+        xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+        xhr.addEventListener('abort', () => reject(new Error('アップロードがキャンセルされました')));
+        xhr.send(fd);
+      });
     }
 
     function uploadToCloudinary(file, onProgress, folder = "simplechat") {
@@ -5803,7 +5820,7 @@
       if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname);
       if (at) at.textContent = (userNickname||'?').charAt(0).toUpperCase();
       if (ap) {
-        if (userAvatarUrl) {
+        if (isUsableAvatarUrl(userAvatarUrl)) {
           const _u = userAvatarUrl;
           try { ap.referrerPolicy = 'no-referrer'; } catch(_) {}
           try { ap.decoding = 'async'; } catch(_) {}
@@ -6036,7 +6053,7 @@
         progressFill.style.width = '0%';
         confirmBtn.disabled = true; cancelBtn.disabled = true;
         try {
-          const cloudinaryUrl = await uploadToCloudinary(
+          const cloudinaryUrl = await uploadToExternalService(
             new File([blob], 'avatar.jpg', { type: 'image/jpeg' }),
             (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
             'simplechat/avatars'
@@ -6074,7 +6091,7 @@
       settingsNicknameInput.value = userNickname;
       settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
       pendingAvatarUrl = null;
-      if (userAvatarUrl) {
+      if (isUsableAvatarUrl(userAvatarUrl)) {
         const _u = userAvatarUrl;
         try { settingsAvatarPreview.referrerPolicy = 'no-referrer'; } catch(_) {}
         try { settingsAvatarPreview.decoding = 'async'; } catch(_) {}
@@ -6129,11 +6146,15 @@
 
     userPanel.addEventListener("click", (e) => {
       if (e.target.closest('#openSettingsBtn')) return;
+      // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
+      if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
       openSettingsModal("profile");
     });
 
     document.getElementById("openSettingsBtn").addEventListener("click", (e) => {
       e.stopPropagation();
+      // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
+      if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
       openSettingsModal("settings");
     });
 
@@ -6666,6 +6687,11 @@
 
     // アバター画像を安全にセット（失敗時に2回リトライ→イニシャル文字フォールバック）
     // Cloudinaryの一時的な配信エラーやキャッシュ問題に対応。
+    // 使用可能なアバターURLか（Cloudinaryは廃止したので無効扱い→デフォルトに戻る）
+    function isUsableAvatarUrl(url) {
+      return !!url && url.indexOf('res.cloudinary.com') < 0;
+    }
+
     function __setAvatarImg(container, url, name, opts) {
       if (!container) return;
       opts = opts || {};
@@ -6673,6 +6699,9 @@
       const className = opts.className || '';
       const initial = ((name || '?').charAt(0) || '?').toUpperCase();
       try { container.innerHTML = ''; } catch(_) {}
+      // Cloudinary は廃止。旧Cloudinaryアイコンは表示せずデフォルト(イニシャル)に戻す。
+      // ユーザーが新しくアイコンを設定すると Cloudflare(KV) に保存され、自然に移行する。
+      if (url && url.indexOf('res.cloudinary.com') >= 0) { try { container.textContent = initial; } catch(_) {} return; }
       if (!url) { try { container.textContent = initial; } catch(_) {} return; }
       const img = document.createElement('img');
       img.alt = '';
@@ -8093,7 +8122,7 @@
           sendMessageButton.disabled = true;
           fileAttachButton.disabled = true;
           try {
-            const cloudinaryUrl = await uploadToCloudinary(
+            const cloudinaryUrl = await uploadToExternalService(
               attachedFile.file,
               (pct) => {
                 progressFill.style.width = pct + "%";
