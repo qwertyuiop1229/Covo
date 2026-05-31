@@ -4146,13 +4146,23 @@
         probe.remove();
 
         const nav = document.getElementById('mobileBottomNav');
-        const navH = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+        const r = nav ? nav.getBoundingClientRect() : null;
+        const navH = r ? Math.round(r.height) : 0;
+        const navTop = r ? Math.round(r.top) : 0;
+        const navBottom = r ? Math.round(r.bottom) : 0;
         const navPadB = nav ? getComputedStyle(nav).paddingBottom : '-';
         const winH = window.innerHeight;
-        const cs = getComputedStyle(document.documentElement);
-        const varTotal = cs.getPropertyValue('--mnav-total').trim() || '-';
+        const docH = document.documentElement.clientHeight;
+        const vvH = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
+        // ナビの親(.container)の位置とサイズ
+        const cont = document.querySelector('.container');
+        const cr = cont ? cont.getBoundingClientRect() : null;
+        const contBottom = cr ? Math.round(cr.bottom) : '-';
+        const contH = cr ? Math.round(cr.height) : '-';
+        // ナビ下端から画面下端までの隙間（これが余白の正体かを判定）
+        const gapBelowNav = (r ? Math.round(docH - r.bottom) : '-');
 
-        const txt = `safe=${safeBottom} nav=${navH} padB=${navPadB} total=${varTotal} winH=${winH}`;
+        const txt = `safe=${safeBottom} nav=${navH} navTop=${navTop} navBottom=${navBottom} padB=${navPadB} winH=${winH} docH=${docH} vvH=${vvH} contBottom=${contBottom} contH=${contH} gapBelowNav=${gapBelowNav}`;
         els.forEach(el => {
           el.textContent = txt;
           // タップでコピーできるようにする
