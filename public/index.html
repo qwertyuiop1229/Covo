@@ -6163,10 +6163,14 @@
 
     document.getElementById('avatarCropConfirm').addEventListener('click', async () => {
       if (!cropImage) return;
-      const OUTPUT = 400;
+      // 解像度を 400→640 に上げ、高品質リサイズ＋JPEG品質0.92で鮮明に保存する
+      // （Cloudflare はファイルをそのまま保存するだけなので、画質はここの設定で決まる）
+      const OUTPUT = 640;
       const offscreen = document.createElement('canvas');
       offscreen.width = OUTPUT; offscreen.height = OUTPUT;
       const offCtx = offscreen.getContext('2d');
+      offCtx.imageSmoothingEnabled = true;
+      offCtx.imageSmoothingQuality = 'high';
       const sf = OUTPUT / CROP_SIZE;
       offCtx.beginPath();
       offCtx.arc(OUTPUT / 2, OUTPUT / 2, OUTPUT / 2, 0, Math.PI * 2);
