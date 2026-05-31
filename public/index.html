@@ -571,7 +571,7 @@
       #chatArea {
         box-shadow: none !important;
       }
-      /* mobile: 入力フィールド・サイドボタンの影だけ消す（borderは元の見た目に戻す） */
+      /* mobile: 入力フィールド・サイドボタンの影を消す */
       #messageInputInner,
       #messageInputInner:focus-within,
       .input-side-btn,
@@ -579,6 +579,17 @@
       .input-side-btn:active,
       .input-side-btn:focus {
         box-shadow: none !important;
+      }
+      /* mobile: 入力ボックスの枠線（黒っぽい線に見えていた1.5px border）を消し、
+         薄グレー背景で形を保つ。枠線が無いので影/線が一切出ない。 */
+      #messageInputInner,
+      #messageInputInner:focus-within {
+        border: 0 none !important;
+        background: #f3f4f6 !important;
+      }
+      body.dark-server-theme #messageInputInner,
+      body.dark-server-theme #messageInputInner:focus-within {
+        background: #0f172a !important;
       }
       /* ダークモード時はチャット背景の#1a202cに合わせる */
       body.dark-server-theme #messageInputArea {
