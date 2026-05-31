@@ -3010,6 +3010,10 @@
                       <span class="text-sm font-bold" id="appInfoE2EE" style="color:#6b7280">確認中…</span>
                     </div>
                     <div class="flex justify-between items-center">
+                      <span class="text-sm text-gray-500">レイアウト診断</span>
+                      <span class="text-xs font-mono text-gray-500" id="appInfoLayoutDbg" style="text-align:right">—</span>
+                    </div>
+                    <div class="flex justify-between items-center">
                       <button id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
                       <span id="pcCheckUpdateStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
@@ -4128,6 +4132,31 @@
       }
     }
 
+    // レイアウト診断: 実機での safe-area 実値・ナビ高さ・画面高さを画面に出す（原因特定用）。
+    function updateLayoutDebugUI() {
+      const el = document.getElementById('appInfoLayoutDbg');
+      if (!el) return;
+      try {
+        // safe-area-inset-bottom の実値を計測（一時要素で env() を解決）
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;pointer-events:none;';
+        document.body.appendChild(probe);
+        const safeBottom = Math.round(probe.getBoundingClientRect().height);
+        probe.remove();
+
+        const nav = document.getElementById('mobileBottomNav');
+        const navH = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+        const navPadB = nav ? getComputedStyle(nav).paddingBottom : '-';
+        const winH = window.innerHeight;
+        const cs = getComputedStyle(document.documentElement);
+        const varTotal = cs.getPropertyValue('--mnav-total').trim() || '-';
+
+        el.textContent = `safe=${safeBottom} nav=${navH} padB=${navPadB} total=${varTotal} winH=${winH}`;
+      } catch (e) {
+        el.textContent = 'err';
+      }
+    }
+
     // Cloudinary設定（要変更）
     const CLOUDINARY_CLOUD_NAME = "dhmsyvwjd";
     const CLOUDINARY_UPLOAD_PRESET = "simplechat_unsigned";
@@ -5148,6 +5177,7 @@
           }
         }
         updateE2EEStatusUI();
+        updateLayoutDebugUI();
       }
       const sec = document.getElementById(smap[tab] || 'profileSection');
       if (sec) sec.classList.add('active');
