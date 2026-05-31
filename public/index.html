@@ -3765,6 +3765,45 @@
 
     const appId = "simplechat-65a0d";
 
+    /* ===== 開発者ツール: コンソールログを画面で見られるよう保持＆オンスクリーン表示 =====
+       iPhone PWA には開発者コンソールが無いので、console.* を配列にも記録しておき、
+       設定>開発者ツールから表示・コピーできるようにする。 */
+    window._devConsoleLog = [];
+    (function hookConsole() {
+      const MAX = 300; // 直近300件だけ保持（メモリ保護）
+      const fmt = (args) => {
+        try {
+          return Array.from(args).map(a => {
+            if (typeof a === 'string') return a;
+            if (a instanceof Error) return a.message;
+            try { return JSON.stringify(a); } catch (e) { return String(a); }
+          }).join(' ');
+        } catch (e) { return '[log整形エラー]'; }
+      };
+      const stamp = () => {
+        const d = new Date();
+        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      };
+      ['log', 'warn', 'error', 'info'].forEach(level => {
+        const orig = console[level] ? console[level].bind(console) : function(){};
+        console[level] = function(...args) {
+          try {
+            window._devConsoleLog.push(`[${stamp()}][${level}] ${fmt(args)}`);
+            if (window._devConsoleLog.length > MAX) window._devConsoleLog.shift();
+            if (window._devConsolePanelAppend) window._devConsolePanelAppend(level, fmt(args));
+          } catch (e) {}
+          return orig(...args);
+        };
+      });
+      // 未捕捉エラーも記録（バグ調査に重要）
+      window.addEventListener('error', (e) => {
+        try { window._devConsoleLog.push(`[${stamp()}][uncaught] ${e.message} @${(e.filename||'').split('/').pop()}:${e.lineno}`); } catch (_) {}
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        try { window._devConsoleLog.push(`[${stamp()}][promise] ${e.reason && (e.reason.message || e.reason)}`); } catch (_) {}
+      });
+    })();
+
     /* =====================================================================
        E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
        ---------------------------------------------------------------------
@@ -4533,39 +4572,25 @@
     const closeSearchBtn = document.getElementById("closeSearchBtn");
     const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
     const currentRoomTitleText = document.getElementById("currentRoomTitleText");
-    // 【検査モード・一時機能】チャット画面でルーム名を長押し(0.6秒)すると「検査モード」に入る。
-    // その状態で画面の気になる場所（例: 影の線）をタップすると、その地点にある要素と
-    // 影/境界/背景のスタイルを上から順に表示＆クリップボードへコピーする。
-    // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ。
+    // ===== 開発者ツール（設定 > 開発者ツール から操作）=====
+    // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ＆オンスクリーンコンソール。
     let _inspectMode = false;
-    (function attachInspector() {
-      const target = currentRoomTitleText;
-      if (!target) return;
-      let timer = null;
-      const enter = () => {
-        _inspectMode = true;
-        try { alertMessage('🔍 検査モードON\n調べたい場所（影の線など）をタップしてください。もう一度ルーム名を長押しで解除。', 'info'); } catch (e) {}
-      };
-      const toggle = () => {
-        if (_inspectMode) { _inspectMode = false; try { alertMessage('検査モードOFF', 'info'); } catch (e) {} }
-        else enter();
-      };
-      const start = () => { timer = setTimeout(toggle, 600); };
-      const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
-      target.addEventListener('touchstart', start, { passive: true });
-      target.addEventListener('touchend', cancel);
-      target.addEventListener('touchmove', cancel);
-      target.addEventListener('mousedown', start);
-      target.addEventListener('mouseup', cancel);
-      target.addEventListener('mouseleave', cancel);
 
-      // 検査モード中のタップを最優先で捕まえる（capture:true で他のハンドラより先に処理）
+    // 検査モードのON/OFF（設定のトグルから呼ばれる）
+    window.setInspectMode = function(on) {
+      _inspectMode = !!on;
+      if (_inspectMode) {
+        try { alertMessage('🔍 検査モードON\n設定を閉じて、調べたい場所（影の線など）をタップしてください。結果が表示＆コピーされます。', 'info'); } catch (e) {}
+      }
+    };
+
+    // 検査モード中のタップを最優先で捕まえる（capture:true で他のUIより先に処理）
+    (function attachInspectorTapCatcher() {
       const onInspectTap = (ev) => {
         if (!_inspectMode) return;
-        const t = ev.touches ? ev.touches[0] : ev;
+        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
         const x = Math.round(t.clientX), y = Math.round(t.clientY);
-        // ルーム名自身のタップ（モード切替）は無視
-        if (ev.target === target) return;
+        if (typeof x !== 'number' || isNaN(x)) return;
         ev.preventDefault(); ev.stopPropagation();
         const txt = inspectPoint(x, y);
         try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
@@ -4574,6 +4599,96 @@
       document.addEventListener('touchstart', onInspectTap, { capture: true, passive: false });
       document.addEventListener('click', onInspectTap, { capture: true });
     })();
+
+    // レイアウト診断（safe-area・ナビ位置など）をダイアログ表示＋コピー
+    window.showLayoutDiagnostics = function() {
+      let txt = '';
+      try {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;';
+        document.body.appendChild(probe);
+        const safeBottom = Math.round(probe.getBoundingClientRect().height);
+        probe.remove();
+        const nav = document.getElementById('mobileBottomNav');
+        const r = nav ? nav.getBoundingClientRect() : null;
+        const docH = document.documentElement.clientHeight;
+        const cs = getComputedStyle(document.documentElement);
+        txt = [
+          'safe-area-bottom=' + safeBottom,
+          'nav: ' + (r ? `h=${Math.round(r.height)} top=${Math.round(r.top)} bottom=${Math.round(r.bottom)}` : 'なし'),
+          'navPadB=' + (nav ? getComputedStyle(nav).paddingBottom : '-'),
+          '--mnav-h=' + cs.getPropertyValue('--mnav-h').trim(),
+          '--mnav-safe=' + cs.getPropertyValue('--mnav-safe').trim(),
+          '--mnav-total=' + cs.getPropertyValue('--mnav-total').trim(),
+          'winH=' + window.innerHeight + ' docH=' + docH,
+          'visualViewport=' + (window.visualViewport ? Math.round(window.visualViewport.height) : '-'),
+          'gapBelowNav=' + (r ? Math.round(docH - r.bottom) : '-'),
+          'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
+        ].join('\n');
+      } catch (e) { txt = 'err:' + (e && e.message); }
+      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      try { alertMessage('📐 レイアウト診断（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
+    };
+
+    // オンスクリーン・コンソールの表示/非表示
+    window.toggleDevConsole = function() {
+      const panel = document.getElementById('devConsolePanel');
+      if (!panel) return;
+      const showing = panel.style.display !== 'none';
+      if (showing) { panel.style.display = 'none'; return; }
+      // 開く時は既存ログを流し込む
+      const body = document.getElementById('devConsoleBody');
+      if (body) {
+        body.innerHTML = '';
+        (window._devConsoleLog || []).forEach(line => _appendConsoleLine(line));
+        body.scrollTop = body.scrollHeight;
+      }
+      panel.style.display = 'flex';
+    };
+    function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]')) return '#f87171';
+      if (line.includes('[warn]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      return '#cbd5e1';
+    }
+    function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      body.appendChild(div);
+    }
+    // console フックから新規ログが来たらライブ追記する
+    window._devConsolePanelAppend = function(level, msg) {
+      const panel = document.getElementById('devConsolePanel');
+      if (!panel || panel.style.display === 'none') return;
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 20;
+      const d = new Date();
+      const stamp = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      _appendConsoleLine(`[${stamp}][${level}] ${msg}`);
+      if (atBottom) body.scrollTop = body.scrollHeight;
+    };
+    window.clearDevConsole = function() {
+      window._devConsoleLog = [];
+      const body = document.getElementById('devConsoleBody');
+      if (body) body.innerHTML = '';
+    };
+    window.copyDevConsole = function() {
+      const txt = (window._devConsoleLog || []).join('\n') || '(ログなし)';
+      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      try { alertMessage('📋 コンソールログをコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件）', 'success'); } catch (e) { alert(txt); }
+    };
+
+    // コンソールログ＋診断をまとめてコピー
+    window.copyDiagnosticsBundle = function() {
+      const logs = (window._devConsoleLog || []).join('\n');
+      const txt = '=== Covo診断バンドル ===\nversion: ' + (_appVersion || '?') + '\nUA: ' + navigator.userAgent + '\n\n=== コンソールログ(最新' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件) ===\n' + (logs || '(なし)');
+      try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {}
+      try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
+    };
 
     // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
     function inspectPoint(x, y) {
@@ -10742,6 +10857,17 @@
     </div>
   </div>
 
+  <!-- 開発者コンソール パネル（オンスクリーン） -->
+  <div id="devConsolePanel" style="display:none;position:fixed;left:0;right:0;bottom:0;height:45vh;background:#0b1220;color:#cbd5e1;z-index:99999;flex-direction:column;font-family:ui-monospace,Consolas,monospace;box-shadow:0 -8px 24px rgba(0,0,0,0.5);">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#111827;border-bottom:1px solid #1f2937;flex-shrink:0;">
+      <span style="font-size:0.8rem;font-weight:700;color:#e5e7eb;flex:1;">コンソール</span>
+      <button onclick="copyDevConsole()" style="padding:5px 10px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;">全部コピー</button>
+      <button onclick="clearDevConsole()" style="padding:5px 10px;background:#374151;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;">クリア</button>
+      <button onclick="toggleDevConsole()" style="padding:5px 10px;background:#374151;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;">閉じる</button>
+    </div>
+    <div id="devConsoleBody" style="flex:1;overflow-y:auto;padding:8px 10px;font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;"></div>
+  </div>
+
   <!-- 通話オーバーレイ -->
   <div id="callOverlay">
     <!-- 着信ビュー -->
@@ -10875,6 +11001,31 @@
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-shield-alt"></i></div>
           <span class="mobile-settings-row-text">管理者パネル</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+      </div>
+    </div>
+    <div class="mobile-settings-section">
+      <div class="mobile-settings-label">開発者ツール</div>
+      <div class="mobile-settings-group">
+        <div class="mobile-settings-row">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-crosshairs"></i></div>
+          <span class="mobile-settings-row-text">要素を検査（タップした場所を調べる）</span>
+          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-ruler-combined"></i></div>
+          <span class="mobile-settings-row-text">レイアウト診断を表示</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-clipboard-list"></i></div>
+          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="toggleDevConsole()">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-terminal"></i></div>
+          <span class="mobile-settings-row-text">コンソールを表示</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
