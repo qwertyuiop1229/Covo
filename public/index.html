@@ -10835,7 +10835,16 @@
     async function acceptFileShare(id, d) {
       _fsRole = 'receiver';
       _fsId = id;
-      _fsRecv = { name: d.fileName, type: d.fileType, size: d.fileSize, received: 0, chunks: [] };
+      _fsRecv = { name: d.fileName, type: d.fileType, size: d.fileSize, received: 0, chunks: [], writer: null, lastPct: -1 };
+      // 対応ブラウザ(Chrome/Edge等)では保存先を先に選び、ディスクへ直接ストリーミング書き込み。
+      // → メモリにファイル全体を溜めないので1GB級でも端末が重くならない＆速い。
+      // 非対応(iOS Safari等)はメモリに溜める従来方式へ自動フォールバック。
+      try {
+        if (window.showSaveFilePicker) {
+          const handle = await window.showSaveFilePicker({ suggestedName: d.fileName || 'file' });
+          _fsRecv.writer = await handle.createWritable();
+        }
+      } catch (e) { _fsRecv.writer = null; /* キャンセル時もメモリ方式で続行 */ }
       const { doc, updateDoc, collection, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
       try {
         _fsPC = new RTCPeerConnection(STUN_ONLY_CONFIG);
@@ -10867,28 +10876,63 @@
       if (typeof data === 'string') {
         let msg; try { msg = JSON.parse(data); } catch (e) { return; }
         if (msg.__meta) { _fsRecv.name = msg.name; _fsRecv.type = msg.type; _fsRecv.size = msg.size; _fsRecv.received = 0; _fsRecv.chunks = []; return; }
-        if (msg.__done) { _fsFinishReceive(); return; }
+        if (msg.__done) { _fsRecv._gotDone = true; _fsMaybeFinish(); return; }
         return;
       }
       // バイナリチャンク
-      _fsRecv.chunks.push(data);
       _fsRecv.received += data.byteLength;
-      if (_fsRecv.size) _fsUpdateProgress(Math.round(_fsRecv.received / _fsRecv.size * 100));
+      if (_fsRecv.writer) {
+        // ディスクへ直接書き込み（順序保証のためPromiseチェーンで直列化）
+        _fsRecv._writeChain = (_fsRecv._writeChain || Promise.resolve())
+          .then(() => _fsRecv.writer.write(data))
+          .catch(e => { console.error('[FileShare] 書き込みエラー:', e); });
+      } else {
+        _fsRecv.chunks.push(data); // メモリ方式（フォールバック）
+      }
+      // 進捗はrAFで間引いて更新（毎チャンク更新は重くて受信を詰まらせる）
+      if (_fsRecv.size && !_fsRecv._rafPending) {
+        _fsRecv._rafPending = true;
+        requestAnimationFrame(() => {
+          _fsRecv._rafPending = false;
+          if (_fsRecv) _fsUpdateProgress(Math.round(_fsRecv.received / _fsRecv.size * 100));
+        });
+      }
     }
 
-    function _fsFinishReceive() {
+    // __done受信＆全書き込み完了の両方が揃ったら完了処理
+    async function _fsMaybeFinish() {
+      if (!_fsRecv || !_fsRecv._gotDone) return;
+      // 書き込みチェーンが残っていれば待つ
+      try { if (_fsRecv._writeChain) await _fsRecv._writeChain; } catch (e) {}
+      _fsFinishReceive();
+    }
+
+    async function _fsFinishReceive() {
       // 送信側に「受信し切った」ことを通知（これで送信側が本当の完了を表示できる）
       try { if (_fsChannel && _fsChannel.readyState === 'open') _fsChannel.send(JSON.stringify({ __ack: true })); } catch (e) {}
       try {
-        const blob = new Blob(_fsRecv.chunks, { type: _fsRecv.type || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        _fsCloseProgress();
-        _fsShowReceivedPreview(url, _fsRecv.name, _fsRecv.type, _fsRecv.size);
+        _fsUpdateProgress(100);
+        if (_fsRecv.writer) {
+          // ディスク書き込みを確定（close）。既に保存済みなのでプレビューはファイル名のみ案内。
+          await _fsRecv.writer.close();
+          _fsCloseProgress();
+          _fsShowSavedNotice(_fsRecv.name, _fsRecv.size);
+        } else {
+          const blob = new Blob(_fsRecv.chunks, { type: _fsRecv.type || 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          _fsCloseProgress();
+          _fsShowReceivedPreview(url, _fsRecv.name, _fsRecv.type, _fsRecv.size);
+        }
       } catch (e) {
         console.error('[FileShare] 受信完了処理エラー:', e);
       }
       // ACKが送信側に届くまで少し待ってから接続を閉じる
       setTimeout(() => { _fsCleanup(); }, 800);
+    }
+
+    // ディスク保存済みの場合の通知（プレビューは作らない＝メモリ節約）
+    function _fsShowSavedNotice(name, size) {
+      _fsShowReceivedPreview(null, name, 'application/octet-stream', size, true);
     }
 
     function _fsHumanSize(b) {
@@ -10939,13 +10983,28 @@
     };
 
     // 受信したファイルのプレビュー＆保存
-    function _fsShowReceivedPreview(url, name, type, size) {
+    function _fsShowReceivedPreview(url, name, type, size, alreadySaved) {
       let ov = document.getElementById('fsPreviewOverlay');
       if (!ov) {
         ov = document.createElement('div');
         ov.id = 'fsPreviewOverlay';
         ov.setAttribute('data-inspect-ignore', '1');
         document.body.appendChild(ov);
+      }
+      // 既にディスク保存済み（ストリーミング書き込み）の場合は完了通知のみ表示
+      if (alreadySaved) {
+        ov.innerHTML = `
+          <div class="fs-prev-box">
+            <div class="fs-prev-file" style="color:#16a34a"><i class="fas fa-circle-check"></i></div>
+            <div class="fs-prev-title" style="margin-bottom:6px">保存しました</div>
+            <div class="fs-prev-name">${escapeHtml(name || '')}</div>
+            <div class="fs-prev-size">${_fsHumanSize(size || 0)}</div>
+            <div class="fs-prev-actions">
+              <button class="fs-prev-close" style="flex:1" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
+            </div>
+          </div>`;
+        ov.style.display = 'flex';
+        return;
       }
       let inner = '';
       if (type && type.startsWith('image/')) {
@@ -10966,7 +11025,6 @@
             <button class="fs-prev-close" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
           </div>
         </div>`;
-      // download属性のファイル名はHTML属性として安全に再設定
       const a = ov.querySelector('.fs-prev-save'); if (a) a.setAttribute('download', name || 'file');
       ov.style.display = 'flex';
     }
