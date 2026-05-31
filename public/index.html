@@ -1880,7 +1880,7 @@
       100% { opacity:0; transform:translateX(-50%) translateY(0); }
     }
 
-    #callButton {
+    #callButton, #fileShareButton {
       background: none;
       border: none;
       color: #6b7280;
@@ -1895,8 +1895,60 @@
       transition: color 0.15s;
       -webkit-tap-highlight-color: transparent;
     }
-    #callButton:hover:not(:disabled) { color: #1f2937; }
-    #callButton:disabled { opacity: 0.35; cursor: not-allowed; }
+    #callButton:hover:not(:disabled), #fileShareButton:hover:not(:disabled) { color: #1f2937; }
+    #callButton:disabled, #fileShareButton:disabled { opacity: 0.35; cursor: not-allowed; }
+    body.dark-server-theme #fileShareButton { color: #94a3b8; }
+    body.dark-server-theme #fileShareButton:hover:not(:disabled) { color: #e2e8f0; }
+
+    /* P2Pファイル共有: 進捗オーバーレイ */
+    #fsProgressOverlay, #fsPreviewOverlay {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); padding: 20px;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+    .fs-prog-box, .fs-prev-box {
+      background: #ffffff; border-radius: 20px; padding: 24px 22px;
+      width: 100%; max-width: 320px; text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    }
+    body.dark-server-theme .fs-prog-box, body.dark-server-theme .fs-prev-box {
+      background: #1e293b; color: #e2e8f0;
+    }
+    .fs-prog-icon {
+      width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 14px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+    }
+    .fs-prog-name, .fs-prev-name { font-size: 0.9rem; font-weight: 700; color: inherit; word-break: break-all; }
+    .fs-prog-status { font-size: 0.78rem; color: #6b7280; margin: 4px 0 14px; }
+    body.dark-server-theme .fs-prog-status { color: #94a3b8; }
+    .fs-prog-bar { height: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+    body.dark-server-theme .fs-prog-bar { background: #334155; }
+    .fs-prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.15s; }
+    .fs-prog-pct { font-size: 0.8rem; font-weight: 700; margin-top: 8px; color: #3b82f6; }
+    .fs-prog-cancel {
+      margin-top: 16px; width: 100%; padding: 10px; border: none; border-radius: 12px;
+      background: #f3f4f6; color: #6b7280; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+    }
+    body.dark-server-theme .fs-prog-cancel { background: #334155; color: #cbd5e1; }
+    /* 受信プレビュー */
+    .fs-prev-title { font-size: 0.78rem; color: #9ca3af; font-weight: 700; margin-bottom: 12px; }
+    .fs-prev-media { max-width: 100%; max-height: 50vh; border-radius: 12px; display: block; margin: 0 auto 12px; object-fit: contain; }
+    .fs-prev-file {
+      width: 80px; height: 80px; border-radius: 16px; margin: 0 auto 12px;
+      background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #9ca3af;
+    }
+    body.dark-server-theme .fs-prev-file { background: #0f172a; }
+    .fs-prev-size { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; }
+    .fs-prev-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .fs-prev-save, .fs-prev-close {
+      flex: 1; padding: 11px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;
+      cursor: pointer; border: none; text-align: center; text-decoration: none;
+    }
+    .fs-prev-save { background: #1f2937; color: #fff; }
+    .fs-prev-close { background: #f3f4f6; color: #6b7280; }
+    body.dark-server-theme .fs-prev-close { background: #334155; color: #cbd5e1; }
 
     #callPickerModal {
       position: fixed;
@@ -3638,6 +3690,9 @@
             <button id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
               <i class="fas fa-phone"></i>
             </button>
+            <button id="fileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()" disabled>
+              <i class="fas fa-share-from-square"></i>
+            </button>
             <button id="toggleSearchButton" class="text-gray-500 hover:text-gray-800 ml-2"><i
                 class="fas fa-search"></i></button>
           </div>
@@ -5085,6 +5140,7 @@
               // Tauriのみ或いはFCMトークン取得失敗時はFirestoreリスナーをフォールバック
               setTimeout(() => setupGlobalNotificationListeners(), 2000);
               initCallListener();
+              initFileShareListener();
             } else {
               authContainer.classList.add("hidden");
               appContainer.classList.add("hidden");
@@ -7535,6 +7591,7 @@
       fileAttachButton.disabled = false;
       if (mentionButton) mentionButton.disabled = false;
       document.getElementById('callButton').disabled = false;
+      { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
       prewarmPeerConnection();
       sendMessageButton.disabled = false;
       messageLimit = 20; // ルームに入り直したらリミットをリセット
@@ -10201,6 +10258,8 @@
       if (!currentServerData || !userId) return;
       const modal = document.getElementById('callPickerModal');
       const list = document.getElementById('callPickerList');
+      const header = modal.querySelector('.call-picker-header span');
+      if (header) header.textContent = '通話する相手を選択';
       list.innerHTML = '';
 
       const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
@@ -10229,6 +10288,345 @@
 
     function closeCallPicker() {
       document.getElementById('callPickerModal').classList.remove('show');
+    }
+
+    /* =====================================================================
+       P2P ファイル共有（WebRTC DataChannel）
+       - シグナリングだけ Firestore (fileshares/{id}) を経由（データ量ごく僅か）
+       - STUN/TURN は接続安定化の補助。ファイル本体は P2P DataChannel で直送
+       - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
+       - 通話用の peerConnection とは完全に別系統（衝突しない）
+       ===================================================================== */
+    const FS_CHUNK = 16 * 1024;          // 16KB チャンク
+    const FS_BUFFER_HIGH = 1 * 1024 * 1024; // 送信バッファ上限 1MB（超えたら待つ）
+    let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
+    let _fsUnsub = null, _fsCandUnsub = null;
+    let _fsRecv = null; // { name, type, size, received, chunks[] }
+
+    function _fsCleanup() {
+      try { if (_fsUnsub) _fsUnsub(); } catch (e) {}
+      try { if (_fsCandUnsub) _fsCandUnsub(); } catch (e) {}
+      try { if (_fsChannel) _fsChannel.close(); } catch (e) {}
+      try { if (_fsPC) _fsPC.close(); } catch (e) {}
+      _fsUnsub = _fsCandUnsub = _fsChannel = _fsPC = _fsId = _fsRole = null;
+      _fsRecv = null;
+    }
+
+    // 送信側: 相手選択ピッカーを開く（通話ピッカーと同デザインを流用）
+    window.openFileSharePicker = function() {
+      if (!currentServerData || !userId) return;
+      const modal = document.getElementById('callPickerModal');
+      const list = document.getElementById('callPickerList');
+      const header = modal.querySelector('.call-picker-header span');
+      if (header) header.textContent = 'ファイルを送る相手を選択';
+      list.innerHTML = '';
+      const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
+      if (memberIds.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.4);">メンバーがいません</div>';
+      } else {
+        for (const uid of memberIds) {
+          const user = cachedUsers.find(u => u.id === uid) || {};
+          const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
+          const div = document.createElement('div');
+          div.className = 'call-picker-item';
+          div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${escapeHtml(nameRaw)}</div></div>`;
+          __setAvatarImg(div.querySelector('.call-picker-avatar'), user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
+          div.onclick = () => { closeCallPicker(); _fsPickFileAndSend(uid, nameRaw); };
+          list.appendChild(div);
+        }
+      }
+      modal.classList.add('show');
+    };
+
+    // ファイル選択 → 送信開始
+    function _fsPickFileAndSend(targetUid, targetName) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (file) startFileShare(targetUid, targetName, file);
+      };
+      input.click();
+    }
+
+    async function startFileShare(targetUid, targetName, file) {
+      if (_fsId) { alertMessage('別のファイル送信が進行中です', 'error'); return; }
+      _fsRole = 'sender';
+      const { doc, setDoc, collection, serverTimestamp, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      try {
+        _fsPC = new RTCPeerConnection(STUN_CONFIG);
+        const ref = doc(collection(db, 'artifacts', appId, 'fileshares'));
+        _fsId = ref.id;
+
+        // DataChannel を作成（送信側）
+        _fsChannel = _fsPC.createDataChannel('file', { ordered: true });
+        _fsChannel.binaryType = 'arraybuffer';
+        _fsChannel.onopen = () => _fsSendFileData(file);
+        _fsChannel.onerror = () => {};
+
+        // ICE候補を Firestore へ
+        const candCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'senderCandidates');
+        _fsPC.onicecandidate = e => { if (e.candidate) addDoc(candCol, e.candidate.toJSON()).catch(() => {}); };
+
+        const offer = await _fsPC.createOffer();
+        await _fsPC.setLocalDescription(offer);
+
+        const myUser = cachedUsers.find(u => u.id === userId) || {};
+        await setDoc(ref, {
+          sender: { uid: userId, nickname: myUser.nickname || '' },
+          receiverUid: targetUid,
+          fileName: file.name, fileType: file.type || 'application/octet-stream', fileSize: file.size,
+          status: 'offering',
+          offer: { type: offer.type, sdp: offer.sdp },
+          createdAt: serverTimestamp()
+        });
+
+        // 相手にプッシュ通知（任意・fire-and-forget）
+        fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId })
+        }).catch(() => {});
+
+        _fsShowProgress('send', file.name, '相手の応答を待っています…');
+
+        // answer + 受信側ICEを待つ
+        _fsUnsub = onSnapshot(ref, async snap => {
+          const d = snap.data();
+          if (!d) return;
+          if (d.status === 'declined') { _fsShowProgress('error', file.name, '相手が拒否しました'); setTimeout(_fsCloseProgress, 1500); _fsCleanup(); return; }
+          if (d.answer && !_fsPC.currentRemoteDescription) {
+            await _fsPC.setRemoteDescription(new RTCSessionDescription(d.answer));
+          }
+        });
+        const rcandCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'receiverCandidates');
+        _fsCandUnsub = onSnapshot(rcandCol, snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {} } });
+        });
+      } catch (e) {
+        console.error('[FileShare] 送信開始失敗:', e);
+        alertMessage('ファイル送信を開始できませんでした', 'error');
+        _fsCleanup();
+      }
+    }
+
+    // チャンク分割送信（バックプレッシャ制御つき）
+    async function _fsSendFileData(file) {
+      try {
+        _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
+        let offset = 0;
+        const reader = file.stream().getReader();
+        // stream対応していない環境向けフォールバック
+        if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          let chunk = value;
+          for (let i = 0; i < chunk.length; i += FS_CHUNK) {
+            const slice = chunk.slice(i, i + FS_CHUNK);
+            while (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) { await new Promise(r => setTimeout(r, 20)); }
+            _fsChannel.send(slice);
+            offset += slice.byteLength;
+            _fsUpdateProgress(Math.round(offset / file.size * 100));
+          }
+        }
+        _fsChannel.send(JSON.stringify({ __done: true }));
+        _fsShowProgress('done', file.name, '送信完了');
+        setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1200);
+      } catch (e) {
+        console.error('[FileShare] 送信中エラー:', e);
+        _fsShowProgress('error', file.name, '送信に失敗しました');
+        setTimeout(_fsCloseProgress, 1500);
+      }
+    }
+    async function _fsSendFileDataLegacy(file) {
+      let offset = 0;
+      while (offset < file.size) {
+        const slice = await file.slice(offset, offset + FS_CHUNK).arrayBuffer();
+        while (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) { await new Promise(r => setTimeout(r, 20)); }
+        _fsChannel.send(slice);
+        offset += slice.byteLength;
+        _fsUpdateProgress(Math.round(offset / file.size * 100));
+      }
+      _fsChannel.send(JSON.stringify({ __done: true }));
+      _fsShowProgress('done', file.name, '送信完了');
+      setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1200);
+    }
+    async function _fsMarkComplete() {
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        if (_fsId) await updateDoc(doc(db, 'artifacts', appId, 'fileshares', _fsId), { status: 'completed' });
+      } catch (e) {}
+      _fsCleanup();
+    }
+
+    // 受信側: 着信を監視（ログイン時に開始）
+    async function initFileShareListener() {
+      if (!userId) return;
+      const { collection, query, where, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const q = query(collection(db, 'artifacts', appId, 'fileshares'), where('receiverUid', '==', userId), where('status', '==', 'offering'));
+      onSnapshot(q, snap => {
+        snap.docChanges().forEach(ch => {
+          if (ch.type === 'added') {
+            const d = ch.doc.data();
+            if (_fsId) return; // 既に処理中
+            _fsShowIncoming(ch.doc.id, d);
+          }
+        });
+      });
+    }
+
+    function _fsShowIncoming(id, d) {
+      const human = _fsHumanSize(d.fileSize || 0);
+      showCustomConfirm(
+        `${escapeHtml(d.sender?.nickname || '相手')}さんからファイル`,
+        '受け取る', '拒否',
+        `${escapeHtml(d.fileName || '')}（${human}）をP2Pで受信しますか？`
+      ).then(ok => {
+        if (ok) acceptFileShare(id, d);
+        else _fsDecline(id);
+      });
+    }
+    async function _fsDecline(id) {
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await updateDoc(doc(db, 'artifacts', appId, 'fileshares', id), { status: 'declined' });
+      } catch (e) {}
+    }
+
+    async function acceptFileShare(id, d) {
+      _fsRole = 'receiver';
+      _fsId = id;
+      _fsRecv = { name: d.fileName, type: d.fileType, size: d.fileSize, received: 0, chunks: [] };
+      const { doc, updateDoc, collection, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      try {
+        _fsPC = new RTCPeerConnection(STUN_CONFIG);
+        const candCol = collection(db, 'artifacts', appId, 'fileshares', id, 'receiverCandidates');
+        _fsPC.onicecandidate = e => { if (e.candidate) addDoc(candCol, e.candidate.toJSON()).catch(() => {}); };
+        _fsPC.ondatachannel = e => {
+          _fsChannel = e.channel;
+          _fsChannel.binaryType = 'arraybuffer';
+          _fsChannel.onmessage = _fsOnMessage;
+        };
+        await _fsPC.setRemoteDescription(new RTCSessionDescription(d.offer));
+        const answer = await _fsPC.createAnswer();
+        await _fsPC.setLocalDescription(answer);
+        await updateDoc(doc(db, 'artifacts', appId, 'fileshares', id), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
+
+        const scandCol = collection(db, 'artifacts', appId, 'fileshares', id, 'senderCandidates');
+        _fsCandUnsub = onSnapshot(scandCol, snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {} } });
+        });
+        _fsShowProgress('recv', d.fileName, '接続中…');
+      } catch (e) {
+        console.error('[FileShare] 受信開始失敗:', e);
+        _fsCleanup();
+      }
+    }
+
+    function _fsOnMessage(ev) {
+      const data = ev.data;
+      if (typeof data === 'string') {
+        let msg; try { msg = JSON.parse(data); } catch (e) { return; }
+        if (msg.__meta) { _fsRecv.name = msg.name; _fsRecv.type = msg.type; _fsRecv.size = msg.size; _fsRecv.received = 0; _fsRecv.chunks = []; return; }
+        if (msg.__done) { _fsFinishReceive(); return; }
+        return;
+      }
+      // バイナリチャンク
+      _fsRecv.chunks.push(data);
+      _fsRecv.received += data.byteLength;
+      if (_fsRecv.size) _fsUpdateProgress(Math.round(_fsRecv.received / _fsRecv.size * 100));
+    }
+
+    function _fsFinishReceive() {
+      try {
+        const blob = new Blob(_fsRecv.chunks, { type: _fsRecv.type || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        _fsCloseProgress();
+        _fsShowReceivedPreview(url, _fsRecv.name, _fsRecv.type, _fsRecv.size);
+      } catch (e) {
+        console.error('[FileShare] 受信完了処理エラー:', e);
+      }
+      _fsCleanup();
+    }
+
+    function _fsHumanSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+      if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+      return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    // 進捗オーバーレイ（送信/受信共通）
+    function _fsShowProgress(mode, fileName, statusText) {
+      let ov = document.getElementById('fsProgressOverlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'fsProgressOverlay';
+        ov.setAttribute('data-inspect-ignore', '1');
+        ov.innerHTML = `
+          <div class="fs-prog-box">
+            <div class="fs-prog-icon"><i class="fas fa-share-from-square"></i></div>
+            <div class="fs-prog-name" id="fsProgName"></div>
+            <div class="fs-prog-status" id="fsProgStatus"></div>
+            <div class="fs-prog-bar"><div class="fs-prog-fill" id="fsProgFill"></div></div>
+            <div class="fs-prog-pct" id="fsProgPct">0%</div>
+            <button class="fs-prog-cancel" onclick="cancelFileShare()">キャンセル</button>
+          </div>`;
+        document.body.appendChild(ov);
+      }
+      ov.style.display = 'flex';
+      document.getElementById('fsProgName').textContent = fileName || '';
+      document.getElementById('fsProgStatus').textContent = statusText || '';
+      const cancel = ov.querySelector('.fs-prog-cancel');
+      if (cancel) cancel.style.display = (mode === 'done' || mode === 'error') ? 'none' : '';
+    }
+    function _fsUpdateProgress(pct) {
+      const f = document.getElementById('fsProgFill'); const p = document.getElementById('fsProgPct');
+      if (f) f.style.width = pct + '%';
+      if (p) p.textContent = pct + '%';
+      const st = document.getElementById('fsProgStatus');
+      if (st && st.textContent.indexOf('待') < 0) st.textContent = (_fsRole === 'sender' ? '送信中…' : '受信中…');
+    }
+    function _fsCloseProgress() {
+      const ov = document.getElementById('fsProgressOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    window.cancelFileShare = function() {
+      _fsCloseProgress();
+      _fsCleanup();
+    };
+
+    // 受信したファイルのプレビュー＆保存
+    function _fsShowReceivedPreview(url, name, type, size) {
+      let ov = document.getElementById('fsPreviewOverlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'fsPreviewOverlay';
+        ov.setAttribute('data-inspect-ignore', '1');
+        document.body.appendChild(ov);
+      }
+      let inner = '';
+      if (type && type.startsWith('image/')) {
+        inner = `<img src="${url}" class="fs-prev-media" alt="">`;
+      } else if (type && type.startsWith('video/')) {
+        inner = `<video src="${url}" class="fs-prev-media" controls></video>`;
+      } else {
+        inner = `<div class="fs-prev-file"><i class="fas fa-file"></i></div>`;
+      }
+      ov.innerHTML = `
+        <div class="fs-prev-box">
+          <div class="fs-prev-title">受信したファイル</div>
+          ${inner}
+          <div class="fs-prev-name">${escapeHtml(name || '')}</div>
+          <div class="fs-prev-size">${_fsHumanSize(size || 0)}</div>
+          <div class="fs-prev-actions">
+            <a class="fs-prev-save" href="${url}" download="${encodeURIComponent(name || 'file').replace(/"/g, '')}">保存</a>
+            <button class="fs-prev-close" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
+          </div>
+        </div>`;
+      // download属性のファイル名はHTML属性として安全に再設定
+      const a = ov.querySelector('.fs-prev-save'); if (a) a.setAttribute('download', name || 'file');
+      ov.style.display = 'flex';
     }
 
     async function startCall(uid, name, avatar) {
