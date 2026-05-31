@@ -2839,7 +2839,7 @@
     <button class="pwa-banner-btn" id="pwaInstallButton">インストール</button>
     <button class="pwa-banner-close" id="pwaInstallClose"><i class="fas fa-times"></i></button>
   </div>
-  <div id="loadingOverlay" class="fixed inset-0 flex items-center justify-center z-50 hidden" style="background-color:#1f2937;">
+  <div id="loadingOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
     <div class="text-white text-xl">読み込み中...</div>
   </div>
 
@@ -4112,9 +4112,10 @@
     // 設定>アプリ情報 の「メッセージの暗号化」状態表示を更新する。
     // ユーザーが自分で暗号化が効いているか確認できるようにする（実機での動作確認用）。
     async function updateE2EEStatusUI() {
-      const el = document.getElementById('appInfoE2EE');
-      if (!el) return;
-      const set = (text, color) => { el.textContent = text; el.style.color = color; };
+      // PC設定モーダルとスマホUIの両方を同時に更新する
+      const els = [document.getElementById('appInfoE2EE'), document.getElementById('mobileAppInfoE2EE')].filter(Boolean);
+      if (!els.length) return;
+      const set = (text, color) => { els.forEach(el => { el.textContent = text; el.style.color = color; }); };
       if (!_subtleOK) {
         set('利用できません（端末非対応）', '#dc2626'); // 赤
         return;
@@ -4134,8 +4135,8 @@
 
     // レイアウト診断: 実機での safe-area 実値・ナビ高さ・画面高さを画面に出す（原因特定用）。
     function updateLayoutDebugUI() {
-      const el = document.getElementById('appInfoLayoutDbg');
-      if (!el) return;
+      const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+      if (!els.length) return;
       try {
         // safe-area-inset-bottom の実値を計測（一時要素で env() を解決）
         const probe = document.createElement('div');
@@ -4151,9 +4152,10 @@
         const cs = getComputedStyle(document.documentElement);
         const varTotal = cs.getPropertyValue('--mnav-total').trim() || '-';
 
-        el.textContent = `safe=${safeBottom} nav=${navH} padB=${navPadB} total=${varTotal} winH=${winH}`;
+        const txt = `safe=${safeBottom} nav=${navH} padB=${navPadB} total=${varTotal} winH=${winH}`;
+        els.forEach(el => { el.textContent = txt; });
       } catch (e) {
-        el.textContent = 'err';
+        els.forEach(el => { el.textContent = 'err'; });
       }
     }
 
@@ -5314,6 +5316,9 @@
                 .catch(() => { verEl.textContent = '取得失敗'; });
             }
           }
+          // スマホUI側のE2EE状態・レイアウト診断も更新
+          updateE2EEStatusUI();
+          updateLayoutDebugUI();
         }
         el.classList.add('active');
       }
@@ -10781,6 +10786,16 @@
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-tag"></i></div>
           <span class="mobile-settings-row-text">バージョン</span>
           <span id="mobileAppInfoVersion" style="font-size:0.85rem;font-family:ui-monospace,Consolas,monospace;font-weight:700;color:#6b7280">—</span>
+        </div>
+        <div class="mobile-settings-row" style="cursor:default;">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-lock"></i></div>
+          <span class="mobile-settings-row-text">メッセージの暗号化</span>
+          <span id="mobileAppInfoE2EE" style="font-size:0.85rem;font-weight:700;color:#6b7280;margin-left:auto">確認中…</span>
+        </div>
+        <div class="mobile-settings-row" style="cursor:default;">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-ruler-combined"></i></div>
+          <span class="mobile-settings-row-text">レイアウト診断</span>
+          <span id="mobileAppInfoLayoutDbg" style="font-size:0.7rem;font-family:ui-monospace,Consolas,monospace;color:#6b7280;margin-left:auto;text-align:right">—</span>
         </div>
         <div id="mobileCheckUpdateBtn" class="mobile-settings-row" onclick="manualCheckUpdate('mobileCheckUpdateBtn','mobileCheckUpdateStatus')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-sync-alt"></i></div>
