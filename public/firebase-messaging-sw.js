@@ -46,6 +46,15 @@ messaging.onBackgroundMessage((payload) => {
     data = payload.data;
   }
 
+  // 最終防壁: SW は鍵を持たず復号できないので、暗号文(enc::v1::)が来たら
+  // ユーザーに暗号文を見せず汎用文言に置き換える。
+  if (typeof body === 'string' && body.indexOf('enc::v1::') === 0) {
+    body = '新しいメッセージがあります';
+  }
+  if (typeof title === 'string' && title.indexOf('enc::v1::') === 0) {
+    title = 'Covo';
+  }
+
   // ★ 自分が送ったメッセージへの通知は表示しない
   // Cloudflare Worker が payload.data.senderId に送信者 UID を含めて送信する
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {

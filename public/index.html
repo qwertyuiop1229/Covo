@@ -635,7 +635,9 @@
         background-color: white;
         z-index: 50;
         border-radius: 1rem 1rem 0 0;
-        box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+        /* box-shadow は閉じている時に上向きの影が画面下部(ナビ付近)へ漏れて
+           黒っぽいグラデに見える原因だったため、開いている時だけ付与する。 */
+        box-shadow: none;
         transform: translateY(100%);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         flex-direction: column;
@@ -645,6 +647,7 @@
 
       #membersSidebar.bottom-sheet-open {
         transform: translateY(0);
+        box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
       }
 
       /* ボトムシートのドラッグハンドル */
@@ -9178,6 +9181,8 @@
     // ===== アプリ内通知スタック =====
         
     function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+      // 最終防壁: 万一ここに暗号文が来ても、ユーザーには絶対に暗号文を見せない
+      if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（メッセージ）';
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
       if (soundEnabled) playNotificationSound();
       const stack = document.getElementById("notifStack");
@@ -9353,12 +9358,24 @@
                   lastNotifTs = msgTs;
                   // 既に currentServerId のルームは dummyUnreadListener が担当
                   if (msgData.senderId !== userId && svId !== currentServerId) {
-                    showInAppNotification(
-                      svData.name || svId, rmName,
-                      msgData.senderNickname || 'ユーザー',
-                      msgData.text || '（ファイル）',
-                      svId, svData, rmId, rmName
-                    );
+                    // E2EE: 暗号文ならまず復号してから通知に渡す（暗号文をそのまま表示しない）
+                    (async () => {
+                      let body = msgData.text || '（ファイル）';
+                      try {
+                        if (isEncrypted(body)) {
+                          const _members = (svData && svData.joinedUsers) || [];
+                          body = await decryptText(body, svId, rmId, _members);
+                        }
+                      } catch (e) { body = '（メッセージ）'; }
+                      // 念のため、復号できず暗号文のままなら汎用文言にフォールバック
+                      if (isEncrypted(body)) body = '（メッセージ）';
+                      showInAppNotification(
+                        svData.name || svId, rmName,
+                        msgData.senderNickname || 'ユーザー',
+                        body,
+                        svId, svData, rmId, rmName
+                      );
+                    })();
                   }
                 }
               });
@@ -10404,6 +10421,11 @@
 
     // --- 統合通知関数 ---
     async function showNotification(title, body, roomId) {
+      // 最終防壁: 暗号文をそのまま通知に出さない
+      if (typeof isEncrypted === 'function') {
+        if (isEncrypted(body)) body = '新しいメッセージがあります';
+        if (isEncrypted(title)) title = 'Covo';
+      }
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
       const desktopEnabled = localStorage.getItem('simplechat_desktop_notif') !== 'false';
       const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
