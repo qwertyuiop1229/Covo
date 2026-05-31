@@ -598,6 +598,10 @@
         background: #f3f4f6 !important;
         box-shadow: none !important;
         color: #6b7280 !important;
+        /* 入力ボックスと高さを完全に揃える（行内で同じ高さに伸ばす） */
+        height: auto !important;
+        align-self: stretch !important;
+        min-height: 40px;
       }
       #fileAttachButton:disabled {
         background: #f3f4f6 !important;
@@ -2107,8 +2111,9 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ（少しコンパクトに 44px→38px） */
-      --mnav-h: 38px;
+      /* アイコン行の高さ。上側に少し余白を持たせるため 38→46px。
+         アイコンは .mobile-nav-tab で下寄せにしているので、増えた分は上側の余白になる。 */
+      --mnav-h: 46px;
       /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
          （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
       --mnav-safe: 0px;
@@ -2135,12 +2140,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      /* アイコンを下寄りに置き、上側に少し余白・下側はほぼ無しにする */
+      justify-content: flex-end;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
       background: transparent;
-      padding: 0;
+      padding: 0 0 2px 0;
       margin: 0;
       transition: color 0.15s;
       -webkit-tap-highlight-color: transparent;
@@ -2379,6 +2385,47 @@
     body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
     body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
     body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）を
+       .modal-box と中の代表的な Tailwind ユーティリティごとまとめて暗くする。 */
+    body.dark-server-theme .modal-box {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100 {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover { background-color: #1e2f42 !important; }
+    /* グレー系ボタン（キャンセル等）。濃色系ボタンはそのまま */
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
 
     /* === スムーズなアニメーション（UIの触り心地向上） === */
     button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
@@ -3219,28 +3266,12 @@
           </div>
         </div>
 
-        <!-- Cloudinary -->
-        <div style="background:#1e293b;" class="rounded-2xl p-4">
-          <div class="flex items-center gap-2 mb-3">
-            <i class="fas fa-cloud text-white text-sm"></i>
-            <span class="text-white text-sm font-bold">Cloudinary（画像）</span>
-            <span id="cloudinaryLimitText" class="ml-auto text-white/40 text-xs">—</span>
-          </div>
-          <div style="background:rgba(255,255,255,0.12);" class="rounded-full h-2.5 overflow-hidden mb-2">
-            <div id="cloudinaryUsageBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:rgba(255,255,255,0.85);"></div>
-          </div>
-          <div class="flex justify-between items-center">
-            <span id="cloudinaryUsageText" class="text-white/70 text-xs">読み込み中...</span>
-            <span id="cloudinaryResourceCount" class="text-white/40 text-xs"></span>
-          </div>
-        </div>
-
         <!-- 一括削除 -->
         <div class="pt-2 border-t border-gray-100">
           <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.7);">
             <i class="fas fa-trash-alt"></i> 全ファイルを一括削除
           </button>
-          <p class="text-xs text-gray-400 mt-2 text-center">KVとCloudinaryの全ファイルが削除されます</p>
+          <p class="text-xs text-gray-400 mt-2 text-center">KV（Cloudflare）の全ファイルが削除されます</p>
         </div>
       </div>
     </div>
@@ -4343,11 +4374,7 @@
       setTimeout(() => { el.textContent = original; el.style.color = '#6b7280'; }, 1500);
     }
 
-    // Cloudinary設定（要変更）
-    const CLOUDINARY_CLOUD_NAME = "dhmsyvwjd";
-    const CLOUDINARY_UPLOAD_PRESET = "simplechat_unsigned";
-
-    // Cloudinaryがブロックする危険な拡張子（クライアント側で事前チェック）
+    // 送信をブロックする危険な拡張子（クライアント側で事前チェック）
     const BLOCKED_EXTENSIONS = new Set([
       'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
       'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
@@ -4391,41 +4418,6 @@
         });
         xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
         xhr.addEventListener('abort', () => reject(new Error('アップロードがキャンセルされました')));
-        xhr.send(fd);
-      });
-    }
-
-    function uploadToCloudinary(file, onProgress, folder = "simplechat") {
-      if (CLOUDINARY_CLOUD_NAME === "your_cloud_name") {
-        return Promise.reject(new Error("Cloudinaryのクラウド名が設定されていません"));
-      }
-      return new Promise((resolve, reject) => {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-        fd.append("folder", folder);
-        // 画像・動画はそれぞれのタイプ、PDFや他ファイルは raw/upload を使用
-        // raw/upload は直接ダウンロード可能でアクセス制限が image/upload より緩い
-        const resourceType = file.type.startsWith('image/') ? 'image'
-          : file.type.startsWith('video/') ? 'video'
-          : 'raw';
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`);
-        xhr.upload.addEventListener("progress", e => {
-          if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-        });
-        xhr.addEventListener("load", () => {
-          if (xhr.status === 200) {
-            const d = JSON.parse(xhr.responseText);
-            d.secure_url ? resolve(d.secure_url) : reject(new Error(d.error?.message || "Upload failed"));
-          } else {
-            let msg = `HTTP ${xhr.status}`;
-            try { msg = JSON.parse(xhr.responseText).error?.message || msg; } catch (_) { }
-            reject(new Error(msg));
-          }
-        });
-        xhr.addEventListener("error", () => reject(new Error("ネットワークエラー")));
-        xhr.addEventListener("abort", () => reject(new Error("アップロードがキャンセルされました")));
         xhr.send(fd);
       });
     }
@@ -5394,55 +5386,21 @@
       const kvBar = document.getElementById('kvUsageBar');
       const kvText = document.getElementById('kvUsageText');
       const kvCount = document.getElementById('kvFileCount');
-      const cdnBar = document.getElementById('cloudinaryUsageBar');
-      const cdnText = document.getElementById('cloudinaryUsageText');
-      const cdnLimit = document.getElementById('cloudinaryLimitText');
-      const cdnCount = document.getElementById('cloudinaryResourceCount');
       if (!kvText) return;
       kvText.textContent = '読み込み中...';
-      cdnText.textContent = '読み込み中...';
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        // KV
+        // KV（Cloudflare）
         const kvLimitBytes = 1 * 1024 * 1024 * 1024;
         const kvUsed = data.kv?.totalBytes || 0;
         const kvPct = Math.min((kvUsed / kvLimitBytes) * 100, 100);
         kvBar.style.width = kvPct + '%';
         kvText.textContent = formatBytes(kvUsed) + ' / 1 GB';
         kvCount.textContent = (data.kv?.fileCount || 0) + ' ファイル';
-        // Cloudinary
-        if (data.cloudinary) {
-          const cdnUsed = data.cloudinary.storageBytes || 0;
-          const cdnMax = data.cloudinary.storageLimitBytes || 26843545600;
-          const cdnPct = Math.min((cdnUsed / cdnMax) * 100, 100);
-          cdnBar.style.width = cdnPct + '%';
-          cdnText.textContent = formatBytes(cdnUsed) + ' / ' + formatBytes(cdnMax);
-          cdnLimit.textContent = formatBytes(cdnMax);
-          cdnCount.textContent = (data.cloudinary.resources || 0) + ' リソース';
-        } else {
-          const err = data.cloudinaryError || '';
-          if (err === 'no_credentials') {
-            cdnText.textContent = 'APIキー未設定';
-          } else if (err.startsWith('api_error:401')) {
-            cdnText.textContent = 'APIキーまたはシークレットが正しくありません';
-            console.error('[storageStats] Cloudinary 401:', err);
-          } else if (err.startsWith('api_error:403')) {
-            cdnText.textContent = 'APIキーの権限が不足しています';
-            console.error('[storageStats] Cloudinary 403 - APIキーにread権限が必要です:', err);
-          } else if (err) {
-            cdnText.textContent = 'エラー: ' + err;
-            console.error('[storageStats] Cloudinary error:', err);
-          } else {
-            cdnText.textContent = '取得に失敗しました';
-          }
-          cdnLimit.textContent = '—';
-          cdnCount.textContent = '';
-        }
       } catch (e) {
         kvText.textContent = '取得に失敗しました';
-        cdnText.textContent = '取得に失敗しました';
         console.error('[storageStats] fetch error:', e);
       }
     }
@@ -5450,7 +5408,7 @@
     document.getElementById('refreshStorageStatsBtn').addEventListener('click', loadStorageStats);
 
     document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
-      const first = await showCustomConfirm('KVとCloudinaryの全ファイルを削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+      const first = await showCustomConfirm('KV（Cloudflare）の全ファイルを削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
       if (!first) return;
       const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', '全ての添付ファイルのURLが無効になります。');
       if (!second) return;
