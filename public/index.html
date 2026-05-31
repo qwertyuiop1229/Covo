@@ -10566,6 +10566,7 @@
     let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
     let _fsUnsub = null, _fsCandUnsub = null;
     let _fsRecv = null; // { name, type, size, received, chunks[] }
+    let _fsAckResolve = null; // 受信完了ACK待ちのresolver
 
     function _fsCleanup() {
       try { if (_fsUnsub) _fsUnsub(); } catch (e) {}
@@ -10673,14 +10674,35 @@
       }
     }
 
+    // 送信バッファが十分はけるまで待つ（送ったつもりで実際は未送信、を防ぐ）
+    async function _fsDrain(threshold) {
+      let guard = 0;
+      while (_fsChannel && _fsChannel.bufferedAmount > threshold) {
+        await new Promise(r => setTimeout(r, 30));
+        if (++guard > 100000) break; // 無限ループ保険
+      }
+    }
+    // 受信側からの完了ACKを待つPromise（チャンネルのonmessageで解決される）
+    function _fsWaitForAck(timeoutMs) {
+      return new Promise(resolve => {
+        _fsAckResolve = resolve;
+        if (timeoutMs) setTimeout(() => { if (_fsAckResolve) { _fsAckResolve = null; resolve(false); } }, timeoutMs);
+      });
+    }
+
     // チャンク分割送信（バックプレッシャ制御つき）
     async function _fsSendFileData(file) {
       try {
+        // 送信側も相手からの完了ACKを受け取れるようにする
+        _fsChannel.onmessage = (ev) => {
+          if (typeof ev.data === 'string') {
+            try { const m = JSON.parse(ev.data); if (m && m.__ack && _fsAckResolve) { const r = _fsAckResolve; _fsAckResolve = null; r(true); } } catch (e) {}
+          }
+        };
         _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
         let offset = 0;
-        const reader = file.stream().getReader();
-        // stream対応していない環境向けフォールバック
         if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
+        const reader = file.stream().getReader();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -10693,9 +10715,20 @@
             _fsUpdateProgress(Math.round(offset / file.size * 100));
           }
         }
+        // 全チャンクがバッファからはけきるまで待ってから __done を送る
+        await _fsDrain(0);
         _fsChannel.send(JSON.stringify({ __done: true }));
-        _fsShowProgress('done', file.name, '送信完了');
-        setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1200);
+        await _fsDrain(0);
+        // ここでは「送信完了」と即断せず、相手が受信し切るのを待つ（最大60秒）
+        _fsShowProgress('send', file.name, '相手が受信中…');
+        const acked = await _fsWaitForAck(60000);
+        if (acked) {
+          _fsShowProgress('done', file.name, '送信完了');
+          setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
+        } else {
+          _fsShowProgress('done', file.name, '送信しました');
+          setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
+        }
       } catch (e) {
         console.error('[FileShare] 送信中エラー:', e);
         _fsShowProgress('error', file.name, '送信に失敗しました');
@@ -10711,9 +10744,13 @@
         offset += slice.byteLength;
         _fsUpdateProgress(Math.round(offset / file.size * 100));
       }
+      await _fsDrain(0);
       _fsChannel.send(JSON.stringify({ __done: true }));
+      await _fsDrain(0);
+      _fsShowProgress('send', file.name, '相手が受信中…');
+      await _fsWaitForAck(60000);
       _fsShowProgress('done', file.name, '送信完了');
-      setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1200);
+      setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
     }
     async function _fsMarkComplete() {
       try {
@@ -10802,6 +10839,8 @@
     }
 
     function _fsFinishReceive() {
+      // 送信側に「受信し切った」ことを通知（これで送信側が本当の完了を表示できる）
+      try { if (_fsChannel && _fsChannel.readyState === 'open') _fsChannel.send(JSON.stringify({ __ack: true })); } catch (e) {}
       try {
         const blob = new Blob(_fsRecv.chunks, { type: _fsRecv.type || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
@@ -10810,7 +10849,8 @@
       } catch (e) {
         console.error('[FileShare] 受信完了処理エラー:', e);
       }
-      _fsCleanup();
+      // ACKが送信側に届くまで少し待ってから接続を閉じる
+      setTimeout(() => { _fsCleanup(); }, 800);
     }
 
     function _fsHumanSize(b) {
