@@ -591,6 +591,26 @@
       body.dark-server-theme #messageInputInner:focus-within {
         background: #0f172a !important;
       }
+      /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー」に統一して馴染ませる。
+         送信ボタン(.send-btn)は主要アクションなので対象外。 */
+      #fileAttachButton {
+        border: 0 none !important;
+        background: #f3f4f6 !important;
+        box-shadow: none !important;
+        color: #6b7280 !important;
+      }
+      #fileAttachButton:disabled {
+        background: #f3f4f6 !important;
+        color: #c4c8ce !important;
+      }
+      body.dark-server-theme #fileAttachButton {
+        background: #0f172a !important;
+        color: #94a3b8 !important;
+      }
+      body.dark-server-theme #fileAttachButton:disabled {
+        background: #0f172a !important;
+        color: #475569 !important;
+      }
       /* ダークモード時はチャット背景の#1a202cに合わせる */
       body.dark-server-theme #messageInputArea {
         background-color: #1a202c !important;
@@ -3653,7 +3673,6 @@
             <div class="flex items-end gap-1.5">
               <button id="fileAttachButton" class="input-side-btn" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
                   class="fas fa-paperclip"></i></button>
-              <button id="mentionButton" class="input-side-btn" title="メンション"><i class="fas fa-at"></i></button>
               <input type="file" id="fileAttachInput" class="hidden" />
               <div id="messageInputInner" style="flex:1;min-width:0;">
                 <textarea id="messageInput" placeholder="メッセージを入力" class="flex-1 w-full focus:outline-none"
@@ -7416,7 +7435,7 @@
       lastMessagesData = [];
       messageInput.disabled = false;
       fileAttachButton.disabled = false;
-      mentionButton.disabled = false;
+      if (mentionButton) mentionButton.disabled = false;
       document.getElementById('callButton').disabled = false;
       prewarmPeerConnection();
       sendMessageButton.disabled = false;
@@ -8313,44 +8332,46 @@
       }
     });
 
-    // --- メンションボタン ---
+    // --- メンションボタン（機能削除済み。要素が無くてもエラーにならないよう存在チェック） ---
     const mentionButton = document.getElementById("mentionButton");
     const mentionPopup = document.getElementById("mentionPopup");
-    mentionButton.disabled = true;
-    mentionButton.addEventListener("click", () => {
-      if (!currentRoomId) return;
-      if (!mentionPopup.classList.contains("hidden")) {
-        mentionPopup.classList.add("hidden"); return;
-      }
-      mentionPopup.innerHTML = "";
-      const serverMemberIds = currentServerData?.joinedUsers || [];
-      const users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
-      if (users.length === 0) {
-        mentionPopup.innerHTML = '<div class="p-2 text-sm text-gray-500">ユーザーがいません</div>';
-      } else {
-        users.forEach(u => {
-          const opt = document.createElement("div");
-          opt.className = "mention-option";
-          opt.textContent = u.nickname || "不明";
-          opt.addEventListener("click", () => {
-            const pos = messageInput.selectionStart || messageInput.value.length;
-            const before = messageInput.value.substring(0, pos);
-            const after = messageInput.value.substring(pos);
-            const prefix = (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n")) ? " " : "";
-            messageInput.value = before + prefix + "@" + u.nickname + " " + after;
-            mentionPopup.classList.add("hidden");
-            messageInput.focus();
+    if (mentionButton && mentionPopup) {
+      mentionButton.disabled = true;
+      mentionButton.addEventListener("click", () => {
+        if (!currentRoomId) return;
+        if (!mentionPopup.classList.contains("hidden")) {
+          mentionPopup.classList.add("hidden"); return;
+        }
+        mentionPopup.innerHTML = "";
+        const serverMemberIds = currentServerData?.joinedUsers || [];
+        const users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
+        if (users.length === 0) {
+          mentionPopup.innerHTML = '<div class="p-2 text-sm text-gray-500">ユーザーがいません</div>';
+        } else {
+          users.forEach(u => {
+            const opt = document.createElement("div");
+            opt.className = "mention-option";
+            opt.textContent = u.nickname || "不明";
+            opt.addEventListener("click", () => {
+              const pos = messageInput.selectionStart || messageInput.value.length;
+              const before = messageInput.value.substring(0, pos);
+              const after = messageInput.value.substring(pos);
+              const prefix = (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n")) ? " " : "";
+              messageInput.value = before + prefix + "@" + u.nickname + " " + after;
+              mentionPopup.classList.add("hidden");
+              messageInput.focus();
+            });
+            mentionPopup.appendChild(opt);
           });
-          mentionPopup.appendChild(opt);
-        });
-      }
-      mentionPopup.classList.remove("hidden");
-    });
-    document.addEventListener("click", (e) => {
-      if (!mentionPopup.contains(e.target) && e.target !== mentionButton && !mentionButton.contains(e.target)) {
-        mentionPopup.classList.add("hidden");
-      }
-    });
+        }
+        mentionPopup.classList.remove("hidden");
+      });
+      document.addEventListener("click", (e) => {
+        if (!mentionPopup.contains(e.target) && e.target !== mentionButton && !mentionButton.contains(e.target)) {
+          mentionPopup.classList.add("hidden");
+        }
+      });
+    }
 
     function escapeHtmlAndLinkUrls(text) {
       if (!text) return "";
@@ -9485,7 +9506,7 @@
       lastMessagesData = [];
       messageInput.disabled = true;
       fileAttachButton.disabled = true;
-      mentionButton.disabled = true;
+      if (mentionButton) mentionButton.disabled = true;
       sendMessageButton.disabled = true;
       clearAttachedFile();
       cancelReply();
