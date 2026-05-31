@@ -5499,8 +5499,10 @@
                 for (const msgDoc of msgsSnap.docs) {
                   const d = msgDoc.data();
                   const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
+                  // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
+                  const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
                   const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
-                  if (hasKvFile || hasCloudinaryFile) {
+                  if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
                     await deleteDoc(msgDoc.ref);
                     msgDeleted++;
                   }
@@ -8256,7 +8258,8 @@
               attachedFile.file,
               (pct) => {
                 progressFill.style.width = pct + "%";
-                progressText.textContent = `アップロード中... ${pct}%`;
+                // 100%到達後はアップロード完了→サーバー処理待ちなので「送信中…」に切り替える
+                progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
               },
               "simplechat/messages"
             );
@@ -8264,6 +8267,9 @@
           } finally {
             sendMessageButton.disabled = false;
             fileAttachButton.disabled = false;
+            // 進捗バーを確実に隠す（100%表示のまま固まって見えるのを防ぐ）
+            progressBar.classList.add("hidden");
+            progressFill.style.width = "0%";
           }
         }
         if (replyingToMessage) {
@@ -8701,7 +8707,9 @@
       }
 
       const timestampSpan = document.createElement("span");
-      timestampSpan.className = `text-xs text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
+      // 専用クラス msg-timestamp を付与（PDFラベル等と同じユーティリティクラスで誤マッチして
+      // 時刻が二重表示されるのを防ぐ）
+      timestampSpan.className = `msg-timestamp text-xs text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
       if (message.timestamp && message.timestamp.toDate) {
         const date = message.timestamp.toDate();
         timestampSpan.textContent = `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -8762,8 +8770,8 @@
             }
           }
 
-          // 送信時間（送信中... からの更新）
-          const timestampSpan = row.querySelector('.text-xs.text-gray-500.mt-1');
+          // 送信時間（送信中... からの更新）。msg-timestamp 限定でPDFラベル等との誤マッチを防ぐ
+          const timestampSpan = row.querySelector('.msg-timestamp');
           if (timestampSpan) {
             if (msg.timestamp && msg.timestamp.toDate) {
               const date = msg.timestamp.toDate();
@@ -9047,7 +9055,31 @@
         }
       }
 
-      // 2. Cloudinary 画像削除（設定済みの場合のみ・失敗でメッセージ削除中止）
+      // 1c. fileData が Cloudflare(KV) URL の場合（画像・その他ファイルの新形式）。
+      //     画像送信もKVに移行したため、ここで実ファイルを削除しないとCloudflareに残ってしまう。
+      if (msgToDelete.fileData && msgToDelete.fileData.indexOf('/api/file/') >= 0) {
+        const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        if (m) {
+          const fileKey = m[1];
+          const params = `userId=${encodeURIComponent(userId)}${forceDelete ? '&forceDelete=1' : ''}`;
+          try {
+            const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              console.error('[deleteMessage] KV file delete failed (fileData):', fileKey, err);
+              alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+              return;
+            }
+            console.log('[deleteMessage] KV file deleted (fileData):', fileKey);
+          } catch (e) {
+            console.error('[deleteMessage] KV file delete error (fileData):', fileKey, e);
+            alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+            return;
+          }
+        }
+      }
+
+      // 2. Cloudinary 画像削除（旧データの後方互換。設定済みの場合のみ・失敗でメッセージ削除中止）
       if (msgToDelete.fileData && msgToDelete.fileData.includes('res.cloudinary.com')) {
         const resType = extractCloudinaryResourceType(msgToDelete.fileData);
         const pubId = extractCloudinaryPublicId(msgToDelete.fileData, resType);
