@@ -581,27 +581,31 @@
         box-shadow: none !important;
       }
       /* mobile: 入力ボックスの枠線（黒っぽい線に見えていた1.5px border）を消し、
-         薄グレー背景で形を保つ。枠線が無いので影/線が一切出ない。 */
+         薄グレー背景で形を保つ。枠線が無いので影/線が一切出ない。
+         ファイル添付ボタンと高さ・縦位置を完全に揃えるため min-height を固定し中央寄せ。 */
       #messageInputInner,
       #messageInputInner:focus-within {
         border: 0 none !important;
         background: #f3f4f6 !important;
+        min-height: 42px;
+        align-items: center;
       }
       body.dark-server-theme #messageInputInner,
       body.dark-server-theme #messageInputInner:focus-within {
         background: #0f172a !important;
       }
-      /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー」に統一して馴染ませる。
+      /* 入力欄が1行のときボタンと天地が揃うよう、行は中央揃えにする */
+      #messageInputArea .flex.items-end {
+        align-items: center !important;
+      }
+      /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー・同じ高さ」に統一。
          送信ボタン(.send-btn)は主要アクションなので対象外。 */
       #fileAttachButton {
         border: 0 none !important;
         background: #f3f4f6 !important;
         box-shadow: none !important;
         color: #6b7280 !important;
-        /* 入力ボックスと高さを完全に揃える（行内で同じ高さに伸ばす） */
-        height: auto !important;
-        align-self: stretch !important;
-        min-height: 40px;
+        height: 42px !important;
       }
       #fileAttachButton:disabled {
         background: #f3f4f6 !important;
@@ -8427,36 +8431,18 @@
       fileAttachInput.click();
     });
 
-    async function handleNonImageUpload(f) {
-      if (f.size > 25 * 1024 * 1024) { alertMessage("ファイルは25MBまでです", "error"); return; }
-      fileAttachButton.disabled = true;
-      fileAttachButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-      try {
-        const url = await uploadToExternalService(f);
-        attachedKvFile = { url, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
-        updateFilePreview();
-        messageInput.focus();
-        alertMessage(`ファイルを添付しました: ${f.name}`, "success");
-      } catch (err) {
-        alertMessage('アップロードに失敗しました: ' + err.message, "error");
-      } finally {
-        fileAttachButton.disabled = !currentRoomId;
-        fileAttachButton.innerHTML = '<i class="fas fa-paperclip"></i>';
-      }
-    }
-
     fileAttachInput.addEventListener("change", async (e) => {
       const f = e.target.files[0];
       if (!f) return;
       fileAttachInput.value = "";
       if (!checkFileAllowed(f)) return;
-      if (f.type.startsWith('image/')) {
-        if (f.size > 10 * 1024 * 1024) { alertMessage("画像は10MBまでです", "error"); return; }
-        attachedFile = { file: f, name: f.name, type: f.type, size: f.size };
-        updateFilePreview();
-      } else {
-        await handleNonImageUpload(f);
-      }
+      // 画像・その他ファイルとも共通: ここではアップロードせず添付予約だけ。
+      // 実際のCloudflare(KV)へのアップロードは「送信ボタンを押した時」に行う。
+      const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+      attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
+      updateFilePreview();
+      messageInput.focus();
     });
 
     // --- ドラッグ＆ドロップ ---
@@ -8478,13 +8464,10 @@
       const f = e.dataTransfer.files[0];
       if (!f) return;
       if (!checkFileAllowed(f)) return;
-      if (f.type.startsWith('image/')) {
-        if (f.size > 10 * 1024 * 1024) { alertMessage("画像は10MBまでです", "error"); return; }
-        attachedFile = { file: f, name: f.name, type: f.type, size: f.size };
-        updateFilePreview();
-      } else {
-        await handleNonImageUpload(f);
-      }
+      const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+      attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
+      updateFilePreview();
     });
 
     // --- メンションボタン（機能削除済み。要素が無くてもエラーにならないよう存在チェック） ---
@@ -8628,7 +8611,8 @@
         } else if (message.fileType === 'application/pdf' && message.fileData.startsWith('http')) {
           const pdfWrapper = document.createElement('div');
           pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
-          const isRawPdf = message.fileData.includes('/raw/upload/');
+          // Cloudinaryの /upload/ 変換が使えるURLか。KV(Cloudflare)等は変換不可なのでアイコン表示。
+          const isRawPdf = !message.fileData.includes('/image/upload/');
           const pdfLabel = document.createElement('div');
           pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
           const safeName = document.createElement('span');
