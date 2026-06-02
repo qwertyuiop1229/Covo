@@ -3475,7 +3475,8 @@
       <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 text-gray-900 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
       <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
-      <button id="adminTabStorageBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-database mr-1.5 text-xs"></i>ストレージ</button>
+      <button id="adminTabStorageBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-database mr-1.5 text-xs"></i>ストレージ</button>
+      <button id="adminTabDevToolsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-screwdriver-wrench mr-1.5 text-xs"></i>開発者ツール</button>
     </div>
     
     <div class="flex-1 overflow-y-auto pr-2">
@@ -3535,6 +3536,30 @@
             <i class="fas fa-trash-alt"></i> 全ファイルを一括削除
           </button>
           <p class="text-xs text-gray-400 mt-2 text-center">KV（Cloudflare）の全ファイルが削除されます</p>
+        </div>
+      </div>
+      </div>
+
+      <!-- 開発者ツールタブ (管理者専用) -->
+      <div id="adminTabDevToolsContent" class="space-y-4 hidden">
+        <p class="text-xs text-gray-400 leading-relaxed">デバッグや診断のための開発者向けツールです。</p>
+        <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
+          <div class="setting-row">
+            <div class="setting-label text-sm"><i class="fas fa-crosshairs mr-2 text-blue-500"></i>要素を検査 (Mobile)</div>
+            <label class="toggle-switch"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors" onclick="showLayoutDiagnostics()">
+            <div class="setting-label text-sm"><i class="fas fa-ruler-combined mr-2 text-indigo-500"></i>レイアウト診断を表示</div>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+          </div>
+          <div class="setting-row cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors" onclick="toggleDevConsole()">
+            <div class="setting-label text-sm"><i class="fas fa-terminal mr-2 text-green-500"></i>オンスクリーンコンソール</div>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+          </div>
+          <div class="setting-row cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors" onclick="copyDiagnosticsBundle()">
+            <div class="setting-label text-sm"><i class="fas fa-clipboard-list mr-2 text-green-600"></i>診断情報をまとめてコピー</div>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+          </div>
         </div>
       </div>
     </div>
@@ -5308,11 +5333,11 @@
             }
 
             // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
+            const mobileAdminSec = document.getElementById("mobileAdminRowSection");
             if (isAdmin || isListAdmin) {
               if (adminPanelContainer) adminPanelContainer.classList.remove("hidden");
               const snavAdmin = document.getElementById("snav-admin-container");
               if (snavAdmin) snavAdmin.classList.remove("hidden");
-              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
               if (mobileAdminSec) {
                 mobileAdminSec.style.display = "";
                 mobileAdminSec.classList.remove("hidden");
@@ -5321,7 +5346,6 @@
               if (adminPanelContainer) adminPanelContainer.classList.add("hidden");
               const snavAdmin = document.getElementById("snav-admin-container");
               if (snavAdmin) snavAdmin.classList.add("hidden");
-              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
               if (mobileAdminSec) {
                 mobileAdminSec.style.display = "none";
                 mobileAdminSec.classList.add("hidden");
@@ -5535,6 +5559,7 @@
         { id: "adminTabAdminsBtn", content: "adminTabAdminsContent", key: "admins" },
         { id: "adminTabListAdminsBtn", content: "adminTabListAdminsContent", key: "listAdmins" },
         { id: "adminTabStorageBtn", content: "adminTabStorageContent", key: "storage" },
+        { id: "adminTabDevToolsBtn", content: "adminTabDevToolsContent", key: "devtools" },
       ];
       tabs.forEach(t => {
         const btn = document.getElementById(t.id);
@@ -5556,6 +5581,7 @@
     document.getElementById("adminTabAdminsBtn").addEventListener("click", () => switchAdminTab("admins"));
     document.getElementById("adminTabListAdminsBtn").addEventListener("click", () => switchAdminTab("listAdmins"));
     document.getElementById("adminTabStorageBtn").addEventListener("click", () => switchAdminTab("storage"));
+    document.getElementById("adminTabDevToolsBtn").addEventListener("click", () => switchAdminTab("devtools"));
 
     // メールアドレスのアバター頭文字取得
     function emailInitial(email) {
@@ -8965,11 +8991,18 @@
       if (!text) return "";
       
       let rawHtml = "";
-      if (typeof marked !== 'undefined') {
-        rawHtml = marked.parse(text);
-      } else {
-        // Fallback
-        rawHtml = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      try {
+        if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+          // breaks: true で改行を維持する
+          rawHtml = marked.parse(text, { async: false, breaks: true, gfm: true });
+        } else {
+          // Fallback (CDN blocked or failed)
+          rawHtml = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+          rawHtml = rawHtml.replace(/\n/g, "<br>");
+        }
+      } catch (err) {
+        console.error("Marked parse error:", err);
+        rawHtml = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/\n/g, "<br>");
       }
 
       // メンションの置換 (@ユーザー名) - DOMPurify の前に処理
@@ -8980,11 +9013,16 @@
 
       // DOMPurifyでXSSサニタイズ（安全なタグと属性のみ許可）
       let cleanHtml = rawHtml;
-      if (typeof DOMPurify !== 'undefined') {
-        cleanHtml = DOMPurify.sanitize(rawHtml, {
-          ALLOWED_TAGS: ['p', 'b', 'i', 'em', 'strong', 'a', 'span', 'pre', 'code', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'del', 'button', 'i'],
-          ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'onclick'],
-        });
+      try {
+        if (typeof DOMPurify !== 'undefined' && typeof DOMPurify.sanitize === 'function') {
+          cleanHtml = DOMPurify.sanitize(rawHtml, {
+            ALLOWED_TAGS: ['p', 'b', 'i', 'em', 'strong', 'a', 'span', 'pre', 'code', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'del', 'button', 'i', 'img'],
+            ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'onclick', 'src', 'alt', 'title'],
+          });
+        }
+      } catch (err) {
+        console.error("DOMPurify sanitize error:", err);
+        // フォールバック時はすでにエスケープ済みだが、一応そのまま返す
       }
 
       // aタグに target="_blank" を強制付与して外部リンクを安全に開く
@@ -12379,15 +12417,6 @@
         </div>
       </div>
     </div>
-    <!-- 管理者ツール（全体管理者のみ表示）。タップで詳細画面を開く -->
-    <div class="mobile-settings-section hidden" id="mobileAdminToolsSection">
-      <div class="mobile-settings-label">管理者ツール</div>
-      <div class="mobile-settings-group">
-        <div class="mobile-settings-row" onclick="openMobileDetail('admintools')">
-          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-screwdriver-wrench"></i></div>
-          <span class="mobile-settings-row-text">管理者ツール</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
       </div>
     </div>
     <div class="mobile-settings-section">
@@ -12487,37 +12516,7 @@
     </div>
   </div>
 
-  <!-- Mobile Detail: 管理者ツール（開発者向け診断ツール群。全体管理者のみ） -->
-  <div class="mobile-settings-detail" id="mobileDetailAdminTools">
-    <div class="mobile-detail-header">
-      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdminTools')"><i class="fas fa-chevron-left"></i></div>
-      <span class="mobile-detail-title">管理者ツール</span>
-    </div>
-    <div style="padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom, 0px))">
-      <div class="mobile-settings-group">
-        <div class="mobile-settings-row">
-          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
-          <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
-          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
-          <div class="mobile-settings-row-icon" style="background:#e0e7ff;color:#4f46e5"><i class="fas fa-ruler-combined"></i></div>
-          <span class="mobile-settings-row-text">レイアウト診断</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="toggleDevConsole()">
-          <div class="mobile-settings-row-icon" style="background:#111827;color:#34d399"><i class="fas fa-terminal"></i></div>
-          <span class="mobile-settings-row-text">コンソール</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
-          <div class="mobile-settings-row-icon" style="background:#dcfce7;color:#16a34a"><i class="fas fa-clipboard-list"></i></div>
-          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-      </div>
-    </div>
-  </div>
+
 
   <!-- Mobile Detail: Admin -->
   <div class="mobile-settings-detail" id="mobileDetailAdmin">
