@@ -27,6 +27,12 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <!-- Markdown rendering: marked.js + DOMPurify (XSS sanitizer) + highlight.js (code syntax) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark" disabled>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     /* --- 全画面化用 --- */
     html,
@@ -820,21 +826,135 @@
       outline: none;
     }
 
+    /* Markdown Styles */
+    .message-markdown {
+      line-height: 1.6;
+    }
+    .message-markdown p { margin-bottom: 0.5em; }
+    .message-markdown p:last-child { margin-bottom: 0; }
+    .message-markdown a { color: #2563eb; text-decoration: underline; }
+    .message-markdown a:hover { color: #1d4ed8; }
+    body.dark-server-theme .message-markdown a { color: #60a5fa; }
+    body.dark-server-theme .message-markdown a:hover { color: #93c5fd; }
+    .message-markdown pre {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      overflow-x: auto;
+      margin: 0.5em 0;
+      position: relative;
+    }
+    .message-markdown pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85em;
+    }
+    .message-markdown code {
+      background: rgba(0, 0, 0, 0.08);
+      padding: 0.2em 0.4em;
+      border-radius: 0.25rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85em;
+    }
+    body.dark-server-theme .message-markdown code {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    body.dark-server-theme .message-markdown pre code {
+      background: transparent;
+    }
+    .message-markdown ul { list-style-type: disc; padding-left: 1.5em; margin: 0.5em 0; }
+    .message-markdown ol { list-style-type: decimal; padding-left: 1.5em; margin: 0.5em 0; }
+    .message-markdown blockquote {
+      border-left: 4px solid #cbd5e1;
+      padding-left: 1em;
+      color: #64748b;
+      margin: 0.5em 0;
+    }
+    body.dark-server-theme .message-markdown blockquote {
+      border-left-color: #475569;
+      color: #94a3b8;
+    }
+    .message-markdown h1, .message-markdown h2, .message-markdown h3, .message-markdown h4, .message-markdown h5, .message-markdown h6 {
+      font-weight: 700;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      line-height: 1.3;
+    }
+    .message-markdown h1 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3em; }
+    .message-markdown h2 { font-size: 1.3em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3em; }
+    .message-markdown h3 { font-size: 1.1em; }
+    body.dark-server-theme .message-markdown h1, body.dark-server-theme .message-markdown h2 {
+      border-bottom-color: #334155;
+    }
+    .copy-code-btn {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #cbd5e1;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s, background 0.2s;
+    }
+    .message-markdown pre:hover .copy-code-btn {
+      opacity: 1;
+    }
+    .copy-code-btn:hover {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+
     /* ドラッグ＆ドロップオーバーレイ */
+    @keyframes dropPulse {
+      0% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.02); opacity: 1; }
+      100% { transform: scale(1); opacity: 0.8; }
+    }
     #dropOverlay {
       position: absolute;
       inset: 0;
-      background-color: rgba(255, 255, 255, 0.92);
-      border: 2px dashed #000;
+      background: rgba(243, 244, 246, 0.85);
+      border: 3px dashed #3b82f6;
+      border-radius: 12px;
+      margin: 8px;
       z-index: 20;
       display: none;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       pointer-events: none;
+      backdrop-filter: blur(4px);
     }
-
+    body.dark-server-theme #dropOverlay {
+      background: rgba(17, 24, 39, 0.85);
+      border-color: #60a5fa;
+    }
     #dropOverlay.active {
       display: flex;
+      animation: dropPulse 1.5s infinite ease-in-out;
+    }
+    .drop-overlay-icon {
+      font-size: 4rem;
+      color: #3b82f6;
+      margin-bottom: 1rem;
+    }
+    body.dark-server-theme .drop-overlay-icon {
+      color: #60a5fa;
+    }
+    .drop-overlay-text {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    body.dark-server-theme .drop-overlay-text {
+      color: #f3f4f6;
     }
 
     /* 入力欄アクションボタン */
@@ -1861,6 +1981,29 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    /* ボイスインジケーター (音声波形) */
+    .voice-waveform {
+      position: absolute;
+      bottom: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 20px;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 12px;
+      z-index: 10;
+    }
+    .voice-waveform .bar {
+      width: 4px;
+      height: 4px;
+      background: #4ade80;
+      border-radius: 2px;
+      transition: height 0.1s ease;
     }
     .call-name {
       font-size: 1.6rem;
@@ -3787,7 +3930,8 @@
             class="px-4 pt-3 pb-4 flex flex-col bg-gray-50 flex-shrink-0 relative border-t border-gray-200">
             <!-- ドラッグ＆ドロップオーバーレイ -->
             <div id="dropOverlay">
-              <span class="text-gray-800 font-bold text-lg">ファイルをドロップして添付</span>
+              <i class="fas fa-file-upload drop-overlay-icon"></i>
+              <span class="drop-overlay-text">ファイルをドロップして添付</span>
             </div>
             <!-- リプライUI -->
             <div id="replyingToContainer"
@@ -4606,6 +4750,7 @@
     // P2P Voice Call
     let _callDoc = null, _callId = null, _peerConnection = null;
     let _localStream = null, _callTimerInterval = null, _callTimeoutHandle = null;
+    let _audioContext = null, _audioAnalyzer = null, _voiceAnimFrame = null;
     let _callUnsubOffer = null, _callEndUnsub = null, _callIncomingUnsub = null;
     let _isMuted = false, _callRole = null, _pendingCallerData = null;
     let _ringRepeatHandle = null, _ringCtx = null, _prewarmPC = null;
@@ -5847,6 +5992,11 @@
       const pe = document.getElementById('pcNotifEmpty');
       if (me) me.style.display = count > 0 ? 'none' : 'block';
       if (pe) pe.style.display = count > 0 ? 'none' : 'block';
+      
+      // Tauri 側でタスクバーバッジを更新
+      if (window.__TAURI__) {
+         window.__TAURI__.invoke('set_taskbar_badge_count', { count: count }).catch(console.error);
+      }
 
       // モバイル通知タブのバッジ更新
       const mobileNotifTab = document.getElementById('mobileTabNotif');
@@ -8767,24 +8917,80 @@
       });
     }
 
+    // --- Markdown 設定 ---
+    if (typeof marked !== 'undefined') {
+      const renderer = new marked.Renderer();
+      renderer.code = function(code, lang, escaped) {
+        let highlighted = code;
+        // hljs の利用
+        if (lang && typeof hljs !== 'undefined' && hljs.getLanguage(lang)) {
+          try { highlighted = hljs.highlight(code, { language: lang }).value; } catch (e) {}
+        } else if (typeof hljs !== 'undefined') {
+          try { highlighted = hljs.highlightAuto(code).value; } catch (e) {}
+        }
+        
+        // コード内容をHTMLエンティティに変換して onClick に渡せるようにする
+        const safeCode = code
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;")
+          .replace(/\n/g, "&#10;");
+        
+        return `<pre><button class="copy-code-btn" onclick="copyCodeBlock(this, '${safeCode}')"><i class="fas fa-copy"></i> Copy</button><code class="hljs ${lang ? 'language-'+lang : ''}">${highlighted}</code></pre>`;
+      };
+      
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        renderer: renderer
+      });
+    }
+
+    window.copyCodeBlock = function(btn, code) {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = code;
+      const decodedCode = txt.value;
+      
+      navigator.clipboard.writeText(decodedCode).then(() => {
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => {
+          btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+        }, 2000);
+      });
+    };
+
     function escapeHtmlAndLinkUrls(text) {
       if (!text) return "";
-      // まず全体をHTMLエスケープ（XSS防止）
-      let escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-      // URL置換: スペース・引用符・不等号を含まない安全なURLのみ <a> に変換
-      // href属性値は encodeURIComponent で二重保護しない（既にエスケープ済み文字列から抽出するため、
-      // "&quot;" などを含むと壊れる）。代わりに href を直接 DOM で設定してインジェクションを根絶する。
-      const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
-      escapedText = escapedText.replace(urlRegex, (safeUrl) => {
-        // safeUrl はすでにエスケープ済みテキストから取り出した安全な断片
-        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color: black; text-decoration: underline;">${safeUrl}</a>`;
+      
+      let rawHtml = "";
+      if (typeof marked !== 'undefined') {
+        rawHtml = marked.parse(text);
+      } else {
+        // Fallback
+        rawHtml = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      }
+
+      // メンションの置換 (@ユーザー名) - DOMPurify の前に処理
+      const mentionRegex = /(^|\s|>)(@([^\s<&]+))/g;
+      rawHtml = rawHtml.replace(mentionRegex, (match, before, mention, p1) => {
+        return `${before}<span class="mention-text">${mention}</span>`;
       });
-      // メンションの置換 (@ユーザー名)
-      const mentionRegex = /@([^\s<&]+)/g;
-      escapedText = escapedText.replace(mentionRegex, (match, p1) => {
-        return `<span class="mention-text">@${p1}</span>`;
-      });
-      return escapedText;
+
+      // DOMPurifyでXSSサニタイズ（安全なタグと属性のみ許可）
+      let cleanHtml = rawHtml;
+      if (typeof DOMPurify !== 'undefined') {
+        cleanHtml = DOMPurify.sanitize(rawHtml, {
+          ALLOWED_TAGS: ['p', 'b', 'i', 'em', 'strong', 'a', 'span', 'pre', 'code', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'del', 'button', 'i'],
+          ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'onclick'],
+        });
+      }
+
+      // aタグに target="_blank" を強制付与して外部リンクを安全に開く
+      cleanHtml = cleanHtml.replace(/<a href="/g, '<a target="_blank" rel="noopener noreferrer" href="');
+
+      return `<div class="message-markdown">${cleanHtml}</div>`;
     }
 
     function openAvatarLightbox(url) {
@@ -9891,6 +10097,65 @@
       });
     }
 
+    function setupVoiceIndicator(stream) {
+      const waveform = document.getElementById('voiceWaveform');
+      if (waveform) waveform.style.display = 'flex';
+
+      try {
+        _audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        _audioAnalyzer = _audioContext.createAnalyser();
+        _audioAnalyzer.fftSize = 256;
+        
+        const source = _audioContext.createMediaStreamSource(stream);
+        source.connect(_audioAnalyzer);
+        
+        const dataArray = new Uint8Array(_audioAnalyzer.frequencyBinCount);
+        const bars = document.querySelectorAll('.voice-waveform .bar');
+        
+        function animate() {
+          _voiceAnimFrame = requestAnimationFrame(animate);
+          if (!_audioAnalyzer) return;
+          
+          _audioAnalyzer.getByteFrequencyData(dataArray);
+          
+          let sum = 0;
+          for(let i=0; i<dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const avg = sum / dataArray.length;
+          
+          const volume = Math.min(Math.max(avg / 10, 1), 5);
+          
+          bars.forEach((bar, index) => {
+            const scale = volume * (0.8 + Math.random() * 0.4);
+            const height = Math.min(Math.max(4 * scale, 4), 20);
+            bar.style.height = `${height}px`;
+          });
+        }
+        
+        animate();
+      } catch(e) {
+        console.warn("Voice indicator setup failed:", e);
+      }
+    }
+
+    function stopVoiceIndicator() {
+      if (_voiceAnimFrame) {
+        cancelAnimationFrame(_voiceAnimFrame);
+        _voiceAnimFrame = null;
+      }
+      if (_audioContext) {
+        if (_audioContext.state !== 'closed') {
+           _audioContext.close().catch(console.warn);
+        }
+        _audioContext = null;
+        _audioAnalyzer = null;
+      }
+      const waveform = document.getElementById('voiceWaveform');
+      if (waveform) waveform.style.display = 'none';
+      const bars = document.querySelectorAll('.voice-waveform .bar');
+      bars.forEach(bar => bar.style.height = '4px');
+    }
 
     // --- 検索機能 ---
     toggleSearchButton.addEventListener("click", () => {
@@ -11040,6 +11305,7 @@
 
       try {
         _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        setupVoiceIndicator(_localStream);
       } catch(e) {
         endCall(false);
         alert('マイクへのアクセスが拒否されました。設定を確認してください。');
@@ -11193,6 +11459,7 @@
           getDoc(callRef)
         ]);
         stream = streamResult;
+        setupVoiceIndicator(stream);
         callData = snapResult.data();
       } catch(e) {
         const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
@@ -11263,6 +11530,7 @@
 
       stopCallRingSound();
       stopCallTimer();
+      stopVoiceIndicator();
 
       if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
       if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
@@ -11993,6 +12261,9 @@
       <div class="call-status-label" id="callStatusLabel">発信中</div>
       <div class="call-avatar-wrap">
         <div class="call-avatar" id="callActiveAvatar"></div>
+        <div id="voiceWaveform" class="voice-waveform" style="display:none">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
       </div>
       <div class="call-name" id="callActiveName"></div>
       <div id="callConnectionType" style="display:none"></div>

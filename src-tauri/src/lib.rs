@@ -622,8 +622,152 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 }
 
 // ===========================================================================
-// run()
+// コマンド: タスクバーバッジ (未読数表示)
 // ===========================================================================
+
+/// タスクバーアイコンのオーバーレイバッジを更新する。
+/// count=0 でバッジをクリア、1以上で赤丸バッジを設定する。
+#[tauri::command]
+fn set_taskbar_badge_count(app_handle: tauri::AppHandle, count: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::{
+            Foundation::{HWND, COLORREF, BOOL},
+            Graphics::Gdi::{
+                CreateCompatibleDC, CreateDIBSection, SelectObject, DeleteDC,
+                DeleteObject, GetDC, ReleaseDC, SetTextColor, SetBkMode,
+                FillRect, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+                CreateSolidBrush, TRANSPARENT, DrawTextW,
+                DT_CENTER, DT_VCENTER, DT_SINGLELINE,
+            },
+            UI::{
+                Shell::{ITaskbarList3, TaskbarList},
+                WindowsAndMessaging::{CreateIconIndirect, DestroyIcon, ICONINFO},
+            },
+            System::Com::{CoCreateInstance, CLSCTX_ALL},
+        };
+        use windows::core::PCWSTR;
+
+        // メインウィンドウの HWND を取得
+        let win = match app_handle.get_webview_window("main") {
+            Some(w) => w,
+            None => {
+                log::warn!("[Badge] main window not found");
+                return;
+            }
+        };
+        let hwnd_isize = match win.hwnd() {
+            Ok(h) => h.0,
+            Err(e) => {
+                log::warn!("[Badge] hwnd() failed: {:?}", e);
+                return;
+            }
+        };
+        let hwnd = HWND(hwnd_isize as *mut core::ffi::c_void);
+
+        unsafe {
+            // ITaskbarList3 インスタンスを取得
+            let taskbar: ITaskbarList3 = match CoCreateInstance(&TaskbarList, None, CLSCTX_ALL) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::warn!("[Badge] CoCreateInstance failed: {:?}", e);
+                    return;
+                }
+            };
+            if taskbar.HrInit().is_err() {
+                log::warn!("[Badge] HrInit failed");
+                return;
+            }
+
+            if count == 0 {
+                // バッジをクリア
+                let _ = taskbar.SetOverlayIcon(hwnd, None, PCWSTR::null());
+                log::info!("[Badge] Cleared taskbar badge");
+            } else {
+                // 16×16 px の赤丸バッジアイコンを作成
+                const SIZE: i32 = 16;
+                let hdc_screen = GetDC(HWND(std::ptr::null_mut()));
+                let hdc = CreateCompatibleDC(hdc_screen);
+
+                let bmi = BITMAPINFO {
+                    bmiHeader: BITMAPINFOHEADER {
+                        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                        biWidth: SIZE,
+                        biHeight: -SIZE,
+                        biPlanes: 1,
+                        biBitCount: 32,
+                        biCompression: BI_RGB.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let mut bits = std::ptr::null_mut();
+                let hbm_color = match CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
+                    Ok(h) => h,
+                    Err(_) => {
+                        DeleteDC(hdc);
+                        ReleaseDC(HWND(std::ptr::null_mut()), hdc_screen);
+                        return;
+                    }
+                };
+                let _old = SelectObject(hdc, hbm_color);
+
+                // 赤い円を塗りつぶす (BGR: 0x0000CC = 赤)
+                let hbrush = CreateSolidBrush(COLORREF(0x0000CC));
+                let rect = windows::Win32::Foundation::RECT {
+                    left: 0, top: 0, right: SIZE, bottom: SIZE
+                };
+                FillRect(hdc, &rect, hbrush);
+                DeleteObject(hbrush);
+
+                // 数字テキストを白で描く
+                SetTextColor(hdc, COLORREF(0x00FFFFFF));
+                SetBkMode(hdc, TRANSPARENT);
+                let label = if count >= 100 { "99+".to_string() } else { count.to_string() };
+                let mut label_w: Vec<u16> = label.encode_utf16().collect();
+                let mut trect = rect;
+                DrawTextW(hdc, label_w.as_mut_slice(), &mut trect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+                // マスクビットマップ(同じサイズ、真っ黒) を作成
+                let hbm_mask = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
+                    .unwrap_or_default();
+
+                // HICON に変換
+                let icon_info = ICONINFO {
+                    fIcon: BOOL(1),
+                    xHotspot: 0,
+                    yHotspot: 0,
+                    hbmMask: hbm_mask,
+                    hbmColor: hbm_color,
+                };
+                if let Ok(hicon) = CreateIconIndirect(&icon_info) {
+                    let desc: Vec<u16> = format!("{} 件の未読メッセージ", count)
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let _ = taskbar.SetOverlayIcon(hwnd, hicon, PCWSTR(desc.as_ptr()));
+                    DestroyIcon(hicon);
+                    log::info!("[Badge] Set taskbar badge: {}", count);
+                }
+
+                SelectObject(hdc, _old);
+                DeleteObject(hbm_color);
+                if !hbm_mask.is_invalid() { DeleteObject(hbm_mask); }
+                DeleteDC(hdc);
+                ReleaseDC(HWND(std::ptr::null_mut()), hdc_screen);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app_handle, count);
+    }
+}
+
+
+
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -647,6 +791,7 @@ pub fn run() {
             open_devtools_for_container,
             open_log_dir,
             create_desktop_shortcut,
+            set_taskbar_badge_count,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -686,8 +831,8 @@ pub fn run() {
 
             let _ = app.global_shortcut().register(ctrl_shift_s);
 
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show Covo", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Covoを開く", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
