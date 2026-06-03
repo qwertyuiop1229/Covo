@@ -11489,6 +11489,7 @@
       
       if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
       
+      let smoothedData = new Float32Array(20);
       function draw() {
         if (!_voiceAnalyser) return;
         _voiceAnimFrame = requestAnimationFrame(draw);
@@ -11496,7 +11497,6 @@
         _voiceAnalyser.getByteFrequencyData(dataArray);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Smoother, LINE-like symmetric waveform
         const numBars = 20;
         const barWidth = 4;
         const gap = 4;
@@ -11508,7 +11508,6 @@
         ctx.lineWidth = barWidth;
         
         for (let i = 0; i < numBars; i++) {
-          // Average data over the bin range
           const binStart = Math.floor(i * (bufferLength / numBars));
           const binEnd = Math.floor((i + 1) * (bufferLength / numBars));
           let sum = 0;
@@ -11516,14 +11515,16 @@
             sum += dataArray[j] || 0;
           }
           const avg = sum / (binEnd - binStart || 1);
+          const targetHeight = (avg / 255) * (canvas.height - 10) * 0.8 + 4;
           
-          // Smoothen the bar height
-          let barHeight = (avg / 255) * (canvas.height - 10) * 0.8 + 4; // min height 4
+          // Smooth interpolation
+          smoothedData[i] += (targetHeight - smoothedData[i]) * 0.2;
+          const barHeight = Math.max(4, smoothedData[i]);
           
           ctx.beginPath();
           ctx.moveTo(startX, centerY - barHeight / 2);
           ctx.lineTo(startX, centerY + barHeight / 2);
-          ctx.strokeStyle = '#4ade80'; // LINE-like bright green
+          ctx.strokeStyle = '#ffffff'; // 以前の色（白）
           ctx.stroke();
           
           startX += barWidth + gap;
@@ -12080,20 +12081,29 @@
           }
         });
         window.__TAURI__.event.listen('plugin:notification|action', (event) => {
+          console.log("[DEBUG] notification|action fired", event);
           const payload = event.payload;
           
           if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
-            window.__TAURI__.core.invoke('show_main_window').catch(() => {});
+            console.log("[DEBUG] invoking show_main_window");
+            window.__TAURI__.core.invoke('show_main_window').then(() => {
+              console.log("[DEBUG] show_main_window invoke succeeded");
+            }).catch((err) => {
+              console.error("[DEBUG] show_main_window invoke error:", err);
+            });
           }
 
           if (payload && payload.notification && payload.notification.actionTypeId) {
             const rId = payload.notification.actionTypeId;
+            console.log("[DEBUG] jumping to room", rId);
             if (typeof goToRoom === 'function') {
               goToRoom(rId);
             } else {
               const roomItem = document.getElementById(`room-item-${rId}`);
               if (roomItem) roomItem.click();
             }
+          } else {
+            console.warn("[DEBUG] payload did not contain actionTypeId", payload);
           }
         });
       }
@@ -12254,7 +12264,7 @@
       <div class="call-avatar-wrap">
         <div class="call-avatar" id="callActiveAvatar"></div>
       </div>
-      <canvas id="voiceWaveform" width="200" height="40" style="margin-top: 15px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); display: none;"></canvas>
+      <canvas id="voiceWaveform" width="200" height="40" style="margin-top: 15px; display: none;"></canvas>
       <div class="call-name" id="callActiveName"></div>
       <div id="callConnectionType" style="display:none"></div>
       <div class="call-timer" id="callTimerDisplay" style="display:none">00:00</div>

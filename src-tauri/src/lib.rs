@@ -633,6 +633,7 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 
 #[tauri::command]
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
+    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
     if let Some(window) = app_handle.get_webview_window("main") {
         let icon_bytes = if has_unread {
             include_bytes!("../icons/icon-unread.png").to_vec()
@@ -640,16 +641,34 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
             include_bytes!("../icons/icon.png").to_vec()
         };
         
-        if let Ok(img) = image::load_from_memory(&icon_bytes) {
-            let rgba = img.into_rgba8();
-            let width = rgba.width();
-            let height = rgba.height();
-            let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
-            let _ = window.set_icon(tauri_image.clone());
-            if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                let _ = tray.set_icon(Some(tauri_image));
+        match image::load_from_memory(&icon_bytes) {
+            Ok(img) => {
+                let rgba = img.into_rgba8();
+                let width = rgba.width();
+                let height = rgba.height();
+                let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+                if let Err(e) = window.set_icon(tauri_image.clone()) {
+                    log::error!("[DEBUG] window.set_icon failed: {}", e);
+                } else {
+                    log::info!("[DEBUG] window.set_icon succeeded");
+                }
+                
+                if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                    if let Err(e) = tray.set_icon(Some(tauri_image)) {
+                        log::error!("[DEBUG] tray.set_icon failed: {}", e);
+                    } else {
+                        log::info!("[DEBUG] tray.set_icon succeeded");
+                    }
+                } else {
+                    log::warn!("[DEBUG] main-tray not found");
+                }
+            },
+            Err(e) => {
+                log::error!("[DEBUG] failed to load icon from memory: {}", e);
             }
         }
+    } else {
+        log::error!("[DEBUG] get_webview_window('main') returned None");
     }
 }
 
