@@ -686,8 +686,8 @@ pub fn run() {
 
             let _ = app.global_shortcut().register(ctrl_shift_s);
 
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show Covo", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()

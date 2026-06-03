@@ -823,18 +823,31 @@
     /* ドラッグ＆ドロップオーバーレイ */
     #dropOverlay {
       position: absolute;
-      inset: 0;
-      background-color: rgba(255, 255, 255, 0.92);
-      border: 2px dashed #000;
-      z-index: 20;
-      display: none;
+      inset: 8px;
+      background-color: rgba(255, 255, 255, 0.85);
+      border: 3px dashed #6366f1;
+      border-radius: 12px;
+      z-index: 50;
+      display: flex;
       align-items: center;
       justify-content: center;
       pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+      transform: scale(0.98);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    body.dark-server-theme #dropOverlay {
+      background-color: rgba(17, 24, 39, 0.85);
+      border-color: #818cf8;
     }
 
     #dropOverlay.active {
-      display: flex;
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1);
     }
 
     /* 入力欄アクションボタン */
@@ -3088,7 +3101,7 @@
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
       <!-- 認証フォーム -->
       <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
-        <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+        <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md modal-box">
 
           <!-- タブ -->
           <div class="flex mb-6 border-b border-gray-300">
@@ -3125,7 +3138,7 @@
 
       <!-- ニックネーム設定コンテナ (初回用) -->
       <div id="nicknameContainer" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box">
           <h2 class="text-2xl font-bold mb-6 text-gray-800">
             ニックネームを設定
           </h2>
@@ -3406,7 +3419,7 @@
   <!-- 各種モーダル -->
       <div id="createRoomPasswordModal"
         class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box">
           <h2 class="text-2xl font-bold mb-6 text-gray-800">
             新しいルームを作成
           </h2>
@@ -3427,7 +3440,7 @@
       </div>
 
       <div id="joinRoomPasswordModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box">
           <h2 class="text-2xl font-bold mb-6 text-gray-800" id="joinRoomTitle">
             ルームに参加
           </h2>
@@ -3446,7 +3459,7 @@
       </div>
 
       <div id="deleteRoomConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box">
           <h2 class="text-2xl font-bold mb-6 text-gray-800" id="deleteConfirmTitle">
             確認
           </h2>
@@ -3467,7 +3480,7 @@
 
       <div id="deleteRoomPasswordModal"
         class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box">
           <h2 class="text-2xl font-bold mb-6 text-gray-800" id="deletePasswordTitle">
             ルームのパスワード
           </h2>
@@ -3787,7 +3800,10 @@
             class="px-4 pt-3 pb-4 flex flex-col bg-gray-50 flex-shrink-0 relative border-t border-gray-200">
             <!-- ドラッグ＆ドロップオーバーレイ -->
             <div id="dropOverlay">
-              <span class="text-gray-800 font-bold text-lg">ファイルをドロップして添付</span>
+              <div class="flex flex-col items-center justify-center">
+                <i class="fas fa-cloud-upload-alt text-4xl mb-3 text-indigo-500"></i>
+                <span class="text-gray-900 dark:text-gray-100 font-bold text-xl">ファイルをドロップして添付</span>
+              </div>
             </div>
             <!-- リプライUI -->
             <div id="replyingToContainer"
@@ -5741,9 +5757,13 @@
     // ============ Discord-style settings tab ============
     window.switchDiscordSettingsTab = function(tab) {
       document.querySelectorAll('#settingsModal .settings-nav-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#settingsModal .settings-nav-item').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('#settingsModal .settings-content-section').forEach(s => s.classList.remove('active'));
-      const nb = document.getElementById('snav-' + tab);
+      
+      const navBtnId = tab === 'admin' ? 'openAdminModalButton' : 'snav-' + tab;
+      const nb = document.getElementById(navBtnId);
       if (nb) nb.classList.add('active');
+      
       const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', appinfo:'appinfoSection' };
       if (tab === 'appinfo') {
         const verEl = document.getElementById('appInfoVersion');
@@ -5825,10 +5845,13 @@
          const c = unreadCounts[rid] || 0;
          if (c > 0) {
             count += c;
-            const rName = roomNames[rid] || rid;
-            htmlStr += `<div class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer" onclick="goToRoom('${rid}')">
-               <div class="text-sm font-bold text-indigo-900 mb-1"># ${rName}</div>
-               <div class="text-xs text-indigo-700">${c}件の新着メッセージがあります</div>
+            const rName = escapeHtml(roomNames[rid] || rid);
+            htmlStr += `<div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:shadow-md transition-shadow group" onclick="goToRoom('${rid}')">
+               <div class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1"># ${rName}</div>
+               <div class="flex justify-between items-center mt-1">
+                 <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">${c}件の新着メッセージ</div>
+                 <div class="text-xs font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">開く &rarr;</div>
+               </div>
             </div>`;
          }
       });
@@ -5837,6 +5860,7 @@
         badge.textContent = count;
         badge.style.display = count > 0 ? 'flex' : 'none';
       }
+      document.title = count > 0 ? `(${count}) Covo` : 'Covo';
       
       const mList = document.getElementById('mobileNotifList');
       const pList = document.getElementById('pcNotifList');
@@ -5919,10 +5943,16 @@
       items.forEach(it => {
         const sName = escapeHtml(it.serverName);
         const rName = escapeHtml(it.roomName);
-        html += `<div class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
-           <div class="text-xs text-indigo-500 mb-0.5">${sName}</div>
-           <div class="text-sm font-bold text-indigo-900"># ${rName}</div>
-           <div class="text-xs text-indigo-700 mt-0.5">新着メッセージがあります</div>
+        html += `<div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:shadow-md transition-shadow group" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+           <div class="flex items-center gap-2 mb-1">
+             <div class="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-[10px] text-gray-500 font-bold flex-shrink-0">${sName.charAt(0).toUpperCase()}</div>
+             <div class="text-xs text-gray-500 dark:text-gray-400 font-medium truncate flex-1">${sName}</div>
+           </div>
+           <div class="text-sm font-bold text-gray-900 dark:text-gray-100"># ${rName}</div>
+           <div class="flex justify-between items-center mt-2">
+             <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">未読メッセージ</div>
+             <div class="text-xs font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">開く &rarr;</div>
+           </div>
         </div>`;
       });
       const count = items.length;
@@ -5945,6 +5975,7 @@
       }
       const badge = document.getElementById('globalUnreadBadge');
       if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+      document.title = count > 0 ? `(${count}) Covo` : 'Covo';
     }
 
     // 他サーバーのルームへ移動する（通知一覧から）
@@ -8769,21 +8800,47 @@
 
     function escapeHtmlAndLinkUrls(text) {
       if (!text) return "";
-      // まず全体をHTMLエスケープ（XSS防止）
-      let escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-      // URL置換: スペース・引用符・不等号を含まない安全なURLのみ <a> に変換
-      // href属性値は encodeURIComponent で二重保護しない（既にエスケープ済み文字列から抽出するため、
-      // "&quot;" などを含むと壊れる）。代わりに href を直接 DOM で設定してインジェクションを根絶する。
+      
+      const codeBlocks = [];
+      let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
+        const id = `__CODE_BLOCK_${codeBlocks.length}__`;
+        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
+        return id;
+      });
+
+      const inlineCodes = [];
+      processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+        const id = `__INLINE_CODE_${inlineCodes.length}__`;
+        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
+        return id;
+      });
+
+      let escapedText = processedText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      
+      escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+      escapedText = escapedText.replace(/\n/g, '<br>');
+
       const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
       escapedText = escapedText.replace(urlRegex, (safeUrl) => {
-        // safeUrl はすでにエスケープ済みテキストから取り出した安全な断片
-        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color: black; text-decoration: underline;">${safeUrl}</a>`;
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${safeUrl}</a>`;
       });
-      // メンションの置換 (@ユーザー名)
+
       const mentionRegex = /@([^\s<&]+)/g;
       escapedText = escapedText.replace(mentionRegex, (match, p1) => {
         return `<span class="mention-text">@${p1}</span>`;
       });
+
+      inlineCodes.forEach((html, index) => {
+        escapedText = escapedText.replace(`__INLINE_CODE_${index}__`, html);
+      });
+      codeBlocks.forEach((html, index) => {
+        escapedText = escapedText.replace(`__CODE_BLOCK_${index}__`, html);
+      });
+
       return escapedText;
     }
 
@@ -10390,6 +10447,7 @@
         remoteAudio.srcObject = event.streams[0];
         remoteAudio.muted = false;
         remoteAudio.play().catch(() => {});
+        startVoiceIndicator(event.streams[0]);
       };
 
       _peerConnection.onicecandidate = async (event) => {
@@ -11286,6 +11344,8 @@
       const remoteAudio = document.getElementById('remoteAudio');
       if (remoteAudio) { remoteAudio.srcObject = null; }
 
+      stopVoiceIndicator();
+
       if (!skipFirestore && callIdCopy) {
         try {
           const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
@@ -11300,6 +11360,75 @@
 
       hideCallOverlay();
       if (reason) showCallEndedReason(reason);
+    }
+
+    let _voiceAudioContext = null;
+    let _voiceAnalyser = null;
+    let _voiceAnimFrame = null;
+
+    function startVoiceIndicator(remoteStream) {
+      const canvas = document.getElementById('voiceWaveform');
+      if (!canvas) return;
+      canvas.style.display = 'block';
+      const ctx = canvas.getContext('2d');
+      
+      if (!_voiceAudioContext) {
+        _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_voiceAudioContext.state === 'suspended') {
+        _voiceAudioContext.resume();
+      }
+      if (_voiceAnalyser) {
+        _voiceAnalyser.disconnect();
+      }
+      _voiceAnalyser = _voiceAudioContext.createAnalyser();
+      _voiceAnalyser.fftSize = 64;
+      
+      const sources = [];
+      if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+        sources.push(_voiceAudioContext.createMediaStreamSource(remoteStream));
+      }
+      if (_localStream && _localStream.getAudioTracks().length > 0) {
+        sources.push(_voiceAudioContext.createMediaStreamSource(_localStream));
+      }
+      
+      sources.forEach(s => s.connect(_voiceAnalyser));
+      
+      const bufferLength = _voiceAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
+      
+      function draw() {
+        if (!_voiceAnalyser) return;
+        _voiceAnimFrame = requestAnimationFrame(draw);
+        
+        _voiceAnalyser.getByteFrequencyData(dataArray);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const barWidth = (canvas.width / bufferLength) * 2.5;
+        let x = 0;
+        
+        for (let i = 0; i < bufferLength; i++) {
+          const barHeight = (dataArray[i] / 255) * canvas.height;
+          ctx.fillStyle = `rgb(${dataArray[i] + 50}, 150, 255)`;
+          ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+          x += barWidth + 1;
+        }
+      }
+      draw();
+    }
+
+    function stopVoiceIndicator() {
+      if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
+      _voiceAnimFrame = null;
+      if (_voiceAnalyser) { _voiceAnalyser.disconnect(); _voiceAnalyser = null; }
+      const canvas = document.getElementById('voiceWaveform');
+      if (canvas) {
+        canvas.style.display = 'none';
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
 
     function toggleMute() {
@@ -11338,7 +11467,6 @@
 
     // --- 統合通知関数 ---
     async function showNotification(title, body, roomId) {
-      // 最終防壁: 暗号文をそのまま通知に出さない
       if (typeof isEncrypted === 'function') {
         if (isEncrypted(body)) body = '新しいメッセージがあります';
         if (isEncrypted(title)) title = 'Covo';
@@ -11350,7 +11478,6 @@
       if (!isTauri && !browserEnabled) return;
       if (isTauri && !desktopEnabled) return;
 
-      // 重複チェック: 3秒以内に同じ内容(body+roomId)が来たら無視
       const now = Date.now();
       const sameContent = body === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
       if (now - lastNotificationTime < 3000 && sameContent) return;
@@ -11363,22 +11490,9 @@
       }
 
       if (isTauri) {
-        // Tauri (Windows) 版:
-        // アプリがバックグラウンド/非フォーカス時はWindowsネイティブプッシュ通知を使用。
-        // フォアグラウンド時は独自のカスタム通知(enqueue_notification)を使用。
-        const isBackground = document.visibilityState === 'hidden' || !document.hasFocus();
-        if (isBackground && window.__TAURI__?.core?.invoke) {
-          try {
-            await window.__TAURI__.core.invoke('plugin:notification|notify', {
-              options: { title, body }
-            });
-          } catch (e) {
-            // フォールバック: カスタム通知
-            try {
-              await window.__TAURI__.core.invoke('enqueue_notification', { title, body, roomId: roomId || "" });
-            } catch (e2) { console.error("Failed to enqueue notification", e2); }
-          }
-        } else if (window.__TAURI__?.core?.invoke) {
+        // Tauri (Windows) 版: 常にネイティブプッシュ通知(Toast)を表示する。
+        // lib.rs の enqueue_notification は native notification を呼び出すように実装されている。
+        if (window.__TAURI__?.core?.invoke) {
           try {
             await window.__TAURI__.core.invoke('enqueue_notification', {
               title: title,
@@ -11389,13 +11503,11 @@
             console.error("Failed to enqueue notification", e);
           }
         }
-      }
-      // Web/PWA版: OS通知は原則として Service Worker (FCM) に完全に任せる。
-      // フロントJSからnew Notification()を呼ぶと二重通知になるため基本は何もしないが、
-      // FCMが無効・非対応な環境（Safariなど）のためにフォールバックを用意する。
-      if (!isTauri && !currentFcmToken && "Notification" in window && Notification.permission === "granted") {
-        try {
-          const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
+      } else {
+        // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
+        if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
+          try {
+            const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
           n.onclick = () => { window.focus(); n.close(); };
         } catch (e) { }
       }
@@ -11994,6 +12106,7 @@
       <div class="call-avatar-wrap">
         <div class="call-avatar" id="callActiveAvatar"></div>
       </div>
+      <canvas id="voiceWaveform" width="200" height="40" style="margin-top: 15px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); display: none;"></canvas>
       <div class="call-name" id="callActiveName"></div>
       <div id="callConnectionType" style="display:none"></div>
       <div class="call-timer" id="callTimerDisplay" style="display:none">00:00</div>
@@ -12039,7 +12152,7 @@
     style="pointer-events:none; bottom: max(20px, calc(12px + env(safe-area-inset-bottom, 0)));"></div>
 
   <!-- サーバーカードコンテキストメニュー -->
-  <div id="serverContextMenu" class="hidden fixed bg-white rounded-xl border border-gray-100 py-1.5 z-[9999] min-w-44"
+  <div id="serverContextMenu" class="hidden fixed bg-white rounded-xl border border-gray-100 py-1.5 z-[9999] min-w-44 modal-box"
     style="box-shadow:0 8px 32px rgba(0,0,0,0.12);">
     <div id="serverCtxEnter"
       class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
