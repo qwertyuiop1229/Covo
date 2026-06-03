@@ -12080,8 +12080,8 @@
             else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
           }
         });
-        window.__TAURI__.event.listen('plugin:notification|action', (event) => {
-          console.log("[DEBUG] notification|action fired", event);
+        window.__TAURI__.event.listen('plugin:notification:actionPerformed', (event) => {
+          console.log("[DEBUG] notification:actionPerformed fired", event);
           const payload = event.payload;
           
           if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
