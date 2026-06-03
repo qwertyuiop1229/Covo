@@ -3181,6 +3181,9 @@
                 <button class="settings-nav-item" id="openAdminModalButton">
                   <i class="fas fa-shield-alt fa-fw"></i>管理者パネル
                 </button>
+                <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
+                  <i class="fas fa-screwdriver-wrench fa-fw"></i>管理者ツール
+                </button>
               </div>
               <button class="settings-nav-item danger" id="logoutButtonInModal">
                 <i class="fas fa-sign-out-alt fa-fw"></i>ログアウト
@@ -3236,6 +3239,32 @@
                 </div>
               </div>
               
+              <!-- 管理者ツールセクション -->
+              <div id="admintoolsSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">管理者ツール</div>
+                <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
+                  <div class="flex justify-between items-center">
+                    <div>
+                      <div class="text-sm font-bold text-gray-800">要素を検査</div>
+                      <div class="text-xs text-gray-500 mt-1">タップした場所の要素を調べます</div>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="pcToggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-gray-800">レイアウト診断</span>
+                    <button onclick="showLayoutDiagnostics()" style="padding:7px 16px;background:#4f46e5;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">診断を実行</button>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-gray-800">コンソール</span>
+                    <button onclick="toggleDevConsole()" style="padding:7px 16px;background:#111827;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">開く</button>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-gray-800">診断情報をまとめてコピー</span>
+                    <button onclick="copyDiagnosticsBundle()" style="padding:7px 16px;background:#16a34a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">コピー</button>
+                  </div>
+                </div>
+              </div>
+
               <!-- アプリ情報セクション -->
               <div id="appinfoSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">アプリ情報</div>
@@ -3255,10 +3284,6 @@
                     <div class="flex justify-between items-center">
                       <span class="text-sm text-gray-500"><i class="fas fa-lock mr-1"></i>メッセージの暗号化</span>
                       <span class="text-sm font-bold" id="appInfoE2EE" style="color:#6b7280">確認中…</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                      <span class="text-sm text-gray-500">レイアウト診断</span>
-                      <span class="text-xs font-mono text-gray-500" id="appInfoLayoutDbg" style="text-align:right">—</span>
                     </div>
                     <div class="flex justify-between items-center">
                       <button id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
@@ -4539,6 +4564,9 @@
         const fd = new FormData();
         fd.append('file', file);
         fd.append('uploaderId', userId || '');
+        if (_folder) {
+          fd.append('folder', _folder);
+        }
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${WORKER_BASE_URL}/api/uploadFile`);
         xhr.upload.addEventListener('progress', e => {
@@ -5764,7 +5792,7 @@
       const nb = document.getElementById(navBtnId);
       if (nb) nb.classList.add('active');
       
-      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', appinfo:'appinfoSection' };
+      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', appinfo:'appinfoSection', admintools:'admintoolsSection' };
       if (tab === 'appinfo') {
         const verEl = document.getElementById('appInfoVersion');
         if (verEl) {
@@ -8748,20 +8776,20 @@
 
     // --- ドラッグ＆ドロップ ---
     const dropOverlay = document.getElementById("dropOverlay");
-    const messageInputArea = document.getElementById("messageInputArea");
     let dragCounter = 0;
-    messageInputArea.addEventListener("dragenter", (e) => {
+    window.addEventListener("dragenter", (e) => {
       e.preventDefault(); dragCounter++;
-      dropOverlay.classList.add("active");
+      if (currentRoomId) dropOverlay.classList.add("active");
     });
-    messageInputArea.addEventListener("dragleave", (e) => {
+    window.addEventListener("dragleave", (e) => {
       e.preventDefault(); dragCounter--;
       if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove("active"); }
     });
-    messageInputArea.addEventListener("dragover", (e) => e.preventDefault());
-    messageInputArea.addEventListener("drop", async (e) => {
+    window.addEventListener("dragover", (e) => e.preventDefault());
+    window.addEventListener("drop", async (e) => {
       e.preventDefault(); dragCounter = 0;
       dropOverlay.classList.remove("active");
+      if (!currentRoomId) return;
       const f = e.dataTransfer.files[0];
       if (!f) return;
       if (!checkFileAllowed(f)) return;
@@ -11468,14 +11496,37 @@
         _voiceAnalyser.getByteFrequencyData(dataArray);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        const barWidth = (canvas.width / bufferLength) * 2.5;
-        let x = 0;
+        // Smoother, LINE-like symmetric waveform
+        const numBars = 20;
+        const barWidth = 4;
+        const gap = 4;
+        const totalWidth = numBars * (barWidth + gap) - gap;
+        let startX = (canvas.width - totalWidth) / 2;
+        const centerY = canvas.height / 2;
         
-        for (let i = 0; i < bufferLength; i++) {
-          const barHeight = (dataArray[i] / 255) * canvas.height;
-          ctx.fillStyle = `rgb(${dataArray[i] + 50}, 150, 255)`;
-          ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-          x += barWidth + 1;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = barWidth;
+        
+        for (let i = 0; i < numBars; i++) {
+          // Average data over the bin range
+          const binStart = Math.floor(i * (bufferLength / numBars));
+          const binEnd = Math.floor((i + 1) * (bufferLength / numBars));
+          let sum = 0;
+          for (let j = binStart; j < binEnd; j++) {
+            sum += dataArray[j] || 0;
+          }
+          const avg = sum / (binEnd - binStart || 1);
+          
+          // Smoothen the bar height
+          let barHeight = (avg / 255) * (canvas.height - 10) * 0.8 + 4; // min height 4
+          
+          ctx.beginPath();
+          ctx.moveTo(startX, centerY - barHeight / 2);
+          ctx.lineTo(startX, centerY + barHeight / 2);
+          ctx.strokeStyle = '#4ade80'; // LINE-like bright green
+          ctx.stroke();
+          
+          startX += barWidth + gap;
         }
       }
       draw();
@@ -12011,22 +12062,38 @@
           const rId = event.payload?.roomId;
           if (rId) {
             // Focus main window
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
+            if (window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+              window.__TAURI__.window.getCurrentWindow().unminimize();
+              window.__TAURI__.window.getCurrentWindow().show();
+              window.__TAURI__.window.getCurrentWindow().setFocus();
+            } else if (window.__TAURI__.webviewWindow && window.__TAURI__.webviewWindow.getCurrentWebviewWindow) {
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
+            } else if (window.__TAURI__.window && window.__TAURI__.window.getCurrent) {
+              window.__TAURI__.window.getCurrent().unminimize();
+              window.__TAURI__.window.getCurrent().show();
+              window.__TAURI__.window.getCurrent().setFocus();
+            }
             if (typeof goToRoom === 'function') goToRoom(rId);
             else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
           }
         });
         window.__TAURI__.event.listen('plugin:notification|action', (event) => {
           const payload = event.payload;
+          
+          if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
+            window.__TAURI__.core.invoke('show_main_window').catch(() => {});
+          }
+
           if (payload && payload.notification && payload.notification.actionTypeId) {
             const rId = payload.notification.actionTypeId;
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
-            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
-            if (typeof goToRoom === 'function') goToRoom(rId);
-            else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
+            if (typeof goToRoom === 'function') {
+              goToRoom(rId);
+            } else {
+              const roomItem = document.getElementById(`room-item-${rId}`);
+              if (roomItem) roomItem.click();
+            }
           }
         });
       }

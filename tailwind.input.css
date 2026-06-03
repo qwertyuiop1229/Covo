@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  button, a, input, select, textarea, .room-item, .msg, .transition-smooth {
+    @apply transition-all duration-200 ease-in-out;
+  }
+}

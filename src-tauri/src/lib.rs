@@ -229,6 +229,15 @@ fn enqueue_notification(
     Ok(())
 }
 
+#[tauri::command]
+fn show_main_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 // コンテナの JS が起動完了したときに呼ばれる
 #[tauri::command]
 fn container_loaded(
@@ -654,6 +663,7 @@ pub fn run() {
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
             enqueue_notification,
+            show_main_window,
             container_loaded,
             hide_notif_container,
             resize_notif_container,

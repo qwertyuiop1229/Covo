@@ -695,7 +695,8 @@ async function handleUploadFile(request, env) {
     const arrayBuffer = await file.arrayBuffer();
     const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const uploaderId = formData.get('uploaderId') || '';
-    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId };
+    const folder = formData.get('folder') || '';
+    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder };
 
     await env.FILES.put(key, arrayBuffer, {
       metadata: meta,
@@ -788,6 +789,10 @@ async function handleStorageStats(request, env) {
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
+          const folder = key.metadata?.folder || '';
+          if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars') {
+            continue; // Ignore icons/avatars
+          }
           kvStats.fileCount++;
           if (key.metadata && key.metadata.size) {
             kvStats.totalBytes += key.metadata.size;
@@ -846,6 +851,10 @@ async function handleBulkDeleteFiles(request, env) {
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
+          const folder = key.metadata?.folder || '';
+          if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars') {
+            continue; // Ignore icons/avatars
+          }
           await env.FILES.delete(key.name);
           kvDeleted++;
         }
