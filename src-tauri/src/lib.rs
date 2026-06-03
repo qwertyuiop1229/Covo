@@ -218,7 +218,7 @@ fn enqueue_notification(
         .builder()
         .title(&title)
         .body(&body)
-        .id(&room_id)
+        .action_type_id(&room_id)
         .show()
         .map_err(|e| {
             log::error!("[enqueue] notification show failed: {}", e);
@@ -626,15 +626,19 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     if let Some(window) = app_handle.get_webview_window("main") {
         let icon_bytes = if has_unread {
-            include_bytes!("../../icons/icon-unread.png").to_vec()
+            include_bytes!("../icons/icon-unread.png").to_vec()
         } else {
-            include_bytes!("../../icons/icon.png").to_vec()
+            include_bytes!("../icons/icon.png").to_vec()
         };
         
-        if let Ok(image) = tauri::image::Image::from_bytes(&icon_bytes) {
-            let _ = window.set_icon(Some(image.clone()));
+        if let Ok(img) = image::load_from_memory(&icon_bytes) {
+            let rgba = img.into_rgba8();
+            let width = rgba.width();
+            let height = rgba.height();
+            let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+            let _ = window.set_icon(tauri_image.clone());
             if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                let _ = tray.set_icon(Some(image));
+                let _ = tray.set_icon(Some(tauri_image));
             }
         }
     }

@@ -10607,6 +10607,7 @@
       });
     }
 
+    const _readStateThrottle = {};
     async function updateLocalAndRemoteReadState(roomId, time) {
       if (!roomId) return;
       try {
@@ -10615,8 +10616,13 @@
         if (time > prev) {
            rm[roomId] = time;
            localStorage.setItem('covo_last_read', JSON.stringify(rm));
+           
            if (userId && appId) {
-              setDoc(doc(db, `artifacts/${appId}/users/${userId}/readStates`, roomId), { lastReadAt: time }, { merge: true }).catch(()=>{});
+              const now = Date.now();
+              if (!_readStateThrottle[roomId] || now - _readStateThrottle[roomId] > 5000) {
+                 _readStateThrottle[roomId] = now;
+                 setDoc(doc(db, `artifacts/${appId}/users/${userId}/readStates`, roomId), { lastReadAt: time }, { merge: true }).catch(()=>{});
+              }
            }
         }
       } catch(e) {}
@@ -12014,8 +12020,8 @@
         });
         window.__TAURI__.event.listen('plugin:notification|action', (event) => {
           const payload = event.payload;
-          if (payload && payload.notification && payload.notification.id) {
-            const rId = payload.notification.id;
+          if (payload && payload.notification && payload.notification.actionTypeId) {
+            const rId = payload.notification.actionTypeId;
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
