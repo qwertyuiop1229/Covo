@@ -5757,7 +5757,6 @@
     // ============ Discord-style settings tab ============
     window.switchDiscordSettingsTab = function(tab) {
       document.querySelectorAll('#settingsModal .settings-nav-item').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('#settingsModal .settings-nav-item').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('#settingsModal .settings-content-section').forEach(s => s.classList.remove('active'));
       
       const navBtnId = tab === 'admin' ? 'openAdminModalButton' : 'snav-' + tab;
@@ -11508,8 +11507,9 @@
         if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
           try {
             const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
-          n.onclick = () => { window.focus(); n.close(); };
-        } catch (e) { }
+            n.onclick = () => { window.focus(); n.close(); };
+          } catch (e) { }
+        }
       }
     }
 
