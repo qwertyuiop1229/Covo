@@ -5238,6 +5238,7 @@
               setTimeout(() => setupGlobalNotificationListeners(), 2000);
               initCallListener();
               initFileShareListener();
+              initReadStatesSync();
             } else {
               authContainer.classList.add("hidden");
               appContainer.classList.add("hidden");
@@ -5859,7 +5860,12 @@
         badge.textContent = count;
         badge.style.display = count > 0 ? 'flex' : 'none';
       }
-      document.title = count > 0 ? `(${count}) Covo` : 'Covo';
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
+        document.title = 'Covo';
+      } else {
+        document.title = count > 0 ? `(${count}) Covo` : 'Covo';
+      }
       
       const mList = document.getElementById('mobileNotifList');
       const pList = document.getElementById('pcNotifList');
@@ -5974,7 +5980,12 @@
       }
       const badge = document.getElementById('globalUnreadBadge');
       if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
-      document.title = count > 0 ? `(${count}) Covo` : 'Covo';
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
+        document.title = 'Covo';
+      } else {
+        document.title = count > 0 ? `(${count}) Covo` : 'Covo';
+      }
     }
 
     // 他サーバーのルームへ移動する（通知一覧から）
@@ -7694,8 +7705,12 @@
         if (typeof prevRead === 'number' && prevRead > 0) {
           unreadBoundaryAt = prevRead - 60000;
         }
-        rm[roomId] = Date.now() + 60000;
-        localStorage.setItem('covo_last_read', JSON.stringify(rm));
+        if (typeof updateLocalAndRemoteReadState === 'function') {
+           updateLocalAndRemoteReadState(roomId, Date.now() + 60000);
+        } else {
+           rm[roomId] = Date.now() + 60000;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+        }
         const badge = document.getElementById('unread-badge-' + roomId);
         if (badge) badge.style.display = 'none';
       } catch(e) {}
@@ -9192,11 +9207,15 @@
       // バックグラウンド・最小化・非フォーカス時は既読にしない
       if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
       // 読んでいるたびに covo_last_read を更新（60秒バッファ切れによる誤未読ドット防止）
-      try {
-        const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-        rm[currentRoomId] = Date.now() + 10000;
-        localStorage.setItem('covo_last_read', JSON.stringify(rm));
-      } catch(e) {}
+      if (typeof updateLocalAndRemoteReadState === 'function') {
+         updateLocalAndRemoteReadState(currentRoomId, Date.now() + 10000);
+      } else {
+         try {
+           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+           rm[currentRoomId] = Date.now() + 10000;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+         } catch(e) {}
+      }
       const lastMsgId = lastMessagesData.length ? lastMessagesData[lastMessagesData.length - 1].id : null;
       if (lastMsgId === _lastSentReadMessageId) return;
       _lastSentReadMessageId = lastMsgId;
@@ -10565,6 +10584,44 @@
       return unsub;
     }
 
+    let readStatesUnsub = null;
+    function initReadStatesSync() {
+      if (!userId || !appId) return;
+      if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
+      readStatesUnsub = onSnapshot(collection(db, `artifacts/${appId}/users/${userId}/readStates`), (snap) => {
+        let changed = false;
+        let rm = {};
+        try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
+        snap.forEach(docSnap => {
+          const remoteTime = docSnap.data().lastReadAt;
+          const localTime = rm[docSnap.id] || 0;
+          if (remoteTime && remoteTime > localTime) {
+            rm[docSnap.id] = remoteTime;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('covo_last_read', JSON.stringify(rm));
+          if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
+        }
+      });
+    }
+
+    async function updateLocalAndRemoteReadState(roomId, time) {
+      if (!roomId) return;
+      try {
+        const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+        const prev = rm[roomId] || 0;
+        if (time > prev) {
+           rm[roomId] = time;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+           if (userId && appId) {
+              setDoc(doc(db, `artifacts/${appId}/users/${userId}/readStates`, roomId), { lastReadAt: time }, { merge: true }).catch(()=>{});
+           }
+        }
+      } catch(e) {}
+    }
+
     function initCallListener() {
       if (!userId) return;
       if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
@@ -11507,7 +11564,14 @@
         if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
           try {
             const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
-            n.onclick = () => { window.focus(); n.close(); };
+            n.onclick = () => { 
+              window.focus(); 
+              n.close(); 
+              if (roomId) {
+                if (typeof goToRoom === 'function') goToRoom(roomId);
+                else { const roomItem = document.getElementById(`room-item-${roomId}`); if (roomItem) roomItem.click(); }
+              }
+            };
           } catch (e) { }
         }
       }
@@ -11944,8 +12008,19 @@
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
             window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
-            const roomItem = document.getElementById(`room-item-${rId}`);
-            if (roomItem) roomItem.click();
+            if (typeof goToRoom === 'function') goToRoom(rId);
+            else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
+          }
+        });
+        window.__TAURI__.event.listen('plugin:notification|action', (event) => {
+          const payload = event.payload;
+          if (payload && payload.notification && payload.notification.id) {
+            const rId = payload.notification.id;
+            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
+            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
+            window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
+            if (typeof goToRoom === 'function') goToRoom(rId);
+            else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
           }
         });
       }

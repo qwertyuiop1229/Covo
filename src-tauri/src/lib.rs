@@ -218,6 +218,7 @@ fn enqueue_notification(
         .builder()
         .title(&title)
         .body(&body)
+        .id(&room_id)
         .show()
         .map_err(|e| {
             log::error!("[enqueue] notification show failed: {}", e);
@@ -621,6 +622,24 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
     }
 }
 
+#[tauri::command]
+fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let icon_bytes = if has_unread {
+            include_bytes!("../../icons/icon-unread.png").to_vec()
+        } else {
+            include_bytes!("../../icons/icon.png").to_vec()
+        };
+        
+        if let Ok(image) = tauri::image::Image::from_bytes(&icon_bytes) {
+            let _ = window.set_icon(Some(image.clone()));
+            if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                let _ = tray.set_icon(Some(image));
+            }
+        }
+    }
+}
+
 // ===========================================================================
 // run()
 // ===========================================================================
@@ -647,6 +666,7 @@ pub fn run() {
             open_devtools_for_container,
             open_log_dir,
             create_desktop_shortcut,
+            set_badge,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -690,7 +710,7 @@ pub fn run() {
             let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
