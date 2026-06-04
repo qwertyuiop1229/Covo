@@ -21,6 +21,7 @@
     "core:window:allow-hide",
     "core:window:allow-show",
     "updater:default",
-    "autostart:default"
+    "autostart:default",
+    "notification:default"
   ]
 }

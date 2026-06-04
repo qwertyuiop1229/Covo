@@ -637,25 +637,29 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                         // HrInit() を呼び出してタスクバーAPIを初期化（バグ修正）
                         if taskbar.HrInit().is_ok() {
                             if has_unread {
-                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, DestroyIcon, LR_DEFAULTCOLOR};
+                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
                                 
                                 // プロジェクト内にある未読用アイコン(.ico)を読み込む
                                 let ico_bytes = include_bytes!("../icons/badge.ico");
                                 // .ico フォーマットのヘッダを解析し、画像データの開始位置（オフセット）を取得
                                 let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
                                 
-                                // メモリ上の画像データから 16x16 のバッジ用 HICON を生成
-                                if let Ok(icon) = CreateIconFromResourceEx(
-                                    &ico_bytes[offset..],
-                                    true,
-                                    0x00030000,
-                                    16,
-                                    16,
-                                    LR_DEFAULTCOLOR,
-                                ) {
+                                // メモリリークを防ぐため、HICON は一度生成したら静的にキャッシュする (HICON は Send/Sync を実装しないため isize として保持)
+                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
+                                    let icon = CreateIconFromResourceEx(
+                                        &ico_bytes[offset..],
+                                        true,
+                                        0x00030000,
+                                        16,
+                                        16,
+                                        LR_DEFAULTCOLOR,
+                                    ).unwrap_or_default();
+                                    icon.0 as isize
+                                });
+                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
+                                if !icon.is_invalid() {
                                     let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
-                                    // メモリリーク（GDIハンドルリーク）を防ぐため、登録後に破棄する
-                                    let _ = DestroyIcon(icon);
                                 }
                             } else {
                                 use windows::Win32::UI::WindowsAndMessaging::HICON;

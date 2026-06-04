@@ -78,6 +78,11 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
       // 3. グローバルオンライン状態
       match /status/{userId} {
         allow read: if isAuthenticated();
