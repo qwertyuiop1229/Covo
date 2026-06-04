@@ -36,6 +36,9 @@ export default {
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
     }
+    if (url.pathname === "/api/shareFile" && request.method === "POST") {
+      return await handleShareFile(request, env);
+    }
     if (url.pathname.startsWith("/api/file/") && request.method === "GET") {
       return await handleServeFile(request, env, url);
     }
@@ -839,10 +842,18 @@ async function handleShareFile(request, env) {
   try {
     const formData = await request.formData();
     const file = formData.get('file');
-    if (!file) {
-      return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
+    const idToken = formData.get('idToken') || '';
+    const uploaderId = formData.get('uploaderId') || formData.get('userId') || '';
+
+    if (!file || !idToken || !uploaderId) {
+      return new Response(JSON.stringify({ error: '必須パラメータが不足しています' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
+    }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== uploaderId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     // ArrayBufferとして読み込んでBlobを再構築（Worker間の転送を安定させる）
