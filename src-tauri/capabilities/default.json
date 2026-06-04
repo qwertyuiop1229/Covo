@@ -20,7 +20,6 @@
     "core:window:allow-close",
     "core:window:allow-hide",
     "core:window:allow-show",
-    "notification:default",
     "updater:default",
     "autostart:default"
   ]

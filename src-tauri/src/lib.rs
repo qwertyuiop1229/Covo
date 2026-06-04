@@ -1,6 +1,5 @@
 use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
 use tauri::WebviewWindowBuilder;
-use tauri_plugin_notification::NotificationExt;
 use std::sync::Mutex;
 
 const CONTAINER_LABEL: &str = "notif_container";
@@ -40,6 +39,7 @@ struct NotificationState {
     saved_position: Mutex<Option<SavedPosition>>,
     container_ready: Mutex<bool>,
     pending: Mutex<Vec<PendingNotif>>,
+    close_behavior: Mutex<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -201,33 +201,7 @@ fn resize_notif_container(
 // コマンド: 通知エンキュー
 // ===========================================================================
 
-#[tauri::command]
-fn enqueue_notification(
-    app_handle: tauri::AppHandle,
-    _state: tauri::State<'_, NotificationState>,
-    title: String,
-    body: String,
-    room_id: String,
-) -> Result<(), String> {
-    log::info!("[enqueue] toast: title={}, body={}, room_id={}", title, body, room_id);
 
-    // Windows ネイティブのトースト通知を使う（WebView2 ベースのカスタム UI は環境問題で動かないため）
-    // メインウィンドウを閉じていても確実に表示される
-    app_handle
-        .notification()
-        .builder()
-        .title(&title)
-        .body(&body)
-        .action_type_id(&room_id)
-        .show()
-        .map_err(|e| {
-            log::error!("[enqueue] notification show failed: {}", e);
-            format!("notification failed: {}", e)
-        })?;
-
-    log::info!("[enqueue] toast shown OK");
-    Ok(())
-}
 
 #[tauri::command]
 fn show_main_window(app_handle: tauri::AppHandle) {
@@ -236,6 +210,17 @@ fn show_main_window(app_handle: tauri::AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+#[tauri::command]
+fn set_close_behavior(
+    behavior: String,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    if let Ok(mut b) = state.close_behavior.lock() {
+        *b = behavior;
+    }
+    Ok(())
 }
 
 // コンテナの JS が起動完了したときに呼ばれる
@@ -655,7 +640,7 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                                 use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, DestroyIcon, LR_DEFAULTCOLOR};
                                 
                                 // プロジェクト内にある未読用アイコン(.ico)を読み込む
-                                let ico_bytes = include_bytes!("../icons/icon-unread.ico");
+                                let ico_bytes = include_bytes!("../icons/badge.ico");
                                 // .ico フォーマットのヘッダを解析し、画像データの開始位置（オフセット）を取得
                                 let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
                                 
@@ -731,8 +716,8 @@ pub fn run() {
     tauri::Builder::default()
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
-            enqueue_notification,
             show_main_window,
+            set_close_behavior,
             container_loaded,
             hide_notif_container,
             resize_notif_container,
@@ -827,8 +812,22 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
+                    use tauri::Manager;
+                    let behavior = {
+                        let state = window.app_handle().state::<NotificationState>();
+                        let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                        b
+                    };
+                    if behavior == "quit" {
+                        // 完全に終了する場合は何もしない (そのまま閉じる)
+                    } else if behavior == "hide" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // デフォルト: タスクバーに最小化
+                        api.prevent_close();
+                        let _ = window.minimize();
+                    }
                 }
             }
         })
@@ -848,7 +847,6 @@ pub fn run() {
                 .level(log::LevelFilter::Debug)
                 .build(),
         )
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,

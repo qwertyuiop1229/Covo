@@ -759,10 +759,14 @@ async function handleServeFile(request, env, url) {
 // -------------------------------------------------------------
 async function handleStorageStats(request, env) {
   try {
-    const url = new URL(request.url);
-    const adminKey = url.searchParams.get('adminKey') || '';
-    if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
-      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "");
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const kvStats = { fileCount: 0, totalBytes: 0 };
@@ -800,10 +804,14 @@ async function handleStorageStats(request, env) {
 // -------------------------------------------------------------
 async function handleBulkDeleteFiles(request, env) {
   try {
-    const url = new URL(request.url);
-    const adminKey = url.searchParams.get('adminKey') || '';
-    if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
-      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "");
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     let kvDeleted = 0;
