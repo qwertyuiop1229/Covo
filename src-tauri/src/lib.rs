@@ -616,6 +616,7 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
     }
 }
 
+
 #[tauri::command]
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);

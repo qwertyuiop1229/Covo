@@ -10260,6 +10260,14 @@
       //     show_notification_window で独自UI（LINE風）の通知を出す
       if (isTauri) {
         fcmInitialized = true;
+
+        if (window.__TAURI__?.notification?.onAction) {
+          window.__TAURI__.notification.onAction((event) => {
+            if (window.__TAURI__?.core?.invoke) {
+               window.__TAURI__.core.invoke('show_main_window').catch(console.error);
+            }
+          }).catch(e => console.error('onAction setup failed', e));
+        }
         console.log('[Tauri] FCM skipped — using Firestore-based notifications');
         return;
       }
@@ -11657,6 +11665,12 @@
         if (window.__TAURI__?.core?.invoke) {
           window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
         }
+
+        if (isTauri) {
+          if (window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('enqueue_notification', { title: title, body: messagePreview }).catch(console.error);
+          }
+        } else {
         if (Notification.permission === 'granted') {
           const n = new Notification(title, { body: messagePreview });
           n.onclick = () => {
@@ -11665,6 +11679,7 @@
               window.__TAURI__.core.invoke('show_main_window').catch(console.error);
             }
           };
+        }
         }
       } else {
         // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
