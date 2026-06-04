@@ -652,7 +652,7 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                         // HrInit() を呼び出してタスクバーAPIを初期化（バグ修正）
                         if taskbar.HrInit().is_ok() {
                             if has_unread {
-                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, DestroyIcon, LR_DEFAULTCOLOR};
                                 
                                 // プロジェクト内にある未読用アイコン(.ico)を読み込む
                                 let ico_bytes = include_bytes!("../icons/icon-unread.ico");
@@ -669,6 +669,8 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                                     LR_DEFAULTCOLOR,
                                 ) {
                                     let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                                    // メモリリーク（GDIハンドルリーク）を防ぐため、登録後に破棄する
+                                    let _ = DestroyIcon(icon);
                                 }
                             } else {
                                 use windows::Win32::UI::WindowsAndMessaging::HICON;
