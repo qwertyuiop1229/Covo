@@ -32,9 +32,7 @@ export default {
     if (url.pathname === "/api/setOffline" && request.method === "POST") {
       return await handleSetOffline(request, env);
     }
-    if (url.pathname === "/api/download" && request.method === "GET") {
-      return await handleDownload(request, env);
-    }
+
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
     }
@@ -50,9 +48,7 @@ export default {
     if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
       return await handleBulkDeleteFiles(request, env);
     }
-    if (url.pathname === "/api/cloudinaryFile" && request.method === "DELETE") {
-      return await handleDeleteCloudinaryFile(request, env, url);
-    }
+
 
     return new Response(JSON.stringify({ error: "Not Found" }), {
       status: 404,
@@ -620,69 +616,6 @@ async function getFCMToken(serviceAccountJsonStr) {
   return data.access_token;
 }
 
-// -------------------------------------------------------------
-// Cloudinary ファイルダウンロードプロキシ
-// ブラウザからは401になるCloudinary URLを、サーバー経由でプロキシして返す
-// -------------------------------------------------------------
-async function handleDownload(request, env) {
-  try {
-    const reqUrl = new URL(request.url);
-    const fileUrl = reqUrl.searchParams.get('url');
-    const fileName = reqUrl.searchParams.get('name') || 'download';
-
-    if (!fileUrl) {
-      return new Response(JSON.stringify({ error: "Missing url parameter" }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // セキュリティ: このアカウントのCloudinary URLのみ許可
-    if (!fileUrl.startsWith('https://res.cloudinary.com/dhmsyvwjd/')) {
-      return new Response(JSON.stringify({ error: "Invalid URL" }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const fileRes = await fetch(fileUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; CovoChatProxy/1.0)',
-        'Accept': '*/*',
-      }
-    });
-
-    if (!fileRes.ok) {
-      const cloudinaryError = await fileRes.text().catch(() => '');
-      const reason = fileRes.status === 401
-        ? 'Cloudinaryがこのリソースタイプ(image/upload)でのPDF配信を拒否しました。raw/uploadタイプで再アップロードが必要です。'
-        : `Cloudinary returned ${fileRes.status}`;
-      console.error(`[Worker/download] Cloudinary error ${fileRes.status} for: ${fileUrl}`);
-      return new Response(JSON.stringify({ error: `Upstream error: ${fileRes.status}`, reason, cloudinaryResponse: cloudinaryError.slice(0, 200) }), {
-        status: fileRes.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const contentType = fileRes.headers.get('Content-Type') || 'application/octet-stream';
-    const isPreview = reqUrl.searchParams.get('preview') === '1';
-    const responseHeaders = {
-      ...corsHeaders,
-      'Content-Type': contentType,
-      // preview=1 のときはインライン表示（PDF viewer）、それ以外はダウンロード強制
-      'Content-Disposition': isPreview
-        ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
-        : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-      'X-Content-Type-Options': 'nosniff',
-    };
-    const contentLength = fileRes.headers.get('Content-Length');
-    if (contentLength) responseHeaders['Content-Length'] = contentLength;
-
-    return new Response(fileRes.body, { status: 200, headers: responseHeaders });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: "Proxy error", details: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
 
 // -------------------------------------------------------------
 // Workers KV を使ったファイルアップロード＆配信
@@ -849,34 +782,7 @@ async function handleStorageStats(request, env) {
       } while (cursor);
     }
 
-    let cloudinaryStats = null;
-    let cloudinaryError = null;
-    if (!env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_CLOUD_NAME) {
-      cloudinaryError = 'no_credentials';
-    } else {
-      try {
-        const auth = btoa(`${env.CLOUDINARY_API_KEY}:${env.CLOUDINARY_API_SECRET}`);
-        const res = await fetch(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/usage`, {
-          headers: { 'Authorization': `Basic ${auth}` }
-        });
-        const data = await res.json();
-        if (res.ok) {
-          cloudinaryStats = {
-            storageBytes: data.storage?.usage || 0,
-            storageLimitBytes: data.storage?.limit || 26843545600,
-            resources: data.objects?.usage || 0,
-          };
-        } else {
-          cloudinaryError = `api_error:${res.status}:${data.error?.message || JSON.stringify(data)}`;
-          console.error('[storageStats] Cloudinary API error:', res.status, JSON.stringify(data));
-        }
-      } catch (e) {
-        cloudinaryError = `fetch_error:${e.toString()}`;
-        console.error('[storageStats] Cloudinary fetch error:', e.toString());
-      }
-    }
-
-    return new Response(JSON.stringify({ kv: kvStats, cloudinary: cloudinaryStats, cloudinaryError }), {
+    return new Response(JSON.stringify({ kv: kvStats }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err) {
@@ -915,19 +821,7 @@ async function handleBulkDeleteFiles(request, env) {
       } while (cursor);
     }
 
-    let cloudinaryDeleted = false;
-    if (env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET && env.CLOUDINARY_CLOUD_NAME) {
-      try {
-        const auth = btoa(`${env.CLOUDINARY_API_KEY}:${env.CLOUDINARY_API_SECRET}`);
-        const res = await fetch(
-          `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload?all=true`,
-          { method: 'DELETE', headers: { 'Authorization': `Basic ${auth}` } }
-        );
-        cloudinaryDeleted = res.ok;
-      } catch (_) {}
-    }
-
-    return new Response(JSON.stringify({ success: true, kvDeleted, cloudinaryDeleted }), {
+    return new Response(JSON.stringify({ success: true, kvDeleted }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err) {
@@ -937,68 +831,6 @@ async function handleBulkDeleteFiles(request, env) {
   }
 }
 
-// -------------------------------------------------------------
-// Cloudinary SHA-1 署名生成
-// -------------------------------------------------------------
-async function cloudinarySign(params, apiSecret) {
-  const sortedKeys = Object.keys(params).sort();
-  const paramStr = sortedKeys.map(k => `${k}=${params[k]}`).join('&') + apiSecret;
-  const hashBuffer = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(paramStr));
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// -------------------------------------------------------------
-// Cloudinary ファイル削除
-// -------------------------------------------------------------
-async function handleDeleteCloudinaryFile(request, env, url) {
-  try {
-    if (!env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_CLOUD_NAME) {
-      return new Response(JSON.stringify({ error: 'no_credentials' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const publicId = url.searchParams.get('publicId');
-    const resourceType = url.searchParams.get('resourceType') || 'image';
-
-    if (!publicId) {
-      return new Response(JSON.stringify({ error: 'publicId is required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signature = await cloudinarySign({ public_id: publicId, timestamp }, env.CLOUDINARY_API_SECRET);
-
-    const formData = new FormData();
-    formData.append('public_id', publicId);
-    formData.append('timestamp', timestamp);
-    formData.append('api_key', env.CLOUDINARY_API_KEY);
-    formData.append('signature', signature);
-
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/destroy`,
-      { method: 'POST', body: formData }
-    );
-    const data = await res.json();
-
-    if (data.result === 'ok' || data.result === 'not found') {
-      return new Response(JSON.stringify({ success: true, result: data.result }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    console.error('[Worker/cloudinaryDelete] Unexpected result:', JSON.stringify(data));
-    return new Response(JSON.stringify({ error: data.error?.message || '削除に失敗しました', result: data.result }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-    console.error('[Worker/cloudinaryDelete] Error:', err.toString());
-    return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
 
 // -------------------------------------------------------------
 // 外部ファイル共有プロキシ（catbox.moe → 0x0.st の順で試行）
