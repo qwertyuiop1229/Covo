@@ -6645,12 +6645,14 @@
     };
 
     const handleWindowBlur = () => {
+      updateUserStatus('offline');
       sendOfflineBeacon();
       stopAwayTimer();
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        updateUserStatus('offline');
         sendOfflineBeacon(); // Worker経由でFirestoreをofflineに
         stopAwayTimer();
       } else {
