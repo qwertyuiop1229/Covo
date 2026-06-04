@@ -4560,10 +4560,12 @@
     // Cloudflare Worker(KV) へのアップロード。進捗対応(XHR)。
     // uploadToCloudinary と同じ (file, onProgress, folder) で呼べるようにしている（folderは未使用）。
     function uploadToExternalService(file, onProgress, _folder) {
-      return new Promise((resolve, reject) => {
+      return new Promise(async (resolve, reject) => {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const fd = new FormData();
         fd.append('file', file);
         fd.append('uploaderId', userId || '');
+        fd.append('idToken', idToken);
         if (_folder) {
           fd.append('folder', _folder);
         }
@@ -5578,7 +5580,9 @@
       if (!kvText) return;
       kvText.textContent = '読み込み中...';
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats`);
+        const adminKey = prompt("管理者キー(ADMIN_SECRET_KEY)を入力してください:");
+        if (!adminKey) { kvText.textContent = 'キャンセルされました'; return; }
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats?adminKey=${encodeURIComponent(adminKey)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         // KV（Cloudflare）
@@ -5601,11 +5605,14 @@
       if (!first) return;
       const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', '全ての添付ファイルのURLが無効になります。');
       if (!second) return;
+      const adminKey = prompt("管理者キー(ADMIN_SECRET_KEY)を入力してください:");
+      if (!adminKey) return;
+      
       const btn = document.getElementById('bulkDeleteAllFilesBtn');
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles`, { method: 'DELETE' });
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?adminKey=${encodeURIComponent(adminKey)}`, { method: 'DELETE' });
         if (res.ok) {
           const data = await res.json();
           // ファイルを参照するFirestoreメッセージも削除
@@ -8448,6 +8455,7 @@
             if (receiverIds.length > 0) {
               const serverName = serverData.name || 'Covo';
               const roomName = roomNames[currentRoomId] || 'room';
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
               fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -8457,7 +8465,8 @@
                   body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
                   roomId: currentRoomId,
                   appId: appId,
-                  senderId: userId
+                  senderId: userId,
+                  idToken
                 })
               }).catch(e => console.error("Notification trigger error:", e));
             }
@@ -8623,9 +8632,10 @@
             const sd = serverSnap.data();
             const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
             if (receiverIds.length > 0) {
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
               fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId })
+                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId, idToken })
               }).catch(() => {});
             }
           }
@@ -9376,7 +9386,8 @@
         const m = msgToDelete.kvFileUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
         if (m) {
           const fileKey = m[1];
-          const params = `userId=${encodeURIComponent(userId)}${forceDelete ? '&forceDelete=1' : ''}`;
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
           try {
             const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
             if (!res.ok) {
@@ -9399,7 +9410,8 @@
         const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
         for (const match of kvMatches) {
           const fileKey = match[1];
-          const params = `userId=${encodeURIComponent(userId)}${forceDelete ? '&forceDelete=1' : ''}`;
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
           try {
             const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
             if (!res.ok) {
@@ -9423,7 +9435,8 @@
         const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
         if (m) {
           const fileKey = m[1];
-          const params = `userId=${encodeURIComponent(userId)}${forceDelete ? '&forceDelete=1' : ''}`;
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
           try {
             const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
             if (!res.ok) {
@@ -10819,9 +10832,10 @@
         });
 
         // 相手にプッシュ通知（任意・fire-and-forget）
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId })
+          body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId, idToken })
         }).catch(() => {});
 
         _fsShowProgress('send', file.name, '相手の応答を待っています…');
@@ -11221,6 +11235,7 @@
       await setDoc(newCallRef, callData);
 
       // ⑥ FCM通知はfire-and-forget（awaitしない → ~1s節約）
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       fetch(`${WORKER_BASE_URL}/api/sendCallNotification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -11229,7 +11244,9 @@
           callerNickname: myUser.nickname || myUser.displayName || '',
           callerAvatarUrl: myUser.avatarUrl || '',
           callId: _callId,
-          appId
+          appId,
+          callerId: userId,
+          idToken
         })
       }).catch(() => {});
 

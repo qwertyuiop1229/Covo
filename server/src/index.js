@@ -174,9 +174,14 @@ async function signUpWithFirebase(email, password, env) {
 // -------------------------------------------------------------
 async function handleJoinRoom(request, env) {
   try {
-    const { roomId, password, userId, appId } = await request.json();
-    if (!roomId || !password || !userId || !appId) {
+    const { roomId, password, userId, appId, idToken } = await request.json();
+    if (!roomId || !password || !userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
+    }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== userId) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     // Workerトークン取得
@@ -250,9 +255,14 @@ async function handleJoinRoom(request, env) {
 // -------------------------------------------------------------
 async function handleSendCallNotification(request, env) {
   try {
-    const { calleeId, callerNickname, callerAvatarUrl, callId, appId } = await request.json();
-    if (!calleeId || !callId || !appId) {
+    const { calleeId, callerNickname, callerAvatarUrl, callId, appId, callerId, idToken } = await request.json();
+    if (!calleeId || !callId || !appId || !callerId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
+    }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== callerId) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const workerToken = await getWorkerAuthToken(env);
@@ -382,9 +392,14 @@ async function handleSendCallNotification(request, env) {
 // -------------------------------------------------------------
 async function handleSendNotification(request, env) {
   try {
-    const { receiverIds, title, body, roomId, appId, senderId } = await request.json();
-    if (!receiverIds || !title || !appId) {
+    const { receiverIds, title, body, roomId, appId, senderId, idToken } = await request.json();
+    if (!receiverIds || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
+    }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== senderId) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const workerToken = await getWorkerAuthToken(env);
@@ -681,11 +696,20 @@ async function handleUploadFile(request, env) {
     }
     const formData = await request.formData();
     const file = formData.get('file');
-    if (!file) {
-      return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
+    const uploaderId = formData.get('uploaderId') || '';
+    const idToken = formData.get('idToken') || '';
+
+    if (!file || !uploaderId || !idToken) {
+      return new Response(JSON.stringify({ error: '必須パラメータが不足しています' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== uploaderId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
     if (file.size > 25 * 1024 * 1024) {
       return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), {
         status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -694,7 +718,6 @@ async function handleUploadFile(request, env) {
 
     const arrayBuffer = await file.arrayBuffer();
     const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const uploaderId = formData.get('uploaderId') || '';
     const folder = formData.get('folder') || '';
     const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder };
 
@@ -720,6 +743,16 @@ async function handleDeleteFile(request, env, url) {
     if (!key || !env.FILES) return new Response('Not Found', { status: 404, headers: corsHeaders });
 
     const requesterId = url.searchParams.get('userId') || '';
+    const idToken = url.searchParams.get('idToken') || '';
+
+    if (!requesterId || !idToken) {
+      return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUid || verifiedUid !== requesterId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // メタデータで所有者確認
     const listed = await env.FILES.list({ prefix: key });
@@ -730,7 +763,14 @@ async function handleDeleteFile(request, env, url) {
 
     const meta = fileEntry.metadata;
     const forceDelete = url.searchParams.get('forceDelete') === '1';
-    if (!forceDelete && meta && meta.uploaderId && meta.uploaderId !== requesterId) {
+
+    // forceDelete is only allowed if they provide the ADMIN_SECRET_KEY in the request
+    const adminKey = url.searchParams.get('adminKey') || '';
+    if (forceDelete) {
+      if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
+        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId) {
       return new Response(JSON.stringify({ error: '削除権限がありません' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -783,6 +823,12 @@ async function handleServeFile(request, env, url) {
 // -------------------------------------------------------------
 async function handleStorageStats(request, env) {
   try {
+    const url = new URL(request.url);
+    const adminKey = url.searchParams.get('adminKey') || '';
+    if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const kvStats = { fileCount: 0, totalBytes: 0 };
     if (env.FILES) {
       let cursor;
@@ -845,6 +891,12 @@ async function handleStorageStats(request, env) {
 // -------------------------------------------------------------
 async function handleBulkDeleteFiles(request, env) {
   try {
+    const url = new URL(request.url);
+    const adminKey = url.searchParams.get('adminKey') || '';
+    if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     let kvDeleted = 0;
     if (env.FILES) {
       let cursor;

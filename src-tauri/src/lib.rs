@@ -635,6 +635,40 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
     if let Some(window) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+            use windows::Win32::Foundation::HWND;
+            
+            
+            if let Ok(hwnd_ptr) = window.hwnd() {
+                let hwnd = HWND(hwnd_ptr.0 as _);
+                unsafe {
+                    // Initialize COM if needed, ignore error if already initialized
+                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+                    
+                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
+                        if has_unread {
+                            // Using a built-in info icon as a simple red badge indicator
+                            // Loading standard system icon: IDI_INFORMATION or IDI_ERROR
+                            use windows::Win32::UI::WindowsAndMessaging::{LoadIconW, IDI_ERROR};
+                            use windows::core::PCWSTR;
+                            
+                            let icon_handle = LoadIconW(None, PCWSTR(IDI_ERROR.0 as _));
+                            if let Ok(icon) = icon_handle {
+                                let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                            }
+                        } else {
+                            // Clear overlay icon
+                            use windows::Win32::UI::WindowsAndMessaging::HICON;
+                            let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
+                        }
+                    }
+                }
+            }
+        }
+        
         let icon_bytes = if has_unread {
             include_bytes!("../icons/icon-unread.png").to_vec()
         } else {
@@ -647,6 +681,8 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                 let width = rgba.width();
                 let height = rgba.height();
                 let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+                // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
+                // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
                 if let Err(e) = window.set_icon(tauri_image.clone()) {
                     log::error!("[DEBUG] window.set_icon failed: {}", e);
                 } else {

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.0.180",
+  "version": "1.0.181",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -29,7 +29,7 @@
       "endpoints": [
         "https://github.com/qwertyuiop1229/simplechat/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJCQTVCQkMwNkMwREQzMzQKUldRMDB3MXN3THVsdTdDS3g5NGRlMmt5Lzc1QmI5ZTJJMmRTN3A5eHZnSzhZUlZNNXo3WmhvQ0QK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVERjY0RTU1QjU4QjlCOTYKUldTV200dTFWVTcyWGRJaEEzaEQyL29tVHFjMVZoT2JaeTlxalZ1b0daUkZoOWMyRndDSWRNVncK"
     }
   },
   "bundle": {
