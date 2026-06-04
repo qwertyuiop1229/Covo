@@ -6604,7 +6604,8 @@
       window.addEventListener("beforeunload", handlePageClose);
       window.addEventListener("pagehide", handlePageClose);  // Safari/iPad対応
       window.addEventListener("freeze", handlePageClose);    // iOS PWA タスクキル前のfreeze
-      // blur/focus は削除: URLバークリックなどで誤検知が多くvisibilitychangeで十分カバーできる
+      window.addEventListener("focus", handleWindowFocus);
+      window.addEventListener("blur", handleWindowBlur);
       subscribeToUserStatus();
 
       if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
@@ -6627,6 +6628,8 @@
       window.removeEventListener("beforeunload", handlePageClose);
       window.removeEventListener("pagehide", handlePageClose);
       window.removeEventListener("freeze", handlePageClose);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("blur", handleWindowBlur);
       if (unsubscribeUserStatus) {
         unsubscribeUserStatus();
         unsubscribeUserStatus = null;
@@ -6635,12 +6638,23 @@
       unsubscribeStatusArray = [];
     }
 
+    const handleWindowFocus = () => {
+      _beaconSent = false;
+      updateUserStatus('online');
+      resetAwayTimer();
+    };
+
+    const handleWindowBlur = () => {
+      sendOfflineBeacon();
+      stopAwayTimer();
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        sendOfflineBeacon(); // Worker経由でFirestoreをofflineに（クライアント直書きは不要）
+        sendOfflineBeacon(); // Worker経由でFirestoreをofflineに
         stopAwayTimer();
       } else {
-        _beaconSent = false; // 次のhide時にまたビーコンを送れるようリセット
+        _beaconSent = false;
         updateUserStatus('online');
         resetAwayTimer();
       }
@@ -7657,6 +7671,9 @@
                 if (!document.hasFocus() || isMentioned) {
                   const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
                   showNotification(notifTitle, `${msgData.senderNickname}: ${bodyText || "（ファイル）"}`, currentRoomId);
+                  if (isTauri && window.__TAURI__?.core?.invoke) {
+                    window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
+                  }
                 }
               })();
             }
@@ -11625,6 +11642,7 @@
         // lib.rs の enqueue_notification は native notification を呼び出すように実装されている。
         if (window.__TAURI__?.core?.invoke) {
           try {
+            window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
             await window.__TAURI__.core.invoke('enqueue_notification', {
               title: title,
               body: body,
