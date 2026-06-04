@@ -649,20 +649,32 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                     let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
                     
                     if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
-                        if has_unread {
-                            // Using a built-in info icon as a simple red badge indicator
-                            // Loading standard system icon: IDI_INFORMATION or IDI_ERROR
-                            use windows::Win32::UI::WindowsAndMessaging::{LoadIconW, IDI_ERROR};
-                            use windows::core::PCWSTR;
-                            
-                            let icon_handle = LoadIconW(None, PCWSTR(IDI_ERROR.0 as _));
-                            if let Ok(icon) = icon_handle {
-                                let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                        // HrInit() を呼び出してタスクバーAPIを初期化（バグ修正）
+                        if taskbar.HrInit().is_ok() {
+                            if has_unread {
+                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+                                
+                                // プロジェクト内にある未読用アイコン(.ico)を読み込む
+                                let ico_bytes = include_bytes!("../icons/icon-unread.ico");
+                                // .ico フォーマットのヘッダを解析し、画像データの開始位置（オフセット）を取得
+                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
+                                
+                                // メモリ上の画像データから 16x16 のバッジ用 HICON を生成
+                                if let Ok(icon) = CreateIconFromResourceEx(
+                                    &ico_bytes[offset..],
+                                    true,
+                                    0x00030000,
+                                    16,
+                                    16,
+                                    LR_DEFAULTCOLOR,
+                                ) {
+                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                                }
+                            } else {
+                                use windows::Win32::UI::WindowsAndMessaging::HICON;
+                                // 未読がない場合はバッジを消去
+                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
                             }
-                        } else {
-                            // Clear overlay icon
-                            use windows::Win32::UI::WindowsAndMessaging::HICON;
-                            let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
                         }
                     }
                 }
