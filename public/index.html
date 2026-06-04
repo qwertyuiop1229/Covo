@@ -11877,6 +11877,31 @@
         const detail = error instanceof Error
           ? (error.message + (error.stack ? '\n\n' + error.stack : ''))
           : (typeof error === 'object' ? JSON.stringify(error, null, 2) : String(error));
+        
+        if (detail.includes("The signature was created with a different key")) {
+          alert("重要なセキュリティアップデートがあります。今回は新しいセキュリティシステムへの移行のため、手動でのインストールが必要です。");
+          const url = "https://github.com/qwertyuiop1229/covo/releases/latest";
+          if (window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(e => {
+              console.warn('Failed to open shell', e);
+              window.open(url, '_blank');
+            });
+          } else {
+            window.open(url, '_blank');
+          }
+          btn.innerHTML = '<i class="fas fa-external-link-alt"></i>&nbsp;&nbsp;ダウンロードページへ';
+          btn.disabled = false;
+          btn.onclick = () => {
+            if (window.__TAURI__?.core?.invoke) {
+              window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+            } else {
+              window.open(url, '_blank');
+            }
+          };
+          progressText.textContent = '手動でのアップデートが必要です。';
+          return;
+        }
+
         progressText.textContent = 'アップデート失敗（詳細は下のエラー欄を確認）';
         // エラー詳細欄に展開
         const errBox = document.getElementById('updateErrorBox');
