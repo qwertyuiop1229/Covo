@@ -28,6 +28,112 @@
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    body.dark-server-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #e5e7eb;
+      border-radius: 9999px;
+      padding: 2px 6px;
+      font-size: 11px;
+      color: #4b5563;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: transform 0.1s;
+    }
+    body.dark-server-theme .reaction-badge {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      color: #e2e8f0;
+    }
+    .reaction-badge.reacted-by-me {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      color: #4f46e5;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me {
+      background: #312e81;
+      border-color: #4338ca;
+      color: #c7d2fe;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
+
     /* --- 全画面化用 --- */
     html,
     body {
@@ -271,17 +377,23 @@
     /* カスタムコンテキストメニュー */
     .custom-context-menu {
       position: absolute;
-      background-color: white;
       -webkit-user-select: none;
       -moz-user-select: none;
       -ms-user-select: none;
       user-select: none;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
       border: 1px solid #ddd;
       border-radius: 0.5rem;
       box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-      z-index: 100;
       padding: 4px 0;
-      min-width: 120px;
+      overflow: hidden;
     }
 
     .custom-context-menu button {
@@ -2445,7 +2557,7 @@
     body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
 
     /* コンテキストメニュー / ドロップダウン */
-    body.dark-server-theme .custom-context-menu {
+    body.dark-server-theme .custom-context-menu-inner {
       background-color: #1e293b;
       border-color: rgba(255,255,255,0.1);
       box-shadow: 0 4px 24px rgba(0,0,0,0.5);
@@ -3945,9 +4057,14 @@
 
   <!-- カスタムコンテキストメニュー -->
   <div id="messageContextMenu" class="custom-context-menu hidden">
-    <button id="copyMessageButton">コピー</button>
-    <button id="pinMessageButton">ピン留め / 解除</button>
-    <button id="deleteMessageButton">削除</button>
+    <div id="reactionPickerBar" class="reaction-picker-bar">
+      <!-- Generated dynamically -->
+    </div>
+    <div class="custom-context-menu-inner">
+      <button id="copyMessageButton">コピー</button>
+      <button id="pinMessageButton">ピン留め / 解除</button>
+      <button id="deleteMessageButton">削除</button>
+    </div>
   </div>
 
   <!-- Firebase SDKのインポート -->
@@ -3999,7 +4116,8 @@
       arrayRemove,
       increment,
       documentId,
-      collectionGroup
+      collectionGroup,
+      deleteField
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import {
       getMessaging,
@@ -8649,6 +8767,11 @@
       if (!currentRoomId) return;
       _skPushRecent(emoji);
       document.getElementById('stickerPicker').classList.remove('show');
+      if (window._reactionTargetMessageId) {
+        window.toggleReaction(window._reactionTargetMessageId, emoji);
+        window._reactionTargetMessageId = null;
+        return;
+      }
       try {
         const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
         if (replyingToMessage) {
@@ -8937,6 +9060,65 @@
       lb.style.display = "flex";
     }
 
+    window.toggleReaction = async function(messageId, emoji) {
+      if (!currentServerId || !currentRoomId || !userId) return;
+      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, messageId);
+      const msgSnap = await getDoc(msgRef);
+      if (!msgSnap.exists()) return;
+      const msgData = msgSnap.data();
+      const currentReactions = msgData.reactions || {};
+      const hasReactedWithSameEmoji = currentReactions[userId] === emoji;
+      try {
+        if (hasReactedWithSameEmoji) {
+          await updateDoc(msgRef, { [`reactions.${userId}`]: deleteField() });
+        } else {
+          await updateDoc(msgRef, { [`reactions.${userId}`]: emoji });
+        }
+      } catch (e) {
+        console.error("Failed to toggle reaction", e);
+      }
+    };
+
+    function updateReactionsUI(container, msg) {
+      let reactionsContainer = container.querySelector('.reactions-container');
+      if (!reactionsContainer) {
+        reactionsContainer = document.createElement('div');
+        reactionsContainer.className = 'reactions-container';
+        const timestampSpan = container.querySelector('.msg-timestamp');
+        if (timestampSpan) {
+          container.insertBefore(reactionsContainer, timestampSpan);
+        } else {
+          container.appendChild(reactionsContainer);
+        }
+      }
+      const reactions = msg.reactions || {};
+      const reactionCounts = {};
+      const myReactions = new Set();
+      for (const [uid, emoji] of Object.entries(reactions)) {
+        if (!reactionCounts[emoji]) reactionCounts[emoji] = 0;
+        reactionCounts[emoji]++;
+        if (uid === userId) myReactions.add(emoji);
+      }
+      reactionsContainer.innerHTML = '';
+      for (const [emoji, count] of Object.entries(reactionCounts)) {
+        if (count === 0) continue;
+        const badge = document.createElement('div');
+        badge.className = 'reaction-badge';
+        if (myReactions.has(emoji)) badge.classList.add('reacted-by-me');
+        badge.innerHTML = `<span class="emoji-wrapper">${emoji}</span><span>${count}</span>`;
+        badge.onclick = (e) => {
+          e.stopPropagation();
+          window.toggleReaction(msg.id, emoji);
+        };
+        reactionsContainer.appendChild(badge);
+      }
+      if (Object.keys(reactionCounts).length === 0) {
+        reactionsContainer.remove();
+      } else {
+        _twemojiParse(reactionsContainer);
+      }
+    }
+
     function createMessageElement(message, messageId, readByCount = 0) {
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
@@ -9109,6 +9291,8 @@
         messageElement.appendChild(kvDiv);
       }
 
+      updateReactionsUI(messageElement, message);
+
       const timestampSpan = document.createElement("span");
       // 専用クラス msg-timestamp を付与（PDFラベル等と同じユーティリティクラスで誤マッチして
       // 時刻が二重表示されるのを防ぐ）
@@ -9189,6 +9373,10 @@
           if (textSpan && msg.text) {
              textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
           }
+
+          // リアクションの更新
+          const bubbleElement = row.querySelector('.message-bubble');
+          if (bubbleElement) updateReactionsUI(bubbleElement, msg);
 
           existingRowsMap.delete(msg.id);
           // 順序が違えば移動
@@ -9342,11 +9530,38 @@
     messagesDisplay.addEventListener("touchmove", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
     messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
 
+    const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
+
     function showContextMenu(bubble, clientX, clientY) {
       const msgData = lastMessagesData.find(m => m.id === bubble.dataset.messageId);
       if (!msgData) return;
       selectedMessageForContext = msgData;
       menuJustShown = true;
+
+      const reactionBar = document.getElementById('reactionPickerBar');
+      if (reactionBar) {
+        reactionBar.innerHTML = '';
+        DEFAULT_REACTIONS.forEach(emoji => {
+          const btn = document.createElement('div');
+          btn.className = 'reaction-btn';
+          btn.innerHTML = emoji;
+          btn.onclick = () => {
+            window.toggleReaction(msgData.id, emoji);
+            messageContextMenu.classList.add("hidden");
+          };
+          reactionBar.appendChild(btn);
+        });
+        const moreBtn = document.createElement('div');
+        moreBtn.className = 'reaction-more-btn';
+        moreBtn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
+        moreBtn.onclick = () => {
+          messageContextMenu.classList.add("hidden");
+          window._reactionTargetMessageId = msgData.id;
+          window.toggleStickerPicker();
+        };
+        reactionBar.appendChild(moreBtn);
+        _twemojiParse(reactionBar);
+      }
 
       messageContextMenu.classList.remove("hidden");
 
