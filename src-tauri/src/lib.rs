@@ -201,7 +201,18 @@ fn resize_notif_container(
 // コマンド: 通知エンキュー
 // ===========================================================================
 
-
+#[tauri::command]
+fn enqueue_notification(title: String, body: String) {
+    #[cfg(target_os = "windows")]
+    {
+        use notify_rust::Notification;
+        let _ = Notification::new()
+            .appname("Covo")
+            .summary(&title)
+            .body(&body)
+            .show();
+    }
+}
 
 #[tauri::command]
 fn show_main_window(app_handle: tauri::AppHandle) {
@@ -621,57 +632,9 @@ fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
     if let Some(window) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
-            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-            use windows::Win32::Foundation::HWND;
-            
-            
-            if let Ok(hwnd_ptr) = window.hwnd() {
-                let hwnd = HWND(hwnd_ptr.0 as _);
-                unsafe {
-                    // Initialize COM if needed, ignore error if already initialized
-                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
-                    
-                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
-                        // HrInit() を呼び出してタスクバーAPIを初期化（バグ修正）
-                        if taskbar.HrInit().is_ok() {
-                            if has_unread {
-                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
-                                
-                                // プロジェクト内にある未読用アイコン(.ico)を読み込む
-                                let ico_bytes = include_bytes!("../icons/badge.ico");
-                                // .ico フォーマットのヘッダを解析し、画像データの開始位置（オフセット）を取得
-                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
-                                
-                                // メモリリークを防ぐため、HICON は一度生成したら静的にキャッシュする (HICON は Send/Sync を実装しないため isize として保持)
-                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
-                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
-                                    let icon = CreateIconFromResourceEx(
-                                        &ico_bytes[offset..],
-                                        true,
-                                        0x00030000,
-                                        16,
-                                        16,
-                                        LR_DEFAULTCOLOR,
-                                    ).unwrap_or_default();
-                                    icon.0 as isize
-                                });
-                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
-                                if !icon.is_invalid() {
-                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
-                                }
-                            } else {
-                                use windows::Win32::UI::WindowsAndMessaging::HICON;
-                                // 未読がない場合はバッジを消去
-                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Removed SetOverlayIcon usage because Windows always anchors it to the bottom-right.
+        // We now rely purely on setting the app window icon to icon-unread.png, which
+        // contains our custom high-quality top-right badge.
         
         let icon_bytes = if has_unread {
             include_bytes!("../icons/icon-unread.png").to_vec()
@@ -726,6 +689,7 @@ pub fn run() {
             container_loaded,
             hide_notif_container,
             resize_notif_container,
+            enqueue_notification,
             close_notification,
             open_position_picker,
             save_notification_position,

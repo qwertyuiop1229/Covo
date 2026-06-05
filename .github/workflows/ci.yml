@@ -32,7 +32,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: 'src-tauri -> target'
+          workspaces: 'src-tauri'
 
       - name: install frontend dependencies
         run: npm install
