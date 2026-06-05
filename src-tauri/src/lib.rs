@@ -697,6 +697,7 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
             show_main_window,
