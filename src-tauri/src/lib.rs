@@ -690,6 +690,16 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     }
 }
 
+use tauri_plugin_notification::NotificationExt;
+
+#[tauri::command]
+fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
+    let _ = app.notification().builder()
+        .title(title)
+        .body(body)
+        .show();
+}
+
 // ===========================================================================
 // run()
 // ===========================================================================
@@ -719,6 +729,7 @@ pub fn run() {
             open_log_dir,
             create_desktop_shortcut,
             set_badge,
+            send_desktop_notification,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();

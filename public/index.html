@@ -7815,6 +7815,8 @@
                 }
               })();
             }
+          } else if (change.type === "removed") {
+            allLoadedMessages = allLoadedMessages.filter(m => m.id !== change.doc.id);
           }
         });
 
@@ -9748,6 +9750,7 @@
         messagesIndexMap = {};
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
         renderMessagesWithReadReceipts();
+        renderPinnedMessages();
         alertMessage("削除しました", "success");
       } catch (e) {
         console.error('[deleteMessage] Firestore delete failed:', msgToDelete.id, e);
@@ -10007,7 +10010,12 @@
       // 最終防壁: 万一ここに暗号文が来ても、ユーザーには絶対に暗号文を見せない
       if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（メッセージ）';
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-      if (soundEnabled) playNotificationSound();
+      if (soundEnabled) {
+        playNotificationSound();
+        if (isTauri && window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
+        }
+      }
       const stack = document.getElementById("notifStack");
       const notif = document.createElement("div");
       notif.className = "bg-white rounded-xl shadow-lg overflow-hidden w-72";
@@ -11887,21 +11895,10 @@
           window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
         }
 
-        const tauriNotif = window.__TAURI__?.notification;
-        if (tauriNotif && tauriNotif.isPermissionGranted) {
-          tauriNotif.isPermissionGranted().then(granted => {
-            if (granted) {
-              tauriNotif.sendNotification({ title: title, body: messagePreview });
-            } else {
-              tauriNotif.requestPermission().then(p => {
-                if (p === 'granted') {
-                  tauriNotif.sendNotification({ title: title, body: messagePreview });
-                }
-              });
-            }
-          }).catch(console.error);
+        if (window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: body }).catch(console.error);
         } else if (Notification.permission === 'granted') {
-          const n = new Notification(title, { body: messagePreview });
+          const n = new Notification(title, { body: body });
           n.onclick = () => {
             if (roomId) selectRoom(roomId);
             if (window.__TAURI__?.core?.invoke) {
