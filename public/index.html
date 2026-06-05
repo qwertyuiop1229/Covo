@@ -376,16 +376,18 @@
 
     /* カスタムコンテキストメニュー */
     .custom-context-menu {
-      position: absolute;
+      position: fixed;
       -webkit-user-select: none;
       -moz-user-select: none;
       -ms-user-select: none;
       user-select: none;
       z-index: 100;
-      display: flex;
       flex-direction: column;
       gap: 6px;
       min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
     }
     .custom-context-menu-inner {
       background-color: white;
@@ -9568,23 +9570,30 @@
       let menuWidth = messageContextMenu.offsetWidth;
       let menuHeight = messageContextMenu.offsetHeight;
 
-      let left = clientX;
-      let top = clientY;
+      let safeLeft = parseFloat(clientX) || 0;
+      let safeTop = parseFloat(clientY) || 0;
 
       // 画面外に見切れないように位置を調整
-      if (left + menuWidth > window.innerWidth) {
-        left = window.innerWidth - menuWidth - 5;
+      if (safeLeft + menuWidth > window.innerWidth) {
+        safeLeft = window.innerWidth - menuWidth - 5;
       }
-      if (top + menuHeight > window.innerHeight) {
-        top = window.innerHeight - menuHeight - 5;
+      if (safeTop + menuHeight > window.innerHeight) {
+        safeTop = window.innerHeight - menuHeight - 5;
       }
 
-      messageContextMenu.style.left = `${left}px`;
-      messageContextMenu.style.top = `${top}px`;
+      // 最終安全装置：左上が見切れないようにする
+      safeLeft = Math.max(5, safeLeft);
+      safeTop = Math.max(5, safeTop);
+
+      messageContextMenu.style.left = `${safeLeft}px`;
+      messageContextMenu.style.top = `${safeTop}px`;
     }
 
     messagesDisplay.addEventListener("contextmenu", (e) => {
       e.preventDefault();
+      // スマホやタッチパネルPCでの長押しによって合成された contextmenu イベント (clientX/Y が 0 になる) を無視する
+      if (e.clientX === 0 && e.clientY === 0) return;
+
       const bubble = e.target.closest(".message-bubble");
       const row = e.target.closest(".message-row");
       const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
@@ -11881,7 +11890,20 @@
           window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
         }
 
-        if (Notification.permission === 'granted') {
+        const tauriNotif = window.__TAURI__?.notification;
+        if (tauriNotif && tauriNotif.isPermissionGranted) {
+          tauriNotif.isPermissionGranted().then(granted => {
+            if (granted) {
+              tauriNotif.sendNotification({ title: title, body: messagePreview });
+            } else {
+              tauriNotif.requestPermission().then(p => {
+                if (p === 'granted') {
+                  tauriNotif.sendNotification({ title: title, body: messagePreview });
+                }
+              });
+            }
+          }).catch(console.error);
+        } else if (Notification.permission === 'granted') {
           const n = new Notification(title, { body: messagePreview });
           n.onclick = () => {
             if (roomId) selectRoom(roomId);
@@ -12278,7 +12300,14 @@
         })();
 
         toggleDesktopNotif.checked = localStorage.getItem('simplechat_desktop_notif') !== 'false';
-      if (isTauri && toggleDesktopNotif.checked && 'Notification' in window && Notification.permission !== 'granted') Notification.requestPermission();
+        if (isTauri && toggleDesktopNotif.checked) {
+          const tauriNotif = window.__TAURI__?.notification;
+          if (tauriNotif && tauriNotif.requestPermission) {
+            tauriNotif.requestPermission();
+          } else if ('Notification' in window && Notification.permission !== 'granted') {
+            Notification.requestPermission();
+          }
+        }
 
         if (window.__TAURI__?.autostart) {
           window.__TAURI__.autostart.isEnabled().then(enabled => {
@@ -12323,7 +12352,14 @@
 
       toggleDesktopNotif.addEventListener('change', (e) => {
         localStorage.setItem('simplechat_desktop_notif', e.target.checked);
-        if (isTauri && e.target.checked && 'Notification' in window && Notification.permission !== 'granted') Notification.requestPermission();
+        if (isTauri && e.target.checked) {
+          const tauriNotif = window.__TAURI__?.notification;
+          if (tauriNotif && tauriNotif.requestPermission) {
+            tauriNotif.requestPermission();
+          } else if ('Notification' in window && Notification.permission !== 'granted') {
+            Notification.requestPermission();
+          }
+        }
       });
 
       toggleAutoStart.addEventListener('change', async (e) => {
