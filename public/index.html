@@ -3656,7 +3656,7 @@
             <button id="joinServerBtn"><i class="fas fa-sign-in-alt sm:mr-1"></i><span class="btn-text">参加</span></button>
             <button id="createServerBtn"><i class="fas fa-plus sm:mr-1"></i><span class="btn-text">新規作成</span></button>
             <button id="viewToggleBtn" title="表示切り替え"><i class="fas fa-list"></i></button>
-            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="unread-badge" style="display:none;position:absolute;top:-5px;right:-5px;width:12px;height:12px;padding:0;color:transparent;overflow:hidden;">!</span></button>
+            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px; position: relative;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="flex items-center justify-center text-white bg-red-500 font-bold" style="display:none;position:absolute;top:-4px;right:-4px;width:16px;height:16px;font-size:9px;border-radius:50%;padding:0;line-height:1;">0</span></button>
             <button id="serverListUserBtn" class="server-list-user-btn" title="プロフィール・設定"></button>
           </div>
         </div>
@@ -6138,6 +6138,7 @@
         if (count > 0) navigator.setAppBadge(count).catch(e => console.warn('Badge error:', e));
         else navigator.clearAppBadge().catch(e => console.warn('Badge clear error:', e));
       }
+      if (typeof updateServerCardDots === 'function') updateServerCardDots();
     }
 
     // 他サーバーのルームへ移動する（通知一覧から）
@@ -7200,7 +7201,7 @@
         const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
         const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
         let hasUnread = false;
-        try { const su = JSON.parse(localStorage.getItem('covo_server_unread') || '{}'); hasUnread = !!su[server.id]; } catch(e) {}
+        try { const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); hasUnread = items.some(it => it.serverId === server.id); } catch(e) {}
         card.innerHTML = `
             <div class="server-card-icon"><i class="fas fa-server"></i></div>
             <div class="server-card-info"><div class="server-card-name">${escapeHtml(server.name || server.id)}</div>
@@ -7293,7 +7294,7 @@
       currentServerData = serverData;
       try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); rm[serverId] = Date.now(); localStorage.setItem('covo_recent_servers', JSON.stringify(rm)); } catch(e) {}
       // サーバーに入ったら未読フラグをクリア
-      try { const su = JSON.parse(localStorage.getItem('covo_server_unread') || '{}'); delete su[serverId]; localStorage.setItem('covo_server_unread', JSON.stringify(su)); } catch(e) {}
+
 
       document.getElementById("serverListScreen").classList.add("hidden");
       appContainer.classList.remove("hidden");
@@ -7567,13 +7568,8 @@
           roomList.appendChild(div);
         });
 
-        // サーバー単位の未読状態をlocalStorageに保存（サーバーカードの通知ドット用）
-        const serverHasUnread = snapshot.docs.some(d => (unreadCounts[d.id] || 0) > 0);
-        try {
-          const su = JSON.parse(localStorage.getItem('covo_server_unread') || '{}');
-          su[currentServerId] = serverHasUnread;
-          localStorage.setItem('covo_server_unread', JSON.stringify(su));
-        } catch(e) {}
+        // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
+        // ここでの boolean 保存(covo_server_unread)は廃止しました。
       }
 
       let isRoomsFirst = true;
@@ -7586,7 +7582,8 @@
                   const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
                   const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
                   const lastRead = rm[change.doc.id] || 0;
-                  if (lastMsgAt > lastRead && change.doc.id !== currentRoomId && room.lastMessageSender && room.lastMessageSender !== userId) {
+                  const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
+                  if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
                      updateGlobalNotifUI();
                      const serverName = currentServerData?.name || 'Covo';
                      const roomName = room.name || 'room';
@@ -7597,10 +7594,12 @@
                         showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
                      }
                      // Push Notification
-                     if (isTauri) {
-                        if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
-                     } else if (!currentFcmToken) {
-                        if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                     if (!document.hasFocus()) {
+                       if (isTauri) {
+                          if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                       } else if (!currentFcmToken) {
+                          if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                       }
                      }
                   }
                }
@@ -7644,11 +7643,11 @@
 
     function updateServerCardDots() {
       try {
-        const su = JSON.parse(localStorage.getItem('covo_server_unread') || '{}');
+        const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
         document.querySelectorAll('.server-card[data-server-id]').forEach(card => {
           const sid = card.dataset.serverId;
           let dot = card.querySelector('.server-card-unread-dot');
-          if (su[sid]) {
+          if (sid !== currentServerId && items.some(it => it.serverId === sid)) {
             if (!dot) { dot = document.createElement('span'); dot.className = 'server-card-unread-dot'; card.appendChild(dot); }
             dot.style.display = 'block';
           } else if (dot) {
@@ -7910,13 +7909,6 @@
 
       // 未読バッジをクリア
       unreadCounts[roomId] = 0;
-      // サーバーカードドットをすぐ再計算（localStorage 更新してから updateGlobalNotifUI）
-      try {
-        const serverHasUnread = Object.values(unreadCounts).some(c => c > 0);
-        const su = JSON.parse(localStorage.getItem('covo_server_unread') || '{}');
-        su[currentServerId] = serverHasUnread;
-        localStorage.setItem('covo_server_unread', JSON.stringify(su));
-      } catch(e) {}
       updateGlobalNotifUI();
       updateUnreadBadge(roomId);
 
@@ -10209,6 +10201,14 @@
                         body,
                         svId, svData, rmId, rmName
                       );
+                      // Push Notification for other servers
+                      if (!document.hasFocus()) {
+                        if (isTauri) {
+                          if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                        } else if (!currentFcmToken) {
+                          if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                        }
+                      }
                     })();
                   }
                 }
