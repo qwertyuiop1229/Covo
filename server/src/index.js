@@ -497,9 +497,7 @@ async function handleSendNotification(request, env) {
                                         title: title,
                                         body: body,
                                         icon: "/icon-192x192.png",
-                                        badge: "/icon-192x192.png",
-                                        tag: roomId || "simplechat",
-                                        renotify: true
+                                        badge: "/icon-192x192.png"
                                     },
                                     headers: {
                                         "Urgency": "high"

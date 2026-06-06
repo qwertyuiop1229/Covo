@@ -6154,6 +6154,10 @@
       } else {
         document.title = count > 0 && !document.hasFocus() ? `(${count}) Covo` : 'Covo';
       }
+      if ('setAppBadge' in navigator) {
+        if (count > 0) navigator.setAppBadge(count).catch(e => console.warn('Badge error:', e));
+        else navigator.clearAppBadge().catch(e => console.warn('Badge clear error:', e));
+      }
     }
 
     // 他サーバーのルームへ移動する（通知一覧から）
@@ -8656,20 +8660,30 @@
     const STICKER_CATEGORIES = [
       { id: 'recent', icon: '🕘', label: '最近' },
       { id: 'fav', icon: '⭐', label: 'よく使う' },
-      { id: 'smile', icon: '😀', label: '顔', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😌','😔','😪','😴','😷','🤒','🤕','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','💩','🤡','👻'] },
-      { id: 'gesture', icon: '👍', label: 'しぐさ', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','✊','👊','🤛','🤜','👏','🙌','👐','🤲','💪','🦾','🖕','✍️','💅','🤳'] },
-      { id: 'heart', icon: '❤️', label: 'ハート', emojis: ['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💋','💯','💢','💥','💫','💦','💨','✨','🌟','⭐','🔥'] },
-      { id: 'animal', icon: '🐶', label: '動物', emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦄','🐝','🦋','🐢','🐙','🐳','🐬','🐟','🦈','🐊','🦖','🐉'] },
-      { id: 'food', icon: '🍔', label: '食べ物', emojis: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🌽','🥕','🍞','🧀','🍔','🍟','🍕','🌭','🥪','🌮','🍣','🍱','🍜','🍡','🍦','🍰','🎂','🍫','🍬','🍭','🍩','🍪','☕','🍵','🍺','🍻','🥂','🍷'] },
-      { id: 'activity', icon: '⚽', label: '活動', emojis: ['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥅','⛳','🎣','🎮','🕹️','🎲','🎯','🎳','🎤','🎧','🎵','🎸','🎹','🥁','🎺','🎻','🎬','🏆','🥇','🥈','🥉','🎉','🎊','🎈','🎁','🎀'] },
-      { id: 'symbol', icon: '✅', label: '記号', emojis: ['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖'] },
+      { id: 'covo', icon: 'covo:yay', label: 'Covo', emojis: ['covo:sleep','covo:yay','covo:love','covo:despair','covo:ok','covo:no','covo:roger','covo:lol','covo:good'] },
+      { id: 'twitter', icon: '🐦', label: 'Twitter', emojis: [
+        ...['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😌','😔','😪','😴','😷','🤒','🤕','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','💩','🤡','👻'],
+        ...['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','✊','👊','🤛','🤜','👏','🙌','👐','🤲','💪','🦾','🖕','✍️','💅','🤳'],
+        ...['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💋','💯','💢','💥','💫','💦','💨','✨','🌟','⭐','🔥'],
+        ...['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦄','🐝','🦋','🐢','🐙','🐳','🐬','🐟','🦈','🐊','🦖','🐉'],
+        ...['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🌽','🥕','🍞','🧀','🍔','🍟','🍕','🌭','🥪','🌮','🍣','🍱','🍜','🍡','🍦','🍰','🎂','🍫','🍬','🍭','🍩','🍪','☕','🍵','🍺','🍻','🥂','🍷'],
+        ...['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥅','⛳','🎣','🎮','🕹️','🎲','🎯','🎳','🎤','🎧','🎵','🎸','🎹','🥁','🎺','🎻','🎬','🏆','🥇','🥈','🥉','🎉','🎊','🎈','🎁','🎀'],
+        ...['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖']
+      ] }
     ];
     const SK_RECENT = 'covo_sticker_recent', SK_FAV = 'covo_sticker_fav';
-    let _stickerActiveCat = 'smile';
+    let _stickerActiveCat = 'covo';
 
     // Twemoji を「生きているCDN(jsDelivr)」のSVGで描画する共通関数。
     // 旧デフォルトの maxcdn は閉鎖済みで画像が404→OS純正絵文字に戻ってしまうため base を明示する。
     const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+    function getEmojiHtml(emoji, spanClass = 'sk-em') {
+      if (emoji && emoji.startsWith('covo:')) {
+        const name = emoji.substring(5);
+        return `<img src="/covo-stamps/${name}.png" class="emoji covo-emoji" alt="${name}" />`;
+      }
+      return `<span class="${spanClass}">${emoji}</span>`;
+    }
     function _twemojiParse(el) {
       if (!window.twemoji || !el) return;
       try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
@@ -8696,7 +8710,7 @@
       STICKER_CATEGORIES.forEach(cat => {
         const b = document.createElement('button');
         b.className = 'sticker-tab' + (cat.id === _stickerActiveCat ? ' active' : '');
-        b.textContent = cat.icon;
+        b.innerHTML = getEmojiHtml(cat.icon, 'sk-em');
         b.title = cat.label;
         b.dataset.cat = cat.id;
         tabs.appendChild(b);
@@ -8732,7 +8746,7 @@
       emojis.forEach(emoji => {
         const cell = document.createElement('button');
         cell.className = 'sticker-cell' + (favs.includes(emoji) ? ' is-fav' : '');
-        cell.innerHTML = `<span class="sk-em">${emoji}</span><span class="sticker-fav-star"><i class="fas fa-star"></i></span>`;
+        cell.innerHTML = getEmojiHtml(emoji, 'sk-em') + `<span class="sticker-fav-star"><i class="fas fa-star"></i></span>`;
         // タップで送信
         let lp = null, lpFired = false;
         const fire = () => { lpFired = true; _skToggleFav(emoji); if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {} };
@@ -8751,8 +8765,8 @@
       const p = document.getElementById('stickerPicker');
       if (!p) return;
       if (p.classList.contains('show')) { p.classList.remove('show'); return; }
-      // 最近があればそれを初期表示、無ければ顔カテゴリ
-      _stickerActiveCat = _skLoad(SK_RECENT).length ? 'recent' : 'smile';
+      // 最近があればそれを初期表示、無ければcovoカテゴリ
+      _stickerActiveCat = _skLoad(SK_RECENT).length ? 'recent' : 'covo';
       _skRenderTabs();
       _skRenderGrid(_stickerActiveCat);
       // 位置決め: 入力欄の上に出す
@@ -9109,7 +9123,7 @@
         const badge = document.createElement('div');
         badge.className = 'reaction-badge';
         if (myReactions.has(emoji)) badge.classList.add('reacted-by-me');
-        badge.innerHTML = `<span class="emoji-wrapper">${emoji}</span><span>${count}</span>`;
+        badge.innerHTML = getEmojiHtml(emoji, 'emoji-wrapper') + `<span>${count}</span>`;
         badge.onclick = (e) => {
           e.stopPropagation();
           window.toggleReaction(msg.id, emoji);
@@ -9169,7 +9183,7 @@
         messageElement.classList.add("sticker-bubble");
         const stickerDiv = document.createElement("div");
         stickerDiv.className = "sticker-content";
-        stickerDiv.textContent = message.sticker;
+        stickerDiv.innerHTML = getEmojiHtml(message.sticker, 'sk-em');
         messageElement.appendChild(stickerDiv);
         _twemojiParse(stickerDiv);
       }
@@ -9507,12 +9521,16 @@
 
     let longPressTimer;
     let longPressTriggered = false;
+    let ignoreNextContextMenuClick = false;
+    let touchStartX = 0, touchStartY = 0;
     messagesDisplay.addEventListener("touchstart", (e) => {
       const bubble = e.target.closest(".message-bubble");
       const row = e.target.closest(".message-row");
       const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
       if (!targetBubble) return;
       const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
       const clientX = touch.clientX;
       const clientY = touch.clientY;
       longPressTriggered = false;
@@ -9527,10 +9545,18 @@
       clearTimeout(longPressTimer);
       if (longPressTriggered) {
         longPressTriggered = false;
-        e.preventDefault();
+        ignoreNextContextMenuClick = true;
+        setTimeout(() => ignoreNextContextMenuClick = false, 500);
+        if (e.cancelable) e.preventDefault();
       }
     });
-    messagesDisplay.addEventListener("touchmove", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
+    messagesDisplay.addEventListener("touchmove", (e) => { 
+      const touch = e.touches[0];
+      if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+        clearTimeout(longPressTimer); 
+        longPressTriggered = false; 
+      }
+    }, { passive: true });
     messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
 
     const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
@@ -9556,7 +9582,8 @@
         const moreBtn = document.createElement('div');
         moreBtn.className = 'reaction-more-btn';
         moreBtn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
-        moreBtn.onclick = () => {
+        moreBtn.onclick = (e) => {
+          e.stopPropagation();
           messageContextMenu.classList.add("hidden");
           window._reactionTargetMessageId = msgData.id;
           window.toggleStickerPicker();
@@ -9604,6 +9631,7 @@
       }
     });
     document.addEventListener("click", (e) => {
+      if (ignoreNextContextMenuClick) return;
       if (!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden");
     });
 
@@ -10145,8 +10173,6 @@
       Object.values(globalNotifListeners).forEach(unsub => unsub());
       globalNotifListeners = {};
       
-      // FCMトークンが取得できている（プッシュ通知が有効な）Web/PWA環境の場合
-      // FCMがバックグラウンドで通知を担当するため、グローバルリスナー（他サーバーのポーリング）は不要
       if (!isTauri && currentFcmToken) {
         console.log('[GlobalNotif] FCM active — skipping Firestore global listeners');
         return;
@@ -10160,59 +10186,58 @@
           const svId = serverDoc.id;
           const svData = serverDoc.data();
           if (svId === currentServerId) continue;
-          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${svId}/rooms`));
-          roomsSnap.forEach(roomDoc => {
-            const rmId = roomDoc.id;
-            const rmName = roomDoc.data().name;
-            const q = query(
-              collection(db, `artifacts/${appId}/servers/${svId}/rooms/${rmId}/messages`),
-              orderBy("timestamp", "desc"),
-              limit(1)
-            );
-            let isFirst = true;
-            let lastNotifTs = 0;
-            const unsub = onSnapshot(q, snapshot => {
-              if (isFirst) {
-                isFirst = false;
-                snapshot.forEach(doc => {
-                  const ts = doc.data().timestamp?.toMillis?.() || 0;
-                  if (ts > lastNotifTs) lastNotifTs = ts;
-                });
-                return;
-              }
-              snapshot.docChanges().forEach(change => {
-                if (change.type === "added") {
-                  const msgData = change.doc.data();
-                  const msgTs = msgData.timestamp?.toMillis?.() || Date.now();
-                  // 削除により浮上した古いメッセージは無視
-                  if (msgTs <= lastNotifTs) return;
-                  lastNotifTs = msgTs;
-                  // 既に currentServerId のルームは dummyUnreadListener が担当
-                  if (msgData.senderId !== userId && svId !== currentServerId) {
-                    // E2EE: 暗号文ならまず復号してから通知に渡す（暗号文をそのまま表示しない）
+          
+          const roomsQuery = collection(db, `artifacts/${appId}/servers/${svId}/rooms`);
+          let isFirst = true;
+          let roomLastNotifTs = {};
+          
+          const unsub = onSnapshot(roomsQuery, snapshot => {
+            if (isFirst) {
+              isFirst = false;
+              snapshot.forEach(doc => {
+                 roomLastNotifTs[doc.id] = doc.data().lastMessageAt?.toMillis?.() || 0;
+              });
+              return;
+            }
+            let hasNewMessage = false;
+            snapshot.docChanges().forEach(change => {
+              if (change.type === "modified" || change.type === "added") {
+                const roomData = change.doc.data();
+                const rmId = change.doc.id;
+                const rmName = roomData.name || rmId;
+                const ts = roomData.lastMessageAt?.toMillis?.() || 0;
+                const prevTs = roomLastNotifTs[rmId] || 0;
+
+                if (ts > prevTs) {
+                  roomLastNotifTs[rmId] = ts;
+                  hasNewMessage = true;
+                  if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
                     (async () => {
-                      let body = msgData.text || '（ファイル）';
+                      let body = roomData.lastMessageText || '新着メッセージ';
                       try {
-                        if (isEncrypted(body)) {
+                        if (typeof isEncrypted === 'function' && isEncrypted(body)) {
                           const _members = (svData && svData.joinedUsers) || [];
                           body = await decryptText(body, svId, rmId, _members);
                         }
                       } catch (e) { body = '（メッセージ）'; }
-                      // 念のため、復号できず暗号文のままなら汎用文言にフォールバック
-                      if (isEncrypted(body)) body = '（メッセージ）';
+                      if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（メッセージ）';
                       showInAppNotification(
                         svData.name || svId, rmName,
-                        msgData.senderNickname || 'ユーザー',
+                        'メンバー',
                         body,
                         svId, svData, rmId, rmName
                       );
                     })();
                   }
                 }
-              });
+              }
             });
-            globalNotifListeners[`${svId}/${rmId}`] = unsub;
+            // バッジ更新のために未読再スキャンをトリガー
+            if (hasNewMessage && typeof scanAllUnreadAndRender === 'function') {
+               scanAllUnreadAndRender();
+            }
           });
+          globalNotifListeners[svId] = unsub;
         }
       } catch (e) { console.error("globalNotifListeners error:", e); }
     }

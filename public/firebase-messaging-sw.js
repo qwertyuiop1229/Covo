@@ -90,8 +90,6 @@ messaging.onBackgroundMessage((payload) => {
       body: body,
       icon: '/icon-192x192.png?v=5',
       badge: '/icon-192x192.png?v=5',
-      tag: data.roomId || 'covo-notification',
-      renotify: true,
       data: data,
       actions: [
         { action: 'open', title: '開く' }
