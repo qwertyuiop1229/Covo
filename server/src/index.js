@@ -469,36 +469,25 @@ async function handleSendNotification(request, env) {
                                 // Androidの通知チャンネル設定
                                 android: {
                                     priority: "high",
-                                    notification: {
+                                    data: {
                                         title: title,
                                         body: body,
-                                        channel_id: "simplechat_messages",
-                                        default_sound: true,
-                                        notification_priority: "PRIORITY_HIGH"
+                                        channel_id: "simplechat_messages"
                                     }
                                 },
                                 // Apple Push Notification Service設定
                                 apns: {
-                                    payload: {
-                                        aps: {
-                                            alert: { title: title, body: body },
-                                            sound: "default",
-                                            badge: 1,
-                                            "content-available": 1
-                                        }
-                                    },
                                     headers: {
                                         "apns-priority": "10"
+                                    },
+                                    payload: {
+                                        aps: {
+                                            "content-available": 1
+                                        }
                                     }
                                 },
                                 // Web Push設定
                                 webpush: {
-                                    notification: {
-                                        title: title,
-                                        body: body,
-                                        icon: "/icon-192x192.png",
-                                        badge: "/icon-192x192.png"
-                                    },
                                     headers: {
                                         "Urgency": "high"
                                     },

@@ -51,9 +51,10 @@ service cloud.firestore {
       // 招待コードインデックス（コード→サーバーID の逆引き）
       // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
       match /inviteIndex/{code} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
-        allow delete: if isAuthenticated();
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
 
       // 2. ユーザー情報

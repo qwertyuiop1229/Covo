@@ -4378,157 +4378,191 @@
       try {
         const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
         const myWrapSnap = await getDoc(myWrapRef);
-        if (myWrapSnap.exists() && myWrapSnap.data().wrappedKey) {
-          const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(myWrapSnap.data().wrappedKey));
-          const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-          _e2ee.roomKeyCache[roomId] = key;
-          return key;
+        if (myWrapSnap.exists()) {
+          const data = myWrapSnap.data();
+          const versions = data.versions || {};
+          if (data.wrappedKey && !versions["1"]) versions["1"] = data.wrappedKey; // migration
+          
+          const keysObj = {};
+          let maxVer = 1;
+          for (const ver in versions) {
+             try {
+               const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(versions[ver]));
+               const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+               keysObj[ver] = key;
+               if (parseInt(ver) > maxVer) maxVer = parseInt(ver);
+             } catch(e) {}
+          }
+          if (Object.keys(keysObj).length > 0) {
+             const latestVerStr = data.latestVersion ? data.latestVersion.toString() : maxVer.toString();
+             keysObj.latest = keysObj[latestVerStr] || keysObj[Object.keys(keysObj).pop()];
+             keysObj.latestVersion = latestVerStr;
+             _e2ee.roomKeyCache[roomId] = keysObj;
+             return keysObj;
+          }
         }
       } catch (e) {
-        // 自分宛wrapを復号できない（鍵が変わった等）。再生成すると既存メッセージが読めなくなるので平文継続。
         console.error(`[E2EE] 自分宛ルーム鍵の復号に失敗（平文で継続。鍵が再生成された可能性） (room=${roomId}):`, e);
-        return null;
       }
 
       // 2) 無ければ新規生成して配布
       try {
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
-        await _distributeRoomKey(serverId, roomId, raw, memberIds);
-        _e2ee.roomKeyCache[roomId] = key;
-        return key;
+        await _distributeRoomKeyVersion(serverId, roomId, raw, memberIds, 1);
+        const keysObj = { "1": key, latest: key, latestVersion: "1" };
+        _e2ee.roomKeyCache[roomId] = keysObj;
+        return keysObj;
       } catch (e) {
         console.warn("[E2EE] ルーム鍵の生成/配布に失敗（平文で継続）:", e);
         return null;
       }
     }
 
-    // 送信用: ルーム鍵を「最大 maxWaitMs ミリ秒だけ待って」取得する。
-    // 入室直後など鍵準備が間に合っていない時でも、少し待つことで最初の1通も
-    // 暗号化できる確率を上げる。待っても取れなければ null（呼び出し側は平文送信）。
     async function getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500) {
       if (!_subtleOK) return null;
-      // 既にキャッシュにあれば即返す（待ち時間ゼロ）
       if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
-        const key = await getOrCreateRoomKey(serverId, roomId, memberIds);
-        if (key) return key;
-        if (Date.now() >= deadline) return null; // タイムアウト→平文送信へ
-        // 少し待ってから再試行（指数的に: 150ms, 300ms, ...）
+        const keyObj = await getOrCreateRoomKey(serverId, roomId, memberIds);
+        if (keyObj) return keyObj;
+        if (Date.now() >= deadline) return null; 
         const delay = Math.min(150 * Math.pow(2, attempt++), 500);
         await new Promise(r => setTimeout(r, delay));
       }
     }
 
-    // 生のルーム鍵を、各メンバーの公開鍵＋エスクロー公開鍵で暗号化して保存
-    async function _distributeRoomKey(serverId, roomId, rawKey, memberIds) {
+    // Forward Secrecy: ルーム鍵のローテーション
+    async function rotateAllRoomKeys(serverId, remainingMembers) {
+       if (!_subtleOK) return;
+       try {
+         const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
+         const promises = [];
+         roomsSnap.forEach(roomSnap => {
+            const roomId = roomSnap.id;
+            promises.push((async () => {
+               const roomRef = roomSnap.ref;
+               let nextVer = (roomSnap.data().currentKeyVersion || 1) + 1;
+               const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+               const raw = await window.crypto.subtle.exportKey("raw", key);
+               await _distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
+               await updateDoc(roomRef, { currentKeyVersion: nextVer });
+               delete _e2ee.roomKeyCache[roomId];
+            })());
+         });
+         await Promise.all(promises);
+         console.log(`[E2EE] All room keys rotated for server ${serverId}`);
+       } catch(e) {
+         console.error("[E2EE] rotateAllRoomKeys failed:", e);
+       }
+    }
+
+    async function _distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
       const ids = Array.from(new Set([...(memberIds || []), userId]));
       const writes = [];
       for (const uid of ids) {
         const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
-        if (!pub) continue; // 公開鍵未登録のメンバーはスキップ（その人は後で自動補完）
+        if (!pub) continue; 
         try {
           const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
           writes.push(setDoc(
             doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-            { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true }
+            { 
+               [`versions.${version}`]: _abToB64(wrapped),
+               latestVersion: version,
+               wrappedKey: _abToB64(wrapped), // fallback
+               updatedAt: serverTimestamp() 
+            }, { merge: true }
           ));
         } catch (e) {}
       }
-      // 管理者エスクロー（合鍵）
       const escrowPub = await _getEscrowPublicKey();
       if (escrowPub) {
         try {
           const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
           writes.push(setDoc(
             doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
-            { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true }
+            { 
+               [`versions.${version}`]: _abToB64(wrapped),
+               latestVersion: version,
+               wrappedKey: _abToB64(wrapped),
+               updatedAt: serverTimestamp() 
+            }, { merge: true }
           ));
         } catch (e) {}
       }
       await Promise.all(writes);
     }
 
-    // メンバー補完: 自分がルーム鍵を持っている場合、まだ wrapped key を持たない
-    // 参加メンバー（後から参加した人など）の分を生成して配布する。
-    // これにより「メンバー追加時に鍵を再配布」を、誰かが入室するたびに自動で満たす。
     async function backfillRoomKeysForMembers(serverId, roomId, memberIds) {
       if (!_subtleOK || !userId) return;
       try {
-        const roomKey = _e2ee.roomKeyCache[roomId];
-        if (!roomKey) return; // 自分が鍵を持っていなければ補完できない
-        const rawKey = await window.crypto.subtle.exportKey("raw", roomKey);
-        const ids = Array.from(new Set(memberIds || []));
-        for (const uid of ids) {
-          try {
-            const ref = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`);
-            const snap = await getDoc(ref);
-            if (snap.exists() && snap.data().wrappedKey) continue; // 既に配布済み
-            const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
-            if (!pub) continue; // 公開鍵未登録（その人がまだログインE2EE初期化していない）
-            const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
-            await setDoc(ref, { wrappedKey: _abToB64(wrapped), updatedAt: serverTimestamp() }, { merge: true });
-          } catch (e) { /* 個別失敗は無視 */ }
+        const roomKeyObj = _e2ee.roomKeyCache[roomId];
+        if (!roomKeyObj) return; 
+        for (const ver in roomKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion') continue;
+          const rawKey = await window.crypto.subtle.exportKey("raw", roomKeyObj[ver]);
+          const ids = Array.from(new Set(memberIds || []));
+          for (const uid of ids) {
+            try {
+              const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
+              if (!pub) continue; 
+              const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+              await setDoc(
+                doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+                { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: serverTimestamp() }, 
+                { merge: true }
+              );
+            } catch (e) { }
+          }
         }
       } catch (e) {}
     }
 
-    // テキストを暗号化。失敗したら null（呼び出し側は平文送信にフォールバック）。
-    async function encryptText(plaintext, roomKey) {
-      if (!_subtleOK || !roomKey || typeof plaintext !== "string" || plaintext.length === 0) return null;
+    async function encryptText(plaintext, roomKeyObj) {
+      if (!_subtleOK || !roomKeyObj || !roomKeyObj.latest || typeof plaintext !== "string" || plaintext.length === 0) return null;
       try {
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const ct = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, roomKey, _te.encode(plaintext));
-        return E2EE_PREFIX + _abToB64(iv.buffer) + "::" + _abToB64(ct);
+        const ct = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, roomKeyObj.latest, _te.encode(plaintext));
+        return `enc::v${roomKeyObj.latestVersion}::` + _abToB64(iv.buffer) + "::" + _abToB64(ct);
       } catch (e) {
         console.warn("[E2EE] 暗号化失敗（平文で送信）:", e);
         return null;
       }
     }
 
-    // 文字列が暗号文か（過去の平文と自動判別）
     function isEncrypted(text) {
       return typeof text === "string" && text.startsWith(E2EE_PREFIX);
     }
 
-    // メッセージ表示用に復号。平文ならそのまま返す。暗号文で失敗したらプレースホルダ。
-    // roomKey が無ければ取得を試みる。同期的に返せない場合のため Promise を返す。
     async function decryptText(text, serverId, roomId, memberIds) {
-      if (!isEncrypted(text)) return text; // 過去の平文・通常テキストはそのまま
-      if (!_subtleOK) {
-        console.warn("[E2EE] Web Crypto 非対応のため暗号化メッセージを復号できません");
-        return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
-      }
+      if (!isEncrypted(text)) return text; 
+      if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
       try {
-        const roomKey = await getOrCreateRoomKey(serverId, roomId, memberIds || []);
-        if (!roomKey) {
-          console.warn(`[E2EE] ルーム鍵が無いため復号できません (room=${roomId})`);
-          return "（復号化エラー：鍵が見つかりません）";
-        }
-        const parts = text.split("::"); // ["enc","v1",iv,ct]
-        if (parts.length !== 4) {
-          console.warn(`[E2EE] 暗号文の形式が不正です (room=${roomId})`);
-          return "（復号化エラー：メッセージを解読できません）";
-        }
+        const roomKeyObj = await getOrCreateRoomKey(serverId, roomId, memberIds || []);
+        if (!roomKeyObj) return "（復号化エラー：鍵が見つかりません）";
+        
+        const parts = text.split("::"); 
+        if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
+        const version = parts[1].replace('v', '');
+        const keyToUse = roomKeyObj[version];
+        if (!keyToUse) return `（復号化エラー：バージョン${version}の鍵がありません）`;
+        
         const iv = new Uint8Array(_b64ToAb(parts[2]));
-        const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKey, _b64ToAb(parts[3]));
+        const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, keyToUse, _b64ToAb(parts[3]));
         return _td.decode(pt);
       } catch (e) {
-        console.error(`[E2EE] メッセージの復号に失敗しました (room=${roomId}):`, e);
         return "（復号化エラー：メッセージを解読できません）";
       }
     }
 
-    // メッセージ配列を一括復号（.text を平文へ置換。平文・復号済みはスキップ）。
-    // 1メッセージでも失敗して全体が止まらないよう、各々を独立に try/catch する。
     async function decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages)) return;
       for (const m of messages) {
         if (!m || typeof m.text !== "string") continue;
-        if (m._decrypted) continue;            // 二重復号防止
-        if (!isEncrypted(m.text)) { m._decrypted = true; continue; } // 平文はそのまま
+        if (m._decrypted) continue;            
+        if (!isEncrypted(m.text)) { m._decrypted = true; continue; } 
         try {
           m.text = await decryptText(m.text, serverId, roomId, memberIds);
         } catch (e) {
@@ -4536,6 +4570,30 @@
         }
         m._decrypted = true;
       }
+    }
+
+    // --- ファイルのE2EE暗号化/復号化 ---
+    async function encryptFileE2EE(file, roomKeyObj) {
+      if (!_subtleOK || !roomKeyObj || !roomKeyObj.latest) throw new Error("Key not found");
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const buffer = await file.arrayBuffer();
+      const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, roomKeyObj.latest, buffer);
+      
+      const verByte = new Uint8Array([parseInt(roomKeyObj.latestVersion)]);
+      return new Blob([verByte, iv, ciphertext]);
+    }
+
+    async function decryptFileE2EE(encryptedBuffer, roomKeyObj) {
+      if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
+      const verBuf = new Uint8Array(encryptedBuffer.slice(0, 1));
+      const version = verBuf[0].toString();
+      const keyToUse = roomKeyObj[version];
+      if (!keyToUse) throw new Error(`Missing key for version ${version}`);
+      
+      const iv = encryptedBuffer.slice(1, 13);
+      const ciphertext = encryptedBuffer.slice(13);
+      const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, keyToUse, ciphertext);
+      return new Blob([plaintext]);
     }
 
     // 設定>アプリ情報 の「メッセージの暗号化」状態表示を更新する。
@@ -6062,8 +6120,9 @@
           const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId)));
           servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         }
-        const items = []; // {serverId, serverName, roomId, roomName, lastAt}
+        const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]').filter(it => it.serverId === currentServerId); // {serverId, serverName, roomId, roomName, lastAt}
         for (const sv of servers) {
+          if (sv.id === currentServerId) continue; // カレントサーバーの未読管理は onRoomsChanged と updateGlobalNotifUI に任せる（競合防止）
           let roomsSnap;
           try { roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sv.id}/rooms`)); }
           catch (e) { continue; }
@@ -7611,8 +7670,8 @@
                            const _members = (currentServerData && currentServerData.joinedUsers) || [];
                            text = await decryptText(text, currentServerId, change.doc.id, _members);
                          }
-                       } catch (e) { text = '（メッセージ）'; }
-                       if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（メッセージ）';
+                       } catch (e) { text = '（暗号化されたメッセージ）'; }
+                       if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
 
                        const isMentioned = text && typeof text === "string" && text.includes(`@${userNickname}`);
                        if (isMentioned && !document.hasFocus()) {
@@ -7804,7 +7863,7 @@
         limit(20)
       );
 
-      unsubscribeMessages = onSnapshot(q, (snapshot) => {
+      unsubscribeMessages = onSnapshot(q, async (snapshot) => {
         // --- メンション・通知処理 ---
         snapshot.docChanges().forEach(change => {
           if (change.type === "added" && !isInitialMessageLoad) {
@@ -7839,6 +7898,10 @@
         });
 
         const latestMessages = latestDocs.reverse(); // 古い順に反転
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        
+        // E2EE: UIに追加する前に暗号文を平文へ復号
+        await decryptMessagesInPlace(latestMessages, currentServerId, currentRoomId, _members).catch(() => {});
         
         if (isInitialMessageLoad) {
           allLoadedMessages = [...latestMessages];
@@ -7858,15 +7921,8 @@
         // 反転されているため、scrollTopが0に近い状態が「最新を見ている」状態になる
         const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollTop <= 50);
 
-        // E2EE: 描画前に暗号文を平文へ復号（失敗してもアプリは止めない）
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        decryptMessagesInPlace(allLoadedMessages, currentServerId, currentRoomId, _members)
-          .catch(() => {})
-          .finally(() => {
-            renderPinnedMessages();
-            renderMessagesWithReadReceipts();
-          });
-
+        renderPinnedMessages();
+        renderMessagesWithReadReceipts();
         if (isInitialMessageLoad) {
           isInitialMessageLoad = false;
           // DOM順が逆になり scaleY(-1) のため、scrollTop = 0 が最新メッセージ位置
@@ -8400,6 +8456,13 @@
               memberCount: Math.max(0, ((await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId))).data().memberCount || 1) - 1)
             });
             await loadServerSettingsMembers();
+            // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
+            if (typeof rotateAllRoomKeys === 'function') {
+               const svSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+               if (svSnap.exists() && svSnap.data().joinedUsers) {
+                  await rotateAllRoomKeys(currentServerId, svSnap.data().joinedUsers);
+               }
+            }
           } catch (e) { alertMessage("キックに失敗しました", "error"); }
         });
       });
@@ -8576,16 +8639,37 @@
           sendMessageButton.disabled = true;
           fileAttachButton.disabled = true;
           try {
+            let fileToUpload = attachedFile.file;
+            let isFileEncrypted = false;
+            
+            // E2EE File Encryption
+            if (_subtleOK) {
+              const members = (currentServerData && currentServerData.joinedUsers) || [];
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
+              if (roomKey) {
+                const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
+                fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+                isFileEncrypted = true;
+              } else {
+                console.warn("[E2EE] ルーム鍵が取得できないためファイルを平文でアップロードします");
+              }
+            }
+
             const cloudinaryUrl = await uploadToExternalService(
-              attachedFile.file,
+              fileToUpload,
               (pct) => {
                 progressFill.style.width = pct + "%";
-                // 100%到達後はアップロード完了→サーバー処理待ちなので「送信中…」に切り替える
                 progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
               },
               "simplechat/messages"
             );
-            Object.assign(data, { fileData: cloudinaryUrl, fileName: attachedFile.name, fileType: attachedFile.type, fileSize: attachedFile.size });
+            Object.assign(data, { 
+              fileData: cloudinaryUrl, 
+              fileName: attachedFile.name, 
+              fileType: attachedFile.type, 
+              fileSize: attachedFile.size,
+              isFileEncrypted: isFileEncrypted 
+            });
           } finally {
             sendMessageButton.disabled = false;
             fileAttachButton.disabled = false;
@@ -8603,7 +8687,7 @@
         await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
           lastMessageAt: data.timestamp,
           lastMessageSender: userId,
-          lastMessageText: wasEncrypted ? '（メッセージ）' : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+          lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
 
         // FCMプッシュ通知（サーバーメンバー全員に送信）
@@ -9197,29 +9281,61 @@
         messageElement.appendChild(messageTextSpan);
       }
       if (message.fileData && message.fileName) {
+        const setMediaSrc = (element, propName, url) => {
+          if (message.isFileEncrypted) {
+            if (message._decryptedFileUrl) {
+              if (propName) element[propName] = message._decryptedFileUrl;
+              if (element.tagName === 'IMG') element.style.opacity = '1';
+            } else {
+              if (element.tagName === 'IMG') element.style.opacity = '0.3';
+              (async () => {
+                try {
+                  const members = (currentServerData && currentServerData.joinedUsers) || [];
+                  const roomKey = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                  if (!roomKey) throw new Error("No key");
+                  const res = await fetch(message.fileData);
+                  const buf = await res.arrayBuffer();
+                  const dec = await decryptFileE2EE(buf, roomKey);
+                  const blob = new Blob([dec], { type: message.fileType });
+                  message._decryptedFileUrl = URL.createObjectURL(blob);
+                  if (propName) element[propName] = message._decryptedFileUrl;
+                  if (element.tagName === 'IMG') element.style.opacity = '1';
+                } catch(e) {
+                  if (element.tagName === 'IMG') element.alt = "復号化エラー";
+                }
+              })();
+            }
+          } else {
+            if (propName) element[propName] = url || message.fileData;
+          }
+        };
+
         if (message.fileType && message.fileType.startsWith('image/')) {
           const img = document.createElement('img');
-          img.src = message.fileData;
-          img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain';
+          img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
           img.style.maxHeight = '250px';
           img.loading = 'lazy';
+          setMediaSrc(img, 'src');
           img.addEventListener("click", () => {
-            lightboxCurrentFile = { data: message.fileData, name: message.fileName, type: message.fileType };
-            lightboxImage.src = message.fileData;
+            lightboxCurrentFile = { 
+              data: message._decryptedFileUrl || message.fileData, 
+              name: message.fileName, 
+              type: message.fileType 
+            };
+            lightboxImage.src = message._decryptedFileUrl || message.fileData;
             imageLightbox.style.display = 'flex';
           });
           messageElement.appendChild(img);
         } else if (message.fileType && message.fileType.startsWith('video/')) {
           const video = document.createElement('video');
-          video.src = message.fileData;
           video.controls = true;
           video.className = 'mt-2 rounded-lg max-w-full h-auto';
           video.style.maxHeight = '250px';
+          setMediaSrc(video, 'src');
           messageElement.appendChild(video);
         } else if (message.fileType === 'application/pdf' && message.fileData.startsWith('http')) {
           const pdfWrapper = document.createElement('div');
           pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
-          // Cloudinaryの /upload/ 変換が使えるURLか。KV(Cloudflare)等は変換不可なのでアイコン表示。
           const isRawPdf = !message.fileData.includes('/image/upload/');
           const pdfLabel = document.createElement('div');
           pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
@@ -9229,8 +9345,8 @@
           safeName.textContent = message.fileName;
           pdfLabel.innerHTML = '<i class="fas fa-file-pdf text-red-500"></i> ';
           pdfLabel.appendChild(safeName);
-          if (!isRawPdf) {
-            // 旧 image/upload 型: サムネイル生成を試みてフォールバック
+          
+          if (!isRawPdf && !message.isFileEncrypted) {
             const thumbUrl = message.fileData.replace('/upload/', '/upload/pg_1,w_240,h_320,c_fit,f_jpg/');
             const thumbImg = document.createElement('img');
             thumbImg.alt = message.fileName;
@@ -9247,14 +9363,19 @@
             thumbImg.src = thumbUrl;
             pdfWrapper.appendChild(thumbImg);
           } else {
-            // raw/upload 型: サムネイル変換不可 → PDFアイコンを直接表示
+            // 復号化待ちのプレースホルダ処理も兼ねてアイコン表示
             const icon = document.createElement('div');
             icon.className = 'w-20 h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-1';
             icon.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-2xl"></i><span class="text-xs text-gray-400">PDF</span>';
             pdfWrapper.appendChild(icon);
+            // ダウンロード＆復号をトリガー
+            setMediaSrc(icon, null);
           }
           pdfWrapper.appendChild(pdfLabel);
-          pdfWrapper.addEventListener('click', () => openPdfLightbox(message.fileData, message.fileName));
+          pdfWrapper.addEventListener('click', () => {
+            const url = message._decryptedFileUrl || message.fileData;
+            openPdfLightbox(url, message.fileName);
+          });
           messageElement.appendChild(pdfWrapper);
         } else {
           const fileAttachmentDiv = document.createElement("div");
@@ -9267,7 +9388,12 @@
           arrSpan.textContent = "▼";
           fileAttachmentDiv.appendChild(fnSpan);
           fileAttachmentDiv.appendChild(arrSpan);
-          fileAttachmentDiv.addEventListener("click", () => downloadFile(message.fileData, message.fileName, message.fileType));
+          // ダウンロード＆復号をトリガー
+          setMediaSrc(fileAttachmentDiv, null);
+          fileAttachmentDiv.addEventListener("click", () => {
+            const url = message._decryptedFileUrl || message.fileData;
+            downloadFile(url, message.fileName, message.fileType);
+          });
           messageElement.appendChild(fileAttachmentDiv);
         }
       }
@@ -10037,7 +10163,7 @@
         
     function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
       // 最終防壁: 万一ここに暗号文が来ても、ユーザーには絶対に暗号文を見せない
-      if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（メッセージ）';
+      if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
       if (soundEnabled) {
         playNotificationSound();
@@ -10200,6 +10326,7 @@
               return;
             }
             let hasNewMessage = false;
+            let newItemsToNotif = [];
             snapshot.docChanges().forEach(change => {
               if (change.type === "modified" || change.type === "added") {
                 const roomData = change.doc.data();
@@ -10212,6 +10339,7 @@
                   roomLastNotifTs[rmId] = ts;
                   hasNewMessage = true;
                   if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
+                    newItemsToNotif.push({ serverId: svId, serverName: svData.name || svId, roomId: rmId, roomName: rmName, lastAt: ts });
                     (async () => {
                       let body = roomData.lastMessageText || '新着メッセージ';
                       try {
@@ -10219,8 +10347,8 @@
                           const _members = (svData && svData.joinedUsers) || [];
                           body = await decryptText(body, svId, rmId, _members);
                         }
-                      } catch (e) { body = '（メッセージ）'; }
-                      if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（メッセージ）';
+                      } catch (e) { body = '（暗号化されたメッセージ）'; }
+                      if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
                       showInAppNotification(
                         svData.name || svId, rmName,
                         'メンバー',
@@ -10240,9 +10368,23 @@
                 }
               }
             });
-            // バッジ更新のために未読再スキャンをトリガー
-            if (hasNewMessage && typeof scanAllUnreadAndRender === 'function') {
-               scanAllUnreadAndRender();
+            // バッジ更新のために即座に更新するか、未読再スキャンをトリガー
+            if (hasNewMessage) {
+               if (newItemsToNotif.length > 0) {
+                 try {
+                   let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+                   newItemsToNotif.forEach(ni => {
+                     const idx = items.findIndex(it => it.serverId === ni.serverId && it.roomId === ni.roomId);
+                     if (idx > -1) items[idx].lastAt = ni.lastAt;
+                     else items.push(ni);
+                   });
+                   items.sort((a, b) => b.lastAt - a.lastAt);
+                   localStorage.setItem('covo_global_items', JSON.stringify(items));
+                   if (typeof renderNotifList === 'function') renderNotifList(items);
+                 } catch (e) { console.error(e); }
+               } else if (typeof scanAllUnreadAndRender === 'function') {
+                 scanAllUnreadAndRender();
+               }
             }
           });
           globalNotifListeners[svId] = unsub;
@@ -10964,7 +11106,7 @@
         let rm = {};
         try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
         snap.forEach(docSnap => {
-          const remoteTime = docSnap.data().lastReadAt;
+          const remoteTime = docSnap.data().lastReadAt?.toMillis?.() || 0;
           const localTime = rm[docSnap.id] || 0;
           if (remoteTime && remoteTime > localTime) {
             rm[docSnap.id] = remoteTime;
