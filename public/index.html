@@ -6074,8 +6074,8 @@
             const lastRead = rm[rd.id] || 0;
             // 自分の最後の発言で更新された分は未読にしない
             const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
-            // 今開いているルームは既読扱い
-            const isOpen = (sv.id === currentServerId && rd.id === currentRoomId);
+            // 今開いているルームは、アプリにフォーカスがある場合のみ既読扱いとする
+            const isOpen = (sv.id === currentServerId && rd.id === currentRoomId && document.hasFocus());
             if (lastAt > lastRead && !bySelf && !isOpen) {
               items.push({ serverId: sv.id, serverName: sv.name || sv.id, roomId: rd.id, roomName: room.name || rd.id, lastAt });
             }
@@ -7603,20 +7603,37 @@
                      updateGlobalNotifUI();
                      const serverName = currentServerData?.name || 'Covo';
                      const roomName = room.name || 'room';
-                     const text = room.lastMessageText || '新着メッセージ';
-                     
-                     // In-app Notification
-                     if (typeof showInAppNotification === 'function') {
-                        showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
-                     }
-                     // Push Notification
-                     if (!document.hasFocus()) {
-                       if (isTauri) {
-                          if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
-                       } else if (!currentFcmToken) {
-                          if (typeof showNotification === 'function') showNotification(`${serverName} › #${roomName}`, `メンバー: ${text}`, change.doc.id);
+                     let text = room.lastMessageText || '新着メッセージ';
+
+                     (async () => {
+                       try {
+                         if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+                           const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                           text = await decryptText(text, currentServerId, change.doc.id, _members);
+                         }
+                       } catch (e) { text = '（メッセージ）'; }
+                       if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（メッセージ）';
+
+                       const isMentioned = text && typeof text === "string" && text.includes(`@${userNickname}`);
+                       if (isMentioned && !document.hasFocus()) {
+                         // Fallback mention toast when not focused is handled by showNotification title
                        }
-                     }
+
+                       const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
+
+                       // In-app Notification
+                       if (typeof showInAppNotification === 'function') {
+                          showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
+                       }
+                       // Push Notification
+                       if (!document.hasFocus()) {
+                         if (isTauri) {
+                            if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                         } else if (!currentFcmToken) {
+                            if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                         }
+                       }
+                     })();
                   }
                }
             });
@@ -7803,15 +7820,8 @@
                   }
                 } catch (e) {}
                 const isMentioned = bodyText && typeof bodyText === "string" && bodyText.includes(`@${userNickname}`);
-                if (isMentioned) {
+                if (isMentioned && document.hasFocus()) {
                   showMentionToast(msgData.senderNickname || "ユーザー");
-                }
-                if (!document.hasFocus() || isMentioned) {
-                  const notifTitle = isMentioned ? `[@メンション] ${currentServerData?.name || ""}` : "チャット通知";
-                  showNotification(notifTitle, `${msgData.senderNickname}: ${bodyText || "（ファイル）"}`, currentRoomId);
-                  if (isTauri && window.__TAURI__?.core?.invoke) {
-                    window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
-                  }
                 }
               })();
             }
