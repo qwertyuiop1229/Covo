@@ -141,15 +141,7 @@ service cloud.firestore {
           request.auth.uid in request.resource.data.serverAdmins &&
           request.auth.uid in request.resource.data.joinedUsers;
 
-        // 管理者によるフル更新
-        allow update: if isServerAdmin(appId, serverId);
-
-        // 参加操作: 自分自身を joinedUsers に追加する場合のみ
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'memberCount']) &&
-          request.auth.uid in request.resource.data.joinedUsers &&
-          !(request.auth.uid in resource.data.joinedUsers);
+        allow update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
 
         // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
         allow update: if isAuthenticated() &&
@@ -219,15 +211,8 @@ service cloud.firestore {
 
         // 招待コード
         match /inviteCodes/{code} {
-          // 認証済みユーザーは招待コードを読める（参加検証のため）
-          allow read: if isAuthenticated();
-          // 作成・無効化はサーバー管理者のみ
-          allow create, delete: if isServerAdmin(appId, serverId);
-          // 使用回数は +1 のインクリメントのみ許可（リセット・改ざん防止）
-          allow update: if isServerAdmin(appId, serverId) ||
-            (isAuthenticated() &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses']) &&
-             request.resource.data.uses == resource.data.uses + 1);
+          allow read: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
         }
       }
     }

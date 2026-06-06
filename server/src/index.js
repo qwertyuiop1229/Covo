@@ -20,8 +20,8 @@ export default {
     if (url.pathname === "/api/signup" && request.method === "POST") {
       return await handleSignup(request, env);
     }
-    if (url.pathname === "/api/joinRoom" && request.method === "POST") {
-      return await handleJoinRoom(request, env);
+    if (url.pathname === "/api/joinServer" && request.method === "POST") {
+      return await handleJoinServer(request, env);
     }
     if (url.pathname === "/api/sendCallNotification" && request.method === "POST") {
       return await handleSendCallNotification(request, env);
@@ -169,12 +169,63 @@ async function signUpWithFirebase(email, password, env) {
 }
 
 // -------------------------------------------------------------
-// ルーム参加処理
+// ルーム参加処理 (Deprecated / Broken) -> サーバー参加処理に変更
 // -------------------------------------------------------------
-async function handleJoinRoom(request, env) {
+async function getFirestoreAdminToken(serviceAccountJsonStr) {
+  const serviceAccount = JSON.parse(serviceAccountJsonStr);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 3600;
+  const payload = {
+    iss: serviceAccount.client_email,
+    sub: serviceAccount.client_email,
+    aud: 'https://oauth2.googleapis.com/token',
+    iat,
+    exp,
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
+  };
+
+  const encodeBase64Url = (obj) => btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const unsignedToken = `${encodeBase64Url(header)}.${encodeBase64Url(payload)}`;
+
+  const privateKey = serviceAccount.private_key;
+  const pemHeader = "-----BEGIN PRIVATE KEY-----";
+  const pemFooter = "-----END PRIVATE KEY-----";
+  const pemContents = privateKey.substring(pemHeader.length, privateKey.length - pemFooter.length - 1).replace(/\s/g, '');
+  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    binaryDer.buffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    new TextEncoder().encode(unsignedToken)
+  );
+
+  const jwt = `${unsignedToken}.${btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
+  });
+  const data = await res.json();
+  return data.access_token;
+}
+
+// -------------------------------------------------------------
+// サーバー参加処理
+// -------------------------------------------------------------
+async function handleJoinServer(request, env) {
   try {
-    const { roomId, password, userId, appId, idToken } = await request.json();
-    if (!roomId || !password || !userId || !appId || !idToken) {
+    const { serverId, password, inviteCode, userId, appId, idToken } = await request.json();
+    if (!serverId || !userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
     }
 
@@ -183,43 +234,110 @@ async function handleJoinRoom(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
-    // Workerトークン取得
-    const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+    }
 
-    // Firestoreからパスワードを取得
+    const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
     const projectId = env.FIREBASE_PROJECT_ID;
-    const pwdUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/public/data/rooms/${roomId}/secrets/password`;
-    
-    const pwdRes = await fetch(pwdUrl, {
-      method: "GET",
-      headers: { "Authorization": `Bearer ${workerToken}` }
-    });
-    const pwdData = await pwdRes.json();
-    
-    if (pwdData.error) {
-      return new Response(JSON.stringify({ success: false, error: "パスワード設定が見つかりません" }), { status: 404, headers: corsHeaders });
+
+    // パスワードまたは招待コードの検証
+    let valid = false;
+
+    if (password) {
+      // 1. secrets/auth からパスワードハッシュを取得 (新しい形式)
+      let hash = null;
+      let pwdRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/secrets/auth`, {
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      });
+      let pwdData = await pwdRes.json();
+      
+      if (!pwdData.error && pwdData.fields && pwdData.fields.passwordHash) {
+         hash = pwdData.fields.passwordHash.stringValue;
+      } else {
+         // 2. 古い形式 (servers/serverId 直下) をフォールバックとして確認
+         let srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
+            headers: { "Authorization": `Bearer ${adminToken}` }
+         });
+         let srvData = await srvRes.json();
+         if (!srvData.error && srvData.fields && srvData.fields.passwordHash) {
+            hash = srvData.fields.passwordHash.stringValue;
+         }
+      }
+
+      if (!hash) {
+         return new Response(JSON.stringify({ success: false, error: "Server password not set" }), { status: 400, headers: corsHeaders });
+      }
+
+      // クライアントで計算されたハッシュと比較 (クライアントがハッシュ化して送る前提)
+      // より安全にするならサーバー側でハッシュ化すべきだが、既存の互換性を考慮
+      if (password !== hash) {
+         return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: corsHeaders });
+      }
+      valid = true;
+    } else if (inviteCode) {
+      // 招待コードの検証
+      let invRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`, {
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      });
+      let invData = await invRes.json();
+      
+      if (invData.error || !invData.fields) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: corsHeaders });
+      }
+      
+      if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
+        return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: corsHeaders });
+      }
+      
+      let expiresAt = invData.fields.expiresAt?.timestampValue;
+      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+        return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: corsHeaders });
+      }
+
+      let maxUses = invData.fields.maxUses?.integerValue;
+      let uses = invData.fields.uses?.integerValue || 0;
+      if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
+        return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: corsHeaders });
+      }
+      
+      // 招待コードの uses をインクリメント (トランザクションではないがREST APIで直接インクリメント)
+      const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+      await fetch(invTransformUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          writes: [{
+            transform: {
+              document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`,
+              fieldTransforms: [{ fieldPath: "uses", increment: { integerValue: "1" } }]
+            }
+          }]
+        })
+      });
+      
+      valid = true;
     }
 
-    const actualPassword = pwdData.fields?.password?.stringValue;
-    if (password !== actualPassword) {
-      return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: corsHeaders });
+    if (!valid) {
+      return new Response(JSON.stringify({ success: false, error: "Authentication required" }), { status: 400, headers: corsHeaders });
     }
 
-    // パスワードが一致したので、該当ルームの joinedUsers 配列に userId を追加
-    // Firestore REST APIで arrayUnion を実行するためのリクエスト
-    const transformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/public/data/rooms/${roomId}:commit`;
+    // サーバーの joinedUsers に userId を追加し、memberCount をインクリメント
+    const transformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
     const transformBody = {
       writes: [
         {
           transform: {
-            document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/public/data/rooms/${roomId}`,
+            document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`,
             fieldTransforms: [
               {
                 fieldPath: "joinedUsers",
-                appendMissingElements: {
-                  values: [{ stringValue: userId }]
-                }
+                appendMissingElements: { values: [{ stringValue: userId }] }
+              },
+              {
+                fieldPath: "memberCount",
+                increment: { integerValue: "1" }
               }
             ]
           }
@@ -229,17 +347,14 @@ async function handleJoinRoom(request, env) {
 
     const updateRes = await fetch(transformUrl, {
       method: "POST",
-      headers: { 
-        "Authorization": `Bearer ${workerToken}`,
-        "Content-Type": "application/json"
-      },
+      headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
       body: JSON.stringify(transformBody)
     });
 
     const updateData = await updateRes.json();
     if (updateData.error) {
        console.error("Firestore Update Error:", updateData.error);
-       return new Response(JSON.stringify({ success: false, error: "Failed to update joinedUsers" }), { status: 500, headers: corsHeaders });
+       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 500, headers: corsHeaders });
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });

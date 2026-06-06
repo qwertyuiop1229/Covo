@@ -7451,7 +7451,6 @@
       const serverData = {
         name,
         serverId: customId,
-        passwordHash,
         joinedUsers: [userId],
         serverAdmins: [userId],
         createdBy: userId,
@@ -7459,6 +7458,11 @@
         memberCount: 1
       };
       await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
+
+      // 新しい形式：パスワードハッシュを secrets/auth に保存
+      await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/secrets`, 'auth'), {
+        passwordHash
+      });
 
       // プロフィール作成
       await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/profiles`, userId), {
@@ -7489,13 +7493,25 @@
         return;
       }
 
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const hash = await hashPassword(password, serverId);
-      if (hash !== serverData.passwordHash) throw new Error("パスワードが違います");
 
-      await updateDoc(doc(db, `artifacts/${appId}/servers`, serverId), {
-        joinedUsers: arrayUnion(userId),
-        memberCount: (serverData.memberCount || 0) + 1
+      const res = await fetch(`${WORKER_BASE_URL}/api/joinServer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverId,
+          password: hash,
+          userId,
+          appId,
+          idToken
+        })
       });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "サーバーに参加できませんでした");
+      }
+
       await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId), {
         nickname: userNickname,
         avatarUrl: userAvatarUrl || null,
@@ -7513,14 +7529,8 @@
       if (!indexSnap.exists()) throw new Error("招待コードが見つかりません");
       const foundServerId = indexSnap.data().serverId;
 
-      const inviteSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/inviteCodes`, code));
-      if (!inviteSnap.exists()) throw new Error("招待コードが見つかりません");
-      const foundInvite = inviteSnap.data();
-      if (foundInvite.disabled) throw new Error("この招待コードは無効化されています");
-      if (foundInvite.expiresAt && foundInvite.expiresAt.toDate() < new Date()) throw new Error("招待コードの有効期限が切れています");
-      if (foundInvite.maxUses > 0 && foundInvite.uses >= foundInvite.maxUses) throw new Error("招待コードの使用上限に達しています");
-
       const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, foundServerId));
+      if (!serverSnap.exists()) throw new Error("サーバーが見つかりません");
       const serverData = serverSnap.data();
 
       if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
@@ -7528,14 +7538,23 @@
         return;
       }
 
-      // 参加処理
-      await updateDoc(doc(db, `artifacts/${appId}/servers`, foundServerId), {
-        joinedUsers: arrayUnion(userId),
-        memberCount: (serverData.memberCount || 0) + 1
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch(`${WORKER_BASE_URL}/api/joinServer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverId: foundServerId,
+          inviteCode: code,
+          userId,
+          appId,
+          idToken
+        })
       });
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/inviteCodes`, code), {
-        uses: (foundInvite.uses || 0) + 1
-      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "招待コードが無効か、使用期限/上限に達しています");
+      }
+
       await setDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/profiles`, userId), {
         nickname: userNickname,
         avatarUrl: userAvatarUrl || null,
@@ -8562,7 +8581,8 @@
       if (!newPass || newPass.length < 4) { alertMessage("パスワードは4文字以上にしてください", "error"); return; }
       try {
         const hash = await hashPassword(newPass, currentServerId);
-        await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: hash });
+        await setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/secrets`, 'auth'), { passwordHash: hash }, { merge: true });
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: deleteField() });
         document.getElementById("changeServerPasswordInput").value = "";
         alertMessage("パスワードを変更しました", "success");
       } catch (e) { alertMessage("変更に失敗しました", "error"); }
