@@ -6722,6 +6722,7 @@
       window.addEventListener("beforeunload", handlePageClose);
       window.addEventListener("pagehide", handlePageClose);  // Safari/iPad対応
       window.addEventListener("freeze", handlePageClose);    // iOS PWA タスクキル前のfreeze
+      window.addEventListener("pageshow", handlePageShow); // bfcache復帰時
       window.addEventListener("focus", handleWindowFocus);
       window.addEventListener("blur", handleWindowBlur);
       subscribeToUserStatus();
@@ -6746,6 +6747,7 @@
       window.removeEventListener("beforeunload", handlePageClose);
       window.removeEventListener("pagehide", handlePageClose);
       window.removeEventListener("freeze", handlePageClose);
+      window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("blur", handleWindowBlur);
       if (unsubscribeUserStatus) {
@@ -6760,8 +6762,17 @@
       _beaconSent = false;
       updateUserStatus('online');
       resetAwayTimer();
+      if (typeof currentRoomId !== 'undefined' && currentRoomId) {
+         try {
+            const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+            rm[currentRoomId] = Date.now();
+            localStorage.setItem('covo_last_read', JSON.stringify(rm));
+         } catch(e) {}
+         if (typeof unreadCounts !== 'undefined') unreadCounts[currentRoomId] = 0;
+         updateGlobalNotifUI();
+      }
       if (isTauri && window.__TAURI__?.core?.invoke) {
-        const unreadCount = Object.values(unreadCounts).reduce((a, b) => a + (b || 0), 0);
+        const unreadCount = Object.values(typeof unreadCounts !== 'undefined' ? unreadCounts : {}).reduce((a, b) => a + (b || 0), 0);
         window.__TAURI__.core.invoke('set_badge', { hasUnread: unreadCount > 0 }).catch(console.error);
       }
     };
@@ -6782,6 +6793,10 @@
         updateUserStatus('online');
         resetAwayTimer();
       }
+    };
+
+    const handlePageShow = (e) => {
+      if (e.persisted) handleWindowFocus();
     };
 
     // タブ閉じ・ページ離脱時の確実なオフライン化（_beaconSentで重複防止）
@@ -7555,9 +7570,10 @@
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
           const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
-          const isUnread = (lastMsgAt > lastRead) && (docSnap.id !== currentRoomId);
+          const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
+          const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+          const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
           unreadCounts[docSnap.id] = isUnread ? 1 : 0;
-          
           const badgeSpan = document.createElement("span");
           badgeSpan.className = "unread-badge";
           badgeSpan.id = `unread-badge-${docSnap.id}`;
