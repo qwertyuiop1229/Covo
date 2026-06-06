@@ -9522,15 +9522,15 @@
     let longPressTimer;
     let longPressTriggered = false;
     let ignoreNextContextMenuClick = false;
-    let touchStartX = 0, touchStartY = 0;
+    let msgTouchStartX = 0, msgTouchStartY = 0;
     messagesDisplay.addEventListener("touchstart", (e) => {
       const bubble = e.target.closest(".message-bubble");
       const row = e.target.closest(".message-row");
       const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
       if (!targetBubble) return;
       const touch = e.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
+      msgTouchStartX = touch.clientX;
+      msgTouchStartY = touch.clientY;
       const clientX = touch.clientX;
       const clientY = touch.clientY;
       longPressTriggered = false;
@@ -9552,7 +9552,7 @@
     });
     messagesDisplay.addEventListener("touchmove", (e) => { 
       const touch = e.touches[0];
-      if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+      if (Math.abs(touch.clientX - msgTouchStartX) > 10 || Math.abs(touch.clientY - msgTouchStartY) > 10) {
         clearTimeout(longPressTimer); 
         longPressTriggered = false; 
       }
