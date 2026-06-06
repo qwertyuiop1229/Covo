@@ -5995,68 +5995,47 @@
       if (tb) tb.classList.add('active');
       document.getElementById('mobileProfileScreen').classList.remove('active');
       document.getElementById('mobileNotifScreen').classList.remove('active');
-      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); scanAllUnreadAndRender(); }
+      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); requestScanAllUnread(); }
       else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
     };
 
     
+    let _scanAllUnreadTimer = null;
+    function requestScanAllUnread() {
+      if (_scanAllUnreadTimer) clearTimeout(_scanAllUnreadTimer);
+      _scanAllUnreadTimer = setTimeout(() => {
+        if (_scanUnreadBusy) {
+          requestScanAllUnread();
+          return;
+        }
+        scanAllUnreadAndRender();
+      }, 500);
+    }
+
     window.openNotifModal = function() {
       const pm = document.getElementById('pcNotifModal');
       pm.style.display = pm.style.display === 'none' ? 'flex' : 'none';
-      updateGlobalNotifUI();
-      if (pm.style.display !== 'none') scanAllUnreadAndRender();
+      if (pm.style.display !== 'none') requestScanAllUnread();
     };
+
     function updateGlobalNotifUI() {
-      let count = 0;
-      let htmlStr = '';
-      Object.keys(unreadCounts).forEach(rid => {
-         const c = unreadCounts[rid] || 0;
-         if (c > 0) {
-            count += c;
-            const rName = escapeHtml(roomNames[rid] || rid);
-            htmlStr += `<div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:shadow-md transition-shadow group" onclick="goToRoom('${rid}')">
-               <div class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1"># ${rName}</div>
-               <div class="flex justify-between items-center mt-1">
-                 <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">${c}件の新着メッセージ</div>
-                 <div class="text-xs font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">開く &rarr;</div>
-               </div>
-            </div>`;
-         }
-      });
-      const badge = document.getElementById('globalUnreadBadge');
-      if (badge) {
-        badge.textContent = count;
-        badge.style.display = count > 0 ? 'flex' : 'none';
-      }
-      if (isTauri && window.__TAURI__?.core?.invoke) {
-        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 && !document.hasFocus() }).catch(console.error);
-        document.title = 'Covo';
-      } else {
-        document.title = count > 0 && !document.hasFocus() ? `(${count}) Covo` : 'Covo';
-      }
-      
-      const mList = document.getElementById('mobileNotifList');
-      const pList = document.getElementById('pcNotifList');
-      if (mList) mList.innerHTML = htmlStr;
-      if (pList) pList.innerHTML = htmlStr;
-      
-      const me = document.getElementById('mobileNotifEmpty');
-      const pe = document.getElementById('pcNotifEmpty');
-      if (me) me.style.display = count > 0 ? 'none' : 'block';
-      if (pe) pe.style.display = count > 0 ? 'none' : 'block';
-
-      // モバイル通知タブのバッジ更新
-      const mobileNotifTab = document.getElementById('mobileTabNotif');
-      if (mobileNotifTab) {
-        let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
-        if (count > 0) {
-          if (!nb) { nb = document.createElement('span'); nb.className = 'mobile-notif-dot'; mobileNotifTab.appendChild(nb); }
-          nb.style.display = 'block';
-        } else if (nb) {
-          nb.style.display = 'none';
-        }
-      }
-
+      try {
+        let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+        items = items.filter(it => it.serverId !== currentServerId);
+        Object.keys(unreadCounts).forEach(rid => {
+          if (unreadCounts[rid] > 0) {
+            items.push({ 
+              serverId: currentServerId, 
+              serverName: currentServerData?.name || currentServerId, 
+              roomId: rid, 
+              roomName: roomNames[rid] || rid, 
+              lastAt: Date.now() 
+            });
+          }
+        });
+        localStorage.setItem('covo_global_items', JSON.stringify(items));
+        renderNotifList(items);
+      } catch(e) {}
       if (typeof updateServerCardDots === 'function') updateServerCardDots();
     }
     window.goToRoom = function(rid) {
@@ -6103,6 +6082,7 @@
           });
         }
         items.sort((a, b) => b.lastAt - a.lastAt);
+        localStorage.setItem('covo_global_items', JSON.stringify(items));
         renderNotifList(items);
       } catch (e) {
         console.warn('[Notif] 未読スキャン失敗:', e);
@@ -6149,10 +6129,10 @@
       const badge = document.getElementById('globalUnreadBadge');
       if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
       if (isTauri && window.__TAURI__?.core?.invoke) {
-        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 && !document.hasFocus() }).catch(console.error);
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
         document.title = 'Covo';
       } else {
-        document.title = count > 0 && !document.hasFocus() ? `(${count}) Covo` : 'Covo';
+        document.title = count > 0 ? `(新着あり) Covo` : 'Covo';
       }
       if ('setAppBadge' in navigator) {
         if (count > 0) navigator.setAppBadge(count).catch(e => console.warn('Badge error:', e));
@@ -6780,7 +6760,8 @@
       updateUserStatus('online');
       resetAwayTimer();
       if (isTauri && window.__TAURI__?.core?.invoke) {
-        window.__TAURI__.core.invoke('set_badge', { hasUnread: false }).catch(console.error);
+        const unreadCount = Object.values(unreadCounts).reduce((a, b) => a + (b || 0), 0);
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: unreadCount > 0 }).catch(console.error);
       }
     };
 
@@ -9554,7 +9535,9 @@
       const touch = e.touches[0];
       if (Math.abs(touch.clientX - msgTouchStartX) > 10 || Math.abs(touch.clientY - msgTouchStartY) > 10) {
         clearTimeout(longPressTimer); 
-        longPressTriggered = false; 
+        if (messageContextMenu.classList.contains("hidden")) {
+          longPressTriggered = false; 
+        }
       }
     }, { passive: true });
     messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
@@ -10172,7 +10155,6 @@
     async function setupGlobalNotificationListeners() {
       Object.values(globalNotifListeners).forEach(unsub => unsub());
       globalNotifListeners = {};
-      
       if (!isTauri && currentFcmToken) {
         console.log('[GlobalNotif] FCM active — skipping Firestore global listeners');
         return;
@@ -10588,9 +10570,34 @@
         }
 
         // フォアグラウンドメッセージ受信
-        // アプリ内通知・サウンドはFirestoreリスナー（dummyUnreadListener/globalNotifListeners）が担当。
-        // ここで showNotification を呼ぶと重複するため何もしない。
-        onMessage(messaging, () => { });
+        onMessage(messaging, (payload) => {
+          const data = payload.data;
+          if (data && data.serverId && data.serverId !== currentServerId) {
+             showInAppNotification(
+               data.serverName || data.serverId, 
+               data.roomName || data.roomId, 
+               data.senderName || 'メンバー', 
+               data.body || '新着メッセージ', 
+               data.serverId, 
+               null, 
+               data.roomId
+             );
+             try {
+               let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+               if (!items.find(it => it.roomId === data.roomId)) {
+                 items.push({
+                   serverId: data.serverId,
+                   serverName: data.serverName || data.serverId,
+                   roomId: data.roomId,
+                   roomName: data.roomName || data.roomId,
+                   lastAt: Date.now()
+                 });
+                 localStorage.setItem('covo_global_items', JSON.stringify(items));
+               }
+               if (typeof renderNotifList === 'function') renderNotifList(items);
+             } catch(e) {}
+          }
+        });
       } catch (error) {
         console.error('FCM Initialization Error:', error);
       }
