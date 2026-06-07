@@ -7656,6 +7656,14 @@
           const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
           const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
           const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+          
+          if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
+             try {
+                rm[docSnap.id] = Date.now();
+                localStorage.setItem('covo_last_read', JSON.stringify(rm));
+             } catch(e) {}
+          }
+          
           const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
           unreadCounts[docSnap.id] = isUnread ? 1 : 0;
           const badgeSpan = document.createElement("span");
