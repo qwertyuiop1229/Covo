@@ -6824,7 +6824,7 @@
       if (typeof currentRoomId !== 'undefined' && currentRoomId) {
          try {
             const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-            rm[currentRoomId] = Date.now();
+            rm[currentRoomId] = Date.now() + 10000;
             localStorage.setItem('covo_last_read', JSON.stringify(rm));
          } catch(e) {}
          if (typeof unreadCounts !== 'undefined') unreadCounts[currentRoomId] = 0;
@@ -7659,7 +7659,9 @@
           
           if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
              try {
-                rm[docSnap.id] = Date.now();
+                // Ensure the read timestamp is strictly greater than the message timestamp to prevent clock skew issues
+                const newRead = Math.max(Date.now(), lastMsgAt) + 10000;
+                rm[docSnap.id] = newRead;
                 localStorage.setItem('covo_last_read', JSON.stringify(rm));
              } catch(e) {}
           }
