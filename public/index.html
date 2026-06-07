@@ -6831,8 +6831,9 @@
          updateGlobalNotifUI();
       }
       if (isTauri && window.__TAURI__?.core?.invoke) {
-        const unreadCount = Object.values(typeof unreadCounts !== 'undefined' ? unreadCounts : {}).reduce((a, b) => a + (b || 0), 0);
-        window.__TAURI__.core.invoke('set_badge', { hasUnread: unreadCount > 0 }).catch(console.error);
+        let globalCount = 0;
+        try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
       }
     };
 
@@ -6840,6 +6841,11 @@
       updateUserStatus('offline');
       sendOfflineBeacon();
       stopAwayTimer();
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        let globalCount = 0;
+        try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
+      }
     };
 
     const handleVisibilityChange = () => {
@@ -9973,6 +9979,13 @@
     })();
 
     function downloadFile(fileData, fileName, mimeType) {
+      if (isTauri && window.__TAURI__?.plugin?.shell) {
+        window.__TAURI__.plugin.shell.open(fileData).catch(e => {
+          console.warn('Tauri open failed', e);
+          window.open(fileData, '_blank');
+        });
+        return;
+      }
       if (fileData && fileData.startsWith('http')) {
         if (fileData.includes('res.cloudinary.com')) {
           // Cloudinary URL はブラウザからの直接アクセスが制限される場合があるため
@@ -10188,7 +10201,7 @@
       if (soundEnabled) {
         playNotificationSound();
         if (isTauri && window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
         }
       }
       const stack = document.getElementById("notifStack");
@@ -12112,7 +12125,7 @@
 
       if (isTauri) {
         if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
         }
 
         if (window.__TAURI__?.core?.invoke) {
