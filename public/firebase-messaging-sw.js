@@ -13,114 +13,174 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// ログイン中ユーザーIDをキャッシュ（自分への通知を防ぐ）
-// メインスクリプトから postMessage({ type: 'SET_USER_ID', userId }) で設定
-self._cachedUserId = null;
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
 
+// ─── postMessage受信 ────────────────────────────────────────────
 self.addEventListener('message', (event) => {
   if (!event.data) return;
-  if (event.data.type === 'SET_USER_ID') {
-    self._cachedUserId = event.data.userId || null;
-    console.log('[SW] userId cached:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-  } else if (event.data.type === 'CLEAR_USER_ID') {
-    self._cachedUserId = null;
-    console.log('[SW] userId cleared');
+
+  switch (event.data.type) {
+    case 'SET_USER_ID':
+      self._cachedUserId = event.data.userId || null;
+      self._cachedAppId  = event.data.appId  || null;
+      console.log('[SW] userId cached:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('[SW] userId cleared');
+      break;
+
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
   }
 });
 
-// バックグラウンドメッセージ処理（data + notification 両対応）
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      navigator.setAppBadge(self._badgeCount).catch(() => {});
+    } else {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  } catch (_) {}
+}
+
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
+    if (activeClients.length === 0) {
+      // 全クライアントが非表示または存在しない → offlineビーコン
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      navigator.sendBeacon(
+        'https://simplechat-api.astro-fray-server.workers.dev/api/setOffline',
+        new Blob([data], { type: 'text/plain' })
+      );
+      console.log('[SW] Sent offline beacon (no active clients)');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[firebase-messaging-sw.js] Received background message', payload);
 
   let title = 'Covo';
-  let body = '新しいメッセージがあります';
-  let data = {};
+  let body  = '新しいメッセージがあります';
+  let data  = {};
 
-  // data フィールドを優先（サーバーが送る情報）
   if (payload.data) {
     title = payload.data.title || title;
-    body = payload.data.body || body;
-    data = payload.data;
+    body  = payload.data.body  || body;
+    data  = payload.data;
   }
-  // notification フィールドはフォールバック（ブラウザが自動表示する前に SW が横取り）
   if (payload.notification) {
     title = payload.notification.title || title;
-    body = payload.notification.body || body;
+    body  = payload.notification.body  || body;
   }
 
-  // 最終防壁: SW は鍵を持たず復号できないので、暗号文(enc::v1::)が来たら
-  // ユーザーに暗号文を見せず汎用文言に置き換える。
-  if (typeof body === 'string' && body.indexOf('enc::v1::') === 0) {
-    body = '新しいメッセージがあります';
-  }
-  if (typeof title === 'string' && title.indexOf('enc::v1::') === 0) {
-    title = 'Covo';
-  }
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
+  if (typeof body  === 'string' && body.indexOf('enc::v1::')  === 0) body  = '新しいメッセージがあります';
+  if (typeof title === 'string' && title.indexOf('enc::v1::') === 0) title = 'Covo';
 
-  // ★ 自分が送ったメッセージへの通知は表示しない
+  // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('[SW] Skipping own message notification (senderId match)');
+    console.log('[SW] Skipping own message notification');
     return;
   }
 
-  // ★ バッジをセット（アプリが閉じていてもアイコンに赤マークが付く）
-  try {
-    if ('setAppBadge' in navigator) {
-      navigator.setAppBadge(1).catch(() => {});
-    }
-  } catch (_) {}
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
 
   let notificationOptions;
   if (data.type === 'incoming_call') {
     notificationOptions = {
-      body: body,
+      body,
       icon: '/icon-192x192.png?v=6',
       badge: '/icon-192x192.png?v=6',
       tag: `call-${data.callId || 'covo-call'}`,
       renotify: true,
       requireInteraction: true,
-      data: data,
+      data,
       actions: [
-        { action: 'accept', title: '応答' },
-        { action: 'decline', title: '拒否' }
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
       ]
     };
   } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+
     notificationOptions = {
-      body: body,
+      body,
       icon: '/icon-192x192.png?v=6',
       badge: '/icon-192x192.png?v=6',
-      // 同じルームの通知は上書き（スパム防止）、毎回振動・音あり
-      tag: `chat-${data.roomId || 'covo'}`,
+      tag,
       renotify: true,
-      data: data,
+      data,
       actions: [
         { action: 'open', title: '開く' }
       ]
     };
   }
 
-  // ブラウザが webpush.notification で自動表示しようとしても、
-  // SW の showNotification が tag で上書きするので重複しない
   return self.registration.showNotification(title, notificationOptions);
 });
 
-// 通知クリック時にアプリを開く / フォーカスする
+// ─── 通知クリック ───────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  // ★ バッジをクリア（通知をタップしたらアイコンの赤マークを消す）
-  try {
-    if ('clearAppBadge' in navigator) {
-      navigator.clearAppBadge().catch(() => {});
-    }
-  } catch (_) {}
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
 
-  const data = event.notification.data || {};
+  const data   = event.notification.data || {};
   const action = event.action;
   const urlToOpen = self.location.origin + '/';
 
-  // 着信通知の「拒否」アクション
+  // 着信「拒否」アクション
   if (data.type === 'incoming_call' && action === 'decline') {
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
@@ -139,12 +199,10 @@ self.addEventListener('notificationclick', (event) => {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          // Tauri (Windows EXE) 向け: postMessage でアプリ側にウィンドウフォーカスを依頼
           client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
           return client.focus();
         }
       }
-      // 開いているウィンドウがなければ新規で開く
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }

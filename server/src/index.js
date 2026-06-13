@@ -545,13 +545,17 @@ async function handleSendNotification(request, env) {
 
             // オンラインかつ、今そのルームを見ているなら通知不要
             // ただし last_changed が 15秒以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
-            if (state === 'online' && currentRoomId === roomId) {
+            if (state === 'online') {
                 const lastChangedRaw = statusData.fields.last_changed?.timestampValue;
                 const lastChangedMs = lastChangedRaw ? new Date(lastChangedRaw).getTime() : 0;
-                const isStale = (Date.now() - lastChangedMs) > 15000; // 15秒以上前は古いとみなす
-                if (!isStale) {
+                const ageMs = Date.now() - lastChangedMs;
+                // ハートビートは3分ごと。5分以上更新がなければiOSサイレントキル等でオフラインと判断
+                const isStale = ageMs > 5 * 60 * 1000;
+                if (!isStale && currentRoomId === roomId) {
+                    // 同じルームを5分以内に見ている → 通知不要
                     shouldSend = false;
                 }
+                // isStale=true（5分以上前） → stateに関わらず通知を送る
             }
         }
 
