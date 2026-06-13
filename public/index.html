@@ -4845,6 +4845,7 @@
     let _iceRestartTimer = null;
     let _lastIceRestartAt = null;
     let _usingTurnRelay = false;
+    let _iceRestartAttempts = 0; // ICE failed時の再試行回数カウンター
     const CALL_TIMEOUT_MS = 30000;
     const STUN_CONFIG = {
       iceServers: [
@@ -6857,6 +6858,13 @@
         _beaconSent = false;
         updateUserStatus('online');
         resetAwayTimer();
+        // アプリが表示に戻った時にバッジをクリア（iOSでfocusイベントが発火しない問題の補完）
+        if ('clearAppBadge' in navigator) {
+          navigator.clearAppBadge().catch(() => {});
+        }
+        // 未読スキャンを実行してUIを更新
+        if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
+        if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
       }
     };
 
@@ -11008,6 +11016,7 @@
 
     function setupPeerConnection(role) {
       _usingTurnRelay = false;
+      _iceRestartAttempts = 0; // 通話ごとにリセット
       setCallConnectionType(null);
       _peerConnection = _prewarmPC || new RTCPeerConnection(STUN_CONFIG);
       _prewarmPC = null;
@@ -11062,7 +11071,46 @@
       _peerConnection.oniceconnectionstatechange = () => {
         const iceState = _peerConnection?.iceConnectionState;
         if (iceState === 'failed') {
-          endCall(false, 'connectionLost');
+          // 即座に切攔せず、最大2回 TURN で ICE 再接続を試みる
+          if (_iceRestartAttempts < 2) {
+            _iceRestartAttempts++;
+            setCallReconnectStatus(true);
+            console.log(`[ICE] failed → restart #${_iceRestartAttempts} attempt`);
+            if (_callRole === 'caller') {
+              (async () => {
+                try {
+                  const offer = await _peerConnection.createOffer({ iceRestart: true });
+                  await _peerConnection.setLocalDescription(offer);
+                  const { doc: fsDoc2, updateDoc: fsUpdateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                  const restartAt = Date.now();
+                  await fsUpdateDoc(fsDoc2(db, 'artifacts', appId, 'calls', _callId), {
+                    offer: { type: offer.type, sdp: offer.sdp },
+                    iceRestartAt: restartAt,
+                    iceRestartAttempt: _iceRestartAttempts,
+                  });
+                  _lastIceRestartAt = restartAt;
+                  _iceRestartTimer = setTimeout(() => {
+                    _iceRestartTimer = null;
+                    const s = _peerConnection?.iceConnectionState;
+                    if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+                  }, 12000);
+                } catch(e) {
+                  console.warn('[ICE restart on failed] failed:', e);
+                  endCall(false, 'connectionLost');
+                }
+              })();
+            } else {
+              // callee: caller が restart するまで最大12秒待つ
+              _iceRestartTimer = setTimeout(() => {
+                _iceRestartTimer = null;
+                const s = _peerConnection?.iceConnectionState;
+                if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+              }, 12000);
+            }
+          } else {
+            // 2回試しても回復しなければ通話終了
+            endCall(false, 'connectionLost');
+          }
         } else if (iceState === 'disconnected') {
           setCallReconnectStatus(true);
           if (_iceDisconnectTimer) return;
@@ -11913,7 +11961,11 @@
             const newAnswer = await _peerConnection.createAnswer();
             await _peerConnection.setLocalDescription(newAnswer);
             await updateDoc(callRef, { answer: { type: newAnswer.type, sdp: newAnswer.sdp } });
-          } catch(e) { console.warn('[ICE restart callee] failed:', e); }
+            console.log('[ICE restart callee] answered successfully, attempt:', d2.iceRestartAttempt || 1);
+          } catch(e) {
+            console.warn('[ICE restart callee] failed:', e);
+            // callee側でanswerに失敗した場合、callerのタイムアウトを待つ（endCallはcallerが制御）
+          }
         }
       });
     }

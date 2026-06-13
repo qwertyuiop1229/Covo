@@ -542,10 +542,16 @@ async function handleSendNotification(request, env) {
         if (!statusData.error && statusData.fields) {
             const state = statusData.fields.state?.stringValue || 'offline';
             const currentRoomId = statusData.fields.currentRoomId?.stringValue;
-            
+
             // オンラインかつ、今そのルームを見ているなら通知不要
+            // ただし last_changed が 15秒以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
             if (state === 'online' && currentRoomId === roomId) {
-                shouldSend = false;
+                const lastChangedRaw = statusData.fields.last_changed?.timestampValue;
+                const lastChangedMs = lastChangedRaw ? new Date(lastChangedRaw).getTime() : 0;
+                const isStale = (Date.now() - lastChangedMs) > 15000; // 15秒以上前は古いとみなす
+                if (!isStale) {
+                    shouldSend = false;
+                }
             }
         }
 
@@ -562,9 +568,9 @@ async function handleSendNotification(request, env) {
                 for (const t of tokens) {
                     const tokenStr = t.stringValue;
                     
-                    // FCM V1 API: data ペイロードのみ送信（Service Workerでの確実な受信のため）
-                    // notification ペイロードを含めると、ブラウザが自動で通知を出し
-                    // Service Workerの onBackgroundMessage が呼ばれないケースがある
+                    // FCM V1 API: webpush.notification + data の両方を送信
+                    // webpush.notification があると Service Worker の onBackgroundMessage が呼ばれるケースと
+                    // ブラウザが自動表示するケースがあるが、SW 側で tag による重複制御をするので問題ない
                     const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
                         method: "POST",
                         headers: {
@@ -574,6 +580,7 @@ async function handleSendNotification(request, env) {
                         body: JSON.stringify({
                             message: {
                                 token: tokenStr,
+                                // data フィールド: SW が受信して処理する
                                 data: {
                                     title: title,
                                     body: body,
@@ -581,30 +588,49 @@ async function handleSendNotification(request, env) {
                                     senderId: senderId || "",
                                     type: "chat_message"
                                 },
-                                // Androidの通知チャンネル設定
+                                // Android: 高優先度通知チャンネル
                                 android: {
                                     priority: "high",
-                                    data: {
+                                    notification: {
                                         title: title,
                                         body: body,
-                                        channel_id: "simplechat_messages"
+                                        channel_id: "covo_messages",
+                                        notification_priority: "PRIORITY_HIGH",
+                                        default_sound: true,
+                                        icon: "ic_notification",
+                                        tag: `chat-${roomId || 'covo'}`
                                     }
                                 },
-                                // Apple Push Notification Service設定
+                                // iOS: alert を含めて高優先度配信（これがないとiOSで届かないことがある）
                                 apns: {
                                     headers: {
-                                        "apns-priority": "10"
+                                        "apns-priority": "10",
+                                        "apns-push-type": "alert"
                                     },
                                     payload: {
                                         aps: {
-                                            "content-available": 1
+                                            "content-available": 1,
+                                            alert: {
+                                                title: title,
+                                                body: body
+                                            },
+                                            sound: "default",
+                                            badge: 1
                                         }
                                     }
                                 },
-                                // Web Push設定
+                                // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起こす
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
+                                    },
+                                    notification: {
+                                        title: title,
+                                        body: body,
+                                        icon: "/icon-192x192.png?v=6",
+                                        badge: "/icon-192x192.png?v=6",
+                                        tag: `chat-${roomId || 'covo'}`,
+                                        renotify: true
                                     },
                                     fcm_options: {
                                         link: "/"

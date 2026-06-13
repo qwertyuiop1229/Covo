@@ -36,14 +36,16 @@ messaging.onBackgroundMessage((payload) => {
   let body = '新しいメッセージがあります';
   let data = {};
 
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body = payload.notification.body || body;
-  }
+  // data フィールドを優先（サーバーが送る情報）
   if (payload.data) {
     title = payload.data.title || title;
     body = payload.data.body || body;
     data = payload.data;
+  }
+  // notification フィールドはフォールバック（ブラウザが自動表示する前に SW が横取り）
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body = payload.notification.body || body;
   }
 
   // 最終防壁: SW は鍵を持たず復号できないので、暗号文(enc::v1::)が来たら
@@ -56,26 +58,24 @@ messaging.onBackgroundMessage((payload) => {
   }
 
   // ★ 自分が送ったメッセージへの通知は表示しない
-  // Cloudflare Worker が payload.data.senderId に送信者 UID を含めて送信する
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
     console.log('[SW] Skipping own message notification (senderId match)');
     return;
   }
 
-  // もし payload.notification が存在する場合、FCMのブラウザSDKが自動でプッシュ通知を表示するため、
-  // ここで showNotification を呼ぶと二重に通知が出てしまいます。
-  if (payload.notification) {
-    console.log('[SW] Notification payload present, letting browser handle it automatically.');
-    return;
-  }
+  // ★ バッジをセット（アプリが閉じていてもアイコンに赤マークが付く）
+  try {
+    if ('setAppBadge' in navigator) {
+      navigator.setAppBadge(1).catch(() => {});
+    }
+  } catch (_) {}
 
-  // 自動表示されないデータメッセージの場合のみ、独自に通知を作成する
   let notificationOptions;
   if (data.type === 'incoming_call') {
     notificationOptions = {
       body: body,
-      icon: '/icon-192x192.png?v=5',
-      badge: '/icon-192x192.png?v=5',
+      icon: '/icon-192x192.png?v=6',
+      badge: '/icon-192x192.png?v=6',
       tag: `call-${data.callId || 'covo-call'}`,
       renotify: true,
       requireInteraction: true,
@@ -88,8 +88,11 @@ messaging.onBackgroundMessage((payload) => {
   } else {
     notificationOptions = {
       body: body,
-      icon: '/icon-192x192.png?v=5',
-      badge: '/icon-192x192.png?v=5',
+      icon: '/icon-192x192.png?v=6',
+      badge: '/icon-192x192.png?v=6',
+      // 同じルームの通知は上書き（スパム防止）、毎回振動・音あり
+      tag: `chat-${data.roomId || 'covo'}`,
+      renotify: true,
       data: data,
       actions: [
         { action: 'open', title: '開く' }
@@ -97,12 +100,21 @@ messaging.onBackgroundMessage((payload) => {
     };
   }
 
-  self.registration.showNotification(title, notificationOptions);
+  // ブラウザが webpush.notification で自動表示しようとしても、
+  // SW の showNotification が tag で上書きするので重複しない
+  return self.registration.showNotification(title, notificationOptions);
 });
 
 // 通知クリック時にアプリを開く / フォーカスする
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  // ★ バッジをクリア（通知をタップしたらアイコンの赤マークを消す）
+  try {
+    if ('clearAppBadge' in navigator) {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  } catch (_) {}
 
   const data = event.notification.data || {};
   const action = event.action;
