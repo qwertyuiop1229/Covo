@@ -7101,6 +7101,13 @@
 
     let unsubscribeStatusArray = [];
 
+    function getTimestampMs(obj) {
+      if (!obj || !obj.last_changed) return 0;
+      if (typeof obj.last_changed === 'number') return obj.last_changed; // RTDB
+      if (obj.last_changed.toDate) return obj.last_changed.toDate().getTime(); // Firestore
+      return 0;
+    }
+
     function subscribeToUserStatus() {
       // 旧リスナーをクリーンアップ
       if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
@@ -7116,7 +7123,7 @@
 
       const usersMap = new Map();
 
-      // 1. Firestoreフォールバック（過去にログインしたユーザーや、まだリロードしていない旧バージョンのユーザーのステータスを取得）
+      // 1. Firestoreフォールバック（過去にログインしたユーザーや旧バージョンのステータス）
       for (let i = 0; i < memberIds.length; i += 30) {
         const chunk = memberIds.slice(i, i + 30);
         const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
@@ -7126,17 +7133,27 @@
             const fsData = doc.data();
             const existing = usersMap.get(doc.id) || { id: doc.id };
             
-            if (existing._hasRtdb) {
-              // RTDBデータがある場合（新バージョン）、nickname/avatarUrlのみ補完
-              if (!existing.nickname && fsData.nickname) {
-                usersMap.set(doc.id, { ...fsData, ...existing });
-                changed = true;
-              }
+            const fsTime = getTimestampMs(fsData);
+            const rtdbTime = existing._rtdbTime || 0;
+            
+            if (fsTime >= rtdbTime) {
+              // Firestoreの方が新しい（旧アプリで更新を続けている場合）
+              usersMap.set(doc.id, { 
+                ...existing, 
+                ...fsData, 
+                _fsTime: fsTime,
+                _fsData: fsData
+              });
             } else {
-              // RTDBデータがない場合（旧バージョン）、Firestoreのデータを全採用（state等も）
-              usersMap.set(doc.id, { ...existing, ...fsData });
-              changed = true;
+              // RTDBの方が新しい
+              usersMap.set(doc.id, {
+                ...fsData,
+                ...existing,
+                _fsTime: fsTime,
+                _fsData: fsData
+              });
             }
+            changed = true;
           });
           if (changed) {
             cachedUsers = Array.from(usersMap.values());
@@ -7156,11 +7173,20 @@
               const existing = usersMap.get(uid) || { id: uid };
               
               if (data) {
-                // RTDBにデータがある場合はそれを最優先
-                usersMap.set(uid, { id: uid, ...existing, ...data, _hasRtdb: true });
+                const rtdbTime = getTimestampMs(data);
+                const fsTime = existing._fsTime || 0;
+                const fsData = existing._fsData || {};
+                
+                if (rtdbTime >= fsTime) {
+                  // RTDBの方が新しい
+                  usersMap.set(uid, { ...existing, ...data, _rtdbTime: rtdbTime });
+                } else {
+                  // Firestoreの方が新しい（旧アプリを使っている）
+                  usersMap.set(uid, { ...existing, ...data, ...fsData, _rtdbTime: rtdbTime });
+                }
               } else {
                 // RTDBにデータがない場合、Firestore(既存)のstateを優先。なければoffline
-                usersMap.set(uid, { id: uid, state: 'offline', ...existing, _hasRtdb: false });
+                usersMap.set(uid, { id: uid, state: 'offline', ...existing, _rtdbTime: 0 });
               }
               cachedUsers = Array.from(usersMap.values());
               renderMembersList(cachedUsers);
