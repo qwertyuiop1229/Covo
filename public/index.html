@@ -6350,26 +6350,35 @@
       if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
       _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
 
-      // RTDB onDisconnectを先に設定→その後onlineに書く（順序重要）
+      // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
       try {
-        const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp } =
+        const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue } =
           await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        _rtdbStatusRef = ref(rtdb, `status/${userId}`);
-        _rtdbOnDisconnect = rtdbOnDisconnect(_rtdbStatusRef);
-        // 接続が切れたらFirebaseサーバーが自動でofflineに書く（iOS強制終了・ネット切断も対応）
-        await _rtdbOnDisconnect.set({
-          state: 'offline',
-          last_changed: serverTimestamp(),
-          nickname: userNickname,
-          avatarUrl: userAvatarUrl || null
+        
+        const connectedRef = ref(rtdb, '.info/connected');
+        onValue(connectedRef, async (snap) => {
+          if (snap.val() === true) {
+            _rtdbStatusRef = ref(rtdb, `status/${userId}`);
+            _rtdbOnDisconnect = rtdbOnDisconnect(_rtdbStatusRef);
+            // 接続が切れたらFirebaseサーバーが自動でofflineに書く（iOS強制終了・ネット切断も対応）
+            await _rtdbOnDisconnect.set({
+              state: 'offline',
+              last_changed: serverTimestamp(),
+              nickname: userNickname,
+              avatarUrl: userAvatarUrl || null
+            });
+            console.log('[RTDB] onDisconnect registered (connected)');
+            
+            // 接続直後は強制的にオンラインを再送信する
+            _lastReportedStatusStr = null;
+            await updateUserStatus('online');
+          }
         });
-        console.log('[RTDB] onDisconnect registered');
       } catch (e) {
-        console.warn('[RTDB] onDisconnect setup failed:', e);
+        console.warn('[RTDB] presence setup failed:', e);
       }
 
-      await updateUserStatus('online');
       resetAwayTimer();
       // startHeartbeat() はRTDB onDisconnect経由のため不要
       document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -6850,6 +6859,15 @@
       unsubscribeStatusArray = [];
     }
 
+    function clearAppBadgeFull() {
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_BADGE' });
+      }
+    }
+
     const handleWindowFocus = () => {
       _beaconSent = false;
       updateUserStatus('online');
@@ -6868,6 +6886,7 @@
         try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
         window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
       }
+      clearAppBadgeFull();
     };
 
     const handleWindowBlur = () => {
@@ -6899,9 +6918,7 @@
         updateUserStatus('online');
         resetAwayTimer();
         // アプリが表示に戻った時にバッジをクリア（iOSでfocusイベントが発火しない問題の補完）
-        if ('clearAppBadge' in navigator) {
-          navigator.clearAppBadge().catch(() => {});
-        }
+        clearAppBadgeFull();
         // 未読スキャンを実行してUIを更新
         if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
         if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
