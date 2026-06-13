@@ -533,29 +533,36 @@ async function handleSendNotification(request, env) {
     for (const rid of receiverIds) {
         if (rid === senderId) continue; // 自分には送らない
 
-        // 1. 相手のステータスを取得
-        const statusUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/status/${rid}`;
-        const statusRes = await fetch(statusUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
-        const statusData = await statusRes.json();
+        // 1. 相手のステータスをRTDBから取得
+        const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+        const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+        const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
+        const statusRes = await fetch(statusUrl);
+        const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
         
         let shouldSend = true;
-        if (!statusData.error && statusData.fields) {
-            const state = statusData.fields.state?.stringValue || 'offline';
-            const currentRoomId = statusData.fields.currentRoomId?.stringValue;
+        if (statusData && !statusData.error) {
+            const state = statusData.state || 'offline'; // RTDB形式
 
             // オンラインかつ、今そのルームを見ているなら通知不要
             // ただし last_changed が 15秒以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
             if (state === 'online') {
-                const lastChangedRaw = statusData.fields.last_changed?.timestampValue;
-                const lastChangedMs = lastChangedRaw ? new Date(lastChangedRaw).getTime() : 0;
+                const lastChangedRaw = statusData.fields?.last_changed?.timestampValue
+                  || statusData.fields?.last_changed?.integerValue
+                  || statusData.last_changed; // RTDB形式: Unix ms
+                let lastChangedMs = 0;
+                if (typeof lastChangedRaw === 'number') {
+                  lastChangedMs = lastChangedRaw; // RTDB
+                } else if (typeof lastChangedRaw === 'string') {
+                  lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
+                }
                 const ageMs = Date.now() - lastChangedMs;
-                // ハートビートは3分ごと。5分以上更新がなければiOSサイレントキル等でオフラインと判断
                 const isStale = ageMs > 5 * 60 * 1000;
-                if (!isStale && currentRoomId === roomId) {
-                    // 同じルームを5分以内に見ている → 通知不要
+                const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
+                  || statusData.currentRoomId; // RTDB形式
+                if (!isStale && currentRoomIdStatus === roomId) {
                     shouldSend = false;
                 }
-                // isStale=true（5分以上前） → stateに関わらず通知を送る
             }
         }
 
@@ -703,6 +710,16 @@ async function handleSendNotification(request, env) {
 
 // Service Account JSON を用いて JWT を署名し OAuth トークンを取得する関数
 async function getFCMToken(serviceAccountJsonStr) {
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.messaging');
+}
+
+// RTDB REST API用 OAuth2トークン
+async function getRTDBToken(serviceAccountJsonStr) {
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.database');
+}
+
+// 共通: サービスアカウントJWTからGoogle OAuth2トークンを取得
+async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
   const serviceAccount = JSON.parse(serviceAccountJsonStr);
   const header = { alg: 'RS256', typ: 'JWT' };
   const iat = Math.floor(Date.now() / 1000);
@@ -713,7 +730,7 @@ async function getFCMToken(serviceAccountJsonStr) {
     aud: 'https://oauth2.googleapis.com/token',
     iat,
     exp,
-    scope: 'https://www.googleapis.com/auth/firebase.messaging'
+    scope
   };
 
   const encodeBase64Url = (obj) => btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -1064,7 +1081,6 @@ async function verifyFirebaseIdToken(idToken, env) {
 
 async function handleSetOffline(request, env) {
   // sendBeaconはcredentials=includeで送るためAccess-Control-Allow-Origin: *が使えない
-  // リクエスト元のOriginをそのまま返すことでCORSを通す
   const origin = request.headers.get("Origin") || "*";
   const corsSetOffline = {
     ...corsHeaders,
@@ -1086,23 +1102,18 @@ async function handleSetOffline(request, env) {
       return new Response("Unauthorized", { status: 401, headers: corsSetOffline });
     }
 
-    const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response("Worker Auth failed", { status: 500, headers: corsSetOffline });
-
     const projectId = env.FIREBASE_PROJECT_ID;
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+    const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
 
-    const docUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/status/${userId}?updateMask.fieldPaths=state&updateMask.fieldPaths=last_changed`;
-    await fetch(docUrl, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${workerToken}`,
-        "Content-Type": "application/json"
-      },
+    // RTDB REST APIで offline を書く
+    // PUT /status/{userId}.json: stateとlast_changedのみ書き換え（PATCHではなくPUTで完全上書き）
+    await fetch(`${rtdbUrl}/status/${userId}.json?access_token=${rtdbToken}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fields: {
-          state: { stringValue: "offline" },
-          last_changed: { timestampValue: new Date().toISOString() }
-        }
+        state: "offline",
+        last_changed: Date.now() // RTDBはUnix msでOK
       })
     });
 

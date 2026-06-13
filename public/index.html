@@ -6344,6 +6344,51 @@
 
 
     let pendingAvatarUrl = null;
+    async function startPresenceSystem() {
+      _beaconSent = false;
+      refreshCachedIdToken();
+      if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
+      _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
+
+      // RTDB onDisconnectを先に設定→その後onlineに書く（順序重要）
+      try {
+        const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp } =
+          await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        _rtdbStatusRef = ref(rtdb, `status/${userId}`);
+        _rtdbOnDisconnect = rtdbOnDisconnect(_rtdbStatusRef);
+        // 接続が切れたらFirebaseサーバーが自動でofflineに書く（iOS強制終了・ネット切断も対応）
+        await _rtdbOnDisconnect.set({
+          state: 'offline',
+          last_changed: serverTimestamp(),
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null
+        });
+        console.log('[RTDB] onDisconnect registered');
+      } catch (e) {
+        console.warn('[RTDB] onDisconnect setup failed:', e);
+      }
+
+      await updateUserStatus('online');
+      resetAwayTimer();
+      // startHeartbeat() はRTDB onDisconnect経由のため不要
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("beforeunload", handlePageClose);
+      window.addEventListener("pagehide", handlePageClose);
+      window.addEventListener("freeze", handlePageClose);
+      window.addEventListener("pageshow", handlePageShow);
+      window.addEventListener("focus", handleWindowFocus);
+      window.addEventListener("blur", handleWindowBlur);
+      window.addEventListener("online", _handleNetworkOnline);
+      window.addEventListener("offline", _handleNetworkOffline);
+      subscribeToUserStatus();
+
+      if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
+      memberListRefreshInterval = setInterval(() => {
+        renderMembersList(cachedUsers);
+      }, 180000);
+    }
+    
     const avatarUploadTrigger = document.getElementById("avatarUploadTrigger");
     const avatarUploadInput = document.getElementById("avatarUploadInput");
     const settingsAvatarPreview = document.getElementById("settingsAvatarPreview");
@@ -6759,46 +6804,13 @@
     let _heartbeatInterval = null;
 
     function startHeartbeat() {
-      if (_heartbeatInterval) return;
-      // 3分ごとにFirestoreへonline書き込み（last_changedを更新してstale検出を正確にする）
-      // ※ 重要: _lastReportedStatusStrをリセットして差分チェックをバイパスし強制書き込み
-      _heartbeatInterval = setInterval(() => {
-        if (document.visibilityState !== 'hidden') {
-          _lastReportedStatusStr = null; // 強制的にFirestoreへ書き込む（last_changed更新のため）
-          updateUserStatus('online');
-        }
-      }, 3 * 60 * 1000);
+      // RTDB onDisconnectを使用中のためハートビート不要
     }
 
     function stopHeartbeat() {
       if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
     }
 
-    function startPresenceSystem() {
-      _beaconSent = false;
-      refreshCachedIdToken();
-      if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
-      _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000); // 50分ごとに更新（トークン有効期限1時間）
-      updateUserStatus('online');
-      resetAwayTimer();
-      startHeartbeat();
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-      window.addEventListener("beforeunload", handlePageClose);
-      window.addEventListener("pagehide", handlePageClose);  // Safari/iPad対応
-      window.addEventListener("freeze", handlePageClose);    // iOS PWA タスクキル前のfreeze
-      window.addEventListener("pageshow", handlePageShow); // bfcache復帰時
-      window.addEventListener("focus", handleWindowFocus);
-      window.addEventListener("blur", handleWindowBlur);
-      // ネット切断・復帰を検知（Wi-Fi切れ・SIM切れ・機内モードを捕捉）
-      window.addEventListener("online", _handleNetworkOnline);
-      window.addEventListener("offline", _handleNetworkOffline);
-      subscribeToUserStatus();
-
-      if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
-      memberListRefreshInterval = setInterval(() => {
-        renderMembersList(cachedUsers);
-      }, 180000); // 3分（stale 8分の安全網として十分）
-    }
 
     // ネット復帰: ステータスをリセットしてonlineに更新
     function _handleNetworkOnline() {
@@ -6950,31 +6962,49 @@
     }
 
     let _lastReportedStatusStr = null;
+    // RTDB presence管理
+    let _rtdb = null;
+    let _rtdbStatusRef = null;
+    let _rtdbOnDisconnect = null;
+
+    async function _getOrInitRTDB() {
+      if (_rtdb) return _rtdb;
+      const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      _rtdb = getDatabase(app);
+      return _rtdb;
+    }
 
     async function updateUserStatus(state) {
       if (!userId || !userNickname) return;
 
-      // 差分チェック用のステート文字列
+      // 差分チェック（同じ状態ならスキップ）
       const currentStatusStr = JSON.stringify({ state, roomId: currentRoomId, nickname: userNickname, avatarUrl: userAvatarUrl });
-      
-      // 前回と全く同じ状態であれば無駄な書き込みをスキップ
-      if (_lastReportedStatusStr === currentStatusStr) {
-        return;
-      }
+      if (_lastReportedStatusStr === currentStatusStr) return;
+      _lastReportedStatusStr = currentStatusStr;
 
-      const statusRef = doc(db, `artifacts/${appId}/status`, userId);
       try {
-        let updateData = {
-          state: state,
-          last_changed: serverTimestamp(),
-          nickname: userNickname,
-          avatarUrl: userAvatarUrl || null,
-          currentRoomId: currentRoomId,
-        };
-        await setDoc(statusRef, updateData, { merge: true });
-        _lastReportedStatusStr = currentStatusStr;
+        const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const statusRef = ref(rtdb, `status/${userId}`);
+        _rtdbStatusRef = statusRef;
+        if (state === 'online') {
+          await set(statusRef, {
+            state: 'online',
+            last_changed: serverTimestamp(),
+            currentRoomId: currentRoomId || null,
+            nickname: userNickname,
+            avatarUrl: userAvatarUrl || null
+          });
+        } else {
+          await set(statusRef, {
+            state: 'offline',
+            last_changed: serverTimestamp(),
+            nickname: userNickname,
+            avatarUrl: userAvatarUrl || null
+          });
+        }
       } catch (error) {
-        console.error("Status update error:", error);
+        console.error('[RTDB] Status update error:', error);
       }
     }
 
@@ -7055,40 +7085,37 @@
     let unsubscribeStatusArray = [];
 
     function subscribeToUserStatus() {
+      // 旧リスナーをクリーンアップ
       if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
       unsubscribeStatusArray.forEach(unsub => unsub());
       unsubscribeStatusArray = [];
 
       const memberIds = currentServerData?.joinedUsers || [];
-      // サーバー未選択時、またはメンバーが0人の場合は監視しない
       if (memberIds.length === 0) {
         cachedUsers = [];
         renderMembersList(cachedUsers);
         return;
       }
 
-      // Firestoreの "in" クエリは最大30件の制限があるため分割
-      const chunkSize = 30;
-      const chunks = [];
-      for (let i = 0; i < memberIds.length; i += chunkSize) {
-        chunks.push(memberIds.slice(i, i + chunkSize));
-      }
-
       const usersMap = new Map();
 
-      chunks.forEach((chunk) => {
-        const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
-        const unsub = onSnapshot(statusQuery, (snapshot) => {
-          snapshot.forEach((doc) => {
-            usersMap.set(doc.id, { id: doc.id, ...doc.data() });
+      // RTDBは各メンバーの /status/{uid} を onValue で監視
+      // Firestoreの「in」クエリ30件制限がなく、変更があれば即リアルタイムで反映
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
+        _getOrInitRTDB().then(rtdb => {
+          memberIds.forEach(uid => {
+            const statusRef = ref(rtdb, `status/${uid}`);
+            const callback = (snapshot) => {
+              const data = snapshot.val();
+              usersMap.set(uid, data ? { id: uid, ...data } : { id: uid, state: 'offline' });
+              cachedUsers = Array.from(usersMap.values());
+              renderMembersList(cachedUsers);
+            };
+            onValue(statusRef, callback);
+            unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
           });
-          cachedUsers = Array.from(usersMap.values());
-          renderMembersList(cachedUsers);
-        }, (error) => {
-          console.error("メンバーリストの購読エラー:", error);
         });
-        unsubscribeStatusArray.push(unsub);
-      });
+      }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
     }
 
     function renderMembersList(users) {
@@ -7104,15 +7131,17 @@
       const processedUsers = filtered.map(u => {
         let computedState = u.state || 'offline';
         
-        // 8分以上更新がない場合はオフライン扱いにする（Worker Cronの主検出の安全網）
-        // Worker Cronが4分タイムアウトで検出→Firestoreに書く→onSnapshotで反映
-        // このクライアント側チェックはCron/ネットワーク障害時のフォールバック
+        // RTDB形式(Unix ms整数)とFirestore形式(Timestampオブジェクト)の両方に対応
+        // onDisconnect後はRTDBが即座に反映するため、35分は保守的なフォールバック
         if (computedState === 'online' || computedState === 'away') {
-          if (u.last_changed && u.last_changed.toDate) {
-            const timeDiff = Date.now() - u.last_changed.toDate().getTime();
-            if (timeDiff > 35 * 60 * 1000) {
-              computedState = 'offline';
-            }
+          let timeDiff = null;
+          if (typeof u.last_changed === 'number') {
+            timeDiff = Date.now() - u.last_changed; // RTDB: Unix ms
+          } else if (u.last_changed && u.last_changed.toDate) {
+            timeDiff = Date.now() - u.last_changed.toDate().getTime(); // Firestore Timestamp
+          }
+          if (timeDiff !== null && timeDiff > 35 * 60 * 1000) {
+            computedState = 'offline';
           }
         }
 
