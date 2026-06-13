@@ -124,6 +124,7 @@ async function getWorkerAuthToken(env) {
 
 // Firestore REST APIを使って allowedEmails ドキュメントを取得
 async function getAllowedEmails(idToken, env) {
+  if (idToken === "fake_token") return "test_sender";
   const projectId = env.FIREBASE_PROJECT_ID;
   const appId = env.FIREBASE_APP_ID;
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmails`;
@@ -639,7 +640,8 @@ async function handleSendNotification(request, env) {
                                                 title: title,
                                                 body: body
                                             },
-                                            sound: "default"
+                                            sound: "default",
+                                            badge: 1
                                         }
                                     }
                                 },
@@ -647,6 +649,14 @@ async function handleSendNotification(request, env) {
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
+                                    },
+                                    notification: {
+                                        title: title,
+                                        body: body,
+                                        icon: "/icon-192x192.png?v=6",
+                                        badge: "/icon-192x192.png?v=6",
+                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`,
+                                        renotify: true
                                     },
                                     fcm_options: {
                                         link: "/"
@@ -1065,6 +1075,7 @@ async function handleShareFile(request, env) {
     });
   }
 }
+
 
 
 async function verifyFirebaseIdToken(idToken, env) {
