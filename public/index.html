@@ -10836,13 +10836,13 @@
                 }
                 await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
                 localStorage.setItem('covo_fcm_token', token);
-                localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
 
                 // ★ FCMトークン週次リフレッシュ（トークン失効による通知停止を防ぐ）
-                // 7日以上経過していたら強制リフレッシュ
+                // 旧タイムスタンプを先に読んでから、今回の時刻を書き込む（順序が重要！）
                 const lastRefreshed = parseInt(localStorage.getItem('covo_fcm_token_refreshed_at') || '0', 10);
+                localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
                 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-                if (Date.now() - lastRefreshed > SEVEN_DAYS) {
+                if (lastRefreshed > 0 && Date.now() - lastRefreshed > SEVEN_DAYS) {
                   console.log('[FCM] Weekly token refresh triggered');
                   try {
                     const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');

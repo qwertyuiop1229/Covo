@@ -80,16 +80,19 @@ async function _sendOfflineIfNoClients() {
     const activeClients = clientList.filter(c => c.visibilityState === 'visible');
     if (activeClients.length === 0) {
       // 全クライアントが非表示または存在しない → offlineビーコン
+      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
       const data = JSON.stringify({
         userId: self._cachedUserId,
         appId:  self._cachedAppId,
         idToken: self._cachedIdToken
       });
-      navigator.sendBeacon(
-        'https://simplechat-api.astro-fray-server.workers.dev/api/setOffline',
-        new Blob([data], { type: 'text/plain' })
-      );
-      console.log('[SW] Sent offline beacon (no active clients)');
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('[SW] Sent offline fetch (no active clients)');
     }
   } catch (e) {
     console.warn('[SW] _sendOfflineIfNoClients error:', e);
