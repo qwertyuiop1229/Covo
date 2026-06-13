@@ -6392,6 +6392,7 @@
       window.addEventListener("online", _handleNetworkOnline);
       window.addEventListener("offline", _handleNetworkOffline);
       subscribeToUserStatus();
+      clearAppBadgeFull();
 
       if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
       memberListRefreshInterval = setInterval(() => {
@@ -6864,8 +6865,12 @@
       if ('clearAppBadge' in navigator) {
         navigator.clearAppBadge().catch(() => {});
       }
-      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_BADGE' });
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(registration => {
+          if (registration.active) {
+            registration.active.postMessage({ type: 'CLEAR_BADGE' });
+          }
+        }).catch(() => {});
       }
     }
 

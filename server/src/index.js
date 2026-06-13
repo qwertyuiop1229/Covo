@@ -505,19 +505,26 @@ async function handleSendCallNotification(request, env) {
 // FCM プッシュ通知送信処理
 // -------------------------------------------------------------
 async function handleSendNotification(request, env) {
+  const origin = request.headers.get("Origin") || "*";
+  const dynamicCors = {
+    ...corsHeaders,
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+  };
+
   try {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !title || !appId || !senderId || !idToken) {
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: dynamicCors });
     }
 
     const verifiedUid = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUid || verifiedUid !== senderId) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: dynamicCors });
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
@@ -698,10 +705,10 @@ async function handleSendNotification(request, env) {
         }
     }
 
-    return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: dynamicCors });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: dynamicCors });
   }
 }
 
