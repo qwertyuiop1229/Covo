@@ -141,7 +141,6 @@ messaging.onBackgroundMessage((payload) => {
       icon: '/icon-192x192.png?v=6',
       badge: '/icon-192x192.png?v=6',
       tag: `call-${data.callId || 'covo-call'}`,
-      renotify: true,
       requireInteraction: true,
       data,
       actions: [
@@ -160,7 +159,6 @@ messaging.onBackgroundMessage((payload) => {
       icon: '/icon-192x192.png?v=6',
       badge: '/icon-192x192.png?v=6',
       tag,
-      renotify: true,
       data,
       actions: [
         { action: 'open', title: '開く' }

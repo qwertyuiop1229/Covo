@@ -603,6 +603,7 @@ async function handleSendNotification(request, env) {
                                     body: body,
                                     roomId: roomId || "",
                                     senderId: senderId || "",
+                                    messageId: messageId || "",
                                     type: "chat_message"
                                 },
                                 // Android: 高優先度通知チャンネル
@@ -615,7 +616,7 @@ async function handleSendNotification(request, env) {
                                         notification_priority: "PRIORITY_HIGH",
                                         default_sound: true,
                                         icon: "ic_notification",
-                                        tag: `chat-${roomId || 'covo'}`
+                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     }
                                 },
                                 // iOS: alert を含めて高優先度配信（これがないとiOSで届かないことがある）
@@ -631,8 +632,7 @@ async function handleSendNotification(request, env) {
                                                 title: title,
                                                 body: body
                                             },
-                                            sound: "default",
-                                            badge: 1
+                                            sound: "default"
                                         }
                                     }
                                 },
@@ -640,15 +640,6 @@ async function handleSendNotification(request, env) {
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
-                                    },
-                                    notification: {
-                                        title: title,
-                                        body: body,
-                                        icon: "/icon-192x192.png?v=6",
-                                        badge: "/icon-192x192.png?v=6",
-                                        // messageIdがあれば1件ずつ独立した通知、なければルーム単位で上書き
-                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`,
-                                        renotify: true
                                     },
                                     fcm_options: {
                                         link: "/"
