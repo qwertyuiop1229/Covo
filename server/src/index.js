@@ -533,37 +533,43 @@ async function handleSendNotification(request, env) {
     for (const rid of receiverIds) {
         if (rid === senderId) continue; // 自分には送らない
 
-        // 1. 相手のステータスをRTDBから取得
-        const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-        const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
-        const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
-        const statusRes = await fetch(statusUrl);
-        const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
-        
         let shouldSend = true;
-        if (statusData && !statusData.error) {
-            const state = statusData.state || 'offline'; // RTDB形式
+        try {
+            // 1. 相手のステータスをRTDBから取得
+            const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+            const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+            const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
+            const statusRes = await fetch(statusUrl);
+            const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
+            
+            if (statusData && !statusData.error) {
+                const state = statusData.state || 'offline'; // RTDB形式
 
-            // オンラインかつ、今そのルームを見ているなら通知不要
-            // ただし last_changed が 15秒以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
-            if (state === 'online') {
-                const lastChangedRaw = statusData.fields?.last_changed?.timestampValue
-                  || statusData.fields?.last_changed?.integerValue
-                  || statusData.last_changed; // RTDB形式: Unix ms
-                let lastChangedMs = 0;
-                if (typeof lastChangedRaw === 'number') {
-                  lastChangedMs = lastChangedRaw; // RTDB
-                } else if (typeof lastChangedRaw === 'string') {
-                  lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
-                }
-                const ageMs = Date.now() - lastChangedMs;
-                const isStale = ageMs > 5 * 60 * 1000;
-                const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
-                  || statusData.currentRoomId; // RTDB形式
-                if (!isStale && currentRoomIdStatus === roomId) {
-                    shouldSend = false;
+                // オンラインかつ、今そのルームを見ているなら通知不要
+                // ただし last_changed が 5分以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
+                if (state === 'online') {
+                    const lastChangedRaw = statusData.fields?.last_changed?.timestampValue
+                      || statusData.fields?.last_changed?.integerValue
+                      || statusData.last_changed; // RTDB形式: Unix ms
+                    let lastChangedMs = 0;
+                    if (typeof lastChangedRaw === 'number') {
+                      lastChangedMs = lastChangedRaw; // RTDB
+                    } else if (typeof lastChangedRaw === 'string') {
+                      lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
+                    }
+                    const ageMs = Date.now() - lastChangedMs;
+                    const isStale = ageMs > 5 * 60 * 1000;
+                    const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
+                      || statusData.currentRoomId; // RTDB形式
+                    if (!isStale && currentRoomIdStatus === roomId) {
+                        shouldSend = false;
+                    }
                 }
             }
+        } catch (statusErr) {
+            console.error("RTDB status check failed:", statusErr);
+            // 万が一ステータス取得に失敗しても、通知は送る（フェールセーフ）
+            shouldSend = true;
         }
 
         if (shouldSend) {
@@ -1107,9 +1113,9 @@ async function handleSetOffline(request, env) {
     const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
 
     // RTDB REST APIで offline を書く
-    // PUT /status/{userId}.json: stateとlast_changedのみ書き換え（PATCHではなくPUTで完全上書き）
+    // PATCH /status/{userId}.json: stateとlast_changedのみ部分書き換え（nicknameなどは保持）
     await fetch(`${rtdbUrl}/status/${userId}.json?access_token=${rtdbToken}`, {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         state: "offline",

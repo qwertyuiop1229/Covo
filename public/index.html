@@ -7099,15 +7099,45 @@
 
       const usersMap = new Map();
 
-      // RTDBは各メンバーの /status/{uid} を onValue で監視
-      // Firestoreの「in」クエリ30件制限がなく、変更があれば即リアルタイムで反映
+      // 1. Firestoreフォールバック（過去にログインしたユーザーの名前・アイコンを取得）
+      for (let i = 0; i < memberIds.length; i += 30) {
+        const chunk = memberIds.slice(i, i + 30);
+        const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
+        const unsub = onSnapshot(statusQuery, (snapshot) => {
+          let changed = false;
+          snapshot.forEach((doc) => {
+            const fsData = doc.data();
+            const existing = usersMap.get(doc.id) || { id: doc.id, state: 'offline' };
+            // RTDB側にまだnicknameが無い場合のみFirestoreから補完
+            if (!existing.nickname && fsData.nickname) {
+              usersMap.set(doc.id, {
+                ...fsData,
+                ...existing // RTDBの最新のstateやlast_changedがあればそれを優先
+              });
+              changed = true;
+            }
+          });
+          if (changed) {
+            cachedUsers = Array.from(usersMap.values());
+            renderMembersList(cachedUsers);
+          }
+        });
+        unsubscribeStatusArray.push(unsub);
+      }
+
+      // 2. RTDBでリアルタイムなステータスを監視
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
         _getOrInitRTDB().then(rtdb => {
           memberIds.forEach(uid => {
             const statusRef = ref(rtdb, `status/${uid}`);
             const callback = (snapshot) => {
               const data = snapshot.val();
-              usersMap.set(uid, data ? { id: uid, ...data } : { id: uid, state: 'offline' });
+              const existing = usersMap.get(uid) || { id: uid, state: 'offline' };
+              if (data) {
+                usersMap.set(uid, { id: uid, ...existing, ...data });
+              } else {
+                usersMap.set(uid, { id: uid, ...existing, state: 'offline' });
+              }
               cachedUsers = Array.from(usersMap.values());
               renderMembersList(cachedUsers);
             };
