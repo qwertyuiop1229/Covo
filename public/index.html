@@ -7321,9 +7321,17 @@
     }
 
     function formatTimeAgo(timestamp) {
-      if (!timestamp || !timestamp.toDate) return "";
+      if (!timestamp) return "";
+      let past;
+      if (typeof timestamp === 'number') {
+        past = new Date(timestamp);
+      } else if (timestamp.toDate) {
+        past = timestamp.toDate();
+      } else {
+        return "";
+      }
+      
       const now = new Date();
-      const past = timestamp.toDate();
       const diffInSeconds = Math.floor((now - past) / 1000);
 
       if (diffInSeconds < 60) return `数秒前`;
