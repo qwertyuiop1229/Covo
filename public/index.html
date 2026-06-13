@@ -7116,7 +7116,7 @@
 
       const usersMap = new Map();
 
-      // 1. Firestoreフォールバック（過去にログインしたユーザーの名前・アイコンを取得）
+      // 1. Firestoreフォールバック（過去にログインしたユーザーや、まだリロードしていない旧バージョンのユーザーのステータスを取得）
       for (let i = 0; i < memberIds.length; i += 30) {
         const chunk = memberIds.slice(i, i + 30);
         const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
@@ -7124,13 +7124,17 @@
           let changed = false;
           snapshot.forEach((doc) => {
             const fsData = doc.data();
-            const existing = usersMap.get(doc.id) || { id: doc.id, state: 'offline' };
-            // RTDB側にまだnicknameが無い場合のみFirestoreから補完
-            if (!existing.nickname && fsData.nickname) {
-              usersMap.set(doc.id, {
-                ...fsData,
-                ...existing // RTDBの最新のstateやlast_changedがあればそれを優先
-              });
+            const existing = usersMap.get(doc.id) || { id: doc.id };
+            
+            if (existing._hasRtdb) {
+              // RTDBデータがある場合（新バージョン）、nickname/avatarUrlのみ補完
+              if (!existing.nickname && fsData.nickname) {
+                usersMap.set(doc.id, { ...fsData, ...existing });
+                changed = true;
+              }
+            } else {
+              // RTDBデータがない場合（旧バージョン）、Firestoreのデータを全採用（state等も）
+              usersMap.set(doc.id, { ...existing, ...fsData });
               changed = true;
             }
           });
@@ -7149,11 +7153,14 @@
             const statusRef = ref(rtdb, `status/${uid}`);
             const callback = (snapshot) => {
               const data = snapshot.val();
-              const existing = usersMap.get(uid) || { id: uid, state: 'offline' };
+              const existing = usersMap.get(uid) || { id: uid };
+              
               if (data) {
-                usersMap.set(uid, { id: uid, ...existing, ...data });
+                // RTDBにデータがある場合はそれを最優先
+                usersMap.set(uid, { id: uid, ...existing, ...data, _hasRtdb: true });
               } else {
-                usersMap.set(uid, { id: uid, ...existing, state: 'offline' });
+                // RTDBにデータがない場合、Firestore(既存)のstateを優先。なければoffline
+                usersMap.set(uid, { id: uid, state: 'offline', ...existing, _hasRtdb: false });
               }
               cachedUsers = Array.from(usersMap.values());
               renderMembersList(cachedUsers);
