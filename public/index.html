@@ -6760,10 +6760,10 @@
 
     function startHeartbeat() {
       if (_heartbeatInterval) return;
-      // 15分ごとにFirestoreへ直接online書き込み（10ユーザーで960回/日 = 無料枠の5%）
+      // 3分ごとにFirestoreへonline書き込み（3分無応答 = 最大3分以内にoffline検知）
       _heartbeatInterval = setInterval(() => {
         if (document.visibilityState !== 'hidden') updateUserStatus('online');
-      }, 15 * 60 * 1000);
+      }, 3 * 60 * 1000);
     }
 
     function stopHeartbeat() {
@@ -6785,12 +6785,26 @@
       window.addEventListener("pageshow", handlePageShow); // bfcache復帰時
       window.addEventListener("focus", handleWindowFocus);
       window.addEventListener("blur", handleWindowBlur);
+      // ネット切断・復帰を検知（Wi-Fi切れ・SIM切れ・機内モードを捕捉）
+      window.addEventListener("online", _handleNetworkOnline);
+      window.addEventListener("offline", _handleNetworkOffline);
       subscribeToUserStatus();
 
       if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
       memberListRefreshInterval = setInterval(() => {
         renderMembersList(cachedUsers);
       }, 180000); // 3分（stale 8分の安全網として十分）
+    }
+
+    // ネット復帰: ステータスをリセットしてonlineに更新
+    function _handleNetworkOnline() {
+      _beaconSent = false;
+      updateUserStatus('online');
+      refreshCachedIdToken();
+    }
+    // ネット切断: 即座にofflineビーコンを送る
+    function _handleNetworkOffline() {
+      sendOfflineBeacon();
     }
 
     function stopPresenceSystem() {
@@ -6810,6 +6824,8 @@
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("online", _handleNetworkOnline);
+      window.removeEventListener("offline", _handleNetworkOffline);
       if (unsubscribeUserStatus) {
         unsubscribeUserStatus();
         unsubscribeUserStatus = null;
@@ -8725,7 +8741,8 @@
         if (replyingToMessage) {
           data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
         }
-        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+        const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+        const newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
         // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
         const wasEncrypted = isEncrypted(textToStore);
         await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
@@ -8744,19 +8761,31 @@
               const serverName = serverData.name || 'Covo';
               const roomName = roomNames[currentRoomId] || 'room';
               const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-              fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  receiverIds,
-                  title: `${serverName} › #${roomName}`,
-                  body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
-                  roomId: currentRoomId,
-                  appId: appId,
-                  senderId: userId,
-                  idToken
-                })
-              }).catch(e => console.error("Notification trigger error:", e));
+              const notifPayload = JSON.stringify({
+                receiverIds,
+                title: `${serverName} › #${roomName}`,
+                body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
+                roomId: currentRoomId,
+                messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
+                appId: appId,
+                senderId: userId,
+                idToken
+              });
+              // sendBeaconはページを閉じても確実に届く（fetchより信頼性が高い）
+              const beaconSent = navigator.sendBeacon
+                ? navigator.sendBeacon(
+                    "https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification",
+                    new Blob([notifPayload], { type: 'application/json' })
+                  )
+                : false;
+              if (!beaconSent) {
+                fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: notifPayload,
+                  keepalive: true
+                }).catch(e => console.error("Notification trigger error:", e));
+              }
             }
           }
         } catch (notifyErr) {
@@ -10733,6 +10762,17 @@
           const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
           console.log('Service Worker registered:', swRegistration);
 
+          // ★ SWにuserIdを送る（SW側で自分のメッセージへの通知をスキップするため）
+          const sendUserIdToSW = () => {
+            const sw = navigator.serviceWorker.controller;
+            if (sw && userId) {
+              sw.postMessage({ type: 'SET_USER_ID', userId });
+            }
+          };
+          // 即時送信 + コントローラー切り替わり時にも送信
+          sendUserIdToSW();
+          navigator.serviceWorker.addEventListener('controllerchange', sendUserIdToSW);
+
           // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカス
           navigator.serviceWorker.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
@@ -10779,6 +10819,22 @@
                 }
                 await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
                 localStorage.setItem('covo_fcm_token', token);
+                localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
+
+                // ★ FCMトークン週次リフレッシュ（トークン失効による通知停止を防ぐ）
+                // 7日以上経過していたら強制リフレッシュ
+                const lastRefreshed = parseInt(localStorage.getItem('covo_fcm_token_refreshed_at') || '0', 10);
+                const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+                if (Date.now() - lastRefreshed > SEVEN_DAYS) {
+                  console.log('[FCM] Weekly token refresh triggered');
+                  try {
+                    const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');
+                    await deleteToken(messaging);
+                    fcmInitialized = false;
+                    await initializeFCM(); // 再初期化でトークン再取得
+                    return;
+                  } catch (_) {}
+                }
               } else if (!token) {
                 console.warn('FCM Token not obtained — push notifications may not work on this device');
               }

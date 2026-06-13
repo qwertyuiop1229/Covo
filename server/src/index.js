@@ -506,7 +506,7 @@ async function handleSendCallNotification(request, env) {
 // -------------------------------------------------------------
 async function handleSendNotification(request, env) {
   try {
-    const { receiverIds, title, body, roomId, appId, senderId, idToken } = await request.json();
+    const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
     }
@@ -619,7 +619,7 @@ async function handleSendNotification(request, env) {
                                         }
                                     }
                                 },
-                                // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起こす
+                                    // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起こす
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
@@ -629,7 +629,8 @@ async function handleSendNotification(request, env) {
                                         body: body,
                                         icon: "/icon-192x192.png?v=6",
                                         badge: "/icon-192x192.png?v=6",
-                                        tag: `chat-${roomId || 'covo'}`,
+                                        // messageIdがあれば1件ずつ独立した通知、なければルーム単位で上書き
+                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`,
                                         renotify: true
                                     },
                                     fcm_options: {
