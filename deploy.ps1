@@ -99,7 +99,7 @@ firebase deploy --only "hosting,firestore:rules,database"
 
 # [5/5] git push → GitHub Actions が Windows インストーラーをビルドする
 Write-Host "[5/5] Pushing to GitHub..." -ForegroundColor Green
-git push origin HEAD --tags
+git push simplechat HEAD --tags
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor Cyan
