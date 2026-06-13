@@ -6760,9 +6760,13 @@
 
     function startHeartbeat() {
       if (_heartbeatInterval) return;
-      // 3分ごとにFirestoreへonline書き込み（3分無応答 = 最大3分以内にoffline検知）
+      // 3分ごとにFirestoreへonline書き込み（last_changedを更新してstale検出を正確にする）
+      // ※ 重要: _lastReportedStatusStrをリセットして差分チェックをバイパスし強制書き込み
       _heartbeatInterval = setInterval(() => {
-        if (document.visibilityState !== 'hidden') updateUserStatus('online');
+        if (document.visibilityState !== 'hidden') {
+          _lastReportedStatusStr = null; // 強制的にFirestoreへ書き込む（last_changed更新のため）
+          updateUserStatus('online');
+        }
       }, 3 * 60 * 1000);
     }
 
