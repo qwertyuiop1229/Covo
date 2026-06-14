@@ -9452,7 +9452,26 @@
         }
         messageRow.appendChild(avatarDiv);
       }
-      const bubbleContainer = messageRow;
+      
+      const replyIconBg = document.createElement("div");
+      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 transition-opacity pointer-events-none";
+      replyIconBg.style.width = "40px";
+      replyIconBg.style.height = "40px";
+      replyIconBg.style.borderRadius = "50%";
+      replyIconBg.style.background = "rgba(0,0,0,0.2)";
+      if (isMyMessage) {
+        replyIconBg.style.right = "100%";
+        replyIconBg.style.marginRight = "10px";
+      } else {
+        replyIconBg.style.left = "100%";
+        replyIconBg.style.marginLeft = "10px";
+      }
+      replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
+      
+      const bubbleContainer = document.createElement("div");
+      bubbleContainer.className = "relative inline-flex";
+      bubbleContainer.appendChild(replyIconBg);
+      messageRow.appendChild(bubbleContainer);
 
       const messageElement = document.createElement("div");
       messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col`;
@@ -9909,6 +9928,13 @@
               replyingToContainer.classList.remove("hidden");
             }
           }
+          const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
+          if (replyBg) {
+             replyBg.style.transition = "opacity 0.2s ease-out, transform 0.2s ease-out";
+             replyBg.style.opacity = "0";
+             replyBg.style.transform = "translateY(-50%) scale(0.5)";
+             setTimeout(() => { replyBg.style.transition = ""; }, 200);
+          }
         }
       }
       swipeTargetRow = null;
@@ -9928,12 +9954,35 @@
       
       if (swipeTargetRow && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
         const bubble = swipeTargetRow.querySelector(".message-bubble");
+        const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
         if (bubble) {
+          const isMyMsg = bubble.classList.contains("my-message");
           let tx = deltaX;
+          // 自分のメッセージ（右寄り）は左にスワイプ、他人のメッセージ（左寄り）は右にスワイプのみ許可
+          if (isMyMsg && tx > 0) tx = 0;
+          if (!isMyMsg && tx < 0) tx = 0;
+          
           if (tx > 60) tx = 60 + (tx - 60) * 0.2;
           if (tx < -60) tx = -60 + (tx + 60) * 0.2;
           bubble.style.transform = `translateX(${tx}px)`;
-          swipeCurrentX = deltaX;
+          swipeCurrentX = tx;
+          
+          if (replyBg) {
+            const absTx = Math.abs(tx);
+            const progress = Math.min(absTx / 50, 1);
+            replyBg.style.opacity = progress;
+            replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
+            if (absTx > 50) {
+               replyBg.style.background = "rgba(59, 130, 246, 0.9)"; // bg-blue-500
+               if (progress > 0.99 && !replyBg.dataset.vibrated) {
+                  if (navigator.vibrate) navigator.vibrate(10);
+                  replyBg.dataset.vibrated = "true";
+               }
+            } else {
+               replyBg.style.background = "rgba(0,0,0,0.2)";
+               replyBg.dataset.vibrated = "";
+            }
+          }
         }
       }
     }, { passive: true });
@@ -10259,6 +10308,14 @@
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       };
+
+      if (fileData && fileData.startsWith('blob:')) {
+        fetch(fileData)
+          .then(res => res.blob())
+          .then(blob => tryShareOrDownloadBlob(blob))
+          .catch(() => window.open(fileData, '_blank'));
+        return;
+      }
 
       if (fileData && fileData.startsWith('http')) {
         if (fileData.includes('res.cloudinary.com')) {

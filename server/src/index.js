@@ -278,44 +278,64 @@ async function handleJoinServer(request, env) {
       valid = true;
     } else if (inviteCode) {
       // 招待コードの検証
-      let invRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`, {
-        headers: { "Authorization": `Bearer ${adminToken}` }
-      });
-      let invData = await invRes.json();
+      let success = false;
+      const docPath = `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`;
       
-      if (invData.error || !invData.fields) {
-        return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: corsHeaders });
-      }
-      
-      if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
-        return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: corsHeaders });
-      }
-      
-      let expiresAt = invData.fields.expiresAt?.timestampValue;
-      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
-        return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: corsHeaders });
-      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let invRes = await fetch(`https://firestore.googleapis.com/v1/${docPath}`, {
+          headers: { "Authorization": `Bearer ${adminToken}` }
+        });
+        let invData = await invRes.json();
+        
+        if (invData.error || !invData.fields) {
+          return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: corsHeaders });
+        }
+        
+        if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
+          return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: corsHeaders });
+        }
+        
+        let expiresAt = invData.fields.expiresAt?.timestampValue;
+        if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+          return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: corsHeaders });
+        }
 
-      let maxUses = invData.fields.maxUses?.integerValue;
-      let uses = invData.fields.uses?.integerValue || 0;
-      if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
-        return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: corsHeaders });
+        let maxUses = invData.fields.maxUses?.integerValue;
+        let uses = invData.fields.uses?.integerValue || 0;
+        if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
+          return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: corsHeaders });
+        }
+        
+        // 招待コードの uses をインクリメント (Precondition付きトランザクション風処理)
+        const updateTime = invData.updateTime;
+        const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+        const commitRes = await fetch(invTransformUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            writes: [{
+              update: {
+                name: invData.name,
+                fields: {
+                  ...invData.fields,
+                  uses: { integerValue: (parseInt(uses) + 1).toString() }
+                }
+              },
+              currentDocument: { updateTime: updateTime }
+            }]
+          })
+        });
+        
+        const commitData = await commitRes.json();
+        if (!commitData.error) {
+          success = true;
+          break;
+        }
       }
       
-      // 招待コードの uses をインクリメント (トランザクションではないがREST APIで直接インクリメント)
-      const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
-      await fetch(invTransformUrl, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          writes: [{
-            transform: {
-              document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`,
-              fieldTransforms: [{ fieldPath: "uses", increment: { integerValue: "1" } }]
-            }
-          }]
-        })
-      });
+      if (!success) {
+        return new Response(JSON.stringify({ success: false, error: "Conflict updating invite code, please try again" }), { status: 409, headers: corsHeaders });
+      }
       
       valid = true;
     }
@@ -816,9 +836,22 @@ async function handleUploadFile(request, env) {
       });
     }
 
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const blockedExts = ['exe', 'bat', 'cmd', 'sh', 'vbs', 'scr', 'msi', 'js', 'html', 'htm'];
+    if (blockedExts.includes(ext)) {
+      return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const folder = formData.get('folder') || '';
+    if (folder && folder.includes('..')) {
+      return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder };
 
     await env.FILES.put(key, arrayBuffer, {
