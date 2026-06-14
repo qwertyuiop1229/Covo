@@ -4063,6 +4063,7 @@
       <!-- Generated dynamically -->
     </div>
     <div class="custom-context-menu-inner">
+      <button id="replyMessageButton">リプライ</button>
       <button id="copyMessageButton">コピー</button>
       <button id="pinMessageButton">ピン留め / 解除</button>
       <button id="deleteMessageButton">削除</button>
@@ -4995,6 +4996,7 @@
     const cancelReplyButton = document.getElementById("cancelReplyButton");
 
     const messageContextMenu = document.getElementById("messageContextMenu");
+    const replyMessageButton = document.getElementById("replyMessageButton");
     const copyMessageButton = document.getElementById("copyMessageButton");
     const deleteMessageButton = document.getElementById("deleteMessageButton");
     const toggleSearchButton = document.getElementById("toggleSearchButton");
@@ -9860,6 +9862,8 @@
     let longPressTriggered = false;
     let ignoreNextContextMenuClick = false;
     let msgTouchStartX = 0, msgTouchStartY = 0;
+    let swipeTargetRow = null;
+    let swipeCurrentX = 0;
     messagesDisplay.addEventListener("touchstart", (e) => {
       const bubble = e.target.closest(".message-bubble");
       const row = e.target.closest(".message-row");
@@ -9868,6 +9872,8 @@
       const touch = e.touches[0];
       msgTouchStartX = touch.clientX;
       msgTouchStartY = touch.clientY;
+      swipeTargetRow = row;
+      swipeCurrentX = 0;
       const clientX = touch.clientX;
       const clientY = touch.clientY;
       longPressTriggered = false;
@@ -9886,17 +9892,52 @@
         setTimeout(() => ignoreNextContextMenuClick = false, 500);
         if (e.cancelable) e.preventDefault();
       }
+      if (swipeTargetRow) {
+        const bubble = swipeTargetRow.querySelector(".message-bubble");
+        if (bubble) {
+          bubble.style.transition = "transform 0.2s ease-out";
+          bubble.style.transform = "translateX(0)";
+          setTimeout(() => { bubble.style.transition = ""; }, 200);
+          
+          if (Math.abs(swipeCurrentX) > 50) {
+            const msgId = bubble.dataset.messageId;
+            const msgData = lastMessagesData.find(m => m.id === msgId);
+            if (msgData) {
+              replyingToMessage = msgData;
+              replyingToNickname.textContent = msgData.senderNickname;
+              replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
+              replyingToContainer.classList.remove("hidden");
+            }
+          }
+        }
+      }
+      swipeTargetRow = null;
+      swipeCurrentX = 0;
     });
     messagesDisplay.addEventListener("touchmove", (e) => { 
       const touch = e.touches[0];
-      if (Math.abs(touch.clientX - msgTouchStartX) > 10 || Math.abs(touch.clientY - msgTouchStartY) > 10) {
+      const deltaX = touch.clientX - msgTouchStartX;
+      const deltaY = touch.clientY - msgTouchStartY;
+      
+      if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
         clearTimeout(longPressTimer); 
         if (messageContextMenu.classList.contains("hidden")) {
           longPressTriggered = false; 
         }
       }
+      
+      if (swipeTargetRow && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+        const bubble = swipeTargetRow.querySelector(".message-bubble");
+        if (bubble) {
+          let tx = deltaX;
+          if (tx > 60) tx = 60 + (tx - 60) * 0.2;
+          if (tx < -60) tx = -60 + (tx + 60) * 0.2;
+          bubble.style.transform = `translateX(${tx}px)`;
+          swipeCurrentX = deltaX;
+        }
+      }
     }, { passive: true });
-    messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; });
+    messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; swipeTargetRow = null; swipeCurrentX = 0; });
 
     const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
 
@@ -9912,7 +9953,8 @@
           const btn = document.createElement('div');
           btn.className = 'reaction-btn';
           btn.innerHTML = emoji;
-          btn.onclick = () => {
+          btn.onclick = (e) => {
+            if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
             window.toggleReaction(msgData.id, emoji);
             messageContextMenu.classList.add("hidden");
           };
@@ -9922,6 +9964,7 @@
         moreBtn.className = 'reaction-more-btn';
         moreBtn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
         moreBtn.onclick = (e) => {
+          if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
           e.stopPropagation();
           messageContextMenu.classList.add("hidden");
           window._reactionTargetMessageId = msgData.id;
@@ -9953,6 +9996,11 @@
 
       messageContextMenu.style.left = `${safeLeft}px`;
       messageContextMenu.style.top = `${safeTop}px`;
+
+      messageContextMenu.style.pointerEvents = "none";
+      setTimeout(() => {
+        messageContextMenu.style.pointerEvents = "auto";
+      }, 400);
     }
 
     messagesDisplay.addEventListener("contextmenu", (e) => {
@@ -9974,7 +10022,19 @@
       if (!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden");
     });
 
-    copyMessageButton.addEventListener("click", () => {
+    replyMessageButton.addEventListener("click", (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      if (selectedMessageForContext) {
+        replyingToMessage = selectedMessageForContext;
+        replyingToNickname.textContent = selectedMessageForContext.senderNickname;
+        replyingToText.textContent = selectedMessageForContext.text || (selectedMessageForContext.fileName ? "ファイル" : "...");
+        replyingToContainer.classList.remove("hidden");
+      }
+      messageContextMenu.classList.add("hidden");
+    });
+
+    copyMessageButton.addEventListener("click", (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
       if (selectedMessageForContext && selectedMessageForContext.text) {
         copyToClipboard(selectedMessageForContext.text);
         alertMessage("コピーしました", "success");
@@ -9994,7 +10054,8 @@
       return m ? m[1] : 'image';
     }
 
-    deleteMessageButton.addEventListener("click", async () => {
+    deleteMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
       messageContextMenu.classList.add("hidden");
       if (!selectedMessageForContext) return;
       const canDelete = selectedMessageForContext.senderId === userId || isAdmin ||
@@ -10172,13 +10233,40 @@
         });
         return;
       }
+
+      const tryShareOrDownloadBlob = async (blob) => {
+        if (navigator.canShare && navigator.share) {
+          try {
+            const file = new File([blob], fileName, { type: mimeType });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: fileName,
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn("Share failed", e);
+          }
+        }
+        // Fallback: download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      };
+
       if (fileData && fileData.startsWith('http')) {
         if (fileData.includes('res.cloudinary.com')) {
           // Cloudinary URL はブラウザからの直接アクセスが制限される場合があるため
           // Cloudflare Worker プロキシ経由でダウンロードする
           const proxyUrl = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(fileData)}&name=${encodeURIComponent(fileName)}`;
-          if (_isIOSSafari) {
-            // iOS Safari: プロキシURL を新タブで開く（Content-Disposition: attachment でダウンロード）
+          if (_isIOSSafari && (!navigator.share)) {
+            // iOS Safari かつ Share 非対応の場合
             window.open(proxyUrl, '_blank');
             return;
           }
@@ -10187,21 +10275,12 @@
               if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
               return res.blob();
             })
-            .then(blob => {
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = fileName;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(() => URL.revokeObjectURL(url), 60000);
-            })
+            .then(blob => tryShareOrDownloadBlob(blob))
             .catch(() => window.open(fileData, '_blank'));
           return;
         }
         // 非Cloudinary HTTP URL
-        if (_isIOSSafari) {
+        if (_isIOSSafari && (!navigator.share)) {
           window.open(fileData, '_blank');
           return;
         }
@@ -10210,16 +10289,7 @@
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.blob();
           })
-          .then(blob => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
-          })
+          .then(blob => tryShareOrDownloadBlob(blob))
           .catch(() => window.open(fileData, '_blank'));
         return;
       }
@@ -10783,7 +10853,8 @@
     });
 
     // --- ピン留め機能 ---
-    pinMessageButton.addEventListener("click", async () => {
+    pinMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
       if (selectedMessageForContext) {
         const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
         const isPinned = !selectedMessageForContext.isPinned;

@@ -198,14 +198,21 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
       for (const client of clientList) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
           return client.focus();
         }
       }
+      // なければ新しく開く
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
       }
     })
   );
