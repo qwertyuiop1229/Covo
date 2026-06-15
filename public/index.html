@@ -5772,7 +5772,7 @@
       try {
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         if (!idToken) { kvText.textContent = '認証エラー'; return; }
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats`, {
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats?appId=${appId}`, {
           headers: { "Authorization": `Bearer ${idToken}` }
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -5804,7 +5804,7 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles`, { 
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}`, { 
           method: 'DELETE',
           headers: { "Authorization": `Bearer ${idToken}` }
         });
@@ -9437,13 +9437,13 @@
     function createMessageElement(message, messageId, readByCount = 0) {
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
-      messageRow.className = "message-row w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRow.className = "message-row relative w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
 
       // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
       if (!isMyMessage) {
         const senderUser = cachedUsers.find(u => u.id === message.senderId);
         const avatarDiv = document.createElement("div");
-        avatarDiv.className = "msg-avatar";
+        avatarDiv.className = "msg-avatar z-10";
         if (senderUser?.avatarUrl) {
           __setAvatarImg(avatarDiv, senderUser.avatarUrl, message.senderNickname, { style: '' });
           avatarDiv.addEventListener("click", () => openAvatarLightbox(senderUser.avatarUrl));
@@ -9454,27 +9454,22 @@
       }
       
       const replyIconBg = document.createElement("div");
-      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 transition-opacity pointer-events-none";
+      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 transition-opacity pointer-events-none z-0";
       replyIconBg.style.width = "40px";
       replyIconBg.style.height = "40px";
       replyIconBg.style.borderRadius = "50%";
       replyIconBg.style.background = "rgba(0,0,0,0.2)";
       if (isMyMessage) {
-        replyIconBg.style.right = "100%";
-        replyIconBg.style.marginRight = "10px";
+        replyIconBg.style.right = "20px";
       } else {
-        replyIconBg.style.left = "100%";
-        replyIconBg.style.marginLeft = "10px";
+        replyIconBg.style.left = "48px";
       }
       replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
-      
-      const bubbleContainer = document.createElement("div");
-      bubbleContainer.className = "relative inline-flex";
-      bubbleContainer.appendChild(replyIconBg);
-      messageRow.appendChild(bubbleContainer);
+      messageRow.appendChild(replyIconBg);
 
       const messageElement = document.createElement("div");
-      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col`;
+      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col z-10`;
+      messageElement.style.touchAction = "pan-y";
       messageElement.dataset.messageId = messageId;
       const senderNicknameSpan = document.createElement("span");
       senderNicknameSpan.className = `text-xs text-gray-600 mb-1 ${isMyMessage ? "text-right" : "text-left"}`;
@@ -9690,7 +9685,7 @@
         }
         messageElement.appendChild(readSpan);
       }
-      bubbleContainer.appendChild(messageElement);
+      messageRow.appendChild(messageElement);
       return messageRow;
     }
 
@@ -9953,6 +9948,7 @@
       }
       
       if (swipeTargetRow && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+        e.preventDefault(); // Prevent native horizontal scroll/swipe-back
         const bubble = swipeTargetRow.querySelector(".message-bubble");
         const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
         if (bubble) {
@@ -9985,7 +9981,7 @@
           }
         }
       }
-    }, { passive: true });
+    }, { passive: false });
     messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; swipeTargetRow = null; swipeCurrentX = 0; });
 
     const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];

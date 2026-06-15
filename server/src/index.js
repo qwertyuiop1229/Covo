@@ -230,8 +230,8 @@ async function handleJoinServer(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== userId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
@@ -395,8 +395,8 @@ async function handleSendCallNotification(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== callerId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== callerId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
@@ -539,9 +539,13 @@ async function handleSendNotification(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: dynamicCors });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== senderId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== senderId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: dynamicCors });
+    }
+
+    if (receiverIds.length > 50) {
+      return new Response(JSON.stringify({ success: false, error: "Too many receivers. Limit is 50." }), { status: 400, headers: dynamicCors });
     }
 
     const workerToken = await getWorkerAuthToken(env);
@@ -825,8 +829,8 @@ async function handleUploadFile(request, env) {
       });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== uploaderId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== uploaderId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
@@ -882,8 +886,8 @@ async function handleDeleteFile(request, env, url) {
       return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== requesterId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== requesterId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -961,9 +965,25 @@ async function handleStorageStats(request, env) {
     if (!idToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const appId = new URL(request.url).searchParams.get("appId");
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    
+    const workerToken = await getWorkerAuthToken(env);
+    const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
+    const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+    const adminData = await adminRes.json();
+    let isAdmin = false;
+    if (adminData.fields && adminData.fields.emails && adminData.fields.emails.arrayValue && adminData.fields.emails.arrayValue.values) {
+       const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
+       if (emails.includes(verifiedUser.email)) isAdmin = true;
+    }
+    if (!isAdmin) {
+       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const kvStats = { fileCount: 0, totalBytes: 0 };
@@ -1006,9 +1026,25 @@ async function handleBulkDeleteFiles(request, env) {
     if (!idToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const appId = new URL(request.url).searchParams.get("appId");
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    
+    const workerToken = await getWorkerAuthToken(env);
+    const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
+    const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+    const adminData = await adminRes.json();
+    let isAdmin = false;
+    if (adminData.fields && adminData.fields.emails && adminData.fields.emails.arrayValue && adminData.fields.emails.arrayValue.values) {
+       const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
+       if (emails.includes(verifiedUser.email)) isAdmin = true;
+    }
+    if (!isAdmin) {
+       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     let kvDeleted = 0;
@@ -1056,8 +1092,12 @@ async function handleShareFile(request, env) {
       });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== uploaderId) {
+    if (file.size > 25 * 1024 * 1024) {
+      return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== uploaderId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
@@ -1121,7 +1161,7 @@ async function verifyFirebaseIdToken(idToken, env) {
     });
     const data = await res.json();
     if (data.error || !data.users || data.users.length === 0) return null;
-    return data.users[0].localId;
+    return { uid: data.users[0].localId, email: data.users[0].email };
   } catch (e) {
     return null;
   }
@@ -1145,8 +1185,8 @@ async function handleSetOffline(request, env) {
       return new Response("Missing fields", { status: 400, headers: corsSetOffline });
     }
 
-    const verifiedUid = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUid || verifiedUid !== userId) {
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response("Unauthorized", { status: 401, headers: corsSetOffline });
     }
 
