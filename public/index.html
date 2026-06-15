@@ -10007,10 +10007,11 @@
                replyBg.style.background = "rgba(0,0,0,0.2)";
                replyBg.dataset.vibrated = "";
             }
+            }
           }
         }
       }
-    }, { passive: false }, { passive: false });
+    }, { passive: false });
     messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; if (swipeTargetRow) swipeTargetRow.dataset.sDir = ""; swipeTargetRow = null; swipeCurrentX = 0; });
 
     const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
