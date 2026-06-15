@@ -66,7 +66,7 @@ service cloud.firestore {
       // サーバー作成クォータ（本人のみ読み書き）
       match /userQuotas/{qUserId} {
         allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if isAuthenticated() && request.auth.uid == qUserId;
+        allow write: if false; // クライアントからの直接更新を禁止
       }
 
       match /users/{userId}/profile/{docId} {
@@ -104,10 +104,14 @@ service cloud.firestore {
         allow create: if isAuthenticated() &&
           request.resource.data.caller.uid == request.auth.uid;
         match /callerCandidates/{candId} {
-          allow read, create: if isAuthenticated();
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
         }
         match /calleeCandidates/{candId} {
-          allow read, create: if isAuthenticated();
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
         }
       }
 
@@ -126,10 +130,14 @@ service cloud.firestore {
           (resource.data.sender.uid == request.auth.uid ||
            resource.data.receiverUid == request.auth.uid);
         match /senderCandidates/{candId} {
-          allow read, create: if isAuthenticated();
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
         }
         match /receiverCandidates/{candId} {
-          allow read, create: if isAuthenticated();
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
         }
       }
 
@@ -150,7 +158,8 @@ service cloud.firestore {
           request.resource.data.serverAdmins == [request.auth.uid] &&
           request.resource.data.joinedUsers == [request.auth.uid];
 
-        allow update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
 
         // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
         allow update: if isAuthenticated() &&
@@ -158,7 +167,8 @@ service cloud.firestore {
             .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
           request.auth.uid in resource.data.joinedUsers &&
           request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]);
+          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]) &&
+          request.resource.data.memberCount == resource.data.memberCount - 1;
 
         // サーバー削除: グローバル管理者またはサーバー管理者
         allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
@@ -183,10 +193,13 @@ service cloud.firestore {
             allow create: if isJoinedServer(appId, serverId) &&
               request.resource.data.senderId == request.auth.uid;
             allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && isServerAdmin(appId, serverId))
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && isServerAdmin(appId, serverId))
               || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId']))
-              || isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
+              || (isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
             );
             allow delete: if isJoinedServer(appId, serverId) &&
               (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
@@ -209,6 +222,12 @@ service cloud.firestore {
             allow create: if isJoinedServer(appId, serverId);
             allow update, delete: if isServerAdmin(appId, serverId);
           }
+
+          // タイピングインジケーター（サーバー参加者のみ）
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+          }
         }
 
         // サーバー別プロフィール
@@ -228,10 +247,5 @@ service cloud.firestore {
       }
     }
 
-    // タイピングインジケーター（既存パス維持）
-    match /apps/{appId}/rooms/{roomId}/typing/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
   }
 }
