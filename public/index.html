@@ -9919,7 +9919,7 @@
         showContextMenu(targetBubble, clientX, clientY);
         if (window.getSelection) window.getSelection().removeAllRanges();
       }, 300);
-    }, { passive: true });
+    }, { passive: false });
 
     messagesDisplay.addEventListener("touchend", (e) => {
       clearTimeout(longPressTimer);
@@ -9932,9 +9932,9 @@
       if (swipeTargetRow) {
         const bubble = swipeTargetRow.querySelector(".message-bubble");
         if (bubble) {
-          bubble.style.transition = "transform 0.2s ease-out";
+          bubble.style.transition = "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
           bubble.style.transform = "translateX(0)";
-          setTimeout(() => { bubble.style.transition = ""; }, 200);
+          setTimeout(() => { bubble.style.transition = ""; }, 400);
           
           if (Math.abs(swipeCurrentX) > 50) {
             const msgId = bubble.dataset.messageId;
@@ -9948,14 +9948,14 @@
           }
           const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
           if (replyBg) {
-             replyBg.style.transition = "opacity 0.2s ease-out, transform 0.2s ease-out";
+             replyBg.style.transition = "opacity 0.2s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
              replyBg.style.opacity = "0";
              replyBg.style.transform = "translateY(-50%) scale(0.5)";
-             setTimeout(() => { replyBg.style.transition = ""; }, 200);
+             setTimeout(() => { replyBg.style.transition = ""; }, 400);
           }
         }
       }
-      swipeTargetRow = null;
+      if (swipeTargetRow) swipeTargetRow.dataset.sDir = ""; swipeTargetRow = null;
       swipeCurrentX = 0;
     });
     messagesDisplay.addEventListener("touchmove", (e) => { 
@@ -9970,27 +9970,33 @@
         }
       }
       
-      if (swipeTargetRow && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
-        e.preventDefault(); // Prevent native horizontal scroll/swipe-back
-        const bubble = swipeTargetRow.querySelector(".message-bubble");
-        const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
-        if (bubble) {
-          const isMyMsg = bubble.classList.contains("my-message");
-          let tx = deltaX;
-          // 自分のメッセージ（右寄り）は左にスワイプ、他人のメッセージ（左寄り）は右にスワイプのみ許可
-          if (isMyMsg && tx > 0) tx = 0;
-          if (!isMyMsg && tx < 0) tx = 0;
-          
-          if (tx > 60) tx = 60 + (tx - 60) * 0.2;
-          if (tx < -60) tx = -60 + (tx + 60) * 0.2;
-          bubble.style.transform = `translateX(${tx}px)`;
-          swipeCurrentX = tx;
-          
-          if (replyBg) {
-            const absTx = Math.abs(tx);
-            const progress = Math.min(absTx / 50, 1);
-            replyBg.style.opacity = progress;
-            replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
+      if (swipeTargetRow) {
+        if (!swipeTargetRow.dataset.sDir) {
+           if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 5) swipeTargetRow.dataset.sDir = 'h';
+           else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 5) swipeTargetRow.dataset.sDir = 'v';
+        }
+        if (swipeTargetRow.dataset.sDir === 'h') {
+          if (e.cancelable) e.preventDefault(); // Lock horizontal swipe for iOS Safari
+          const bubble = swipeTargetRow.querySelector(".message-bubble");
+          const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
+          if (bubble) {
+            const isMyMsg = bubble.classList.contains("my-message");
+            let tx = deltaX;
+            // 自分のメッセージ（右寄り）は左にスワイプ、他人のメッセージ（左寄り）は右にスワイプのみ許可
+            if (isMyMsg && tx > 0) tx = 0;
+            if (!isMyMsg && tx < 0) tx = 0;
+            
+            if (tx > 60) tx = 60 + (tx - 60) * 0.2;
+            if (tx < -60) tx = -60 + (tx + 60) * 0.2;
+            bubble.style.transform = `translateX(${tx}px)`;
+            swipeCurrentX = tx;
+            
+            if (replyBg) {
+              const absTx = Math.abs(tx);
+              const progress = Math.min(absTx / 50, 1);
+              replyBg.style.transition = "background-color 0.2s ease";
+              replyBg.style.opacity = progress;
+              replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
             if (absTx > 50) {
                replyBg.style.background = "rgba(59, 130, 246, 0.9)"; // bg-blue-500
                if (progress > 0.99 && !replyBg.dataset.vibrated) {
@@ -10005,7 +10011,7 @@
         }
       }
     }, { passive: false }, { passive: false });
-    messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; swipeTargetRow = null; swipeCurrentX = 0; });
+    messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; if (swipeTargetRow) swipeTargetRow.dataset.sDir = ""; swipeTargetRow = null; swipeCurrentX = 0; });
 
     const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
 
