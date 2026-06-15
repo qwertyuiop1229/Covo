@@ -7,3 +7,9 @@
     @apply transition-all duration-200 ease-in-out;
   }
 }
+
+@layer utilities {
+  .message-row {
+    touch-action: pan-y;
+  }
+}
