@@ -184,7 +184,10 @@ service cloud.firestore {
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
+          );
           allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
 
           // ルーム内メッセージ

@@ -8231,7 +8231,7 @@
         renderMessagesWithReadReceipts();
       });
 
-      const typingColRef = collection(db, "apps", appId, "rooms", currentRoomId, "typing");
+      const typingColRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
       typingUnsubscribe = onSnapshot(typingColRef, (snap) => {
         const now = Date.now();
         const others = snap.docs
@@ -8786,7 +8786,7 @@
 
     async function sendMessage() {
       const text = messageInput.value.trim();
-      if ((!text && !attachedFile && !attachedKvFile) || !targetRoomId) return;
+      if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
       clearTimeout(typingTimeout);
       isCurrentlyTyping = false;
       setTypingStatus(false);
@@ -8810,18 +8810,18 @@
               // 鍵がまだ無ければ最大1.5秒待って取得（入室直後の最初の1通も暗号化しやすくする）。
               // この待ち時間は「読み込み中…」オーバーレイの表示中に行う（ユーザーには通常の送信待ちに見える）。
               const overlayWasHidden = loadingOverlay.classList.contains("hidden");
-              if (overlayWasHidden && !_e2ee.roomKeyCache[targetRoomId]) {
+              if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
                 loadingOverlay.classList.remove("hidden");
               }
-              const roomKey = await getRoomKeyWithWait(targetServerId, targetRoomId, members, 1500);
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
               if (!roomKey) {
-                console.warn(`[E2EE] ルーム鍵を取得できなかったため平文で送信します (server=${targetServerId}, room=${targetRoomId})`);
+                console.warn(`[E2EE] ルーム鍵を取得できなかったため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
               } else {
                 const enc = await encryptText(text, roomKey);
                 if (enc) {
                   textToStore = enc; // 暗号化できた時だけ置換
                 } else {
-                  console.warn(`[E2EE] 本文の暗号化に失敗したため平文で送信します (server=${targetServerId}, room=${targetRoomId})`);
+                  console.warn(`[E2EE] 本文の暗号化に失敗したため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
                 }
               }
             } catch (e) {
@@ -8846,7 +8846,7 @@
             // E2EE File Encryption
             if (_subtleOK) {
               const members = (currentServerData && currentServerData.joinedUsers) || [];
-              const roomKey = await getRoomKeyWithWait(targetServerId, targetRoomId, members, 1500);
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
               if (roomKey) {
                 const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
                 fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
@@ -8882,31 +8882,36 @@
         if (replyingToMessage) {
           data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
         }
-        const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`), data);
+        const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
         const newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
         // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
         const wasEncrypted = isEncrypted(textToStore);
-        await updateDoc(doc(db, `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}`), {
-          lastMessageAt: data.timestamp,
-          lastMessageSender: userId,
-          lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
-        });
+        
+        try {
+          await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+            lastMessageAt: data.timestamp,
+            lastMessageSender: userId,
+            lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+          });
+        } catch (updateErr) {
+          console.warn("プレビュー情報の更新に失敗しました:", updateErr);
+        }
 
         // FCMプッシュ通知（サーバーメンバー全員に送信）
         try {
-          const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId));
+          const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
           if (serverSnap.exists()) {
             const serverData = serverSnap.data();
             const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
             if (receiverIds.length > 0) {
               const serverName = serverData.name || 'Covo';
-              const roomName = roomNames[targetRoomId] || 'room';
+              const roomName = roomNames[currentRoomId] || 'room';
               const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
               const notifPayload = JSON.stringify({
                 receiverIds,
                 title: `${serverName} › #${roomName}`,
                 body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
-                roomId: targetRoomId,
+                roomId: currentRoomId,
                 messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
                 appId: appId,
                 senderId: userId,
@@ -9882,7 +9887,7 @@
 
     async function setTypingStatus(isTyping) {
       if (!currentRoomId || !userId || !appId) return;
-      const typingRef = doc(db, "apps", appId, "rooms", currentRoomId, "typing", userId);
+      const typingRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`, userId);
       try {
         if (isTyping) {
           await setDoc(typingRef, { n: userNickname, t: serverTimestamp() });
