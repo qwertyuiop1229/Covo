@@ -111,44 +111,55 @@
     .reactions-container {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 4px;
+      gap: 2px;
+      position: absolute;
+      bottom: -12px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      right: 4px;
+    }
+    .other-message .reactions-container {
+      left: 4px;
     }
     .reaction-badge {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px 8px;
-      border-radius: 9999px;
-      background: rgba(255, 255, 255, 0.9);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      font-size: 0.85rem;
-      color: #4b5563;
+      gap: 2px;
+      padding: 2px 4px;
+      border-radius: 12px;
+      background: transparent;
+      box-shadow: none;
+      font-size: 0.9rem;
+      color: #6b7280;
       cursor: pointer;
       user-select: none;
       transition: all 0.2s ease;
-      border: 1px solid rgba(0, 0, 0, 0.05);
+      border: none;
+      filter: drop-shadow(0 1px 1px rgba(255,255,255,0.8));
     }
     body.dark-server-theme .reaction-badge {
-      background: rgba(30, 41, 59, 0.9);
+      background: transparent;
       color: #cbd5e1;
-      border-color: rgba(255, 255, 255, 0.1);
+      border: none;
+      filter: drop-shadow(0 1px 1px rgba(0,0,0,0.8));
     }
     body.dark-server-theme .reaction-badge.reacted-by-me {
-      background: rgba(59, 130, 246, 0.2);
-      border-color: rgba(59, 130, 246, 0.5);
-      color: #93c5fd;
+      background: transparent;
+      border: none;
+      color: #60a5fa;
     }
     .reaction-badge:hover {
-      transform: scale(1.05);
+      transform: scale(1.1);
     }
     .reaction-badge img.emoji {
       width: 1.25rem;
       height: 1.25rem;
+      pointer-events: none;
     }
     .reaction-badge.reacted-by-me {
-      background: #eef2ff;
-      border-color: #c7d2fe;
+      background: transparent;
+      border: none;
       color: #3b82f6;
     }
     .reaction-badge:active {
@@ -1081,7 +1092,7 @@
       border: none !important;
     }
     .sticker-content { line-height: 1; font-size: 128px; }
-    .sticker-content img.emoji { width: 128px !important; height: 128px !important; margin: 0 !important; display: block; }
+    .sticker-content img.emoji { width: 128px !important; height: 128px !important; object-fit: contain; margin: 0 !important; display: block; }
     /* 本文中のTwemoji絵文字は文字サイズに馴染ませる */
     .message-content img.emoji { width: 1.3em; height: 1.3em; vertical-align: -0.25em; margin: 0 1px; }
 
@@ -4151,9 +4162,7 @@
     <div id="reactionPickerBar" class="reaction-picker-bar">
       <!-- Generated dynamically -->
     </div>
-    <div id="customReactionPickerBar" class="reaction-picker-bar scrollable mt-2 hidden">
-      <!-- Generated dynamically -->
-    </div>
+
     <div class="custom-context-menu-inner">
       <button class="" id="replyMessageButton">リプライ</button>
       <button class="" id="copyMessageButton">コピー</button>
@@ -9968,27 +9977,26 @@
         messageRowInner.appendChild(avatarDiv);
       }
       
-      const bubbleContainer = document.createElement("div");
-      bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] ${isMyMessage ? 'items-end' : 'items-start'}`;
-
-      if (message.replyTo && message.replyTo.messageId) {
-        const replyQuoteDiv = document.createElement("div");
-        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none pl-1";
-        replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
-        
-        replyQuoteDiv.innerHTML = `
-          <div class="w-3 h-3 border-l-2 border-t-2 border-gray-400 rounded-tl-sm translate-y-0.5"></div>
-          <span class="font-bold whitespace-nowrap">${escapeHtml(message.replyTo.senderNickname || "不明")}</span>
-          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo.text || "（ファイル）")}</span>
-        `;
-        bubbleContainer.appendChild(replyQuoteDiv);
-      }
+      const bubbleOuterWrapper = document.createElement("div");
+      bubbleOuterWrapper.className = `flex items-end gap-1.5 z-10 w-fit max-w-[85%]`;
 
       const messageElement = document.createElement("div");
-      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-full`;
+      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-full relative`;
       messageElement.style.touchAction = "pan-y";
       messageElement.style.maxWidth = "100%"; // 75% max-width override
       messageElement.dataset.messageId = messageId;
+
+      if (message.replyTo && message.replyTo.messageId) {
+        const replyQuoteDiv = document.createElement("div");
+        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-1 cursor-pointer hover:underline opacity-80 select-none pl-1.5 border-l-2 border-gray-400";
+        replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
+        
+        replyQuoteDiv.innerHTML = `
+          <span class="font-bold whitespace-nowrap">${escapeHtml(message.replyTo.senderNickname || "不明")}</span>
+          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo.text || "（ファイル）")}</span>
+        `;
+        messageElement.appendChild(replyQuoteDiv);
+      }
       const senderNicknameSpan = document.createElement("span");
       senderNicknameSpan.className = `text-xs text-gray-600 mb-1 ${isMyMessage ? "text-right" : "text-left"}`;
       senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
@@ -10169,28 +10177,39 @@
 
       updateReactionsUI(messageElement, message);
 
+      const metadataContainer = document.createElement("div");
+      metadataContainer.className = `flex flex-col mb-1 flex-shrink-0 ${isMyMessage ? "items-end justify-end" : "items-start justify-end"}`;
+
       const timestampSpan = document.createElement("span");
-      timestampSpan.className = `msg-timestamp text-xs text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
+      timestampSpan.className = `msg-timestamp text-[10px] text-gray-500 whitespace-nowrap`;
       if (message.timestamp && message.timestamp.toDate) {
         const date = message.timestamp.toDate();
-        timestampSpan.textContent = `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+        timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
       } else {
         timestampSpan.textContent = "送信中...";
       }
-      messageElement.appendChild(timestampSpan);
+      
       if (isMyMessage) {
         const readSpan = document.createElement("span");
-        readSpan.className = "read-receipt text-xs text-gray-400 text-right";
+        readSpan.className = "read-receipt text-[10px] text-gray-500 mb-0.5 whitespace-nowrap";
         if (readByCount > 0) {
-          readSpan.textContent = `既読${readByCount > 1 ? `（${readByCount}）` : ""}`;
+          readSpan.textContent = `既読${readByCount > 1 ? ` ${readByCount}` : ""}`;
         } else {
           readSpan.style.display = "none";
         }
-        messageElement.appendChild(readSpan);
+        metadataContainer.appendChild(readSpan);
+      }
+      metadataContainer.appendChild(timestampSpan);
+
+      if (isMyMessage) {
+        bubbleOuterWrapper.appendChild(metadataContainer);
+        bubbleOuterWrapper.appendChild(messageElement);
+      } else {
+        bubbleOuterWrapper.appendChild(messageElement);
+        bubbleOuterWrapper.appendChild(metadataContainer);
       }
       
-      bubbleContainer.appendChild(messageElement);
-      messageRowInner.appendChild(bubbleContainer);
+      messageRowInner.appendChild(bubbleOuterWrapper);
       
       return messageRow;
     }
@@ -10431,6 +10450,7 @@
                 replyingToContainer.classList.remove("hidden");
                 const input = document.getElementById("messageInput");
                 if (input && !input.disabled) {
+                   input.focus();
                    setTimeout(() => input.focus(), 50);
                 }
               }
@@ -10534,23 +10554,6 @@
         _twemojiParse(reactionBar);
       }
 
-      const customReactionBar = document.getElementById('customReactionPickerBar');
-      if (customReactionBar) {
-        customReactionBar.innerHTML = '';
-        const customEmojis = ['covonew:OKです', 'covonew:ありがとう', 'covonew:いいね', 'covonew:うーん', 'covonew:え！', 'covonew:おやすみ', 'covonew:がんばるぞ', 'covonew:ごめんなさい', 'covonew:ちら', 'covonew:ぴえん', 'covonew:ぺこり', 'covonew:またねー', 'covonew:やっほー', 'covonew:わーい！', 'covonew:了解', 'covonew:大好き'];
-        customEmojis.forEach(emoji => {
-          const btn = document.createElement('div');
-          btn.className = 'reaction-btn custom-reaction';
-          btn.innerHTML = getEmojiHtml(emoji, '');
-          btn.onclick = (e) => {
-            if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-            window.toggleReaction(msgData.id, emoji);
-            messageContextMenu.classList.add("hidden");
-          };
-          customReactionBar.appendChild(btn);
-        });
-        customReactionBar.classList.remove('hidden');
-      }
 
       messageContextMenu.classList.remove("hidden");
 
