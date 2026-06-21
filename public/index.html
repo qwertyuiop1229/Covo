@@ -7768,7 +7768,11 @@
 
       // ルームを読み込む
       loadServerRooms(serverId);
-      membersSidebar.classList.remove("hidden");
+      if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
+        membersSidebar.style.setProperty("display", "", "important");
+        membersSidebar.classList.remove("hidden");
+        membersSidebar.classList.add("md:flex");
+      }
       // サーバーメンバーでメンバーリストを即時更新
       renderMembersList(cachedUsers);
 
@@ -10174,39 +10178,29 @@
 
       updateReactionsUI(messageElement, message);
 
-      const metadataContainer = document.createElement("div");
-      metadataContainer.className = `flex flex-col mb-1 flex-shrink-0 ${isMyMessage ? "items-end justify-end" : "items-start justify-end"}`;
-
       const timestampSpan = document.createElement("span");
-      timestampSpan.className = `msg-timestamp text-[10px] text-gray-500 whitespace-nowrap`;
+      timestampSpan.className = `msg-timestamp text-[10px] text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
       if (message.timestamp && message.timestamp.toDate) {
         const date = message.timestamp.toDate();
         timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
       } else {
         timestampSpan.textContent = "送信中...";
       }
+      messageElement.appendChild(timestampSpan);
       
       if (isMyMessage) {
         const readSpan = document.createElement("span");
-        readSpan.className = "read-receipt text-[10px] text-gray-500 mb-0.5 whitespace-nowrap";
+        readSpan.className = "read-receipt text-[10px] text-gray-500 text-right";
         if (readByCount > 0) {
-          readSpan.textContent = `既読${readByCount > 1 ? ` ${readByCount}` : ""}`;
+          readSpan.textContent = `既読${readByCount > 1 ? `（${readByCount}）` : ""}`;
         } else {
           readSpan.style.display = "none";
         }
-        metadataContainer.appendChild(readSpan);
+        messageElement.appendChild(readSpan);
       }
-      metadataContainer.appendChild(timestampSpan);
 
-      if (isMyMessage) {
-        bubbleOuterWrapper.appendChild(metadataContainer);
-        bubbleOuterWrapper.appendChild(messageElement);
-      } else {
-        bubbleOuterWrapper.appendChild(messageElement);
-        bubbleOuterWrapper.appendChild(metadataContainer);
-      }
-      
-      messageRowInner.appendChild(bubbleOuterWrapper);
+      bubbleContainer.appendChild(messageElement);
+      messageRowInner.appendChild(bubbleContainer);
       
       return messageRow;
     }
@@ -11873,6 +11867,7 @@
 
       const isRightCollapsed = localStorage.getItem(RIGHT_COLLAPSED_KEY) === "true";
       if (isRightCollapsed && window.innerWidth >= 768 && membersSidebar) {
+        membersSidebar.style.setProperty("display", "none", "important");
         membersSidebar.classList.add("hidden");
         membersSidebar.classList.remove("md:flex");
       }
