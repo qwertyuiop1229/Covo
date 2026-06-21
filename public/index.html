@@ -2,6 +2,15 @@
 <html lang="ja">
 
 <head>
+  <!--
+    ======================================================================
+    [AI ASSISTANT INSTRUCTION]
+    If you are an AI assistant (like Antigravity) modifying this file:
+    Whenever you add new UI elements or change colors, you MUST use the app's 
+    theme colors to ensure visual consistency. Do not use generic colors.
+    Primary Brand Color: #3b82f6 (blue-500)
+    ======================================================================
+  -->
   <meta charset="UTF-8" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -40,6 +49,15 @@
       align-items: center;
       justify-content: center;
       margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
     }
     body.dark-server-theme .reaction-picker-bar {
       background: #1e293b;
@@ -100,30 +118,38 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid #e5e7eb;
+      padding: 4px 8px;
       border-radius: 9999px;
-      padding: 2px 6px;
-      font-size: 11px;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      font-size: 0.85rem;
       color: #4b5563;
       cursor: pointer;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-      transition: transform 0.1s;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid rgba(0, 0, 0, 0.05);
     }
     body.dark-server-theme .reaction-badge {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      color: #e2e8f0;
+      background: rgba(30, 41, 59, 0.9);
+      color: #cbd5e1;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.5);
+      color: #93c5fd;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.05);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
     }
     .reaction-badge.reacted-by-me {
       background: #eef2ff;
       border-color: #c7d2fe;
-      color: #4f46e5;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me {
-      background: #312e81;
-      border-color: #4338ca;
-      color: #c7d2fe;
+      color: #3b82f6;
     }
     .reaction-badge:active {
       transform: scale(0.95);
@@ -427,27 +453,47 @@
       background-color: #d1d5db;
     }
 
-    /* リプライ機能用CSS */
+    /* リプライ機能用CSS (Discord風L字ライン) */
     .reply-quote {
-      background-color: rgba(0, 0, 0, 0.05);
-      padding: 6px 10px;
-      border-radius: 8px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 24px;
       margin-bottom: 6px;
       cursor: pointer;
-      font-size: 0.875rem;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 50%;
+      width: 12px;
+      height: 14px;
+      border-left: 2px solid currentColor;
+      border-top: 2px solid currentColor;
+      border-top-left-radius: 4px;
+      transform: translateY(-100%);
+      opacity: 0.4;
+    }
+    .reply-quote:hover {
+      opacity: 0.8;
     }
 
     .reply-quote-nickname {
-      font-size: 0.75rem;
-      color: #555;
       font-weight: 600;
+      color: #475569;
     }
 
     .reply-quote-text {
-      color: #333;
+      color: #334155;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      opacity: 0.9;
     }
 
     .message-highlight {
@@ -4080,6 +4126,9 @@
   <!-- カスタムコンテキストメニュー -->
   <div id="messageContextMenu" class="custom-context-menu hidden">
     <div id="reactionPickerBar" class="reaction-picker-bar">
+      <!-- Generated dynamically -->
+    </div>
+    <div id="customReactionPickerBar" class="reaction-picker-bar scrollable mt-2 hidden">
       <!-- Generated dynamically -->
     </div>
     <div class="custom-context-menu-inner">
@@ -8982,6 +9031,7 @@
     const STICKER_CATEGORIES = [
       { id: 'recent', icon: '🕘', label: '最近' },
       { id: 'fav', icon: '⭐', label: 'よく使う' },
+      { id: 'covo_new', icon: '✨', label: 'スタンプ', emojis: ['covonew:OKです', 'covonew:ありがとう', 'covonew:いいね', 'covonew:うーん', 'covonew:え！', 'covonew:おやすみ', 'covonew:がんばるぞ', 'covonew:ごめんなさい', 'covonew:ちら', 'covonew:ぴえん', 'covonew:ぺこり', 'covonew:またねー', 'covonew:やっほー', 'covonew:わーい！', 'covonew:了解', 'covonew:大好き'] },
       { id: 'covo', icon: 'covo:yay', label: 'Covo', emojis: ['covo:sleep','covo:yay','covo:love','covo:despair','covo:ok','covo:no','covo:roger','covo:lol','covo:good'] },
       { id: 'twitter', icon: '🐦', label: 'Twitter', emojis: [
         ...['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😌','😔','😪','😴','😷','🤒','🤕','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','💩','🤡','👻'],
@@ -9003,6 +9053,10 @@
       if (emoji && emoji.startsWith('covo:')) {
         const name = emoji.substring(5);
         return `<img src="/covo-stamps/${name}.png" class="emoji covo-emoji" alt="${name}" />`;
+      }
+      if (emoji && emoji.startsWith('covonew:')) {
+        const name = emoji.substring(8);
+        return `<img src="/assets/covo_stamps/${name}.png" class="emoji covo-emoji" alt="${name}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
       }
       return `<span class="${spanClass}">${emoji}</span>`;
     }
@@ -9485,7 +9539,22 @@
     function createMessageElement(message, messageId, readByCount = 0) {
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
-      messageRow.className = "message-row relative w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRow.className = "message-row relative w-full mb-4 group";
+
+      const replyIconBg = document.createElement("div");
+      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 pointer-events-none z-0";
+      replyIconBg.style.width = "40px";
+      replyIconBg.style.height = "40px";
+      replyIconBg.style.borderRadius = "50%";
+      replyIconBg.style.background = "#3b82f6";
+      replyIconBg.style.right = "20px";
+      replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
+      messageRow.appendChild(replyIconBg);
+
+      const messageRowInner = document.createElement("div");
+      messageRowInner.className = "message-row-inner w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRowInner.style.willChange = "transform";
+      messageRow.appendChild(messageRowInner);
 
       // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
       if (!isMyMessage) {
@@ -9498,19 +9567,9 @@
         } else {
           avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
         }
-        messageRow.appendChild(avatarDiv);
+        messageRowInner.appendChild(avatarDiv);
       }
       
-      const replyIconBg = document.createElement("div");
-      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 transition-opacity pointer-events-none z-0";
-      replyIconBg.style.width = "40px";
-      replyIconBg.style.height = "40px";
-      replyIconBg.style.borderRadius = "50%";
-      replyIconBg.style.background = "rgba(0,0,0,0.2)";
-      replyIconBg.style.right = "20px";
-      replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
-      messageRow.appendChild(replyIconBg);
-
       const messageElement = document.createElement("div");
       messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col z-10`;
       messageElement.style.touchAction = "pan-y";
@@ -9951,23 +10010,26 @@
         if (e.cancelable) e.preventDefault();
       }
       if (swipeTargetRow) {
-        const bubble = swipeTargetRow.querySelector(".message-bubble");
-        if (bubble) {
-          bubble.style.transition = "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
-          bubble.style.transform = "translateX(0)";
-          setTimeout(() => { bubble.style.transition = ""; }, 400);
+        const innerRow = swipeTargetRow.querySelector(".message-row-inner");
+        if (innerRow) {
+          innerRow.style.transition = "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          innerRow.style.transform = "translateX(0)";
+          setTimeout(() => { innerRow.style.transition = ""; }, 400);
           
           if (Math.abs(swipeCurrentX) > 50) {
-            const msgId = bubble.dataset.messageId;
-            const msgData = lastMessagesData.find(m => m.id === msgId);
-            if (msgData) {
-              replyingToMessage = msgData;
-              replyingToNickname.textContent = msgData.senderNickname;
-              replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
-              replyingToContainer.classList.remove("hidden");
-              const input = document.getElementById("messageInput");
-              if (input && !input.disabled) {
-                 setTimeout(() => input.focus(), 50);
+            const bubble = innerRow.querySelector(".message-bubble");
+            const msgId = bubble ? bubble.dataset.messageId : null;
+            if (msgId) {
+              const msgData = lastMessagesData.find(m => m.id === msgId);
+              if (msgData) {
+                replyingToMessage = msgData;
+                replyingToNickname.textContent = msgData.senderNickname;
+                replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
+                replyingToContainer.classList.remove("hidden");
+                const input = document.getElementById("messageInput");
+                if (input && !input.disabled) {
+                   setTimeout(() => input.focus(), 50);
+                }
               }
             }
           }
@@ -10002,34 +10064,30 @@
         }
         if (swipeTargetRow.dataset.sDir === 'h') {
           if (e.cancelable) e.preventDefault(); // Lock horizontal swipe for iOS Safari
-          const bubble = swipeTargetRow.querySelector(".message-bubble");
+          const innerRow = swipeTargetRow.querySelector(".message-row-inner");
           const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
-          if (bubble) {
-            const isMyMsg = bubble.classList.contains("my-message");
+          if (innerRow) {
             let tx = deltaX;
             // 全てのメッセージで左にスワイプ（LINE風）のみ許可
             if (tx > 0) tx = 0;
             
             if (tx < -60) tx = -60 + (tx + 60) * 0.2;
-            bubble.style.transform = `translateX(${tx}px)`;
+            innerRow.style.transform = `translateX(${tx}px)`;
             swipeCurrentX = tx;
             
             if (replyBg) {
               const absTx = Math.abs(tx);
               const progress = Math.min(absTx / 50, 1);
-              replyBg.style.transition = "background-color 0.2s ease";
               replyBg.style.opacity = progress;
               replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
-            if (absTx > 50) {
-               replyBg.style.background = "rgba(59, 130, 246, 0.9)"; // bg-blue-500
-               if (progress > 0.99 && !replyBg.dataset.vibrated) {
-                  if (navigator.vibrate) navigator.vibrate(10);
-                  replyBg.dataset.vibrated = "true";
-               }
-            } else {
-               replyBg.style.background = "rgba(0,0,0,0.2)";
-               replyBg.dataset.vibrated = "";
-            }
+              if (absTx > 50) {
+                 if (progress > 0.99 && !replyBg.dataset.vibrated) {
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    replyBg.dataset.vibrated = "true";
+                 }
+              } else {
+                 replyBg.dataset.vibrated = "";
+              }
             }
           }
         }
@@ -10070,6 +10128,24 @@
         };
         reactionBar.appendChild(moreBtn);
         _twemojiParse(reactionBar);
+      }
+
+      const customReactionBar = document.getElementById('customReactionPickerBar');
+      if (customReactionBar) {
+        customReactionBar.innerHTML = '';
+        const customEmojis = ['covonew:OKです', 'covonew:ありがとう', 'covonew:いいね', 'covonew:うーん', 'covonew:え！', 'covonew:おやすみ', 'covonew:がんばるぞ', 'covonew:ごめんなさい', 'covonew:ちら', 'covonew:ぴえん', 'covonew:ぺこり', 'covonew:またねー', 'covonew:やっほー', 'covonew:わーい！', 'covonew:了解', 'covonew:大好き'];
+        customEmojis.forEach(emoji => {
+          const btn = document.createElement('div');
+          btn.className = 'reaction-btn custom-reaction';
+          btn.innerHTML = getEmojiHtml(emoji, '');
+          btn.onclick = (e) => {
+            if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+            window.toggleReaction(msgData.id, emoji);
+            messageContextMenu.classList.add("hidden");
+          };
+          customReactionBar.appendChild(btn);
+        });
+        customReactionBar.classList.remove('hidden');
       }
 
       messageContextMenu.classList.remove("hidden");
@@ -10366,29 +10442,74 @@
       
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) {
-        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">検索中...</span>';
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">ジャンプ中...</span>';
         spinner.style.display = 'flex';
       }
 
-      while (attempts < MAX_ATTEMPTS) {
-        let el = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          el.classList.add('message-highlight');
-          setTimeout(() => el.classList.remove('message-highlight'), 1200);
+      // 既にDOMにあるかチェック
+      let el = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('message-highlight');
+        setTimeout(() => el.classList.remove('message-highlight'), 1200);
+        if (spinner) spinner.style.display = 'none';
+        return;
+      }
+
+      try {
+        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          alertMessage("メッセージが見つかりません。", "error");
           if (spinner) spinner.style.display = 'none';
           return;
         }
         
-        if (!hasMoreOlderMessages) break;
+        const targetTimestamp = docSnap.data().timestamp;
+        const oldestMsg = allLoadedMessages[0];
         
-        await loadOlderMessages();
-        await new Promise(r => setTimeout(r, 100)); // wait for DOM update
-        attempts++;
+        if (oldestMsg && targetTimestamp && targetTimestamp.toMillis() < oldestMsg.timestamp.toMillis()) {
+          // 目的のメッセージまでの間にあるメッセージを最大200件取得
+          const q = query(
+            collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+            orderBy("timestamp", "desc"),
+            startAfter(oldestMsg.timestamp),
+            endAt(targetTimestamp),
+            limit(200)
+          );
+          
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const newMsgs = [];
+            snap.forEach(doc => newMsgs.push({ id: doc.id, ...doc.data() }));
+            
+            const oldScrollHeight = messagesDisplay.scrollHeight;
+            const oldScrollTop = messagesDisplay.scrollTop;
+            
+            newMsgs.forEach(msg => {
+              allLoadedMessages.unshift(msg);
+              prependMessage(msg);
+            });
+            
+            // スクロール位置の維持
+            messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+          }
+        }
+      } catch (e) {
+        console.error(e);
       }
       
-      if (spinner) spinner.style.display = 'none';
-      alertMessage("メッセージが古すぎるためジャンプできませんでした。", "warning");
+      setTimeout(() => {
+        let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+        if (el2) {
+          el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el2.classList.add('message-highlight');
+          setTimeout(() => el2.classList.remove('message-highlight'), 1200);
+        } else {
+          alertMessage("メッセージが遠すぎるためジャンプできませんでした。", "warning");
+        }
+        if (spinner) spinner.style.display = 'none';
+      }, 100);
     }
 
     // iOS/Safari 判定
@@ -11042,7 +11163,7 @@
       if (selectedMessageForContext) {
         const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
         const isPinned = !selectedMessageForContext.isPinned;
-        await updateDoc(msgRef, { isPinned: isPinned }, { merge: true });
+        await updateDoc(msgRef, { isPinned: isPinned });
         alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
       }
       messageContextMenu.classList.add("hidden");
@@ -12888,14 +13009,19 @@
         try {
           if ('serviceWorker' in navigator) {
             const regs = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(regs.map(r => r.unregister()));
+            for (const r of regs) {
+              await r.unregister();
+            }
           }
           if ('caches' in window) {
             const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
+            for (const k of keys) {
+              await caches.delete(k);
+            }
           }
         } catch(e) { console.warn('[manualCheckUpdate] cache clear failed:', e); }
-        location.reload();
+        // Cache-busting reload to ensure the latest index.html is fetched
+        window.location.href = window.location.pathname + '?v=' + new Date().getTime();
         return;
       }
 
