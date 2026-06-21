@@ -3,7 +3,10 @@
 #        .\deploy.ps1 -y    (No Confirm)
 #        npm run deploy     (No Confirm / Auto)
 
-param([switch]$y)
+param(
+    [switch]$y,
+    [switch]$force
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -64,7 +67,8 @@ Write-Host "[0/5] Building Tailwind CSS..." -ForegroundColor Green
 node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/styles.css --minify
 
 # [1/5] Update version.json + sync tauri.conf.json (must match git tag)
-$versionJsonContent = "{`n  `"version`": `"$newVersion`"`n}`n"
+$forceStr = if ($force) { "true" } else { "false" }
+$versionJsonContent = "{`n  `"version`": `"$newVersion`",`n  `"forceUpdate`": $forceStr`n}`n"
 [System.IO.File]::WriteAllText($versionJsonPath, $versionJsonContent, [System.Text.UTF8Encoding]::new($false))
 Write-Host "[1/5] Updated version.json to $newVersion" -ForegroundColor Green
 

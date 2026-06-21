@@ -111,9 +111,9 @@
     .reactions-container {
       display: flex;
       flex-wrap: wrap;
-      gap: 2px;
+      gap: 4px;
       position: absolute;
-      bottom: -12px;
+      bottom: -14px;
       z-index: 20;
     }
     .my-message .reactions-container {
@@ -126,41 +126,40 @@
       display: inline-flex;
       align-items: center;
       gap: 2px;
-      padding: 2px 4px;
-      border-radius: 12px;
-      background: transparent;
-      box-shadow: none;
-      font-size: 0.9rem;
-      color: #6b7280;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #475569;
       cursor: pointer;
       user-select: none;
-      transition: all 0.2s ease;
-      border: none;
-      filter: drop-shadow(0 1px 1px rgba(255,255,255,0.8));
-    }
-    body.dark-server-theme .reaction-badge {
-      background: transparent;
-      color: #cbd5e1;
-      border: none;
-      filter: drop-shadow(0 1px 1px rgba(0,0,0,0.8));
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
+      transition: all 0.15s ease;
+      border: 1px solid #e2e8f0;
     }
     .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
+      background: #f8fafc;
+      transform: scale(1.05);
     }
     .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+    body.dark-server-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border-color: #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.dark-server-theme .reaction-badge:hover {
+      background: #475569;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me {
+      background: #1e3a8a;
+      border-color: #3b82f6;
+      color: #bfdbfe;
     }
     .reaction-badge:active {
       transform: scale(0.95);
@@ -464,32 +463,20 @@
       background-color: #d1d5db;
     }
 
-    /* リプライ機能用CSS (Discord風L字ライン) */
+    /* リプライ機能用CSS (Discord風/LINE風ライン) */
     .reply-quote {
       position: relative;
       display: flex;
       align-items: center;
       gap: 0.4rem;
       background-color: transparent;
-      padding: 2px 0 2px 24px;
+      padding: 2px 0 2px 8px; /* LINE風の左余白に調整 */
       margin-bottom: 6px;
       cursor: pointer;
       font-size: 0.8rem;
       color: #64748b;
     }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 6px;
-      top: 50%;
-      width: 12px;
-      height: 14px;
-      border-left: 2px solid currentColor;
-      border-top: 2px solid currentColor;
-      border-top-left-radius: 4px;
-      transform: translateY(-100%);
-      opacity: 0.4;
-    }
+
     .reply-quote:hover {
       opacity: 0.8;
     }
@@ -1314,6 +1301,21 @@
       opacity: 0.6;
       cursor: not-allowed;
       transform: none;
+    }
+
+    .close-update-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1.25rem;
+      color: #94a3b8;
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .close-update-btn:hover {
+      color: white;
     }
 
     .update-progress {
@@ -3228,7 +3230,10 @@
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
-    <div class="update-card">
+    <div class="update-card relative">
+      <button id="closeUpdateBtn" class="close-update-btn hidden" onclick="closeUpdateOverlay()">
+        <i class="fas fa-times"></i>
+      </button>
       <div class="update-icon"><i class="fas fa-arrow-up"></i></div>
       <div class="update-title">アップデートがあります</div>
       <div class="update-version" id="updateVersionText">新しいバージョンが利用可能です</div>
@@ -3236,6 +3241,11 @@
       <button class="update-btn" id="updateButton" onclick="performUpdate()">
         <i class="fas fa-download"></i>&nbsp;&nbsp;アップデートする
       </button>
+      <script>
+        function closeUpdateOverlay() {
+          document.getElementById('updateOverlay').classList.remove('show');
+        }
+      </script>
       <div class="update-progress" id="updateProgress">
         <span class="update-spinner"></span>
         <span id="updateProgressText">ダウンロード中...</span>
@@ -3433,15 +3443,7 @@
                     <span class="text-sm font-bold text-gray-800">診断情報をまとめてコピー</span>
                     <button class="" onclick="copyDiagnosticsBundle()" style="padding:7px 16px;background:#16a34a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">コピー</button>
                   </div>
-                  <div class="flex justify-between items-center mt-6 p-4 bg-orange-100 rounded-xl border border-orange-200">
-                    <div>
-                      <span class="text-sm font-bold text-orange-800">Cloudflare完全移行</span>
-                      <div class="text-xs text-orange-600 mt-1">過去のCloudinary画像をCloudflareに移行します</div>
-                    </div>
-                    <button class="" id="btnMigrateCloudinary" onclick="migrateCloudinaryToCloudflare()" style="padding:7px 16px;background:#ea580c;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">実行</button>
-                  </div>
-                </div>
-              </div>
+
 
               <!-- アプリ情報セクション -->
               <div id="appinfoSection" class="settings-content-section space-y-6">
@@ -3908,10 +3910,20 @@
               <!-- スタンプタブ -->
               <div id="ssStampsSection" class="hidden space-y-4">
                 <div class="mb-4">
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">カスタムスタンプを追加</label>
                   <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <input type="text" id="newStampNameInput" placeholder="スタンプ名（例: いいね）" class="w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm transition-shadow" />
-                    <input type="file" id="newStampFileInput" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
+                    <div class="flex gap-2">
+                      <select id="newStampGroupSelect" class="flex-1 p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm">
+                        <option value="">（グループなし）</option>
+                        <option value="_new">＋ 新規グループ作成...</option>
+                      </select>
+                      <input type="text" id="newStampGroupInput" placeholder="新規グループ名" class="hidden flex-1 p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm" />
+                    </div>
+                    <div id="newStampGroupIconContainer" class="hidden flex-col gap-1 mt-1 mb-2">
+                      <label class="text-xs font-bold text-gray-500">グループのアイコン画像 (正方形推奨)</label>
+                      <input type="file" id="newStampGroupIconInput" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
+                    </div>
+                    <input type="file" id="newStampFileInput" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
+                    <div id="newStampPreviewContainer" class="hidden flex flex-col gap-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-white empty:hidden"></div>
                     <button id="uploadCustomStampBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all mt-1 shadow-sm"><i class="fas fa-cloud-upload-alt mr-2"></i>アップロード</button>
                   </div>
                 </div>
@@ -5345,101 +5357,6 @@
       try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
     };
 
-    window.migrateCloudinaryToCloudflare = async function() {
-      if (!isAdmin) return;
-      if (!await showCustomConfirm("CloudinaryからCloudflareへ過去の画像を全自動移行します。件数によっては非常に時間がかかります。開始しますか？", "移行開始")) return;
-      
-      const btn = document.getElementById("btnMigrateCloudinary");
-      if(btn) btn.textContent = "移行中...";
-      
-      try {
-        let count = 0;
-        const migrateUrl = async (oldUrl) => {
-          if (!oldUrl || typeof oldUrl !== 'string' || !oldUrl.includes("res.cloudinary.com")) return null;
-          try {
-            console.log(`Migrating: ${oldUrl}`);
-            const res = await fetch(oldUrl);
-            const blob = await res.blob();
-            // 拡張子推定
-            let ext = "png";
-            if (oldUrl.includes(".jpg") || oldUrl.includes(".jpeg")) ext = "jpg";
-            if (oldUrl.includes(".gif")) ext = "gif";
-            if (oldUrl.includes(".webp")) ext = "webp";
-            const file = new File([blob], `migrated.${ext}`, { type: blob.type || "image/png" });
-            const newUrl = await uploadToExternalService(file, () => {}, "migrated");
-            count++;
-            console.log(`Migrated -> ${newUrl}`);
-            return newUrl;
-          } catch(e) {
-            console.error(`Migration failed for ${oldUrl}`, e);
-            return null;
-          }
-        };
-
-        // 1. Servers (icons)
-        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-        for (const s of serversSnap.docs) {
-          const sData = s.data();
-          if (sData.icon && sData.icon.includes("res.cloudinary.com")) {
-            const newIcon = await migrateUrl(sData.icon);
-            if (newIcon) await updateDoc(s.ref, { icon: newIcon });
-          }
-
-          // 2. Stamps
-          const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/stamps`));
-          for (const stamp of stampsSnap.docs) {
-            const stampData = stamp.data();
-            if (stampData.url && stampData.url.includes("res.cloudinary.com")) {
-              const newUrl = await migrateUrl(stampData.url);
-              if (newUrl) await updateDoc(stamp.ref, { url: newUrl });
-            }
-          }
-
-          // 3. Profiles
-          const profilesSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/profiles`));
-          for (const profile of profilesSnap.docs) {
-            const pData = profile.data();
-            if (pData.avatarUrl && pData.avatarUrl.includes("res.cloudinary.com")) {
-              const newUrl = await migrateUrl(pData.avatarUrl);
-              if (newUrl) await updateDoc(profile.ref, { avatarUrl: newUrl });
-            }
-          }
-
-          // 4. Messages (fileData)
-          // 注意：messagesは大量にあるかもしれないので100件ずつくらい処理するのが安全だが、
-          // 管理者が1度実行するだけなので愚直に全件スキャンする
-          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms`));
-          for (const room of roomsSnap.docs) {
-            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms/${room.id}/messages`));
-            for (const msg of msgsSnap.docs) {
-              const msgData = msg.data();
-              if (msgData.fileData && msgData.fileData.includes("res.cloudinary.com")) {
-                const newUrl = await migrateUrl(msgData.fileData);
-                if (newUrl) await updateDoc(msg.ref, { fileData: newUrl });
-              }
-            }
-          }
-        }
-
-        // 5. Global Users
-        const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-        for (const user of usersSnap.docs) {
-          const uData = user.data();
-          if (uData.avatarUrl && uData.avatarUrl.includes("res.cloudinary.com")) {
-            const newUrl = await migrateUrl(uData.avatarUrl);
-            if (newUrl) await updateDoc(user.ref, { avatarUrl: newUrl });
-          }
-        }
-
-        alertMessage(`移行が完了しました！合計 ${count} 件の画像をCloudflareに移行しました。`, "success");
-      } catch (err) {
-        console.error("Migration error:", err);
-        alertMessage("移行中にエラーが発生しました", "error");
-      } finally {
-        if(btn) btn.textContent = "実行";
-      }
-    };
-
     // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
     function inspectPoint(x, y) {
       try {
@@ -6020,8 +5937,7 @@
                   const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
                   // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
                   const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
-                  const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
-                  if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
+                  if (hasKvFile || hasFileDataKv) {
                     await deleteDoc(msgDoc.ref);
                     msgDeleted++;
                   }
@@ -7555,7 +7471,7 @@
     // Cloudinaryの一時的な配信エラーやキャッシュ問題に対応。
     // 使用可能なアバターURLか（Cloudinaryは廃止したので無効扱い→デフォルトに戻る）
     function isUsableAvatarUrl(url) {
-      return !!url && url.indexOf('res.cloudinary.com') < 0;
+      return !!url;
     }
 
     function __setAvatarImg(container, url, name, opts) {
@@ -7565,9 +7481,7 @@
       const className = opts.className || '';
       const initial = ((name || '?').charAt(0) || '?').toUpperCase();
       try { container.innerHTML = ''; } catch(_) {}
-      // Cloudinary は廃止。旧Cloudinaryアイコンは表示せずデフォルト(イニシャル)に戻す。
-      // ユーザーが新しくアイコンを設定すると Cloudflare(KV) に保存され、自然に移行する。
-      if (url && url.indexOf('res.cloudinary.com') >= 0) { try { container.textContent = initial; } catch(_) {} return; }
+      
       if (!url) { try { container.textContent = initial; } catch(_) {} return; }
       const img = document.createElement('img');
       img.alt = '';
@@ -8939,6 +8853,26 @@
         if (snap.empty) {
           listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>スタンプはありません</p>";
         }
+
+        const groupSelect = document.getElementById("newStampGroupSelect");
+        if (groupSelect) {
+          const currentGroupVal = groupSelect.value;
+          const groups = new Set();
+          snap.forEach(d => {
+            const g = d.data().groupName;
+            if (g) groups.add(g);
+          });
+          groupSelect.innerHTML = `<option value="">（グループなし）</option><option value="_new">＋ 新規グループ作成...</option>`;
+          groups.forEach(g => {
+            const opt = document.createElement("option");
+            opt.value = g; opt.textContent = g;
+            groupSelect.appendChild(opt);
+          });
+          if (currentGroupVal && (groups.has(currentGroupVal) || currentGroupVal === "_new")) {
+            groupSelect.value = currentGroupVal;
+          }
+        }
+
         snap.forEach(d => {
           const stamp = d.data();
           const item = document.createElement("div");
@@ -8948,6 +8882,7 @@
           item.innerHTML = `
             <img src="${escapeHtml(stamp.url)}" class="w-12 h-12 object-contain mb-1" />
             <span class="text-xs text-gray-600 w-full text-center" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(stamp.name)}">${escapeHtml(stamp.name)}</span>
+            ${stamp.groupName ? `<span class="text-[10px] text-gray-400 w-full text-center truncate px-1">${escapeHtml(stamp.groupName)}</span>` : ''}
             
             <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-wrap items-center justify-center gap-1 p-1 rounded-xl transition-opacity">
               <button class="dl-stamp-btn bg-white/20 hover:bg-white/40 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="ダウンロード">
@@ -9072,72 +9007,171 @@
       }
     }
 
-    document.getElementById("uploadCustomStampBtn")?.addEventListener("click", async () => {
-      const nameInput = document.getElementById("newStampNameInput");
-      const fileInput = document.getElementById("newStampFileInput");
-      const name = nameInput.value.trim();
-      const file = fileInput.files[0];
-      if (!name || !file) {
-        alertMessage("スタンプ名と画像を選択してください", "error");
-        return;
+    document.getElementById("newStampGroupSelect")?.addEventListener("change", (e) => {
+      const input = document.getElementById("newStampGroupInput");
+      const iconContainer = document.getElementById("newStampGroupIconContainer");
+      if (e.target.value === "_new") {
+        input.classList.remove("hidden");
+        if (iconContainer) {
+          iconContainer.classList.remove("hidden");
+          iconContainer.style.display = "flex";
+        }
+        input.focus();
+      } else {
+        input.classList.add("hidden");
+        if (iconContainer) {
+          iconContainer.classList.add("hidden");
+          iconContainer.style.display = "none";
+        }
+        input.value = "";
       }
-      if (file.size > 2 * 1024 * 1024) {
-        alertMessage("画像は2MB以下にしてください", "error");
+    });
+
+    document.getElementById("newStampFileInput")?.addEventListener("change", (e) => {
+      const container = document.getElementById("newStampPreviewContainer");
+      container.innerHTML = "";
+      const files = Array.from(e.target.files);
+      if (files.length > 0) {
+        container.classList.remove("hidden");
+        files.forEach((file, index) => {
+          const row = document.createElement("div");
+          row.className = "flex items-center gap-2 p-2 bg-gray-100 rounded border border-gray-200";
+          const img = document.createElement("img");
+          img.className = "w-10 h-10 object-contain rounded";
+          img.src = URL.createObjectURL(file);
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "flex-1 p-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-gray-400";
+          const defaultName = file.name.replace(/\.[^/.]+$/, "");
+          input.value = defaultName;
+          input.dataset.index = index;
+          input.placeholder = "スタンプ名";
+          row.appendChild(img);
+          row.appendChild(input);
+          container.appendChild(row);
+        });
+      } else {
+        container.classList.add("hidden");
+      }
+    });
+
+    document.getElementById("uploadCustomStampBtn")?.addEventListener("click", async () => {
+      const fileInput = document.getElementById("newStampFileInput");
+      const groupSelect = document.getElementById("newStampGroupSelect");
+      const groupInput = document.getElementById("newStampGroupInput");
+      const groupIconInput = document.getElementById("newStampGroupIconInput");
+      const container = document.getElementById("newStampPreviewContainer");
+      
+      const files = Array.from(fileInput.files);
+      if (files.length === 0) {
+        alertMessage("画像を選択してください", "error");
         return;
       }
       
+      let groupName = groupSelect.value;
+      let groupIconFile = null;
+      let groupIconUrl = null;
+
+      if (groupName === "_new") {
+        groupName = groupInput.value.trim();
+        if (!groupName) {
+          alertMessage("新規グループ名を入力してください", "error");
+          return;
+        }
+        if (groupIconInput && groupIconInput.files && groupIconInput.files.length > 0) {
+          groupIconFile = groupIconInput.files[0];
+          if (groupIconFile.size > 2 * 1024 * 1024) {
+            alertMessage("グループアイコン画像は2MB以下にしてください", "error");
+            return;
+          }
+        }
+      }
+
+      const inputs = container.querySelectorAll("input[type='text']");
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const name = inputs[i].value.trim();
+        if (!name) { alertMessage("すべてのスタンプ名を入力してください", "error"); return; }
+        if (file.size > 2 * 1024 * 1024) { alertMessage("画像は2MB以下にしてください", "error"); return; }
+      }
+      
       const btn = document.getElementById("uploadCustomStampBtn");
-      const originalText = btn.textContent;
+      const originalText = btn.innerHTML;
       btn.textContent = "処理中...";
       btn.disabled = true;
       try {
-        const img = new Image();
-        const objUrl = URL.createObjectURL(file);
-        await new Promise((res, rej) => {
-          img.onload = res;
-          img.onerror = rej;
-          img.src = objUrl;
-        });
-        
-        if (img.width !== img.height) {
+        if (groupIconFile) {
+          btn.textContent = "アイコン画像アップロード中...";
+          const img = new Image();
+          const objUrl = URL.createObjectURL(groupIconFile);
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = 128; canvas.height = 128;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
           URL.revokeObjectURL(objUrl);
-          alertMessage("スタンプ画像は完全な正方形（縦横同じサイズ）である必要があります", "error");
-          btn.textContent = originalText;
-          btn.disabled = false;
-          return;
+          
+          const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+          const iconFileToUpload = new File([blob], "group_icon.png", { type: "image/png" });
+          groupIconUrl = await uploadToExternalService(iconFileToUpload, () => {}, 'stamps');
+        }
+
+        btn.textContent = "処理中 (0/" + files.length + ")...";
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const name = inputs[i].value.trim();
+          
+          const img = new Image();
+          const objUrl = URL.createObjectURL(file);
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+          
+          if (img.width !== img.height) {
+            URL.revokeObjectURL(objUrl);
+            throw new Error(`「${name}」の画像が完全な正方形ではありません。`);
+          }
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = 128; canvas.height = 128;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+          URL.revokeObjectURL(objUrl);
+          
+          const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+          const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+          
+          btn.textContent = "アップロード中 (" + (i+1) + "/" + files.length + ")...";
+          const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
+          
+          const docData = {
+            name: name,
+            groupName: groupName || null,
+            url: fileUrl,
+            createdBy: userId,
+            createdAt: serverTimestamp()
+          };
+          if (groupIconUrl) {
+            docData.groupIconUrl = groupIconUrl;
+          }
+          await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`), docData);
         }
         
-        const canvas = document.createElement("canvas");
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
-        URL.revokeObjectURL(objUrl);
-        
-        const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
-        const stampFile = new File([blob], "stamp.png", { type: "image/png" });
-        
-        btn.textContent = "アップロード中...";
-        const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
-        
-        btn.textContent = "保存中...";
-        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`), {
-          name: name,
-          url: fileUrl,
-          createdBy: userId,
-          createdAt: serverTimestamp()
-        });
-        
-        nameInput.value = "";
         fileInput.value = "";
+        container.innerHTML = "";
+        container.classList.add("hidden");
+        groupInput.value = "";
+        if (groupIconInput) groupIconInput.value = "";
+        if (groupSelect.value === "_new") {
+          groupSelect.value = ""; // reload will fix options
+        }
         alertMessage("スタンプを追加しました", "success");
         await loadServerStampsForAdmin();
         if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
       } catch (e) {
         console.error("Stamp upload error", e);
-        alertMessage("アップロードに失敗しました", "error");
+        alertMessage(e.message || "アップロードに失敗しました", "error");
       } finally {
-        btn.textContent = originalText;
+        btn.innerHTML = originalText;
         btn.disabled = false;
       }
     });
@@ -9414,24 +9448,36 @@
            currentServerStampsData.push({ id: d.id, ...d.data() });
         });
         
-        const customCatIdx = STICKER_CATEGORIES.findIndex(c => c.id === 'server_custom');
+        // Remove old server_custom categories
+        STICKER_CATEGORIES = STICKER_CATEGORIES.filter(c => !c.id.startsWith('server_custom'));
+        
         if (currentServerStampsData.length > 0) {
-          const customCat = { 
-            id: 'server_custom', 
-            icon: '🖼️', 
-            label: 'カスタム', 
-            emojis: currentServerStampsData.map(s => `serverstamp:${s.url}`) 
-          };
+          const grouped = {};
+          currentServerStampsData.forEach(s => {
+            const g = s.groupName || 'カスタム';
+            if (!grouped[g]) grouped[g] = [];
+            grouped[g].push(s);
+          });
           
-          if (customCatIdx !== -1) {
-            STICKER_CATEGORIES[customCatIdx] = customCat;
-          } else {
-            STICKER_CATEGORIES.splice(2, 0, customCat); // "最近" "よく使う" の次に追加
-          }
-        } else {
-          // スタンプがない場合はタブを削除
-          if (customCatIdx !== -1) {
-            STICKER_CATEGORIES.splice(customCatIdx, 1);
+          let insertIdx = 2; // "最近" "よく使う" の次に追加
+          for (const g in grouped) {
+            const catId = 'server_custom_' + encodeURIComponent(g);
+            let iconValue = '🖼️';
+            // Find if any stamp in this group has a groupIconUrl
+            const stampWithIcon = grouped[g].find(s => s.groupIconUrl);
+            if (stampWithIcon) {
+              iconValue = `serverstamp:${stampWithIcon.groupIconUrl}::${g}`;
+            }
+
+            // URLの後に::で名前を付与して後で取り出せるようにする
+            const customCat = { 
+              id: catId, 
+              icon: iconValue, 
+              label: g, 
+              emojis: grouped[g].map(s => `serverstamp:${s.url}::${s.name}`) 
+            };
+            STICKER_CATEGORIES.splice(insertIdx, 0, customCat);
+            insertIdx++;
           }
         }
       } catch (e) {
@@ -9454,8 +9500,10 @@
         return `<img src="/assets/covo_stamps/${name}.png" class="emoji covo-emoji" alt="${name}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
       }
       if (emoji && emoji.startsWith('serverstamp:')) {
-        const url = emoji.substring(12);
-        return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+        const parts = emoji.substring(12).split('::');
+        const url = parts[0];
+        const name = parts[1] || 'カスタムスタンプ';
+        return `<img src="${escapeHtml(url)}" class="emoji covo-emoji server-emoji" alt="${escapeHtml(name)}" title="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
       }
       return `<span class="${spanClass}">${emoji}</span>`;
     }
@@ -9576,7 +9624,7 @@
         });
         cancelReply();
         resetAwayTimer();
-        // 通知（スタンプ絵文字つき）
+        // 通知（スタンプ名つき）
         try {
           const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
           if (serverSnap.exists()) {
@@ -9584,9 +9632,24 @@
             const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
             if (receiverIds.length > 0) {
               const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+              
+              let displayEmoji = emoji;
+              if (emoji && emoji.startsWith('serverstamp:')) {
+                const parts = emoji.substring(12).split('::');
+                const stampUrl = parts[0];
+                const stampName = parts[1] || 'スタンプ';
+                const sData = currentServerStampsData.find(s => s.url === stampUrl);
+                const gName = sData && sData.groupName ? sData.groupName : 'カスタム';
+                displayEmoji = `[${gName}: ${stampName}]`;
+              } else if (emoji && emoji.startsWith('covo:')) {
+                displayEmoji = `[Covo: ${emoji.substring(5)}]`;
+              } else if (emoji && emoji.startsWith('covonew:')) {
+                displayEmoji = `[スタンプ: ${emoji.substring(8)}]`;
+              }
+
               fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId, idToken })
+                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${displayEmoji}`, roomId: currentRoomId, appId, senderId: userId, idToken })
               }).catch(() => {});
             }
           }
@@ -9930,8 +9993,10 @@
       }
       if (Object.keys(reactionCounts).length === 0) {
         reactionsContainer.remove();
+        container.classList.remove('mb-3');
       } else {
         _twemojiParse(reactionsContainer);
+        container.classList.add('mb-3');
       }
     }
 
@@ -10933,25 +10998,6 @@
       }
 
       if (fileData && fileData.startsWith('http')) {
-        if (fileData.includes('res.cloudinary.com')) {
-          // Cloudinary URL はブラウザからの直接アクセスが制限される場合があるため
-          // Cloudflare Worker プロキシ経由でダウンロードする
-          const proxyUrl = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(fileData)}&name=${encodeURIComponent(fileName)}`;
-          if (_isIOSSafari && (!navigator.share)) {
-            // iOS Safari かつ Share 非対応の場合
-            window.open(proxyUrl, '_blank');
-            return;
-          }
-          fetch(proxyUrl)
-            .then(res => {
-              if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
-              return res.blob();
-            })
-            .then(blob => tryShareOrDownloadBlob(blob))
-            .catch(() => window.open(fileData, '_blank'));
-          return;
-        }
-        // 非Cloudinary HTTP URL
         if (_isIOSSafari && (!navigator.share)) {
           window.open(fileData, '_blank');
           return;
@@ -11051,8 +11097,8 @@
           if (!res.ok) {
             const errBody = await res.json().catch(() => ({}));
             if (res.status === 401) {
-              console.warn('[PDF] 401 Unauthorized: Cloudinaryがこのファイルへのアクセスを制限しています。');
-              console.warn('[PDF] 原因:', errBody.reason || 'アップロードプリセットのアクセス設定が原因の可能性があります。Cloudinaryダッシュボードでプリセットのaccess_modeをpublicに変更してください。');
+              console.warn('[PDF] 401 Unauthorized: アクセスが制限されています。');
+              console.warn('[PDF] 原因:', errBody.reason || 'アクセス設定が原因の可能性があります。');
             } else {
               console.error(`[PDF] エラー (HTTP ${res.status}):`, errBody);
             }
@@ -13347,12 +13393,34 @@
           const overlay = document.getElementById('updateOverlay');
           const versionText = document.getElementById('updateVersionText');
           const bodyText = document.getElementById('updateBodyText');
+          const closeBtn = document.getElementById('closeUpdateBtn');
+
+          let isForceUpdate = false;
+          try {
+            const res = await fetch("https://simplechat-65a0d.firebaseapp.com/version.json?t=" + Date.now());
+            if (res.ok) {
+              const j = await res.json();
+              if (j.version === metadata.version && j.forceUpdate) {
+                isForceUpdate = true;
+              }
+            }
+          } catch(e) {
+            console.warn("Failed to check forceUpdate flag", e);
+          }
 
           versionText.textContent = `v${metadata.version} が利用可能です`;
-          bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+          if (isForceUpdate) {
+            bodyText.textContent = metadata.body || 'このアップデートは必須です。バグ修正とパフォーマンス改善が含まれています。';
+            if (closeBtn) closeBtn.classList.add('hidden');
+          } else {
+            bodyText.innerHTML = (metadata.body || 'バグ修正とパフォーマンス改善が含まれています。') + '<br><br><span style="color:#94a3b8;font-size:0.8rem;">※アップデートを推奨します</span>';
+            if (closeBtn) closeBtn.classList.remove('hidden');
+          }
+          
           overlay.classList.add('show');
 
-          return true; // アプリ起動をブロック
+          return isForceUpdate; // アプリ起動をブロックするかどうか
+
         }
         console.log('No updates available.');
       } catch (error) {
@@ -13403,17 +13471,7 @@
           resetBtn();
           if (statusEl) { statusEl.textContent = ''; }
           // 既存のアップデートオーバーレイを使用して通常のアップデートフローへ
-          const result = await blockingUpdateCheck();
-          if (!result) {
-            const overlay = document.getElementById('updateOverlay');
-            const versionText = document.getElementById('updateVersionText');
-            const bodyText = document.getElementById('updateBodyText');
-            if (overlay && versionText) {
-              versionText.textContent = `v${metadata.version} が利用可能です`;
-              if (bodyText) bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
-              overlay.classList.add('show');
-            }
-          }
+          await blockingUpdateCheck();
         } else {
           if (statusEl) { statusEl.textContent = '最新バージョンです'; statusEl.style.color = '#22c55e'; }
           resetBtn();
@@ -13738,19 +13796,9 @@
         window.__TAURI__.event.listen('open-room', (event) => {
           const rId = event.payload?.roomId;
           if (rId) {
-            // Focus main window
-            if (window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-              window.__TAURI__.window.getCurrentWindow().unminimize();
-              window.__TAURI__.window.getCurrentWindow().show();
-              window.__TAURI__.window.getCurrentWindow().setFocus();
-            } else if (window.__TAURI__.webviewWindow && window.__TAURI__.webviewWindow.getCurrentWebviewWindow) {
-              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
-              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
-              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
-            } else if (window.__TAURI__.window && window.__TAURI__.window.getCurrent) {
-              window.__TAURI__.window.getCurrent().unminimize();
-              window.__TAURI__.window.getCurrent().show();
-              window.__TAURI__.window.getCurrent().setFocus();
+            // Focus main window via rust command
+            if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
+              window.__TAURI__.core.invoke('show_main_window').catch(console.error);
             }
             if (typeof goToRoom === 'function') goToRoom(rId);
             else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
