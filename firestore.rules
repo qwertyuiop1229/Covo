@@ -242,6 +242,20 @@ service cloud.firestore {
             (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
         }
 
+        // サーバーカスタムスタンプ
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isJoinedServer(appId, serverId) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string &&
+            request.resource.data.url is string;
+          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+          allow update: if isJoinedServer(appId, serverId) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
         // 招待コード
         match /inviteCodes/{code} {
           allow read: if isServerAdmin(appId, serverId);

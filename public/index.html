@@ -3422,6 +3422,13 @@
                     <span class="text-sm font-bold text-gray-800">診断情報をまとめてコピー</span>
                     <button class="" onclick="copyDiagnosticsBundle()" style="padding:7px 16px;background:#16a34a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">コピー</button>
                   </div>
+                  <div class="flex justify-between items-center mt-6 p-4 bg-orange-100 rounded-xl border border-orange-200">
+                    <div>
+                      <span class="text-sm font-bold text-orange-800">Cloudflare完全移行</span>
+                      <div class="text-xs text-orange-600 mt-1">過去のCloudinary画像をCloudflareに移行します</div>
+                    </div>
+                    <button class="" id="btnMigrateCloudinary" onclick="migrateCloudinaryToCloudflare()" style="padding:7px 16px;background:#ea580c;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">実行</button>
+                  </div>
                 </div>
               </div>
 
@@ -3835,10 +3842,11 @@
               <p id="serverSettingsTitle" class="font-bold text-lg"></p>
             </div>
             <!-- タブ -->
-            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100">
+            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100 flex-wrap">
               <button id="ssTabRooms" class="ss-tab active">ルーム</button>
               <button id="ssTabMembers" class="ss-tab">メンバー</button>
               <button id="ssTabInvites" class="ss-tab">招待</button>
+              <button id="ssTabStamps" class="ss-tab">スタンプ</button>
               <button id="ssTabDanger" class="ss-tab">その他</button>
             </div>
             <div class="p-6 max-h-[60vh] overflow-y-auto">
@@ -3885,6 +3893,21 @@
                     class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
                 </div>
                 <div id="inviteCodesList" class="space-y-2"></div>
+              </div>
+              <!-- スタンプタブ -->
+              <div id="ssStampsSection" class="hidden space-y-4">
+                <div class="mb-4">
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">カスタムスタンプを追加</label>
+                  <div class="flex flex-col gap-2">
+                    <input type="text" id="newStampNameInput" placeholder="スタンプ名（例: いいね）" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none text-sm" />
+                    <input type="file" id="newStampFileInput" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                    <button id="uploadCustomStampBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all mt-2">アップロード</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">登録済みスタンプ</label>
+                  <div id="serverStampsList" class="grid grid-cols-4 gap-3"></div>
+                </div>
               </div>
               <!-- その他タブ -->
               <div id="ssDangerSection" class="hidden space-y-4">
@@ -5314,6 +5337,101 @@
       try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
     };
 
+    window.migrateCloudinaryToCloudflare = async function() {
+      if (!isAdmin) return;
+      if (!await showCustomConfirm("CloudinaryからCloudflareへ過去の画像を全自動移行します。件数によっては非常に時間がかかります。開始しますか？", "移行開始")) return;
+      
+      const btn = document.getElementById("btnMigrateCloudinary");
+      if(btn) btn.textContent = "移行中...";
+      
+      try {
+        let count = 0;
+        const migrateUrl = async (oldUrl) => {
+          if (!oldUrl || typeof oldUrl !== 'string' || !oldUrl.includes("res.cloudinary.com")) return null;
+          try {
+            console.log(`Migrating: ${oldUrl}`);
+            const res = await fetch(oldUrl);
+            const blob = await res.blob();
+            // 拡張子推定
+            let ext = "png";
+            if (oldUrl.includes(".jpg") || oldUrl.includes(".jpeg")) ext = "jpg";
+            if (oldUrl.includes(".gif")) ext = "gif";
+            if (oldUrl.includes(".webp")) ext = "webp";
+            const file = new File([blob], `migrated.${ext}`, { type: blob.type || "image/png" });
+            const newUrl = await uploadToExternalService(file, () => {}, "migrated");
+            count++;
+            console.log(`Migrated -> ${newUrl}`);
+            return newUrl;
+          } catch(e) {
+            console.error(`Migration failed for ${oldUrl}`, e);
+            return null;
+          }
+        };
+
+        // 1. Servers (icons)
+        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+        for (const s of serversSnap.docs) {
+          const sData = s.data();
+          if (sData.icon && sData.icon.includes("res.cloudinary.com")) {
+            const newIcon = await migrateUrl(sData.icon);
+            if (newIcon) await updateDoc(s.ref, { icon: newIcon });
+          }
+
+          // 2. Stamps
+          const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/stamps`));
+          for (const stamp of stampsSnap.docs) {
+            const stampData = stamp.data();
+            if (stampData.url && stampData.url.includes("res.cloudinary.com")) {
+              const newUrl = await migrateUrl(stampData.url);
+              if (newUrl) await updateDoc(stamp.ref, { url: newUrl });
+            }
+          }
+
+          // 3. Profiles
+          const profilesSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/profiles`));
+          for (const profile of profilesSnap.docs) {
+            const pData = profile.data();
+            if (pData.avatarUrl && pData.avatarUrl.includes("res.cloudinary.com")) {
+              const newUrl = await migrateUrl(pData.avatarUrl);
+              if (newUrl) await updateDoc(profile.ref, { avatarUrl: newUrl });
+            }
+          }
+
+          // 4. Messages (fileData)
+          // 注意：messagesは大量にあるかもしれないので100件ずつくらい処理するのが安全だが、
+          // 管理者が1度実行するだけなので愚直に全件スキャンする
+          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms`));
+          for (const room of roomsSnap.docs) {
+            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms/${room.id}/messages`));
+            for (const msg of msgsSnap.docs) {
+              const msgData = msg.data();
+              if (msgData.fileData && msgData.fileData.includes("res.cloudinary.com")) {
+                const newUrl = await migrateUrl(msgData.fileData);
+                if (newUrl) await updateDoc(msg.ref, { fileData: newUrl });
+              }
+            }
+          }
+        }
+
+        // 5. Global Users
+        const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+        for (const user of usersSnap.docs) {
+          const uData = user.data();
+          if (uData.avatarUrl && uData.avatarUrl.includes("res.cloudinary.com")) {
+            const newUrl = await migrateUrl(uData.avatarUrl);
+            if (newUrl) await updateDoc(user.ref, { avatarUrl: newUrl });
+          }
+        }
+
+        alertMessage(`移行が完了しました！合計 ${count} 件の画像をCloudflareに移行しました。`, "success");
+      } catch (err) {
+        console.error("Migration error:", err);
+        alertMessage("移行中にエラーが発生しました", "error");
+      } finally {
+        if(btn) btn.textContent = "実行";
+      }
+    };
+
     // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
     function inspectPoint(x, y) {
       try {
@@ -6646,13 +6764,13 @@
         progressFill.style.width = '0%';
         confirmBtn.disabled = true; cancelBtn.disabled = true;
         try {
-          const cloudinaryUrl = await uploadToExternalService(
+          const fileUrl = await uploadToExternalService(
             new File([blob], 'avatar.jpg', { type: 'image/jpeg' }),
             (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
             'simplechat/avatars'
           );
-          pendingAvatarUrl = cloudinaryUrl;
-          settingsAvatarPreview.src = cloudinaryUrl;
+          pendingAvatarUrl = fileUrl;
+          settingsAvatarPreview.src = fileUrl;
           settingsAvatarPreview.classList.remove("hidden");
           document.getElementById("resetAvatarButton").classList.remove("hidden");
           avatarCropModal.classList.add('hidden');
@@ -7639,6 +7757,11 @@
           : null;
       } catch (e) { currentServerNickname = null; }
 
+      // カスタムスタンプを読み込む
+      if (typeof loadCurrentServerStamps === 'function') {
+        loadCurrentServerStamps();
+      }
+
       // ルームを読み込む
       loadServerRooms(serverId);
       membersSidebar.classList.remove("hidden");
@@ -8576,12 +8699,12 @@
     let currentSsTab = "rooms";
     function switchSsTab(tab) {
       currentSsTab = tab;
-      ["rooms", "members", "invites", "danger"].forEach(t => {
+      ["rooms", "members", "invites", "stamps", "danger"].forEach(t => {
         document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`).classList.toggle("active", t === tab);
         document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`).classList.toggle("hidden", t !== tab);
       });
     }
-    ["Rooms", "Members", "Invites", "Danger"].forEach(t => {
+    ["Rooms", "Members", "Invites", "Stamps", "Danger"].forEach(t => {
       document.getElementById(`ssTab${t}`).addEventListener("click", () => switchSsTab(t.toLowerCase()));
     });
 
@@ -8590,17 +8713,32 @@
       document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
       document.getElementById("serverSettingsMessage").textContent = "";
 
-      // 削除ボタンはオーナー（またはserverAdmins所属）かグローバル管理者のみ表示
       const isOwner = currentServerData?.createdBy === userId ||
         (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+      const hasAdminRights = isOwner || isAdmin;
+
+      // 削除ボタンは管理者向け
       const deleteBtn = document.getElementById("deleteServerBtn");
       if (deleteBtn) {
-        deleteBtn.style.display = (isOwner || isAdmin) ? "" : "none";
+        deleteBtn.style.display = hasAdminRights ? "" : "none";
       }
 
+      // タブの表示制御
+      const tabs = ["ssTabRooms", "ssTabMembers", "ssTabInvites", "ssTabDanger"];
+      tabs.forEach(tabId => {
+        const el = document.getElementById(tabId);
+        if (el) el.style.display = hasAdminRights ? "" : "none";
+      });
+
       openModal(serverSettingsModal);
-      switchSsTab("rooms");
-      await loadServerSettingsRooms();
+      
+      if (hasAdminRights) {
+        switchSsTab("rooms");
+        await loadServerSettingsRooms();
+      } else {
+        switchSsTab("stamps");
+        await loadServerStampsForAdmin();
+      }
     }
 
     async function loadServerSettingsRooms() {
@@ -8782,6 +8920,220 @@
       });
     }
 
+    // カスタムスタンプ管理タブ
+    async function loadServerStampsForAdmin() {
+      if (currentSsTab !== "stamps") return;
+      const listEl = document.getElementById("serverStampsList");
+      listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>読み込み中...</p>";
+      try {
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
+        listEl.innerHTML = "";
+        if (snap.empty) {
+          listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>スタンプはありません</p>";
+        }
+        snap.forEach(d => {
+          const stamp = d.data();
+          const item = document.createElement("div");
+          const isOwner = currentServerData?.createdBy === userId || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+          const hasAdminRights = isOwner || isAdmin;
+          
+          item.innerHTML = `
+            <img src="${escapeHtml(stamp.url)}" class="w-12 h-12 object-contain mb-1" />
+            <span class="text-xs text-gray-600 w-full text-center" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(stamp.name)}">${escapeHtml(stamp.name)}</span>
+            
+            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-wrap items-center justify-center gap-1 p-1 rounded-xl transition-opacity">
+              <button class="dl-stamp-btn bg-white/20 hover:bg-white/40 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="ダウンロード">
+                <i class="fas fa-download text-xs"></i>
+              </button>
+              ${hasAdminRights ? `
+              <button class="update-stamp-btn bg-white/20 hover:bg-white/40 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="画像を更新">
+                <i class="fas fa-upload text-xs"></i>
+              </button>
+              <button class="delete-stamp-btn bg-red-500/80 hover:bg-red-600 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="削除">
+                <i class="fas fa-times text-xs"></i>
+              </button>
+              ` : ''}
+              ${isAdmin ? `
+              <button class="copy-stamp-btn bg-blue-500/80 hover:bg-blue-600 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="別サーバーへコピー">
+                <i class="fas fa-copy text-xs"></i>
+              </button>
+              ` : ''}
+            </div>
+          `;
+          
+          const dlBtn = item.querySelector(".dl-stamp-btn");
+          if (dlBtn) {
+            dlBtn.addEventListener("click", async () => {
+              try {
+                const res = await fetch(stamp.url);
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `${stamp.name}.png`;
+                a.click();
+              } catch(e) {
+                alertMessage("ダウンロード失敗", "error");
+              }
+            });
+          }
+
+          const updateBtn = item.querySelector(".update-stamp-btn");
+          if (updateBtn) {
+            updateBtn.addEventListener("click", () => {
+              const fileInput = document.createElement("input");
+              fileInput.type = "file";
+              fileInput.accept = "image/*";
+              fileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.size > 2 * 1024 * 1024) { alertMessage("画像は2MB以下にしてください", "error"); return; }
+                
+                updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+                try {
+                  const img = new Image();
+                  const objUrl = URL.createObjectURL(file);
+                  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+                  
+                  if (img.width !== img.height) {
+                    URL.revokeObjectURL(objUrl);
+                    alertMessage("スタンプ画像は完全な正方形（縦横同じサイズ）である必要があります", "error");
+                    updateBtn.innerHTML = '<i class="fas fa-upload text-xs"></i>';
+                    return;
+                  }
+                  
+                  const canvas = document.createElement("canvas");
+                  canvas.width = 128; canvas.height = 128;
+                  const ctx = canvas.getContext("2d");
+                  ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+                  URL.revokeObjectURL(objUrl);
+                  
+                  const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+                  const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+                  const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
+                  
+                  await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, d.id), {
+                    url: fileUrl
+                  });
+                  alertMessage("画像を更新しました", "success");
+                  await loadServerStampsForAdmin();
+                  if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
+                } catch(err) {
+                  alertMessage("更新失敗", "error");
+                  updateBtn.innerHTML = '<i class="fas fa-upload text-xs"></i>';
+                }
+              };
+              fileInput.click();
+            });
+          }
+
+          const delBtn = item.querySelector(".delete-stamp-btn");
+          if (delBtn) {
+            delBtn.addEventListener("click", async () => {
+              if (!await showCustomConfirm(`スタンプ「${stamp.name}」を削除しますか？`, "削除")) return;
+              try {
+                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, d.id));
+                await loadServerStampsForAdmin();
+                if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
+              } catch(e) {
+                alertMessage("削除権限がありません", "error");
+              }
+            });
+          }
+          const copyBtn = item.querySelector(".copy-stamp-btn");
+          if (copyBtn) {
+            copyBtn.addEventListener("click", async () => {
+              const targetServerId = prompt("コピー先のサーバーIDを入力してください:");
+              if (!targetServerId) return;
+              try {
+                await setDoc(doc(collection(db, `artifacts/${appId}/servers/${targetServerId}/stamps`)), {
+                  name: stamp.name,
+                  url: stamp.url,
+                  createdBy: userId,
+                  createdAt: serverTimestamp()
+                });
+                alertMessage("コピーしました", "success");
+              } catch(e) {
+                alertMessage("コピー失敗: " + e.message, "error");
+              }
+            });
+          }
+          listEl.appendChild(item);
+        });
+      } catch (e) {
+        listEl.innerHTML = "<p class='text-sm text-red-500 col-span-4'>取得失敗</p>";
+      }
+    }
+
+    document.getElementById("uploadCustomStampBtn")?.addEventListener("click", async () => {
+      const nameInput = document.getElementById("newStampNameInput");
+      const fileInput = document.getElementById("newStampFileInput");
+      const name = nameInput.value.trim();
+      const file = fileInput.files[0];
+      if (!name || !file) {
+        alertMessage("スタンプ名と画像を選択してください", "error");
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        alertMessage("画像は2MB以下にしてください", "error");
+        return;
+      }
+      
+      const btn = document.getElementById("uploadCustomStampBtn");
+      const originalText = btn.textContent;
+      btn.textContent = "処理中...";
+      btn.disabled = true;
+      try {
+        const img = new Image();
+        const objUrl = URL.createObjectURL(file);
+        await new Promise((res, rej) => {
+          img.onload = res;
+          img.onerror = rej;
+          img.src = objUrl;
+        });
+        
+        if (img.width !== img.height) {
+          URL.revokeObjectURL(objUrl);
+          alertMessage("スタンプ画像は完全な正方形（縦横同じサイズ）である必要があります", "error");
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return;
+        }
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+        URL.revokeObjectURL(objUrl);
+        
+        const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+        const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+        
+        btn.textContent = "アップロード中...";
+        const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
+        
+        btn.textContent = "保存中...";
+        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`), {
+          name: name,
+          url: fileUrl,
+          createdBy: userId,
+          createdAt: serverTimestamp()
+        });
+        
+        nameInput.value = "";
+        fileInput.value = "";
+        alertMessage("スタンプを追加しました", "success");
+        await loadServerStampsForAdmin();
+        if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
+      } catch (e) {
+        console.error("Stamp upload error", e);
+        alertMessage("アップロードに失敗しました", "error");
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("createInviteCodeBtn").addEventListener("click", async () => {
       const expiryDays = parseInt(document.getElementById("inviteExpiry").value);
       const maxUses = parseInt(document.getElementById("inviteMaxUses").value);
@@ -8925,7 +9277,7 @@
               }
             }
 
-            const cloudinaryUrl = await uploadToExternalService(
+            const fileUrl = await uploadToExternalService(
               fileToUpload,
               (pct) => {
                 progressFill.style.width = pct + "%";
@@ -8934,7 +9286,7 @@
               "simplechat/messages"
             );
             Object.assign(data, { 
-              fileData: cloudinaryUrl, 
+              fileData: fileUrl, 
               fileName: attachedFile.name, 
               fileType: attachedFile.type, 
               fileSize: attachedFile.size,
@@ -9028,7 +9380,7 @@
        - スタンプは message.sticker フィールドで送信し、受信側で大きく表示
        - お気に入り/最近は localStorage に保存（端末ごと）
        ===================================================================== */
-    const STICKER_CATEGORIES = [
+    let STICKER_CATEGORIES = [
       { id: 'recent', icon: '🕘', label: '最近' },
       { id: 'fav', icon: '⭐', label: 'よく使う' },
       { id: 'covo_new', icon: '✨', label: 'スタンプ', emojis: ['covonew:OKです', 'covonew:ありがとう', 'covonew:いいね', 'covonew:うーん', 'covonew:え！', 'covonew:おやすみ', 'covonew:がんばるぞ', 'covonew:ごめんなさい', 'covonew:ちら', 'covonew:ぴえん', 'covonew:ぺこり', 'covonew:またねー', 'covonew:やっほー', 'covonew:わーい！', 'covonew:了解', 'covonew:大好き'] },
@@ -9043,6 +9395,41 @@
         ...['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖']
       ] }
     ];
+    let currentServerStampsData = [];
+    
+    async function loadCurrentServerStamps() {
+      if (!currentServerId) return;
+      try {
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
+        currentServerStampsData = [];
+        snap.forEach(d => {
+           currentServerStampsData.push({ id: d.id, ...d.data() });
+        });
+        
+        const customCatIdx = STICKER_CATEGORIES.findIndex(c => c.id === 'server_custom');
+        if (currentServerStampsData.length > 0) {
+          const customCat = { 
+            id: 'server_custom', 
+            icon: '🖼️', 
+            label: 'カスタム', 
+            emojis: currentServerStampsData.map(s => `serverstamp:${s.url}`) 
+          };
+          
+          if (customCatIdx !== -1) {
+            STICKER_CATEGORIES[customCatIdx] = customCat;
+          } else {
+            STICKER_CATEGORIES.splice(2, 0, customCat); // "最近" "よく使う" の次に追加
+          }
+        } else {
+          // スタンプがない場合はタブを削除
+          if (customCatIdx !== -1) {
+            STICKER_CATEGORIES.splice(customCatIdx, 1);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load server stamps", e);
+      }
+    }
     const SK_RECENT = 'covo_sticker_recent', SK_FAV = 'covo_sticker_fav';
     let _stickerActiveCat = 'covo';
 
@@ -9052,11 +9439,15 @@
     function getEmojiHtml(emoji, spanClass = 'sk-em') {
       if (emoji && emoji.startsWith('covo:')) {
         const name = emoji.substring(5);
-        return `<img src="/covo-stamps/${name}.png" class="emoji covo-emoji" alt="${name}" />`;
+        return `<img src="/covo-stamps/${name}.png" class="emoji covo-emoji" alt="${name}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
       }
       if (emoji && emoji.startsWith('covonew:')) {
         const name = emoji.substring(8);
         return `<img src="/assets/covo_stamps/${name}.png" class="emoji covo-emoji" alt="${name}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+      }
+      if (emoji && emoji.startsWith('serverstamp:')) {
+        const url = emoji.substring(12);
+        return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
       }
       return `<span class="${spanClass}">${emoji}</span>`;
     }
@@ -9537,9 +9928,16 @@
     }
 
     function createMessageElement(message, messageId, readByCount = 0) {
+      if (message.isGap) {
+        const gapRow = document.createElement("div");
+        gapRow.className = "w-full flex justify-center py-6 opacity-60 select-none flipped";
+        gapRow.innerHTML = `<span class="text-xs text-gray-500 bg-gray-100 px-4 py-1.5 rounded-full shadow-inner"><i class="fas fa-history mr-1.5"></i>${escapeHtml(message.text)}</span>`;
+        return gapRow;
+      }
+
       const isMyMessage = message.senderId === userId;
       const messageRow = document.createElement("div");
-      messageRow.className = "message-row relative w-full mb-4 group";
+      messageRow.className = "message-row relative w-full mb-4 group flipped";
 
       const replyIconBg = document.createElement("div");
       replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 pointer-events-none z-0";
@@ -9552,7 +9950,7 @@
       messageRow.appendChild(replyIconBg);
 
       const messageRowInner = document.createElement("div");
-      messageRowInner.className = "message-row-inner w-full flex flipped " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRowInner.className = "message-row-inner w-full flex " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
       messageRowInner.style.willChange = "transform";
       messageRow.appendChild(messageRowInner);
 
@@ -9570,28 +9968,32 @@
         messageRowInner.appendChild(avatarDiv);
       }
       
+      const bubbleContainer = document.createElement("div");
+      bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] ${isMyMessage ? 'items-end' : 'items-start'}`;
+
+      if (message.replyTo && message.replyTo.messageId) {
+        const replyQuoteDiv = document.createElement("div");
+        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none pl-1";
+        replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
+        
+        replyQuoteDiv.innerHTML = `
+          <div class="w-3 h-3 border-l-2 border-t-2 border-gray-400 rounded-tl-sm translate-y-0.5"></div>
+          <span class="font-bold whitespace-nowrap">${escapeHtml(message.replyTo.senderNickname || "不明")}</span>
+          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo.text || "（ファイル）")}</span>
+        `;
+        bubbleContainer.appendChild(replyQuoteDiv);
+      }
+
       const messageElement = document.createElement("div");
-      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col z-10`;
+      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-full`;
       messageElement.style.touchAction = "pan-y";
+      messageElement.style.maxWidth = "100%"; // 75% max-width override
       messageElement.dataset.messageId = messageId;
       const senderNicknameSpan = document.createElement("span");
       senderNicknameSpan.className = `text-xs text-gray-600 mb-1 ${isMyMessage ? "text-right" : "text-left"}`;
       senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
       messageElement.appendChild(senderNicknameSpan);
-      if (message.replyTo && message.replyTo.messageId) {
-        const replyQuoteDiv = document.createElement("div");
-        replyQuoteDiv.className = "reply-quote";
-        replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
-        const replyNicknameSpan = document.createElement("div");
-        replyNicknameSpan.className = "reply-quote-nickname";
-        replyNicknameSpan.textContent = `返信先: ${message.replyTo.senderNickname || "不明"}`;
-        const replyTextSpan = document.createElement("div");
-        replyTextSpan.className = "reply-quote-text";
-        replyTextSpan.textContent = message.replyTo.text || "（ファイル）";
-        replyQuoteDiv.appendChild(replyNicknameSpan);
-        replyQuoteDiv.appendChild(replyTextSpan);
-        messageElement.appendChild(replyQuoteDiv);
-      }
+      
       // スタンプメッセージ（絵文字をTwemojiで大きく表示。吹き出し背景なし）
       if (message.sticker) {
         messageElement.classList.add("sticker-bubble");
@@ -9768,8 +10170,6 @@
       updateReactionsUI(messageElement, message);
 
       const timestampSpan = document.createElement("span");
-      // 専用クラス msg-timestamp を付与（PDFラベル等と同じユーティリティクラスで誤マッチして
-      // 時刻が二重表示されるのを防ぐ）
       timestampSpan.className = `msg-timestamp text-xs text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
       if (message.timestamp && message.timestamp.toDate) {
         const date = message.timestamp.toDate();
@@ -9780,7 +10180,7 @@
       messageElement.appendChild(timestampSpan);
       if (isMyMessage) {
         const readSpan = document.createElement("span");
-        readSpan.className = "read-receipt";
+        readSpan.className = "read-receipt text-xs text-gray-400 text-right";
         if (readByCount > 0) {
           readSpan.textContent = `既読${readByCount > 1 ? `（${readByCount}）` : ""}`;
         } else {
@@ -9788,7 +10188,10 @@
         }
         messageElement.appendChild(readSpan);
       }
-      messageRow.appendChild(messageElement);
+      
+      bubbleContainer.appendChild(messageElement);
+      messageRowInner.appendChild(bubbleContainer);
+      
       return messageRow;
     }
 
@@ -10071,16 +10474,17 @@
             // 全てのメッセージで左にスワイプ（LINE風）のみ許可
             if (tx > 0) tx = 0;
             
-            if (tx < -60) tx = -60 + (tx + 60) * 0.2;
+            // 画面にちょっと見切れるくらいまでスムーズにスライドさせる
+            if (tx < -120) tx = -120 + (tx + 120) * 0.3;
             innerRow.style.transform = `translateX(${tx}px)`;
             swipeCurrentX = tx;
             
             if (replyBg) {
               const absTx = Math.abs(tx);
-              const progress = Math.min(absTx / 50, 1);
+              const progress = Math.min(absTx / 60, 1);
               replyBg.style.opacity = progress;
               replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
-              if (absTx > 50) {
+              if (absTx > 60) {
                  if (progress > 0.99 && !replyBg.dataset.vibrated) {
                     if (navigator.vibrate) navigator.vibrate(10);
                     replyBg.dataset.vibrated = "true";
@@ -10215,18 +10619,6 @@
       }
       messageContextMenu.classList.add("hidden");
     });
-    function extractCloudinaryPublicId(url, resourceType) {
-      const uploadIdx = url.indexOf('/upload/');
-      if (uploadIdx === -1) return null;
-      let afterUpload = url.substring(uploadIdx + 8).split('?')[0].split('#')[0];
-      afterUpload = afterUpload.replace(/^v\d+\//, '');
-      if (resourceType !== 'raw') afterUpload = afterUpload.replace(/\.[^.]+$/, '');
-      return afterUpload || null;
-    }
-    function extractCloudinaryResourceType(url) {
-      const m = url.match(/cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\//);
-      return m ? m[1] : 'image';
-    }
 
     deleteMessageButton.addEventListener("click", async (e) => {
       if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
@@ -10309,36 +10701,6 @@
           } catch (e) {
             console.error('[deleteMessage] KV file delete error (fileData):', fileKey, e);
             alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-            return;
-          }
-        }
-      }
-
-      // 2. Cloudinary 画像削除（旧データの後方互換。設定済みの場合のみ・失敗でメッセージ削除中止）
-      if (msgToDelete.fileData && msgToDelete.fileData.includes('res.cloudinary.com')) {
-        const resType = extractCloudinaryResourceType(msgToDelete.fileData);
-        const pubId = extractCloudinaryPublicId(msgToDelete.fileData, resType);
-        if (pubId) {
-          try {
-            const res = await fetch(
-              `${WORKER_BASE_URL}/api/cloudinaryFile?publicId=${encodeURIComponent(pubId)}&resourceType=${resType}`,
-              { method: 'DELETE' }
-            );
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              if (data.error === 'no_credentials') {
-                console.warn('[deleteMessage] Cloudinary credentials not set in Worker, skipping image cleanup');
-              } else {
-                console.error('[deleteMessage] Cloudinary delete failed:', pubId, data);
-                alertMessage('画像の削除に失敗しました。メッセージは削除されませんでした。', 'error');
-                return;
-              }
-            } else {
-              console.log('[deleteMessage] Cloudinary file deleted:', pubId, data.result);
-            }
-          } catch (e) {
-            console.error('[deleteMessage] Cloudinary delete error:', pubId, e);
-            alertMessage('画像の削除に失敗しました。メッセージは削除されませんでした。', 'error');
             return;
           }
         }
@@ -10469,19 +10831,30 @@
         const oldestMsg = allLoadedMessages[0];
         
         if (oldestMsg && targetTimestamp && targetTimestamp.toMillis() < oldestMsg.timestamp.toMillis()) {
-          // 目的のメッセージまでの間にあるメッセージを最大200件取得
+          // 目的のメッセージまでの間にあるメッセージを最大100件取得
           const q = query(
             collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
             orderBy("timestamp", "desc"),
             startAfter(oldestMsg.timestamp),
             endAt(targetTimestamp),
-            limit(200)
+            limit(100)
           );
           
           const snap = await getDocs(q);
           if (!snap.empty) {
             const newMsgs = [];
-            snap.forEach(doc => newMsgs.push({ id: doc.id, ...doc.data() }));
+            let reachedTarget = false;
+            snap.forEach(doc => {
+              newMsgs.push({ id: doc.id, ...doc.data() });
+              if (doc.id === msgId) reachedTarget = true;
+            });
+            
+            // 100件以上離れている場合は間にギャップ（中抜け）メッセージを挟んでターゲットを追加
+            if (!reachedTarget) {
+              const targetMsg = { id: docSnap.id, ...docSnap.data() };
+              newMsgs.push({ id: `gap-${msgId}`, isGap: true, text: "中間のメッセージは省略されました", senderId: "system", timestamp: targetMsg.timestamp });
+              newMsgs.push(targetMsg);
+            }
             
             const oldScrollHeight = messagesDisplay.scrollHeight;
             const oldScrollTop = messagesDisplay.scrollTop;
