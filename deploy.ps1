@@ -99,7 +99,7 @@ firebase deploy --only "hosting,firestore:rules,database"
 
 # [5/5] git push → GitHub Actions が Windows インストーラーをビルドする
 Write-Host "[5/5] Pushing to GitHub..." -ForegroundColor Green
-git push simplechat HEAD --tags
+git push origin HEAD --tags
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor Cyan
@@ -109,5 +109,5 @@ Write-Host "  Tag: $tagName" -ForegroundColor Green
 Write-Host "====================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Firebase: https://simplechat-65a0d.web.app" -ForegroundColor Yellow
-Write-Host "GitHub Actions (Windows build): https://github.com/qwertyuiop1229/simplechat/actions" -ForegroundColor Yellow
+Write-Host "GitHub Actions (Windows build): https://github.com/qwertyuiop1229/Covo/actions" -ForegroundColor Yellow
 Write-Host ""
