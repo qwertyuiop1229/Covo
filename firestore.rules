@@ -196,9 +196,9 @@ service cloud.firestore {
             allow create: if isJoinedServer(appId, serverId) &&
               request.resource.data.senderId == request.auth.uid;
             allow update: if isJoinedServer(appId, serverId) && (
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && isServerAdmin(appId, serverId))
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
               || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && isServerAdmin(appId, serverId))
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
               || (isServerAdmin(appId, serverId)

@@ -415,7 +415,7 @@
     }
 
     /* サイドバーリサイズ用ハンドル */
-    #resizer {
+    #resizer, #resizerRight {
       width: 2px;
       cursor: col-resize;
       background-color: #e5e7eb;
@@ -423,7 +423,7 @@
       flex-shrink: 0;
     }
 
-    #resizer:hover {
+    #resizer:hover, #resizerRight:hover {
       background-color: #d1d5db;
     }
 
@@ -621,7 +621,7 @@
         background: white;
       }
 
-      #resizer {
+      #resizer, #resizerRight {
         display: none;
       }
 
@@ -880,7 +880,7 @@
       background: white;
       border-radius: 4px;
       margin-bottom: 4px;
-      border-left: 4px solid #f59e0b;
+      border-left: 4px solid #3b82f6;
       cursor: pointer;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }
@@ -2574,8 +2574,8 @@
     body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
 
     /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer { background-color: rgba(255,255,255,0.05); }
-    body.dark-server-theme #resizer:hover { background-color: rgba(255,255,255,0.1); }
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
     body.dark-server-theme * {
       scrollbar-color: rgba(255,255,255,0.18) transparent;
     }
@@ -3914,6 +3914,7 @@
             <button id="mobileBackButton"
               class="text-gray-600 hover:text-gray-800 hidden items-center p-3 -ml-3 mr-1 rounded-full"
               style="display:none;"><i class="fas fa-arrow-left"></i></button>
+            <button id="toggleLeftSidebarBtn" class="text-gray-500 hover:text-gray-800 mr-2 hidden md:block" title="左サイドバーの表示/非表示"><i class="fas fa-bars"></i></button>
             <span id="currentRoomTitleText" class="flex-1"></span>
             <button class="" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
               <i class="fas fa-phone"></i>
@@ -3923,6 +3924,7 @@
             </button>
             <button id="toggleSearchButton" class="text-gray-500 hover:text-gray-800 ml-2"><i
                 class="fas fa-search"></i></button>
+            <button id="toggleMembersSidebarBtn" class="text-gray-500 hover:text-gray-800 ml-2 hidden md:block" title="メンバーリストの表示/非表示"><i class="fas fa-user-friends"></i></button>
           </div>
           <div id="searchContainer" class="hidden flex-shrink-0 flex items-center">
             <input type="text" id="searchInput" placeholder="メッセージを検索..."
@@ -3932,7 +3934,7 @@
           </div>
           <div id="pinnedMessagesArea" class="hidden flex-shrink-0"></div>
 
-          <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped">
+          <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
             <!-- 過去メッセージ読み込みスピナー -->
             <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
               <div class="top-spinner"></div>
@@ -4005,6 +4007,7 @@
         </div>
 
         <!-- メンバーリストサイドバー (スマホではボトムシート) -->
+        <div id="resizerRight"></div>
         <div id="bottomSheetOverlay"></div>
         <div id="membersSidebar" class="hidden md:flex scrollable">
           <div id="bottomSheetHandle"></div>
@@ -4042,6 +4045,23 @@
           class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
         <button id="customConfirmOk"
           class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- メッセージプレビューダイアログ -->
+  <div id="messagePreviewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden" onclick="this.classList.add('hidden')">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 modal-box confirm-box animate-pop-in cursor-pointer hover:bg-gray-50 transition-colors" onclick="event.stopPropagation(); jumpToUnloadedMessage(this.dataset.msgId)">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-sm font-bold text-gray-500">元のメッセージ</h3>
+        <button onclick="document.getElementById('messagePreviewModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="flex items-start gap-3">
+        <div id="previewModalAvatar" class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold flex-shrink-0 bg-cover bg-center text-lg"></div>
+        <div>
+          <div id="previewModalName" class="font-bold text-gray-800 text-sm"></div>
+          <div id="previewModalText" class="text-gray-600 mt-1 whitespace-pre-wrap break-words text-sm max-h-40 overflow-y-auto"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -9487,11 +9507,7 @@
       replyIconBg.style.height = "40px";
       replyIconBg.style.borderRadius = "50%";
       replyIconBg.style.background = "rgba(0,0,0,0.2)";
-      if (isMyMessage) {
-        replyIconBg.style.right = "20px";
-      } else {
-        replyIconBg.style.left = "48px";
-      }
+      replyIconBg.style.right = "20px";
       replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
       messageRow.appendChild(replyIconBg);
 
@@ -9949,6 +9965,10 @@
               replyingToNickname.textContent = msgData.senderNickname;
               replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
               replyingToContainer.classList.remove("hidden");
+              const input = document.getElementById("messageInput");
+              if (input && !input.disabled) {
+                 setTimeout(() => input.focus(), 50);
+              }
             }
           }
           const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
@@ -9987,11 +10007,9 @@
           if (bubble) {
             const isMyMsg = bubble.classList.contains("my-message");
             let tx = deltaX;
-            // 自分のメッセージ（右寄り）は左にスワイプ、他人のメッセージ（左寄り）は右にスワイプのみ許可
-            if (isMyMsg && tx > 0) tx = 0;
-            if (!isMyMsg && tx < 0) tx = 0;
+            // 全てのメッセージで左にスワイプ（LINE風）のみ許可
+            if (tx > 0) tx = 0;
             
-            if (tx > 60) tx = 60 + (tx - 60) * 0.2;
             if (tx < -60) tx = -60 + (tx + 60) * 0.2;
             bubble.style.transform = `translateX(${tx}px)`;
             swipeCurrentX = tx;
@@ -10286,14 +10304,92 @@
     messagesDisplay.addEventListener("click", (e) => {
       const q = e.target.closest(".reply-quote");
       if (q) {
-        const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${q.dataset.replyToId}"]`);
+        const replyId = q.dataset.replyToId;
+        const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${replyId}"]`);
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.classList.add("message-highlight");
           setTimeout(() => el.classList.remove("message-highlight"), 1200);
+        } else {
+          showUnloadedMessagePreview(replyId);
         }
       }
     });
+
+    async function showUnloadedMessagePreview(msgId) {
+      let msgData = lastMessagesData.find(m => m.id === msgId);
+      if (!msgData) {
+        try {
+          const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            msgData = { id: docSnap.id, ...docSnap.data() };
+          } else {
+            alertMessage("メッセージが見つかりません。", "error");
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+          alertMessage("メッセージの読み込みに失敗しました。", "error");
+          return;
+        }
+      }
+      
+      const pText = msgData.text || (msgData.fileName ? "ファイル" : "...");
+      const pName = msgData.senderNickname || "ユーザー";
+      
+      const modal = document.getElementById("messagePreviewModal");
+      document.getElementById("previewModalName").textContent = pName;
+      document.getElementById("previewModalText").textContent = pText;
+      
+      const avatarEl = document.getElementById("previewModalAvatar");
+      avatarEl.innerHTML = "";
+      avatarEl.style.backgroundImage = "";
+      const senderUser = cachedUsers.find(u => u.id === msgData.senderId);
+      if (senderUser?.avatarUrl) {
+        __setAvatarImg(avatarEl, senderUser.avatarUrl, pName, { style: '' });
+      } else {
+        avatarEl.textContent = pName.charAt(0).toUpperCase();
+      }
+      
+      modal.querySelector('.modal-box').dataset.msgId = msgId;
+      modal.classList.remove("hidden");
+    }
+
+    async function jumpToUnloadedMessage(msgId) {
+      if (!msgId) return;
+      const modal = document.getElementById("messagePreviewModal");
+      if (modal) modal.classList.add("hidden");
+      
+      const MAX_ATTEMPTS = 5;
+      let attempts = 0;
+      
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) {
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">検索中...</span>';
+        spinner.style.display = 'flex';
+      }
+
+      while (attempts < MAX_ATTEMPTS) {
+        let el = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('message-highlight');
+          setTimeout(() => el.classList.remove('message-highlight'), 1200);
+          if (spinner) spinner.style.display = 'none';
+          return;
+        }
+        
+        if (!hasMoreOlderMessages) break;
+        
+        await loadOlderMessages();
+        await new Promise(r => setTimeout(r, 100)); // wait for DOM update
+        attempts++;
+      }
+      
+      if (spinner) spinner.style.display = 'none';
+      alertMessage("メッセージが古すぎるためジャンプできませんでした。", "warning");
+    }
 
     // iOS/Safari 判定
     const _isIOSSafari = (() => {
@@ -10973,6 +11069,8 @@
               el.scrollIntoView({ behavior: "smooth", block: "center" });
               el.classList.add("message-highlight");
               setTimeout(() => el.classList.remove("message-highlight"), 1200);
+            } else {
+              showUnloadedMessagePreview(msg.id);
             }
           });
           pinnedMessagesArea.appendChild(div);
@@ -11211,37 +11309,118 @@
     // Sidebar Resizing Feature - ★改善版に置き換え
     // =========================================================================
     function initializeResizer() {
+      // --- Left Sidebar ---
       const sidebar = document.getElementById("sidebar");
       const resizer = document.getElementById("resizer");
-      const SIDEBAR_WIDTH_KEY = "chatAppSidebarWidth";
+      const toggleLeftBtn = document.getElementById("toggleLeftSidebarBtn");
+      const LEFT_WIDTH_KEY = "chatAppSidebarWidth";
+      const LEFT_COLLAPSED_KEY = "chatAppSidebarCollapsed";
 
-      const savedWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-      if (savedWidth) {
-        sidebar.style.width = savedWidth;
+      const savedLeftWidth = localStorage.getItem(LEFT_WIDTH_KEY);
+      if (savedLeftWidth && sidebar) {
+        sidebar.style.width = savedLeftWidth;
+      }
+      
+      const isLeftCollapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === "true";
+      if (isLeftCollapsed && window.innerWidth >= 768 && sidebar) {
+        sidebar.classList.add("hidden");
+        sidebar.classList.remove("md:flex");
       }
 
-      let isResizing = false;
+      let isResizingLeft = false;
+      if (resizer) {
+        resizer.addEventListener("mousedown", (e) => {
+          isResizingLeft = true;
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", handleLeftMouseMove);
+          document.addEventListener("mouseup", handleLeftMouseUp);
+        });
+      }
 
-      resizer.addEventListener("mousedown", (e) => {
-        isResizing = true;
-        document.body.style.userSelect = "none";
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
-      });
-
-      function handleMouseMove(e) {
-        if (isResizing) {
+      function handleLeftMouseMove(e) {
+        if (isResizingLeft && sidebar) {
           const newWidth = Math.max(180, Math.min(600, e.clientX));
           sidebar.style.width = `${newWidth}px`;
         }
       }
 
-      function handleMouseUp() {
-        isResizing = false;
+      function handleLeftMouseUp() {
+        isResizingLeft = false;
         document.body.style.userSelect = "";
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebar.style.width);
+        document.removeEventListener("mousemove", handleLeftMouseMove);
+        document.removeEventListener("mouseup", handleLeftMouseUp);
+        if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+      }
+
+      if (toggleLeftBtn && sidebar) {
+        toggleLeftBtn.addEventListener("click", () => {
+          const isHidden = sidebar.classList.contains("hidden") || sidebar.style.display === "none";
+          if (isHidden) {
+            sidebar.classList.remove("hidden");
+            sidebar.classList.add("md:flex");
+            localStorage.setItem(LEFT_COLLAPSED_KEY, "false");
+          } else {
+            sidebar.classList.add("hidden");
+            sidebar.classList.remove("md:flex");
+            localStorage.setItem(LEFT_COLLAPSED_KEY, "true");
+          }
+        });
+      }
+
+      // --- Right Sidebar (Members) ---
+      const membersSidebar = document.getElementById("membersSidebar");
+      const resizerRight = document.getElementById("resizerRight");
+      const toggleMembersBtn = document.getElementById("toggleMembersSidebarBtn");
+      const RIGHT_WIDTH_KEY = "chatAppMembersWidth";
+      const RIGHT_COLLAPSED_KEY = "chatAppMembersCollapsed";
+
+      const savedRightWidth = localStorage.getItem(RIGHT_WIDTH_KEY);
+      if (savedRightWidth && membersSidebar) membersSidebar.style.width = savedRightWidth;
+
+      const isRightCollapsed = localStorage.getItem(RIGHT_COLLAPSED_KEY) === "true";
+      if (isRightCollapsed && window.innerWidth >= 768 && membersSidebar) {
+        membersSidebar.classList.add("hidden");
+        membersSidebar.classList.remove("md:flex");
+      }
+
+      let isResizingRight = false;
+      if (resizerRight) {
+        resizerRight.addEventListener("mousedown", (e) => {
+          isResizingRight = true;
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", handleRightMouseMove);
+          document.addEventListener("mouseup", handleRightMouseUp);
+        });
+      }
+
+      function handleRightMouseMove(e) {
+        if (isResizingRight && membersSidebar) {
+          const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
+          membersSidebar.style.width = `${newWidth}px`;
+        }
+      }
+
+      function handleRightMouseUp() {
+        isResizingRight = false;
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", handleRightMouseMove);
+        document.removeEventListener("mouseup", handleRightMouseUp);
+        if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+      }
+
+      if (toggleMembersBtn && membersSidebar) {
+        toggleMembersBtn.addEventListener("click", () => {
+          const isHidden = membersSidebar.classList.contains("hidden") || membersSidebar.style.display === "none";
+          if (isHidden) {
+            membersSidebar.classList.remove("hidden");
+            membersSidebar.classList.add("md:flex");
+            localStorage.setItem(RIGHT_COLLAPSED_KEY, "false");
+          } else {
+            membersSidebar.classList.add("hidden");
+            membersSidebar.classList.remove("md:flex");
+            localStorage.setItem(RIGHT_COLLAPSED_KEY, "true");
+          }
+        });
       }
     }
 
