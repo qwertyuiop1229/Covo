@@ -111,16 +111,17 @@
     .reactions-container {
       display: flex;
       flex-wrap: wrap;
-      gap: 2px;
-      position: absolute;
-      bottom: -14px;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
       z-index: 20;
     }
     .my-message .reactions-container {
-      right: 6px;
+      justify-content: flex-end;
     }
     .other-message .reactions-container {
-      left: 6px;
+      justify-content: flex-start;
     }
     
     .date-divider {
@@ -142,32 +143,38 @@
     
     .reply-quote {
       position: relative;
-      padding-left: 28px;
-      margin-top: 4px;
-      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
     }
     .reply-quote::before {
       content: "";
       position: absolute;
-      left: 8px;
-      top: -12px;
-      bottom: 50%;
+      left: 12px;
+      top: 50%;
+      height: 12px;
       width: 12px;
       border-left: 2px solid #9ca3af;
-      border-bottom: 2px solid #9ca3af;
-      border-bottom-left-radius: 6px;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
     }
     .my-reply {
-      padding-left: 0;
-      padding-right: 28px;
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
     }
     .my-reply::before {
       left: auto;
-      right: 8px;
+      right: 12px;
       border-left: none;
       border-right: 2px solid #9ca3af;
-      border-bottom: 2px solid #9ca3af;
-      border-bottom-right-radius: 6px;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
     }
     .reaction-badge {
       display: inline-flex;
@@ -274,7 +281,7 @@
       /* iOS長押しメニュー防止 */
     }
     .message-bubble:has(.reactions-container) {
-      margin-bottom: 1.25rem;
+      /* margin-bottom removed for inline reactions */
     }
 
     .msg-avatar {
@@ -513,19 +520,7 @@
       background-color: #d1d5db;
     }
 
-    /* リプライ機能用CSS (Discord風L字ライン) */
-    .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 0;
-      margin-bottom: 6px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-    }
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
     .reply-quote:hover {
       opacity: 0.8;
     }
@@ -9839,7 +9834,7 @@
       if (reactionsArray.length === 0) return;
       
       reactionsArray.forEach(([uid, emoji]) => {
-        const user = (globalOnlineStatus || []).find(u => u.uid === uid) || {};
+        const user = (cachedUsers || []).find(u => u.id === uid) || {};
         const nickname = user.nickname || "ユーザー";
         const avatarUrl = user.avatarUrl;
         
