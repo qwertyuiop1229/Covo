@@ -8973,9 +8973,9 @@
               if (!await showCustomConfirm(`グループ「${name}」を削除しますか？`, "削除")) return;
               try {
                 if (isLegacy) {
-                  await deleteDoc(doc(db, \`artifacts/\${appId}/servers/\${currentServerId}/stamps\`, id));
+                  await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, id));
                 } else {
-                  await deleteDoc(doc(db, \`artifacts/\${appId}/servers/\${currentServerId}/stampGroups\`, id));
+                  await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`, id));
                 }
                 await loadServerStampsForAdmin();
                 if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
