@@ -256,6 +256,16 @@ service cloud.firestore {
             (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
         }
 
+        // スタンプグループ（古い形式 / 拡張形式）
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isJoinedServer(appId, serverId) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string;
+          allow delete, update: if isJoinedServer(appId, serverId) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
         // 招待コード
         match /inviteCodes/{code} {
           allow read: if isServerAdmin(appId, serverId);

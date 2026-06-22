@@ -32,8 +32,8 @@
   <!-- Tailwind CSS (本番ビルド) -->
   <link rel="stylesheet" href="styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-  <!-- FontAwesome for Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
@@ -113,7 +113,7 @@
       flex-wrap: wrap;
       gap: 2px;
       position: absolute;
-      bottom: -8px;
+      bottom: -14px;
       z-index: 20;
     }
     .my-message .reactions-container {
@@ -150,12 +150,24 @@
       content: "";
       position: absolute;
       left: 8px;
-      top: 50%;
-      bottom: -4px;
+      top: -12px;
+      bottom: 50%;
       width: 12px;
       border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
+      border-bottom: 2px solid #9ca3af;
+      border-bottom-left-radius: 6px;
+    }
+    .my-reply {
+      padding-left: 0;
+      padding-right: 28px;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 8px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-bottom: 2px solid #9ca3af;
+      border-bottom-right-radius: 6px;
     }
     .reaction-badge {
       display: inline-flex;
@@ -262,7 +274,7 @@
       /* iOS長押しメニュー防止 */
     }
     .message-bubble:has(.reactions-container) {
-      margin-bottom: 0.75rem;
+      margin-bottom: 1.25rem;
     }
 
     .msg-avatar {
@@ -3457,13 +3469,6 @@
                     <span class="text-sm font-bold text-gray-800">診断情報をまとめてコピー</span>
                     <button class="" onclick="copyDiagnosticsBundle()" style="padding:7px 16px;background:#16a34a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">コピー</button>
                   </div>
-                  <div class="flex justify-between items-center mt-6 p-4 bg-orange-100 rounded-xl border border-orange-200">
-                    <div>
-                      <span class="text-sm font-bold text-orange-800">Cloudflare完全移行</span>
-                      <div class="text-xs text-orange-600 mt-1">過去のCloudinary画像をCloudflareに移行します</div>
-                    </div>
-                    <button class="" id="btnMigrateCloudinary" onclick="migrateCloudinaryToCloudflare()" style="padding:7px 16px;background:#ea580c;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">実行</button>
-                  </div>
                 </div>
               </div>
 
@@ -4183,6 +4188,18 @@
       <div class="flex mt-5">
         <button id="customAlertOk"
           class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="reactionUsersModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[350] hidden">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-4 modal-box animate-pop-in relative">
+      <button class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 focus:outline-none" onclick="document.getElementById('reactionUsersModal').classList.add('hidden')">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+      <h3 class="text-sm font-bold text-gray-800 mb-3 border-b pb-2">リアクション</h3>
+      <div id="reactionUsersList" class="flex flex-col gap-2 max-h-60 overflow-y-auto">
+        <!-- JS rendered -->
       </div>
     </div>
   </div>
@@ -5376,100 +5393,7 @@
       try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
     };
 
-    window.migrateCloudinaryToCloudflare = async function() {
-      if (!isAdmin) return;
-      if (!await showCustomConfirm("CloudinaryからCloudflareへ過去の画像を全自動移行します。件数によっては非常に時間がかかります。開始しますか？", "移行開始")) return;
-      
-      const btn = document.getElementById("btnMigrateCloudinary");
-      if(btn) btn.textContent = "移行中...";
-      
-      try {
-        let count = 0;
-        const migrateUrl = async (oldUrl) => {
-          if (!oldUrl || typeof oldUrl !== 'string' || !oldUrl.includes("res.cloudinary.com")) return null;
-          try {
-            console.log(`Migrating: ${oldUrl}`);
-            const res = await fetch(oldUrl);
-            const blob = await res.blob();
-            // 拡張子推定
-            let ext = "png";
-            if (oldUrl.includes(".jpg") || oldUrl.includes(".jpeg")) ext = "jpg";
-            if (oldUrl.includes(".gif")) ext = "gif";
-            if (oldUrl.includes(".webp")) ext = "webp";
-            const file = new File([blob], `migrated.${ext}`, { type: blob.type || "image/png" });
-            const newUrl = await uploadToExternalService(file, () => {}, "migrated");
-            count++;
-            console.log(`Migrated -> ${newUrl}`);
-            return newUrl;
-          } catch(e) {
-            console.error(`Migration failed for ${oldUrl}`, e);
-            return null;
-          }
-        };
-
-        // 1. Servers (icons)
-        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-        for (const s of serversSnap.docs) {
-          const sData = s.data();
-          if (sData.icon && sData.icon.includes("res.cloudinary.com")) {
-            const newIcon = await migrateUrl(sData.icon);
-            if (newIcon) await updateDoc(s.ref, { icon: newIcon });
-          }
-
-          // 2. Stamps
-          const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/stamps`));
-          for (const stamp of stampsSnap.docs) {
-            const stampData = stamp.data();
-            if (stampData.url && stampData.url.includes("res.cloudinary.com")) {
-              const newUrl = await migrateUrl(stampData.url);
-              if (newUrl) await updateDoc(stamp.ref, { url: newUrl });
-            }
-          }
-
-          // 3. Profiles
-          const profilesSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/profiles`));
-          for (const profile of profilesSnap.docs) {
-            const pData = profile.data();
-            if (pData.avatarUrl && pData.avatarUrl.includes("res.cloudinary.com")) {
-              const newUrl = await migrateUrl(pData.avatarUrl);
-              if (newUrl) await updateDoc(profile.ref, { avatarUrl: newUrl });
-            }
-          }
-
-          // 4. Messages (fileData)
-          // 注意：messagesは大量にあるかもしれないので100件ずつくらい処理するのが安全だが、
-          // 管理者が1度実行するだけなので愚直に全件スキャンする
-          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms`));
-          for (const room of roomsSnap.docs) {
-            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${s.id}/rooms/${room.id}/messages`));
-            for (const msg of msgsSnap.docs) {
-              const msgData = msg.data();
-              if (msgData.fileData && msgData.fileData.includes("res.cloudinary.com")) {
-                const newUrl = await migrateUrl(msgData.fileData);
-                if (newUrl) await updateDoc(msg.ref, { fileData: newUrl });
-              }
-            }
-          }
-        }
-
-        // 5. Global Users
-        const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-        for (const user of usersSnap.docs) {
-          const uData = user.data();
-          if (uData.avatarUrl && uData.avatarUrl.includes("res.cloudinary.com")) {
-            const newUrl = await migrateUrl(uData.avatarUrl);
-            if (newUrl) await updateDoc(user.ref, { avatarUrl: newUrl });
-          }
-        }
-
-        alertMessage(`移行が完了しました！合計 ${count} 件の画像をCloudflareに移行しました。`, "success");
-      } catch (err) {
-        console.error("Migration error:", err);
-        alertMessage("移行中にエラーが発生しました", "error");
-      } finally {
-        if(btn) btn.textContent = "実行";
-      }
-    };
+    // Cloudinary移行関数は廃止
 
     // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
     function inspectPoint(x, y) {
@@ -6515,13 +6439,8 @@
           const _u = userAvatarUrl;
           try { ap.referrerPolicy = 'no-referrer'; } catch(_) {}
           try { ap.decoding = 'async'; } catch(_) {}
-          ap.dataset.retries = '0';
           ap.onerror = function() {
-            const r = parseInt(ap.dataset.retries || '0', 10);
-            if (r < 2) {
-              ap.dataset.retries = String(r + 1);
-              setTimeout(() => { try { const sep = _u.indexOf('?') >= 0 ? '&' : '?'; ap.src = _u + sep + '_r=' + Date.now(); } catch(_) {} }, 800 * (r + 1));
-            } else { try { ap.style.display = 'none'; } catch(_) {} }
+            ap.style.display = 'none';
           };
           ap.src = userAvatarUrl;
           ap.style.display = '';
@@ -7497,19 +7416,8 @@
             avatarImg.dataset.retries = '0';
             const _u = member.avatarUrl;
             avatarImg.onerror = function() {
-              const r = parseInt(avatarImg.dataset.retries || '0', 10);
-              if (r < 2) {
-                avatarImg.dataset.retries = String(r + 1);
-                setTimeout(() => {
-                  try {
-                    const sep = _u.indexOf('?') >= 0 ? '&' : '?';
-                    avatarImg.src = _u + sep + '_r=' + Date.now();
-                  } catch(_) {}
-                }, 800 * (r + 1));
-              } else {
-                _invalidAvatars.add(member.avatarUrl);
-                try { avatarImg.remove(); avatar.insertBefore(document.createTextNode((member.nickname || " ").charAt(0).toUpperCase()), avatar.firstChild); } catch(_) {}
-              }
+              _invalidAvatars.add(member.avatarUrl);
+              try { avatarImg.remove(); avatar.insertBefore(document.createTextNode((member.nickname || " ").charAt(0).toUpperCase()), avatar.firstChild); } catch(_) {}
             };
             avatarImg.src = member.avatarUrl;
             avatar.appendChild(avatarImg);
@@ -8965,10 +8873,13 @@
       const listEl = document.getElementById("serverStampsList");
       listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>読み込み中...</p>";
       try {
-        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
+        const [snapStamps, snapGroups] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)).catch(() => ({ docs: [], empty: true })),
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`)).catch(() => ({ docs: [], empty: true }))
+        ]);
         
         listEl.innerHTML = "";
-        if (snap.empty) {
+        if (snapStamps.empty && snapGroups.empty) {
           listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>スタンプはありません</p>";
           return;
         }
@@ -9004,7 +8915,8 @@
             delBtn.addEventListener("click", async () => {
               if (!await showCustomConfirm(`グループ「${name}」を削除しますか？`, "削除")) return;
               try {
-                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, id));
+                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, id)).catch(() => {});
+                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`, id)).catch(() => {});
                 await loadServerStampsForAdmin();
                 if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
               } catch(e) {
@@ -9015,14 +8927,18 @@
           listEl.appendChild(item);
         };
 
-        snap.forEach(d => {
-          const s = d.data();
-          if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
-            renderGroupItem(d.id, s.name, s.thumbnailUrl, s.stamps || [], false);
-          } else {
-            renderGroupItem(d.id, s.name, s.url, [{name: s.name, url: s.url}], true);
-          }
-        });
+        const renderDocs = (snap) => {
+          snap.forEach(d => {
+            const s = d.data();
+            if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
+              renderGroupItem(d.id, s.name, s.thumbnailUrl || s.url, s.stamps || [], false);
+            } else {
+              renderGroupItem(d.id, s.name, s.url, [{name: s.name, url: s.url}], true);
+            }
+          });
+        };
+        renderDocs(snapStamps);
+        renderDocs(snapGroups);
 
       } catch (e) {
         listEl.innerHTML = "<p class='text-sm text-red-500 col-span-4'>取得失敗</p>";
@@ -9373,7 +9289,10 @@
     async function loadCurrentServerStamps() {
       if (!currentServerId) return;
       try {
-        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
+        const [snapStamps, snapGroups] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)).catch(() => ({ docs: [], empty: true })),
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`)).catch(() => ({ docs: [], empty: true }))
+        ]);
         
         for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
           if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
@@ -9383,9 +9302,10 @@
         
         let customCategories = [];
         
-        snap.forEach(d => {
-          const s = d.data();
-          if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
+        const processDocs = (snap) => {
+          snap.forEach(d => {
+            const s = d.data();
+            if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
             customCategories.push({
               id: 'server_group_' + d.id,
               icon: `serverstamp:${s.thumbnailUrl}`,
@@ -9895,7 +9815,7 @@
         badge.innerHTML = getEmojiHtml(emoji, 'emoji-wrapper') + `<span>${count}</span>`;
         badge.onclick = (e) => {
           e.stopPropagation();
-          window.toggleReaction(msg.id, emoji);
+          window.showReactionUsers(reactions);
         };
         reactionsContainer.appendChild(badge);
       }
@@ -9905,6 +9825,48 @@
         _twemojiParse(reactionsContainer);
       }
     }
+
+    window.showReactionUsers = function(reactionsObj) {
+      const modal = document.getElementById('reactionUsersModal');
+      const listEl = document.getElementById('reactionUsersList');
+      listEl.innerHTML = '';
+      
+      const reactionsArray = Object.entries(reactionsObj || {});
+      if (reactionsArray.length === 0) return;
+      
+      reactionsArray.forEach(([uid, emoji]) => {
+        const user = (globalOnlineStatus || []).find(u => u.uid === uid) || {};
+        const nickname = user.nickname || "ユーザー";
+        const avatarUrl = user.avatarUrl;
+        
+        const row = document.createElement('div');
+        row.className = "flex items-center gap-3 p-2 bg-gray-50 rounded-lg";
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = "w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 overflow-hidden flex-shrink-0";
+        if (avatarUrl) {
+          __setAvatarImg(avatarDiv, avatarUrl, nickname);
+        } else {
+          avatarDiv.textContent = nickname.charAt(0).toUpperCase();
+        }
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = "text-sm font-bold text-gray-700 flex-1 truncate";
+        nameDiv.textContent = nickname;
+        
+        const emojiDiv = document.createElement('div');
+        emojiDiv.className = "text-xl";
+        emojiDiv.innerHTML = getEmojiHtml(emoji, 'emoji-wrapper');
+        
+        row.appendChild(avatarDiv);
+        row.appendChild(nameDiv);
+        row.appendChild(emojiDiv);
+        listEl.appendChild(row);
+      });
+      
+      _twemojiParse(listEl);
+      openModal(modal);
+    };
 
     function createMessageElement(message, messageId, readByCount = 0) {
       if (message.isGap) {
@@ -9952,7 +9914,7 @@
 
       if (message.replyTo && message.replyTo.messageId) {
         const replyQuoteDiv = document.createElement("div");
-        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none";
+        replyQuoteDiv.className = `reply-quote ${isMyMessage ? 'my-reply' : ''} flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none`;
         replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
         
         replyQuoteDiv.innerHTML = `
