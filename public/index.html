@@ -7472,6 +7472,7 @@
                   } catch(_) {}
                 }, 800 * (r + 1));
               } else {
+                _invalidAvatars.add(member.avatarUrl);
                 try { avatarImg.remove(); avatar.insertBefore(document.createTextNode((member.nickname || " ").charAt(0).toUpperCase()), avatar.firstChild); } catch(_) {}
               }
             };
@@ -7547,11 +7548,10 @@
     // Server Features
     // =========================================================================
 
-    // アバター画像を安全にセット（失敗時に2回リトライ→イニシャル文字フォールバック）
-    // Cloudinaryの一時的な配信エラーやキャッシュ問題に対応。
-    // 使用可能なアバターURLか（Cloudinaryは廃止したので無効扱い→デフォルトに戻る）
+    const _invalidAvatars = new Set();
+
     function isUsableAvatarUrl(url) {
-      return !!url && url.indexOf('res.cloudinary.com') < 0;
+      return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
     }
 
     function __setAvatarImg(container, url, name, opts) {
@@ -7563,8 +7563,7 @@
       try { container.innerHTML = ''; } catch(_) {}
       // Cloudinary は廃止。旧Cloudinaryアイコンは表示せずデフォルト(イニシャル)に戻す。
       // ユーザーが新しくアイコンを設定すると Cloudflare(KV) に保存され、自然に移行する。
-      if (url && url.indexOf('res.cloudinary.com') >= 0) { try { container.textContent = initial; } catch(_) {} return; }
-      if (!url) { try { container.textContent = initial; } catch(_) {} return; }
+      if (!isUsableAvatarUrl(url)) { try { container.textContent = initial; } catch(_) {} return; }
       const img = document.createElement('img');
       img.alt = '';
       img.decoding = 'async';
@@ -7584,6 +7583,7 @@
             } catch(_) {}
           }, 800 * (r + 1));
         } else {
+          _invalidAvatars.add(url);
           try { container.innerHTML = ''; container.textContent = initial; } catch(_) {}
         }
       };
@@ -8930,13 +8930,10 @@
       const listEl = document.getElementById("serverStampsList");
       listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>読み込み中...</p>";
       try {
-        const [legacySnap, groupsSnap] = await Promise.all([
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)),
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`))
-        ]);
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
         
         listEl.innerHTML = "";
-        if (legacySnap.empty && groupsSnap.empty) {
+        if (snap.empty) {
           listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>スタンプはありません</p>";
           return;
         }
@@ -8972,11 +8969,7 @@
             delBtn.addEventListener("click", async () => {
               if (!await showCustomConfirm(`グループ「${name}」を削除しますか？`, "削除")) return;
               try {
-                if (isLegacy) {
-                  await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, id));
-                } else {
-                  await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`, id));
-                }
+                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, id));
                 await loadServerStampsForAdmin();
                 if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
               } catch(e) {
@@ -8987,14 +8980,13 @@
           listEl.appendChild(item);
         };
 
-        groupsSnap.forEach(d => {
-          const g = d.data();
-          renderGroupItem(d.id, g.name, g.thumbnailUrl, g.stamps || [], false);
-        });
-
-        legacySnap.forEach(d => {
+        snap.forEach(d => {
           const s = d.data();
-          renderGroupItem(d.id, s.name, s.url, [{name: s.name, url: s.url}], true);
+          if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
+            renderGroupItem(d.id, s.name, s.thumbnailUrl, s.stamps || [], false);
+          } else {
+            renderGroupItem(d.id, s.name, s.url, [{name: s.name, url: s.url}], true);
+          }
         });
 
       } catch (e) {
@@ -9056,10 +9048,11 @@
         }
         
         btn.textContent = "保存中...";
-        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`), {
+        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`), {
           name: name,
           thumbnailUrl: thumbUrl,
           stamps: uploadedStamps,
+          isGroup: true,
           createdBy: userId,
           createdAt: serverTimestamp()
         });
@@ -9345,10 +9338,7 @@
     async function loadCurrentServerStamps() {
       if (!currentServerId) return;
       try {
-        const [legacySnap, groupsSnap] = await Promise.all([
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)),
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`))
-        ]);
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
         
         for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
           if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
@@ -9358,26 +9348,23 @@
         
         let customCategories = [];
         
-        groupsSnap.forEach(d => {
-          const g = d.data();
-          if (g.stamps && g.stamps.length > 0) {
+        snap.forEach(d => {
+          const s = d.data();
+          if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
             customCategories.push({
               id: 'server_group_' + d.id,
-              icon: `serverstamp:${g.thumbnailUrl}`,
-              label: g.name,
-              emojis: g.stamps.map(s => `serverstamp:${s.url}`)
+              icon: `serverstamp:${s.thumbnailUrl}`,
+              label: s.name,
+              emojis: s.stamps.map(st => `serverstamp:${st.url}`)
+            });
+          } else {
+            customCategories.push({
+              id: 'server_group_' + d.id,
+              icon: `serverstamp:${s.url}`,
+              label: s.name,
+              emojis: [`serverstamp:${s.url}`]
             });
           }
-        });
-
-        legacySnap.forEach(d => {
-          const s = d.data();
-          customCategories.push({
-            id: 'server_group_' + d.id,
-            icon: `serverstamp:${s.url}`,
-            label: s.name,
-            emojis: [`serverstamp:${s.url}`]
-          });
         });
         
         if (customCategories.length > 0) {
