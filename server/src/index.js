@@ -928,10 +928,10 @@ async function handleServeFile(request, env, url) {
   try {
     const key = url.pathname.replace('/api/file/', '');
     if (!key || !env.FILES) {
-      return new Response('Not Found', { status: 404, headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
-    if (!value) return new Response('Not Found', { status: 404, headers: corsHeaders });
+    if (!value) return new Response(null, { status: 204, headers: corsHeaders });
 
     const contentType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
