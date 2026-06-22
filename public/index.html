@@ -9306,21 +9306,25 @@
           snap.forEach(d => {
             const s = d.data();
             if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
-            customCategories.push({
-              id: 'server_group_' + d.id,
-              icon: `serverstamp:${s.thumbnailUrl}`,
-              label: s.name,
-              emojis: s.stamps.map(st => `serverstamp:${st.url}`)
-            });
-          } else {
-            customCategories.push({
-              id: 'server_group_' + d.id,
-              icon: `serverstamp:${s.url}`,
-              label: s.name,
-              emojis: [`serverstamp:${s.url}`]
-            });
-          }
-        });
+              customCategories.push({
+                id: 'server_group_' + d.id,
+                icon: `serverstamp:${s.thumbnailUrl}`,
+                label: s.name,
+                emojis: s.stamps.map(st => `serverstamp:${st.url}`)
+              });
+            } else {
+              customCategories.push({
+                id: 'server_group_' + d.id,
+                icon: `serverstamp:${s.url}`,
+                label: s.name,
+                emojis: [`serverstamp:${s.url}`]
+              });
+            }
+          });
+        };
+        
+        if (!snapStamps.empty) processDocs(snapStamps);
+        if (!snapGroups.empty) processDocs(snapGroups);
         
         if (customCategories.length > 0) {
           STICKER_CATEGORIES.splice(2, 0, ...customCategories);
