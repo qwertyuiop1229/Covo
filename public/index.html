@@ -11575,7 +11575,7 @@
             if (window.__TAURI__?.core?.invoke) {
                window.__TAURI__.core.invoke('show_main_window').catch(console.error);
             }
-          }).catch(e => console.error('onAction setup failed', e));
+          }).catch(e => { /* ignore error as notification plugin might be missing some commands */ });
         }
         console.log('[Tauri] FCM skipped — using Firestore-based notifications');
         return;
