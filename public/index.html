@@ -113,14 +113,49 @@
       flex-wrap: wrap;
       gap: 2px;
       position: absolute;
-      bottom: -12px;
+      bottom: -8px;
       z-index: 20;
     }
     .my-message .reactions-container {
-      right: 4px;
+      right: 6px;
     }
     .other-message .reactions-container {
-      left: 4px;
+      left: 6px;
+    }
+    
+    .date-divider {
+      text-align: center;
+      margin: 1rem 0;
+      width: 100%;
+    }
+    .date-divider-inner {
+      display: inline-block;
+      padding: 4px 12px;
+      background-color: rgba(0,0,0,0.2);
+      color: #fff;
+      font-size: 0.75rem;
+      border-radius: 999px;
+    }
+    body.dark-server-theme .date-divider-inner {
+      background-color: rgba(255,255,255,0.2);
+    }
+    
+    .reply-quote {
+      position: relative;
+      padding-left: 28px;
+      margin-top: 4px;
+      margin-bottom: 2px;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      bottom: -4px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
     }
     .reaction-badge {
       display: inline-flex;
@@ -218,16 +253,16 @@
     }
 
     .message-bubble {
-      max-width: 75%;
+      max-width: 100%;
       padding: 0.75rem 1rem;
       border-radius: 1rem;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0;
       word-wrap: break-word;
       -webkit-touch-callout: none;
       /* iOS長押しメニュー防止 */
     }
     .message-bubble:has(.reactions-container) {
-      margin-bottom: 1.5rem;
+      margin-bottom: 0.75rem;
     }
 
     .msg-avatar {
@@ -9917,7 +9952,7 @@
 
       if (message.replyTo && message.replyTo.messageId) {
         const replyQuoteDiv = document.createElement("div");
-        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none pl-1.5 border-l-2 border-gray-400";
+        replyQuoteDiv.className = "reply-quote flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none";
         replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
         
         replyQuoteDiv.innerHTML = `
@@ -9928,7 +9963,7 @@
       }
 
       const messageElement = document.createElement("div");
-      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-full relative`;
+      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-fit relative`;
       messageElement.style.touchAction = "pan-y";
       messageElement.style.maxWidth = "100%"; // 75% max-width override
       messageElement.dataset.messageId = messageId;
@@ -10115,27 +10150,43 @@
       updateReactionsUI(messageElement, message);
 
       const timestampSpan = document.createElement("span");
-      timestampSpan.className = `msg-timestamp text-[10px] text-gray-500 mt-1 ${isMyMessage ? "text-right" : "text-left"}`;
+      timestampSpan.className = "msg-timestamp text-[10px] text-gray-500 whitespace-nowrap";
       if (message.timestamp && message.timestamp.toDate) {
         const date = message.timestamp.toDate();
         timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
       } else {
         timestampSpan.textContent = "送信中...";
       }
-      messageElement.appendChild(timestampSpan);
+
+      const metaContainer = document.createElement("div");
+      metaContainer.className = "flex flex-col mb-1 select-none " + (isMyMessage ? "items-end" : "items-start");
       
+      let readSpan = null;
       if (isMyMessage) {
-        const readSpan = document.createElement("span");
-        readSpan.className = "read-receipt text-[10px] text-gray-500 text-right";
+        readSpan = document.createElement("span");
+        readSpan.className = "read-receipt text-[10px] text-gray-500 whitespace-nowrap";
         if (readByCount > 0) {
           readSpan.textContent = `既読${readByCount > 1 ? `（${readByCount}）` : ""}`;
         } else {
           readSpan.style.display = "none";
         }
-        messageElement.appendChild(readSpan);
+        metaContainer.appendChild(readSpan);
+      }
+      metaContainer.appendChild(timestampSpan);
+
+      const bubbleRowWrapper = document.createElement("div");
+      bubbleRowWrapper.className = "flex items-end gap-1.5 w-full";
+      if (isMyMessage) {
+        bubbleRowWrapper.classList.add("justify-end");
+        bubbleRowWrapper.appendChild(metaContainer);
+        bubbleRowWrapper.appendChild(messageElement);
+      } else {
+        bubbleRowWrapper.classList.add("justify-start");
+        bubbleRowWrapper.appendChild(messageElement);
+        bubbleRowWrapper.appendChild(metaContainer);
       }
 
-      bubbleContainer.appendChild(messageElement);
+      bubbleContainer.appendChild(bubbleRowWrapper);
       messageRowInner.appendChild(bubbleContainer);
       
       return messageRow;
@@ -10161,9 +10212,25 @@
       // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
       const reversedMessages = [...filteredMessages].reverse();
 
+      const getDayString = (ts) => {
+        if (!ts) return "";
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        const today = new Date();
+        const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+        if (isToday) return "今日";
+        const yday = new Date(today); yday.setDate(today.getDate() - 1);
+        const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
+        if (isYday) return "昨日";
+        const days = ['日', '月', '火', '水', '木', '金', '土'];
+        return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} (${days[d.getDay()]})`;
+      };
+
+      const existingDividers = messagesDisplay.querySelectorAll('.date-divider');
+      existingDividers.forEach(el => el.remove());
+
       let currentChild = messagesDisplay.firstElementChild;
 
-      reversedMessages.forEach((msg) => {
+      reversedMessages.forEach((msg, i) => {
         const idx = messagesIndexMap[msg.id];
         const readCount = computeReadByCount(msg, idx);
         
@@ -10185,7 +10252,7 @@
           if (timestampSpan) {
             if (msg.timestamp && msg.timestamp.toDate) {
               const date = msg.timestamp.toDate();
-              timestampSpan.textContent = `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+              timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
             } else {
               timestampSpan.textContent = "送信中...";
             }
@@ -10211,6 +10278,16 @@
           // 新規メッセージ要素作成
           row = createMessageElement(msg, msg.id, readCount);
           messagesDisplay.insertBefore(row, currentChild);
+        }
+
+        // 日付の境界線を追加
+        const currentDay = getDayString(msg.timestamp);
+        const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(reversedMessages[i+1].timestamp) : null;
+        if (currentDay && currentDay !== nextMsgDay) {
+          const div = document.createElement("div");
+          div.className = "date-divider flipped";
+          div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
+          messagesDisplay.insertBefore(div, currentChild);
         }
       });
 
