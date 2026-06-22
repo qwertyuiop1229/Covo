@@ -126,23 +126,22 @@
       display: inline-flex;
       align-items: center;
       gap: 2px;
-      padding: 2px 4px;
-      border-radius: 12px;
-      background: transparent;
-      box-shadow: none;
-      font-size: 0.9rem;
-      color: #6b7280;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
       cursor: pointer;
       user-select: none;
       transition: all 0.2s ease;
-      border: none;
-      filter: drop-shadow(0 1px 1px rgba(255,255,255,0.8));
+      border: 1px solid #f3f4f6;
     }
     body.dark-server-theme .reaction-badge {
-      background: transparent;
+      background: #334155;
       color: #cbd5e1;
-      border: none;
-      filter: drop-shadow(0 1px 1px rgba(0,0,0,0.8));
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
     body.dark-server-theme .reaction-badge.reacted-by-me {
       background: transparent;
@@ -226,6 +225,9 @@
       word-wrap: break-word;
       -webkit-touch-callout: none;
       /* iOS長押しメニュー防止 */
+    }
+    .message-bubble:has(.reactions-container) {
+      margin-bottom: 1.5rem;
     }
 
     .msg-avatar {
@@ -471,24 +473,11 @@
       align-items: center;
       gap: 0.4rem;
       background-color: transparent;
-      padding: 2px 0 2px 24px;
+      padding: 2px 0 2px 0;
       margin-bottom: 6px;
       cursor: pointer;
       font-size: 0.8rem;
       color: #64748b;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 6px;
-      top: 50%;
-      width: 12px;
-      height: 14px;
-      border-left: 2px solid currentColor;
-      border-top: 2px solid currentColor;
-      border-top-left-radius: 4px;
-      transform: translateY(-100%);
-      opacity: 0.4;
     }
     .reply-quote:hover {
       opacity: 0.8;
@@ -3908,16 +3897,23 @@
               <!-- スタンプタブ -->
               <div id="ssStampsSection" class="hidden space-y-4">
                 <div class="mb-4">
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">カスタムスタンプを追加</label>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">新規グループ作成</label>
                   <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <input type="text" id="newStampNameInput" placeholder="スタンプ名（例: いいね）" class="w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm transition-shadow" />
-                    <input type="file" id="newStampFileInput" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
-                    <button id="uploadCustomStampBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all mt-1 shadow-sm"><i class="fas fa-cloud-upload-alt mr-2"></i>アップロード</button>
+                    <input type="text" id="newStampGroupNameInput" placeholder="グループ名（例: 日常セット）" class="w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm transition-shadow" />
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">メインのアイコン画像（サムネイル）</label>
+                      <input type="file" id="newStampGroupThumbnailInput" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">スタンプ画像（複数選択可）</label>
+                      <input type="file" id="newStampGroupFilesInput" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-700 hover:file:bg-gray-300 transition-colors" />
+                    </div>
+                    <button id="uploadCustomStampGroupBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all mt-1 shadow-sm"><i class="fas fa-cloud-upload-alt mr-2"></i>グループを追加</button>
                   </div>
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">登録済みスタンプ</label>
-                  <div id="serverStampsList" class="grid grid-cols-4 gap-3"></div>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">登録済みスタンプグループ</label>
+                  <div id="serverStampsList" class="flex flex-col gap-4"></div>
                 </div>
               </div>
               <!-- その他タブ -->
@@ -8934,210 +8930,151 @@
       const listEl = document.getElementById("serverStampsList");
       listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>読み込み中...</p>";
       try {
-        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
+        const [legacySnap, groupsSnap] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)),
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`))
+        ]);
+        
         listEl.innerHTML = "";
-        if (snap.empty) {
+        if (legacySnap.empty && groupsSnap.empty) {
           listEl.innerHTML = "<p class='text-sm text-gray-500 col-span-4'>スタンプはありません</p>";
+          return;
         }
-        snap.forEach(d => {
-          const stamp = d.data();
+        
+        const isOwner = currentServerData?.createdBy === userId || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+        const hasAdminRights = isOwner || isAdmin;
+
+        const renderGroupItem = (id, name, thumbUrl, stampsList, isLegacy) => {
           const item = document.createElement("div");
-          const isOwner = currentServerData?.createdBy === userId || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-          const hasAdminRights = isOwner || isAdmin;
+          item.className = "flex flex-col gap-2 p-3 bg-white rounded-lg border border-gray-200";
+          
+          let stampsHtml = stampsList.map(s => `<img src="${escapeHtml(s.url)}" class="w-10 h-10 object-contain border border-gray-100 rounded" title="${escapeHtml(s.name)}" />`).join("");
           
           item.innerHTML = `
-            <img src="${escapeHtml(stamp.url)}" class="w-12 h-12 object-contain mb-1" />
-            <span class="text-xs text-gray-600 w-full text-center" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(stamp.name)}">${escapeHtml(stamp.name)}</span>
-            
-            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-wrap items-center justify-center gap-1 p-1 rounded-xl transition-opacity">
-              <button class="dl-stamp-btn bg-white/20 hover:bg-white/40 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="ダウンロード">
-                <i class="fas fa-download text-xs"></i>
-              </button>
-              ${hasAdminRights ? `
-              <button class="update-stamp-btn bg-white/20 hover:bg-white/40 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="画像を更新">
-                <i class="fas fa-upload text-xs"></i>
-              </button>
-              <button class="delete-stamp-btn bg-red-500/80 hover:bg-red-600 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="削除">
-                <i class="fas fa-times text-xs"></i>
-              </button>
-              ` : ''}
-              ${isAdmin ? `
-              <button class="copy-stamp-btn bg-blue-500/80 hover:bg-blue-600 text-white rounded w-6 h-6 flex items-center justify-center transition-colors" title="別サーバーへコピー">
-                <i class="fas fa-copy text-xs"></i>
-              </button>
-              ` : ''}
+            <div class="flex items-center justify-between border-b pb-2 border-gray-100">
+              <div class="flex items-center gap-2">
+                <img src="${escapeHtml(thumbUrl)}" class="w-8 h-8 object-contain rounded bg-gray-50 border border-gray-200" />
+                <span class="text-sm font-bold text-gray-700">${escapeHtml(name)} ${isLegacy ? '<span class="text-xs font-normal text-gray-400 ml-1">(レガシー)</span>' : ''}</span>
+              </div>
+              <div class="flex gap-2">
+                ${hasAdminRights ? `
+                <button class="delete-group-btn bg-red-50 hover:bg-red-100 text-red-500 rounded px-3 py-1 text-xs font-bold transition-colors">削除</button>
+                ` : ''}
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-1">
+              ${stampsHtml}
             </div>
           `;
           
-          const dlBtn = item.querySelector(".dl-stamp-btn");
-          if (dlBtn) {
-            dlBtn.addEventListener("click", async () => {
-              try {
-                const res = await fetch(stamp.url);
-                const blob = await res.blob();
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = `${stamp.name}.png`;
-                a.click();
-              } catch(e) {
-                alertMessage("ダウンロード失敗", "error");
-              }
-            });
-          }
-
-          const updateBtn = item.querySelector(".update-stamp-btn");
-          if (updateBtn) {
-            updateBtn.addEventListener("click", () => {
-              const fileInput = document.createElement("input");
-              fileInput.type = "file";
-              fileInput.accept = "image/*";
-              fileInput.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                if (file.size > 2 * 1024 * 1024) { alertMessage("画像は2MB以下にしてください", "error"); return; }
-                
-                updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
-                try {
-                  const img = new Image();
-                  const objUrl = URL.createObjectURL(file);
-                  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
-                  
-                  if (img.width !== img.height) {
-                    URL.revokeObjectURL(objUrl);
-                    alertMessage("スタンプ画像は完全な正方形（縦横同じサイズ）である必要があります", "error");
-                    updateBtn.innerHTML = '<i class="fas fa-upload text-xs"></i>';
-                    return;
-                  }
-                  
-                  const canvas = document.createElement("canvas");
-                  canvas.width = 128; canvas.height = 128;
-                  const ctx = canvas.getContext("2d");
-                  ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
-                  URL.revokeObjectURL(objUrl);
-                  
-                  const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
-                  const stampFile = new File([blob], "stamp.png", { type: "image/png" });
-                  const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
-                  
-                  await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, d.id), {
-                    url: fileUrl
-                  });
-                  alertMessage("画像を更新しました", "success");
-                  await loadServerStampsForAdmin();
-                  if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
-                } catch(err) {
-                  alertMessage("更新失敗", "error");
-                  updateBtn.innerHTML = '<i class="fas fa-upload text-xs"></i>';
-                }
-              };
-              fileInput.click();
-            });
-          }
-
-          const delBtn = item.querySelector(".delete-stamp-btn");
+          const delBtn = item.querySelector(".delete-group-btn");
           if (delBtn) {
             delBtn.addEventListener("click", async () => {
-              if (!await showCustomConfirm(`スタンプ「${stamp.name}」を削除しますか？`, "削除")) return;
+              if (!await showCustomConfirm(`グループ「${name}」を削除しますか？`, "削除")) return;
               try {
-                await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/stamps`, d.id));
+                if (isLegacy) {
+                  await deleteDoc(doc(db, \`artifacts/\${appId}/servers/\${currentServerId}/stamps\`, id));
+                } else {
+                  await deleteDoc(doc(db, \`artifacts/\${appId}/servers/\${currentServerId}/stampGroups\`, id));
+                }
                 await loadServerStampsForAdmin();
                 if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
               } catch(e) {
-                alertMessage("削除権限がありません", "error");
-              }
-            });
-          }
-          const copyBtn = item.querySelector(".copy-stamp-btn");
-          if (copyBtn) {
-            copyBtn.addEventListener("click", async () => {
-              const targetServerId = prompt("コピー先のサーバーIDを入力してください:");
-              if (!targetServerId) return;
-              try {
-                await setDoc(doc(collection(db, `artifacts/${appId}/servers/${targetServerId}/stamps`)), {
-                  name: stamp.name,
-                  url: stamp.url,
-                  createdBy: userId,
-                  createdAt: serverTimestamp()
-                });
-                alertMessage("コピーしました", "success");
-              } catch(e) {
-                alertMessage("コピー失敗: " + e.message, "error");
+                alertMessage("削除に失敗しました", "error");
               }
             });
           }
           listEl.appendChild(item);
+        };
+
+        groupsSnap.forEach(d => {
+          const g = d.data();
+          renderGroupItem(d.id, g.name, g.thumbnailUrl, g.stamps || [], false);
         });
+
+        legacySnap.forEach(d => {
+          const s = d.data();
+          renderGroupItem(d.id, s.name, s.url, [{name: s.name, url: s.url}], true);
+        });
+
       } catch (e) {
         listEl.innerHTML = "<p class='text-sm text-red-500 col-span-4'>取得失敗</p>";
       }
     }
 
-    document.getElementById("uploadCustomStampBtn")?.addEventListener("click", async () => {
-      const nameInput = document.getElementById("newStampNameInput");
-      const fileInput = document.getElementById("newStampFileInput");
+    document.getElementById("uploadCustomStampGroupBtn")?.addEventListener("click", async () => {
+      const nameInput = document.getElementById("newStampGroupNameInput");
+      const thumbInput = document.getElementById("newStampGroupThumbnailInput");
+      const filesInput = document.getElementById("newStampGroupFilesInput");
+      
       const name = nameInput.value.trim();
-      const file = fileInput.files[0];
-      if (!name || !file) {
-        alertMessage("スタンプ名と画像を選択してください", "error");
-        return;
-      }
-      if (file.size > 2 * 1024 * 1024) {
-        alertMessage("画像は2MB以下にしてください", "error");
+      const thumbFile = thumbInput.files[0];
+      const stampFiles = Array.from(filesInput.files);
+      
+      if (!name || !thumbFile || stampFiles.length === 0) {
+        alertMessage("グループ名、アイコン画像、および1枚以上のスタンプ画像を選択してください", "error");
         return;
       }
       
-      const btn = document.getElementById("uploadCustomStampBtn");
-      const originalText = btn.textContent;
+      const btn = document.getElementById("uploadCustomStampGroupBtn");
+      const originalText = btn.innerHTML;
       btn.textContent = "処理中...";
       btn.disabled = true;
+      
       try {
-        const img = new Image();
-        const objUrl = URL.createObjectURL(file);
-        await new Promise((res, rej) => {
-          img.onload = res;
-          img.onerror = rej;
-          img.src = objUrl;
-        });
-        
-        if (img.width !== img.height) {
+        const uploadImage = async (file, checkSquare = true) => {
+          if (file.size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+          
+          const img = new Image();
+          const objUrl = URL.createObjectURL(file);
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+          
+          if (checkSquare && img.width !== img.height) {
+            URL.revokeObjectURL(objUrl);
+            throw new Error("スタンプ画像とアイコン画像は完全な正方形（縦横同じサイズ）である必要があります");
+          }
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = 128; canvas.height = 128;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
           URL.revokeObjectURL(objUrl);
-          alertMessage("スタンプ画像は完全な正方形（縦横同じサイズ）である必要があります", "error");
-          btn.textContent = originalText;
-          btn.disabled = false;
-          return;
+          
+          const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+          const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+          return await uploadToExternalService(stampFile, () => {}, 'stamps');
+        };
+        
+        btn.textContent = "アイコンをアップロード中...";
+        const thumbUrl = await uploadImage(thumbFile, true);
+        
+        const uploadedStamps = [];
+        for (let i = 0; i < stampFiles.length; i++) {
+          btn.textContent = `スタンプアップロード中... (${i+1}/${stampFiles.length})`;
+          const url = await uploadImage(stampFiles[i], true);
+          uploadedStamps.push({ name: `${name}_${i+1}`, url });
         }
         
-        const canvas = document.createElement("canvas");
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
-        URL.revokeObjectURL(objUrl);
-        
-        const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
-        const stampFile = new File([blob], "stamp.png", { type: "image/png" });
-        
-        btn.textContent = "アップロード中...";
-        const fileUrl = await uploadToExternalService(stampFile, () => {}, 'stamps');
-        
         btn.textContent = "保存中...";
-        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`), {
+        await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`), {
           name: name,
-          url: fileUrl,
+          thumbnailUrl: thumbUrl,
+          stamps: uploadedStamps,
           createdBy: userId,
           createdAt: serverTimestamp()
         });
         
         nameInput.value = "";
-        fileInput.value = "";
-        alertMessage("スタンプを追加しました", "success");
+        thumbInput.value = "";
+        filesInput.value = "";
+        alertMessage("スタンプグループを追加しました", "success");
         await loadServerStampsForAdmin();
         if (typeof loadCurrentServerStamps === 'function') loadCurrentServerStamps();
       } catch (e) {
-        console.error("Stamp upload error", e);
-        alertMessage("アップロードに失敗しました", "error");
+        console.error("Stamp group upload error", e);
+        alertMessage(e.message || "アップロードに失敗しました", "error");
       } finally {
-        btn.textContent = originalText;
+        btn.innerHTML = originalText;
         btn.disabled = false;
       }
     });
@@ -9408,31 +9345,43 @@
     async function loadCurrentServerStamps() {
       if (!currentServerId) return;
       try {
-        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`));
-        currentServerStampsData = [];
-        snap.forEach(d => {
-           currentServerStampsData.push({ id: d.id, ...d.data() });
+        const [legacySnap, groupsSnap] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)),
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`))
+        ]);
+        
+        for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
+          if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
+            STICKER_CATEGORIES.splice(i, 1);
+          }
+        }
+        
+        let customCategories = [];
+        
+        groupsSnap.forEach(d => {
+          const g = d.data();
+          if (g.stamps && g.stamps.length > 0) {
+            customCategories.push({
+              id: 'server_group_' + d.id,
+              icon: `serverstamp:${g.thumbnailUrl}`,
+              label: g.name,
+              emojis: g.stamps.map(s => `serverstamp:${s.url}`)
+            });
+          }
+        });
+
+        legacySnap.forEach(d => {
+          const s = d.data();
+          customCategories.push({
+            id: 'server_group_' + d.id,
+            icon: `serverstamp:${s.url}`,
+            label: s.name,
+            emojis: [`serverstamp:${s.url}`]
+          });
         });
         
-        const customCatIdx = STICKER_CATEGORIES.findIndex(c => c.id === 'server_custom');
-        if (currentServerStampsData.length > 0) {
-          const customCat = { 
-            id: 'server_custom', 
-            icon: '🖼️', 
-            label: 'カスタム', 
-            emojis: currentServerStampsData.map(s => `serverstamp:${s.url}`) 
-          };
-          
-          if (customCatIdx !== -1) {
-            STICKER_CATEGORIES[customCatIdx] = customCat;
-          } else {
-            STICKER_CATEGORIES.splice(2, 0, customCat); // "最近" "よく使う" の次に追加
-          }
-        } else {
-          // スタンプがない場合はタブを削除
-          if (customCatIdx !== -1) {
-            STICKER_CATEGORIES.splice(customCatIdx, 1);
-          }
+        if (customCategories.length > 0) {
+          STICKER_CATEGORIES.splice(2, 0, ...customCategories);
         }
       } catch (e) {
         console.error("Failed to load server stamps", e);
