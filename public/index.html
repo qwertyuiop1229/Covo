@@ -139,20 +139,14 @@
       text-align: center;
       margin: 1rem 0;
       width: 100%;
-      position: sticky;
-      bottom: 0.5rem;
-      z-index: 20;
-      pointer-events: none;
     }
     .date-divider-inner {
       display: inline-block;
       padding: 4px 12px;
-      background-color: rgba(0,0,0,0.4);
-      backdrop-filter: blur(4px);
+      background-color: rgba(0,0,0,0.2);
       color: #fff;
       font-size: 0.75rem;
       border-radius: 999px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     body.dark-server-theme .date-divider-inner {
       background-color: rgba(255,255,255,0.2);
@@ -4026,7 +4020,7 @@
         <div id="resizer"></div>
 
         <!-- チャットエリア -->
-        <div id="chatArea" class="flex-1 flex flex-col relative bg-white dark:bg-gray-900 overflow-hidden min-w-0">
+        <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
           <div id="currentRoomHeader"
             class="bg-gray-200 p-3 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center">
             <button id="mobileBackButton"
@@ -4050,6 +4044,11 @@
                 class="fas fa-times"></i></button>
           </div>
           <div id="pinnedMessagesArea" class="hidden flex-shrink-0"></div>
+
+          <!-- フローティング日付ヘッダー -->
+          <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-opacity duration-300 opacity-0" style="top: 1rem;">
+            <div id="floatingDateBadge" class="bg-black bg-opacity-40 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs shadow-md"></div>
+          </div>
 
           <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
             <!-- 過去メッセージ読み込みスピナー -->
@@ -8539,6 +8538,30 @@
     messagesDisplay.addEventListener("scroll", async () => {
       if (!allowPagination) return;
       
+      const floatingContainer = document.getElementById('floatingDateContainer');
+      const floatingBadge = document.getElementById('floatingDateBadge');
+      if (floatingContainer && floatingBadge) {
+        let activeDivider = null;
+        const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
+        const dividers = messagesDisplay.querySelectorAll('.date-divider');
+        for (let i = 0; i < dividers.length; i++) {
+          if (dividers[i].offsetTop <= viewTop) {
+            activeDivider = dividers[i];
+          }
+        }
+        if (activeDivider) {
+          const text = activeDivider.textContent.trim();
+          if (text) {
+            floatingBadge.textContent = text;
+            floatingContainer.classList.remove('opacity-0');
+          } else {
+            floatingContainer.classList.add('opacity-0');
+          }
+        } else {
+          floatingContainer.classList.add('opacity-0');
+        }
+      }
+
       const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
       if (isJumpMode || messagesDisplay.scrollTop > 300) {
         jumpModeExitBtn.classList.remove("hidden");
