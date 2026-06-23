@@ -4053,6 +4053,9 @@
             </div>
             <!-- メッセージはここに動的に追加されます -->
           </div>
+          <button id="jumpModeExitBtn" class="hidden absolute bottom-24 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg z-50 text-sm font-bold flex items-center gap-2 hover:bg-gray-700 transition-colors" onclick="window.exitJumpMode()">
+            <i class="fas fa-arrow-down"></i> 最新へ戻る
+          </button>
 
           <div id="typingIndicator" class="px-4 pb-1 text-xs text-gray-400 italic min-h-[1.25rem] hidden"></div>
           <!-- メッセージ入力エリア -->
@@ -5122,6 +5125,9 @@
     let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
     let isLoadingOlderMessages = false; // 二重ローディング防止
     let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
+    let isJumpMode = false;
+    let isLoadingNewerMessages = false;
+    let hasMoreNewerMessages = false;
     // onAuthStateChanged の再入防止
     let _authHandlerBusy = false;
     let _lastAuthUserId = null; // 同一ユーザーの重複初期化防止
@@ -8330,6 +8336,11 @@
         // E2EE: UIに追加する前に暗号文を平文へ復号
         await decryptMessagesInPlace(latestMessages, currentServerId, currentRoomId, _members).catch(() => {});
         
+        if (isJumpMode) {
+          // ジャンプ中は現在のタイムラインに最新20件をマージさせない（ただし内部的な受信バッジなどは更新できる）
+          return;
+        }
+
         if (isInitialMessageLoad) {
           allLoadedMessages = [...latestMessages];
         } else {
@@ -8482,16 +8493,79 @@
       membersSidebar.classList.remove("hidden");
     }
 
-    // スクロールを検知して過去のメッセージを読み込むリスナー
     messagesDisplay.addEventListener("scroll", async () => {
-      // 初期化が終わるまでは発火させない
       if (!allowPagination) return;
-      // 反転されているため、一番上（過去のメッセージ）は scrollTop の最大値付近になる
       const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
+      
+      // 過去への読み込み (scrollTop大=上スクロール)
       if (scrollDistanceToTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
         await loadOlderMessages();
       }
+
+      // ジャンプ中の未来への読み込み (scrollTop小=下スクロール)
+      if (isJumpMode && messagesDisplay.scrollTop < 300 && !isLoadingNewerMessages && hasMoreNewerMessages) {
+        await loadNewerMessages();
+      }
     });
+
+    async function loadNewerMessages() {
+      if (isLoadingNewerMessages || !hasMoreNewerMessages || !allLoadedMessages.length) return;
+      
+      isLoadingNewerMessages = true;
+      try {
+        const newestMsg = allLoadedMessages[allLoadedMessages.length - 1]; // 一番新しいメッセージ（配列最後）
+        if (!newestMsg || !newestMsg.timestamp) {
+          hasMoreNewerMessages = false;
+          return;
+        }
+
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(newestMsg.timestamp),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) {
+          hasMoreNewerMessages = false;
+        }
+        if (!snap.empty) {
+          const newerMessages = [];
+          snap.forEach(doc => {
+            const d = doc.data(); d.id = doc.id;
+            newerMessages.push(d);
+          });
+          // ascで取得しているので、そのままallLoadedMessagesの後ろに足せば時系列(asc)になる
+          try {
+            const _members = (currentServerData && currentServerData.joinedUsers) || [];
+            await decryptMessagesInPlace(newerMessages, currentServerId, currentRoomId, _members);
+          } catch (e) {}
+
+          const oldScrollHeight = messagesDisplay.scrollHeight;
+          const oldScrollTop = messagesDisplay.scrollTop;
+
+          allLoadedMessages = [...allLoadedMessages, ...newerMessages];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+          renderMessagesWithReadReceipts();
+          messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+        }
+      } catch (e) {
+        console.error("Failed to load newer messages:", e);
+      } finally {
+        isLoadingNewerMessages = false;
+      }
+    }
+
+    window.exitJumpMode = function() {
+      if (!isJumpMode) return;
+      isJumpMode = false;
+      document.getElementById('jumpModeExitBtn').classList.add('hidden');
+      isInitialMessageLoad = true;
+      subscribeToMessages();
+    };
 
     // PCでのマウスホイールによるスクロール方向逆転の修正
     messagesDisplay.addEventListener("wheel", (e) => {
@@ -10408,6 +10482,99 @@
       return messageRow;
     }
 
+    window.jumpToUnloadedMessage = jumpToUnloadedMessage;
+    async function jumpToUnloadedMessage(msgId) {
+      if (!msgId) return;
+      const modal = document.getElementById("messagePreviewModal");
+      if (modal) modal.classList.add("hidden");
+      
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) {
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">ジャンプ中...</span>';
+        spinner.style.display = 'flex';
+      }
+
+      // ジャンプモードに移行
+      isJumpMode = true;
+      allowPagination = false;
+      document.getElementById('jumpModeExitBtn').classList.remove('hidden');
+
+      try {
+        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          alertMessage("メッセージが見つかりません。", "error");
+          if (spinner) spinner.style.display = 'none';
+          return;
+        }
+        const targetMsg = { id: docSnap.id, ...docSnap.data() };
+        
+        // ターゲットメッセージを中心として、過去20件・未来20件を取得
+        const fetchLimit = 20;
+        
+        // 過去分（ターゲット含む）
+        const qPast = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAt(targetMsg.timestamp),
+          limit(fetchLimit)
+        );
+        const snapPast = await getDocs(qPast);
+        const pastMsgs = [];
+        snapPast.forEach(doc => pastMsgs.push({ id: doc.id, ...doc.data() }));
+        pastMsgs.reverse(); // descをascに戻す
+
+        // 未来分
+        const qFuture = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(targetMsg.timestamp),
+          limit(fetchLimit)
+        );
+        const snapFuture = await getDocs(qFuture);
+        const futureMsgs = [];
+        snapFuture.forEach(doc => futureMsgs.push({ id: doc.id, ...doc.data() }));
+        
+        hasMoreOlderMessages = snapPast.docs.length === fetchLimit;
+        hasMoreNewerMessages = snapFuture.docs.length === fetchLimit;
+        
+        const combinedMsgs = [...pastMsgs, ...futureMsgs];
+        
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        for (let i = 0; i < combinedMsgs.length; i++) {
+          if (combinedMsgs[i].text && isEncrypted(combinedMsgs[i].text)) {
+            combinedMsgs[i].text = await decryptText(combinedMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>combinedMsgs[i].text);
+          }
+        }
+
+        allLoadedMessages = combinedMsgs;
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        
+        // DOM全クリアして再描画
+        messagesDisplay.innerHTML = '';
+        if (spinner) {
+          spinner.style.display = 'none';
+          messagesDisplay.appendChild(spinner);
+        }
+        renderMessagesWithReadReceipts();
+        
+      } catch (e) {
+        console.error("Jump error:", e);
+      }
+      
+      setTimeout(() => {
+        let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+        if (el2) {
+          doJumpHighlight(el2);
+        } else {
+          alertMessage("ジャンプできませんでした。", "warning");
+        }
+        allowPagination = true;
+      }, 300);
+    }
+
     function renderMessagesWithReadReceipts() {
       const filteredMessages = lastMessagesData.filter(msg => {
         if (!searchQuery) return true;
@@ -11034,94 +11201,7 @@
       modal.classList.remove("hidden");
     }
 
-    window.jumpToUnloadedMessage = jumpToUnloadedMessage;
-    async function jumpToUnloadedMessage(msgId) {
-      if (!msgId) return;
-      const modal = document.getElementById("messagePreviewModal");
-      if (modal) modal.classList.add("hidden");
-      
-      const spinner = document.getElementById('topLoadingSpinner');
-      if (spinner) {
-        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">ジャンプ中...</span>';
-        spinner.style.display = 'flex';
-      }
 
-      // 既にDOMにあるかチェック
-      let el = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
-      if (el) {
-        doJumpHighlight(el);
-        if (spinner) spinner.style.display = 'none';
-        return;
-      }
-
-      try {
-        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-          alertMessage("メッセージが見つかりません。", "error");
-          if (spinner) spinner.style.display = 'none';
-          return;
-        }
-        
-        const targetMsg = { id: docSnap.id, ...docSnap.data() };
-        
-        // 画面解像度から必要なメッセージ件数を動的に計算
-        const msgHeightEst = 80;
-        const fetchCount = Math.max(10, Math.ceil(window.innerHeight / msgHeightEst) * 2);
-
-        // ターゲットメッセージから過去に向かってfetchCount件を取得
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "desc"),
-          startAt(targetMsg.timestamp),
-          limit(fetchCount)
-        );
-        const snap = await getDocs(q);
-        const newMsgs = [];
-        snap.forEach(doc => newMsgs.push({ id: doc.id, ...doc.data() }));
-
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        for (let i = 0; i < newMsgs.length; i++) {
-          if (newMsgs[i].text && isEncrypted(newMsgs[i].text)) {
-            newMsgs[i].text = await decryptText(newMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>newMsgs[i].text);
-          }
-        }
-
-        const oldScrollHeight = messagesDisplay.scrollHeight;
-        const oldScrollTop = messagesDisplay.scrollTop;
-        
-        function prependMsgToDOM(msg) {
-          const row = createMessageElement(msg, msg.id, 0);
-          messagesDisplay.prepend(row);
-        }
-
-        const gapMsg = { id: `gap-${msgId}`, isGap: true, text: "中間のメッセージは省略されました", senderId: "system", timestamp: targetMsg.timestamp };
-        
-        allLoadedMessages.unshift(gapMsg);
-        prependMsgToDOM(gapMsg);
-        
-        // newMsgsはdesc順(ターゲット, 1つ前, 2つ前...)なのでそのままunshift/prependすれば時系列(asc)にDOM構成される
-        for (const msg of newMsgs) {
-            allLoadedMessages.unshift(msg);
-            prependMsgToDOM(msg);
-        }
-        
-        messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
-        
-      } catch (e) {
-        console.error(e);
-      }
-      
-      setTimeout(() => {
-        let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
-        if (el2) {
-          doJumpHighlight(el2);
-        } else {
-          alertMessage("ジャンプできませんでした。", "warning");
-        }
-        if (spinner) spinner.style.display = 'none';
-      }, 100);
-    }
 
     function doJumpHighlight(el) {
        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
