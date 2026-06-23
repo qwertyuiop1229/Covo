@@ -4053,8 +4053,8 @@
             </div>
             <!-- メッセージはここに動的に追加されます -->
           </div>
-          <button id="jumpModeExitBtn" class="hidden absolute bottom-24 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg z-50 text-sm font-bold flex items-center gap-2 hover:bg-gray-700 transition-colors" onclick="window.exitJumpMode()">
-            <i class="fas fa-arrow-down"></i> 最新へ戻る
+          <button id="jumpModeExitBtn" class="hidden absolute bottom-6 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="window.exitJumpMode()">
+            <i class="fas fa-arrow-down text-xl"></i>
           </button>
 
           <div id="typingIndicator" class="px-4 pb-1 text-xs text-gray-400 italic min-h-[1.25rem] hidden"></div>
@@ -5128,6 +5128,8 @@
     let isJumpMode = false;
     let isLoadingNewerMessages = false;
     let hasMoreNewerMessages = false;
+    let unsubscribePinnedMessages = null;
+    let currentPinnedMessages = [];
     // onAuthStateChanged の再入防止
     let _authHandlerBusy = false;
     let _lastAuthUserId = null; // 同一ユーザーの重複初期化防止
@@ -8279,6 +8281,33 @@
       loadOlderMessages();
     };
 
+    function subscribeToPinnedMessages() {
+      if (unsubscribePinnedMessages) unsubscribePinnedMessages();
+      currentPinnedMessages = [];
+      const q = query(
+        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+        where("isPinned", "==", true)
+      );
+      unsubscribePinnedMessages = onSnapshot(q, async (snapshot) => {
+        const msgs = [];
+        snapshot.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+        
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        for (let i = 0; i < msgs.length; i++) {
+          if (msgs[i].text && isEncrypted(msgs[i].text)) {
+            msgs[i].text = await decryptText(msgs[i].text, currentServerId, currentRoomId, _members).catch(()=>msgs[i].text);
+          }
+        }
+        currentPinnedMessages = msgs;
+        renderPinnedMessages();
+      }, (error) => {
+         console.warn("Pinned messages query failed (index missing?):", error);
+         // フォールバック: 現在表示中のlastMessagesDataから拾う
+         currentPinnedMessages = lastMessagesData.filter(m => m.isPinned);
+         renderPinnedMessages();
+      });
+    }
+
     function subscribeToMessages() {
       if (unsubscribeMessages) unsubscribeMessages();
 
@@ -8452,6 +8481,7 @@
       isLoadingOlderMessages = false;
 
       subscribeToMessages();
+      subscribeToPinnedMessages();
 
       // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完（メンバー追加対応）
       (async () => {
@@ -9925,6 +9955,7 @@
     clearFileButton.addEventListener("click", clearAttachedFile);
     function clearAttachedFile() { attachedFile = null; attachedKvFile = null; updateFilePreview(); }
 
+
     // --- 送信ボタン ---
     const sendMessageButton = document.getElementById("sendMessageButton");
     sendMessageButton.addEventListener("click", sendMessage);
@@ -10553,6 +10584,8 @@
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
         
         // DOM全クリアして再描画
+        messagesDisplay.style.transition = 'none';
+        messagesDisplay.style.opacity = '0';
         messagesDisplay.innerHTML = '';
         if (spinner) {
           spinner.style.display = 'none';
@@ -10571,8 +10604,10 @@
         } else {
           alertMessage("ジャンプできませんでした。", "warning");
         }
+        messagesDisplay.style.transition = 'opacity 0.2s ease';
+        messagesDisplay.style.opacity = '1';
         allowPagination = true;
-      }, 300);
+      }, 500);
     }
 
     function renderMessagesWithReadReceipts() {
@@ -11204,7 +11239,10 @@
 
 
     function doJumpHighlight(el) {
-       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+       el.scrollIntoView({ behavior: 'auto', block: 'center' });
+       // 少し経ってからもう一度合わせる（画像読み込みなどでずれた場合への対応）
+       setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+       
        const isStamp = el.querySelector('img[alt^="stamp_"]');
        if (isStamp) {
            isStamp.classList.add('stamp-jump-anim');
@@ -11873,29 +11911,22 @@
     });
 
     function renderPinnedMessages() {
-      const pinnedMessages = lastMessagesData.filter(m => m.isPinned);
+      const pinnedMessages = currentPinnedMessages;
       if (pinnedMessages.length > 0) {
         pinnedMessagesArea.innerHTML = '<div class="text-xs font-bold text-gray-500 mb-1"><i class="fas fa-thumbtack mr-1"></i>ピン留めされたメッセージ</div>';
         pinnedMessages.forEach(msg => {
           const div = document.createElement("div");
           div.className = "pinned-message-item truncate";
           const pNameSpan = document.createElement("span");
-          pNameSpan.className = "font-bold mr-2 text-gray-800";
+          pNameSpan.className = "font-bold mr-2 text-gray-800 dark:text-gray-200";
           pNameSpan.textContent = msg.senderNickname + ":";
           const pTextSpan = document.createElement("span");
-          pTextSpan.className = "text-gray-600";
+          pTextSpan.className = "text-gray-600 dark:text-gray-400";
           pTextSpan.textContent = msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル");
           div.appendChild(pNameSpan);
           div.appendChild(pTextSpan);
           div.addEventListener("click", () => {
-            const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${msg.id}"]`);
-            if (el) {
-              el.scrollIntoView({ behavior: "smooth", block: "center" });
-              el.classList.add("message-highlight");
-              setTimeout(() => el.classList.remove("message-highlight"), 1200);
-            } else {
-              showUnloadedMessagePreview(msg.id);
-            }
+             jumpToUnloadedMessage(msg.id);
           });
           pinnedMessagesArea.appendChild(div);
         });
