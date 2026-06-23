@@ -37,6 +37,17 @@
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
+    .stamp-jump-anim {
+      animation: stampWiggle 0.8s ease-in-out;
+    }
+    @keyframes stampWiggle {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px) rotate(-5deg); }
+      30% { transform: translateX(8px) rotate(3deg); }
+      45% { transform: translateX(-6px) rotate(-2deg); }
+      60% { transform: translateX(4px) rotate(1deg); }
+      75% { transform: translateX(-2px); }
+    }
     /* Reactions */
     .reaction-picker-bar {
       display: flex;
@@ -3931,14 +3942,13 @@
               </div>
               <!-- スタンプタブ -->
               <div id="ssStampsSection" class="hidden space-y-4">
-                <div class="bg-indigo-50 border border-indigo-100 p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                <div class="bg-gray-50 border border-gray-200 p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                   <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                    <i class="fas fa-icons text-3xl text-indigo-500"></i>
+                    <i class="fas fa-icons text-3xl text-gray-500"></i>
                   </div>
-                  <h3 class="text-lg font-bold text-indigo-900 mb-2">スタンプ管理</h3>
-                  <p class="text-sm text-indigo-700 mb-6">新しいスタンプ管理画面から、より使いやすく一括でスタンプを追加・管理できます。</p>
-                  <button onclick="openStampAdminModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all">
-                    詳細なスタンプ管理を開く
+                  <h3 class="text-lg font-bold text-gray-800 mb-6">スタンプ管理</h3>
+                  <button onclick="openStampAdminModal()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all">
+                    スタンプ管理を開く
                   </button>
                 </div>
               </div>
@@ -4171,7 +4181,7 @@
   <div id="stampAdminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-box animate-pop-in relative">
       <div class="flex justify-between items-center p-6 border-b border-gray-100">
-        <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-icons mr-2 text-indigo-500"></i>スタンプ管理</h2>
+        <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-icons mr-2 text-gray-600"></i>スタンプ管理</h2>
         <button onclick="document.getElementById('stampAdminModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors">
           <i class="fas fa-times text-xl"></i>
         </button>
@@ -4180,25 +4190,25 @@
         <!-- 管理者用サーバー選択 -->
         <div id="stampAdminServerSelectContainer" class="hidden">
           <label class="block text-sm font-bold text-gray-600 mb-2">対象サーバーを選択</label>
-          <select id="stampAdminServerSelect" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:outline-none transition-shadow shadow-sm bg-white"></select>
+          <select id="stampAdminServerSelect" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 focus:outline-none transition-shadow shadow-sm bg-white"></select>
         </div>
         
         <!-- 新規追加セクション -->
         <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">新規スタンプグループ作成</h3>
           <div class="flex flex-col gap-4">
-            <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-400 outline-none text-sm" />
+            <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 outline-none text-sm" />
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-bold text-gray-500 mb-1">メインアイコン画像（サムネイル）</label>
-                <input type="file" id="saNewGroupThumb" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 transition-colors" />
+                <input type="file" id="saNewGroupThumb" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors" />
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-500 mb-1">スタンプ画像（複数選択可）</label>
-                <input type="file" id="saNewGroupFiles" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 transition-colors" />
+                <input type="file" id="saNewGroupFiles" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors" />
               </div>
             </div>
-            <button id="saUploadBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all mt-2 shadow-md w-full md:w-auto md:self-end flex items-center justify-center gap-2">
+            <button id="saUploadBtn" class="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all mt-2 shadow-md w-full md:w-auto md:self-end flex items-center justify-center gap-2">
               <i class="fas fa-cloud-upload-alt mr-2"></i>アップロード
             </button>
           </div>
@@ -10825,9 +10835,6 @@
       const modal = document.getElementById("messagePreviewModal");
       if (modal) modal.classList.add("hidden");
       
-      const MAX_ATTEMPTS = 5;
-      let attempts = 0;
-      
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) {
         spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">ジャンプ中...</span>';
@@ -10837,9 +10844,7 @@
       // 既にDOMにあるかチェック
       let el = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('message-highlight');
-        setTimeout(() => el.classList.remove('message-highlight'), 1200);
+        doJumpHighlight(el);
         if (spinner) spinner.style.display = 'none';
         return;
       }
@@ -10853,47 +10858,26 @@
           return;
         }
         
-        const targetTimestamp = docSnap.data().timestamp;
-        const oldestMsg = allLoadedMessages[0];
+        const targetMsg = { id: docSnap.id, ...docSnap.data() };
         
-        if (oldestMsg && targetTimestamp && targetTimestamp.toMillis() < oldestMsg.timestamp.toMillis()) {
-          // 目的のメッセージまでの間にあるメッセージを最大100件取得
-          const q = query(
-            collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-            orderBy("timestamp", "desc"),
-            startAfter(oldestMsg.timestamp),
-            endAt(targetTimestamp),
-            limit(100)
-          );
-          
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const newMsgs = [];
-            let reachedTarget = false;
-            snap.forEach(doc => {
-              newMsgs.push({ id: doc.id, ...doc.data() });
-              if (doc.id === msgId) reachedTarget = true;
-            });
-            
-            // 100件以上離れている場合は間にギャップ（中抜け）メッセージを挟んでターゲットを追加
-            if (!reachedTarget) {
-              const targetMsg = { id: docSnap.id, ...docSnap.data() };
-              newMsgs.push({ id: `gap-${msgId}`, isGap: true, text: "中間のメッセージは省略されました", senderId: "system", timestamp: targetMsg.timestamp });
-              newMsgs.push(targetMsg);
-            }
-            
-            const oldScrollHeight = messagesDisplay.scrollHeight;
-            const oldScrollTop = messagesDisplay.scrollTop;
-            
-            newMsgs.forEach(msg => {
-              allLoadedMessages.unshift(msg);
-              prependMessage(msg);
-            });
-            
-            // スクロール位置の維持
-            messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
-          }
+        if (targetMsg.text && isEncrypted(targetMsg.text)) {
+           const _members = (currentServerData && currentServerData.joinedUsers) || [];
+           targetMsg.text = await decryptText(targetMsg.text, currentServerId, currentRoomId, _members).catch(()=>targetMsg.text);
         }
+
+        const oldScrollHeight = messagesDisplay.scrollHeight;
+        const oldScrollTop = messagesDisplay.scrollTop;
+        
+        const gapMsg = { id: `gap-${msgId}`, isGap: true, text: "中間のメッセージは省略されました", senderId: "system", timestamp: targetMsg.timestamp };
+        
+        allLoadedMessages.unshift(gapMsg);
+        prependMessage(gapMsg);
+        
+        allLoadedMessages.unshift(targetMsg);
+        prependMessage(targetMsg);
+        
+        messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+        
       } catch (e) {
         console.error(e);
       }
@@ -10901,14 +10885,24 @@
       setTimeout(() => {
         let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
         if (el2) {
-          el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          el2.classList.add('message-highlight');
-          setTimeout(() => el2.classList.remove('message-highlight'), 1200);
+          doJumpHighlight(el2);
         } else {
-          alertMessage("メッセージが遠すぎるためジャンプできませんでした。", "warning");
+          alertMessage("ジャンプできませんでした。", "warning");
         }
         if (spinner) spinner.style.display = 'none';
       }, 100);
+    }
+
+    function doJumpHighlight(el) {
+       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+       const isStamp = el.querySelector('img[alt^="stamp_"]');
+       if (isStamp) {
+           isStamp.classList.add('stamp-jump-anim');
+           setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+       } else {
+           el.classList.add('message-highlight');
+           setTimeout(() => el.classList.remove('message-highlight'), 1200);
+       }
     }
 
     // iOS/Safari 判定
