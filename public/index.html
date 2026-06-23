@@ -4178,6 +4178,7 @@
   </div>
 
   <!-- スタンプ詳細管理モーダル -->
+  <!-- スタンプ詳細管理モーダル -->
   <div id="stampAdminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-box animate-pop-in relative">
       <div class="flex justify-between items-center p-6 border-b border-gray-100">
@@ -4188,13 +4189,28 @@
       </div>
       <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex flex-col gap-6">
         <!-- 管理者用サーバー選択 -->
-        <div id="stampAdminServerSelectContainer" class="hidden">
+        <div id="stampAdminServerSelectContainer" class="hidden relative">
           <label class="block text-sm font-bold text-gray-600 mb-2">対象サーバーを選択</label>
-          <select id="stampAdminServerSelect" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 focus:outline-none transition-shadow shadow-sm bg-white"></select>
+          <div class="relative">
+            <button type="button" id="saCustomSelectBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-gray-700 font-medium">
+              <span id="saCustomSelectLabel">サーバーを選択</span>
+              <i class="fas fa-chevron-down text-gray-400 transition-transform duration-200" id="saCustomSelectIcon"></i>
+            </button>
+            <div id="saCustomSelectDropdown" class="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top">
+              <ul id="saCustomSelectList" class="py-1"></ul>
+            </div>
+            <input type="hidden" id="stampAdminServerSelect" value="" />
+          </div>
         </div>
         
+        <!-- タブ切り替えUI -->
+        <div class="flex space-x-2 border-b border-gray-200 mb-2">
+          <button id="saTabNew" class="py-2 px-4 text-sm font-bold border-b-2 border-gray-800 text-gray-800 focus:outline-none transition-colors">新規グループ作成</button>
+          <button id="saTabExisting" class="py-2 px-4 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors">既存グループへ追加</button>
+        </div>
+
         <!-- 新規追加セクション -->
-        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+        <div id="saSectionNew" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm block">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">新規スタンプグループ作成</h3>
           <div class="flex flex-col gap-4">
             <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 outline-none text-sm" />
@@ -4210,6 +4226,35 @@
             </div>
             <button id="saUploadBtn" class="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all mt-2 shadow-md w-full md:w-auto md:self-end flex items-center justify-center gap-2">
               <i class="fas fa-cloud-upload-alt mr-2"></i>アップロード
+            </button>
+          </div>
+        </div>
+
+        <!-- 既存グループへ追加セクション -->
+        <div id="saSectionExisting" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hidden">
+          <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">既存グループへスタンプを追加</h3>
+          <div class="flex flex-col gap-4">
+            <div>
+              <label class="block text-sm font-bold text-gray-600 mb-2">対象グループを選択</label>
+              <div class="relative">
+                <button type="button" id="saExistingGroupBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-gray-700 font-medium">
+                  <span id="saExistingGroupLabel">グループを選択</span>
+                  <i class="fas fa-chevron-down text-gray-400 transition-transform duration-200" id="saExistingGroupIcon"></i>
+                </button>
+                <div id="saExistingGroupDropdown" class="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto hidden opacity-0 transition-opacity duration-200">
+                  <ul id="saExistingGroupList" class="py-1"></ul>
+                </div>
+                <input type="hidden" id="saSelectedExistingGroupId" value="" />
+              </div>
+            </div>
+            
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">追加するスタンプ画像（複数選択可）</label>
+              <input type="file" id="saAppendFiles" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors" />
+            </div>
+            
+            <button id="saAppendBtn" class="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all mt-2 shadow-md w-full md:w-auto md:self-end flex items-center justify-center gap-2">
+              <i class="fas fa-plus mr-2"></i>既存グループに追加
             </button>
           </div>
         </div>
@@ -8918,32 +8963,54 @@
       const modal = document.getElementById('stampAdminModal');
       modal.classList.remove('hidden');
       const selContainer = document.getElementById('stampAdminServerSelectContainer');
-      const sel = document.getElementById('stampAdminServerSelect');
-      sel.innerHTML = '<option value="">読み込み中...</option>';
+      const hiddenSel = document.getElementById('stampAdminServerSelect');
+      const label = document.getElementById('saCustomSelectLabel');
+      const list = document.getElementById('saCustomSelectList');
+      
+      list.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500">読み込み中...</li>';
+      label.textContent = "読み込み中...";
+      
       if (isAdmin) {
         selContainer.classList.remove('hidden');
         try {
           const snap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-          sel.innerHTML = '';
+          list.innerHTML = '';
           snap.forEach(doc => {
-            const opt = document.createElement('option');
-            opt.value = doc.id;
-            opt.textContent = doc.data().name || "名称未設定サーバー";
-            if (doc.id === currentServerId) opt.selected = true;
-            sel.appendChild(opt);
+            const li = document.createElement('li');
+            const sName = doc.data().name || "名称未設定サーバー";
+            li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 transition-colors border-b border-gray-100 last:border-0";
+            li.textContent = sName;
+            li.onclick = () => {
+              hiddenSel.value = doc.id;
+              label.textContent = sName;
+              document.getElementById('saCustomSelectDropdown').classList.add('hidden', 'opacity-0');
+              document.getElementById('saCustomSelectIcon').classList.remove('rotate-180');
+              saLoadStamps(doc.id);
+            };
+            if (doc.id === currentServerId) {
+              hiddenSel.value = doc.id;
+              label.textContent = sName;
+            }
+            list.appendChild(li);
           });
-        } catch(e) { sel.innerHTML = '<option value="">エラー</option>'; }
+        } catch(e) { list.innerHTML = '<li class="px-4 py-3 text-sm text-red-500">エラー</li>'; }
       } else {
         selContainer.classList.add('hidden');
-        sel.innerHTML = `<option value="${currentServerId}">${currentServerData?.name || "現在のサーバー"}</option>`;
+        hiddenSel.value = currentServerId;
+        label.textContent = currentServerData?.name || "現在のサーバー";
       }
-      sel.onchange = () => saLoadStamps(sel.value);
-      await saLoadStamps(sel.value || currentServerId);
+      await saLoadStamps(hiddenSel.value || currentServerId);
     };
 
     window.saLoadStamps = async function(targetServerId) {
       if (!targetServerId) return;
       const listEl = document.getElementById('saStampsList');
+      const existingGroupList = document.getElementById('saExistingGroupList');
+      if (existingGroupList) {
+        existingGroupList.innerHTML = '';
+        document.getElementById('saSelectedExistingGroupId').value = '';
+        document.getElementById('saExistingGroupLabel').textContent = 'グループを選択';
+      }
       listEl.innerHTML = '<p class="text-sm text-gray-500 col-span-2 text-center py-4">読み込み中...</p>';
       try {
         const [snapStamps, snapGroups] = await Promise.all([
@@ -8953,6 +9020,7 @@
         listEl.innerHTML = '';
         if (snapStamps.empty && snapGroups.empty) {
           listEl.innerHTML = '<p class="text-sm text-gray-500 col-span-2 text-center py-4">登録されているスタンプはありません。</p>';
+          if (existingGroupList) existingGroupList.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500 text-center">グループがありません</li>';
           return;
         }
         let hasAdminRights = isAdmin;
@@ -8979,7 +9047,21 @@
           `;
           listEl.appendChild(div);
         };
-        snapGroups.forEach(doc => renderGroup(doc.id, doc.data().name, doc.data().thumbnailUrl, doc.data().stamps || [], false));
+        snapGroups.forEach(doc => {
+            renderGroup(doc.id, doc.data().name, doc.data().thumbnailUrl, doc.data().stamps || [], false);
+            if (existingGroupList) {
+                const li = document.createElement('li');
+                li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 transition-colors flex items-center gap-3 border-b border-gray-100 last:border-0";
+                li.innerHTML = `<img src="${escapeHtml(doc.data().thumbnailUrl)}" class="w-6 h-6 object-contain rounded border border-gray-200"/><span>${escapeHtml(doc.data().name)}</span>`;
+                li.onclick = () => {
+                  document.getElementById('saSelectedExistingGroupId').value = doc.id;
+                  document.getElementById('saExistingGroupLabel').textContent = doc.data().name;
+                  document.getElementById('saExistingGroupDropdown').classList.add('hidden', 'opacity-0');
+                  document.getElementById('saExistingGroupIcon').classList.remove('rotate-180');
+                };
+                existingGroupList.appendChild(li);
+            }
+        });
         snapStamps.forEach(doc => renderGroup(doc.id, doc.data().name, doc.data().thumbnailUrl || doc.data().url, doc.data().stamps || [{name: doc.data().name, url: doc.data().url}], true));
       } catch(e) { listEl.innerHTML = '<p class="text-sm text-red-500 col-span-2 text-center py-4">読み込みエラーが発生しました。</p>'; }
     };
@@ -8995,6 +9077,71 @@
     };
 
     setTimeout(() => {
+      document.getElementById('saCustomSelectBtn')?.addEventListener('click', (e) => {
+        const dd = document.getElementById('saCustomSelectDropdown');
+        const icon = document.getElementById('saCustomSelectIcon');
+        if (dd.classList.contains('hidden')) {
+          dd.classList.remove('hidden');
+          setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
+        } else {
+          dd.classList.add('opacity-0');
+          icon.classList.remove('rotate-180');
+          setTimeout(() => dd.classList.add('hidden'), 200);
+        }
+      });
+      document.getElementById('saExistingGroupBtn')?.addEventListener('click', (e) => {
+        const dd = document.getElementById('saExistingGroupDropdown');
+        const icon = document.getElementById('saExistingGroupIcon');
+        if (dd.classList.contains('hidden')) {
+          dd.classList.remove('hidden');
+          setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
+        } else {
+          dd.classList.add('opacity-0');
+          icon.classList.remove('rotate-180');
+          setTimeout(() => dd.classList.add('hidden'), 200);
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#stampAdminServerSelectContainer')) {
+          const dd1 = document.getElementById('saCustomSelectDropdown');
+          if (dd1 && !dd1.classList.contains('hidden')) {
+            dd1.classList.add('opacity-0');
+            document.getElementById('saCustomSelectIcon')?.classList.remove('rotate-180');
+            setTimeout(() => dd1.classList.add('hidden'), 200);
+          }
+        }
+        if (!e.target.closest('#saSectionExisting')) {
+          const dd2 = document.getElementById('saExistingGroupDropdown');
+          if (dd2 && !dd2.classList.contains('hidden')) {
+            dd2.classList.add('opacity-0');
+            document.getElementById('saExistingGroupIcon')?.classList.remove('rotate-180');
+            setTimeout(() => dd2.classList.add('hidden'), 200);
+          }
+        }
+      });
+      const tabNew = document.getElementById('saTabNew');
+      const tabEx = document.getElementById('saTabExisting');
+      const secNew = document.getElementById('saSectionNew');
+      const secEx = document.getElementById('saSectionExisting');
+      if(tabNew && tabEx && secNew && secEx) {
+        tabNew.onclick = () => {
+          tabNew.className = "py-2 px-4 text-sm font-bold border-b-2 border-gray-800 text-gray-800 focus:outline-none transition-colors";
+          tabEx.className = "py-2 px-4 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors";
+          secNew.classList.remove('hidden');
+          secNew.classList.add('block');
+          secEx.classList.add('hidden');
+          secEx.classList.remove('block');
+        };
+        tabEx.onclick = () => {
+          tabEx.className = "py-2 px-4 text-sm font-bold border-b-2 border-gray-800 text-gray-800 focus:outline-none transition-colors";
+          tabNew.className = "py-2 px-4 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors";
+          secEx.classList.remove('hidden');
+          secEx.classList.add('block');
+          secNew.classList.add('hidden');
+          secNew.classList.remove('block');
+        };
+      }
+
       document.getElementById("saUploadBtn")?.addEventListener("click", async () => {
         const targetServerId = document.getElementById('stampAdminServerSelect').value;
         if (!targetServerId) return alertMessage("サーバーが選択されていません", "error");
@@ -9053,6 +9200,63 @@
         } catch (e) {
           console.error(e);
           alertMessage(e.message || "アップロードに失敗しました", "error");
+        } finally {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById("saAppendBtn")?.addEventListener("click", async () => {
+        const targetServerId = document.getElementById('stampAdminServerSelect').value;
+        const groupId = document.getElementById('saSelectedExistingGroupId').value;
+        if (!targetServerId) return alertMessage("サーバーが選択されていません", "error");
+        if (!groupId) return alertMessage("対象グループを選択してください", "warning");
+        const filesInput = document.getElementById("saAppendFiles");
+        const stampFiles = Array.from(filesInput.files);
+        if (stampFiles.length === 0) return alertMessage("追加するスタンプ画像を選択してください", "warning");
+
+        const btn = document.getElementById("saAppendBtn");
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>追加中...';
+        btn.disabled = true;
+
+        try {
+          const uploadedStamps = [];
+          for (let i = 0; i < stampFiles.length; i++) {
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>画像アップロード中... (${i+1}/${stampFiles.length})`;
+            if (stampFiles[i].size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+            const img = new Image();
+            const objUrl = URL.createObjectURL(stampFiles[i]);
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+            if (img.width !== img.height) {
+              URL.revokeObjectURL(objUrl);
+              throw new Error("スタンプ画像は完全な正方形である必要があります");
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+            URL.revokeObjectURL(objUrl);
+            const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+            const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+            const url = await uploadToExternalService(stampFile, () => {}, 'stamps');
+            const sName = stampFiles[i].name.replace(/\.[^/.]+$/, "");
+            uploadedStamps.push({ name: sName, url });
+          }
+
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+          const groupRef = doc(db, `artifacts/${appId}/servers/${targetServerId}/stampGroups`, groupId);
+          await updateDoc(groupRef, {
+             stamps: arrayUnion(...uploadedStamps)
+          });
+
+          filesInput.value = "";
+          alertMessage("既存グループにスタンプを追加しました", "success");
+          await saLoadStamps(targetServerId);
+          if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+        } catch (e) {
+          console.error(e);
+          alertMessage(e.message || "追加に失敗しました", "error");
         } finally {
           btn.innerHTML = originalText;
           btn.disabled = false;
@@ -10868,13 +11072,18 @@
         const oldScrollHeight = messagesDisplay.scrollHeight;
         const oldScrollTop = messagesDisplay.scrollTop;
         
+        function prependMsgToDOM(msg) {
+          const row = createMessageElement(msg, msg.id, 0);
+          messagesDisplay.prepend(row);
+        }
+
         const gapMsg = { id: `gap-${msgId}`, isGap: true, text: "中間のメッセージは省略されました", senderId: "system", timestamp: targetMsg.timestamp };
         
         allLoadedMessages.unshift(gapMsg);
-        prependMessage(gapMsg);
+        prependMsgToDOM(gapMsg);
         
         allLoadedMessages.unshift(targetMsg);
-        prependMessage(targetMsg);
+        prependMsgToDOM(targetMsg);
         
         messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
         
