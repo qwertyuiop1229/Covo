@@ -11064,9 +11064,26 @@
         
         const targetMsg = { id: docSnap.id, ...docSnap.data() };
         
-        if (targetMsg.text && isEncrypted(targetMsg.text)) {
-           const _members = (currentServerData && currentServerData.joinedUsers) || [];
-           targetMsg.text = await decryptText(targetMsg.text, currentServerId, currentRoomId, _members).catch(()=>targetMsg.text);
+        // 画面解像度から必要なメッセージ件数を動的に計算
+        const msgHeightEst = 80;
+        const fetchCount = Math.max(10, Math.ceil(window.innerHeight / msgHeightEst) * 2);
+
+        // ターゲットメッセージから過去に向かってfetchCount件を取得
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAt(targetMsg.timestamp),
+          limit(fetchCount)
+        );
+        const snap = await getDocs(q);
+        const newMsgs = [];
+        snap.forEach(doc => newMsgs.push({ id: doc.id, ...doc.data() }));
+
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        for (let i = 0; i < newMsgs.length; i++) {
+          if (newMsgs[i].text && isEncrypted(newMsgs[i].text)) {
+            newMsgs[i].text = await decryptText(newMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>newMsgs[i].text);
+          }
         }
 
         const oldScrollHeight = messagesDisplay.scrollHeight;
@@ -11082,8 +11099,11 @@
         allLoadedMessages.unshift(gapMsg);
         prependMsgToDOM(gapMsg);
         
-        allLoadedMessages.unshift(targetMsg);
-        prependMsgToDOM(targetMsg);
+        // newMsgsはdesc順(ターゲット, 1つ前, 2つ前...)なのでそのままunshift/prependすれば時系列(asc)にDOM構成される
+        for (const msg of newMsgs) {
+            allLoadedMessages.unshift(msg);
+            prependMsgToDOM(msg);
+        }
         
         messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
         
