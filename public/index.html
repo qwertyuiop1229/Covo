@@ -139,14 +139,20 @@
       text-align: center;
       margin: 1rem 0;
       width: 100%;
+      position: sticky;
+      bottom: 0.5rem;
+      z-index: 20;
+      pointer-events: none;
     }
     .date-divider-inner {
       display: inline-block;
       padding: 4px 12px;
-      background-color: rgba(0,0,0,0.2);
+      background-color: rgba(0,0,0,0.4);
+      backdrop-filter: blur(4px);
       color: #fff;
       font-size: 0.75rem;
       border-radius: 999px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     body.dark-server-theme .date-divider-inner {
       background-color: rgba(255,255,255,0.2);
@@ -4020,7 +4026,7 @@
         <div id="resizer"></div>
 
         <!-- チャットエリア -->
-        <div id="chatArea" class="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
+        <div id="chatArea" class="flex-1 flex flex-col relative bg-white dark:bg-gray-900 overflow-hidden min-w-0">
           <div id="currentRoomHeader"
             class="bg-gray-200 p-3 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center">
             <button id="mobileBackButton"
@@ -4053,7 +4059,7 @@
             </div>
             <!-- メッセージはここに動的に追加されます -->
           </div>
-          <button id="jumpModeExitBtn" class="hidden absolute bottom-6 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="window.exitJumpMode()">
+          <button id="jumpModeExitBtn" class="hidden absolute bottom-28 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all opacity-90 hover:opacity-100" onclick="window.exitJumpMode()">
             <i class="fas fa-arrow-down text-xl"></i>
           </button>
 
@@ -5228,6 +5234,13 @@
 
     const currentRoomHeader = document.getElementById("currentRoomHeader");
     const messagesDisplay = document.getElementById("messagesDisplay");
+    function clearMessagesDOM() {
+      const spinner = document.getElementById('topLoadingSpinner');
+      const endMsg = document.getElementById('endOfMessagesIndicator');
+      messagesDisplay.innerHTML = '';
+      if (spinner) messagesDisplay.appendChild(spinner);
+      if (endMsg) messagesDisplay.appendChild(endMsg);
+    }
     const messageInput = document.getElementById("messageInput");
 
     const filePreviewContainer = document.getElementById("filePreviewContainer");
@@ -5725,7 +5738,7 @@
             currentRoomId = null; currentServerId = null; currentServerData = null;
             headerTitle.textContent = "";
             currentRoomHeader.classList.add("hidden");
-            messagesDisplay.innerHTML = "";
+            clearMessagesDOM();
             messageInput.disabled = true;
             sendMessageButton.disabled = true;
             document.getElementById('callButton').disabled = true;
@@ -7831,7 +7844,7 @@
       unreadListeners = {}; unreadCounts = {};
 
       roomList.innerHTML = "";
-      messagesDisplay.innerHTML = "";
+      clearMessagesDOM();
       currentRoomHeader.classList.add("hidden");
       messageInput.disabled = true;
       sendMessageButton.disabled = true;
@@ -8442,7 +8455,7 @@
       updateUserStatus('online'); // Sync room selection for notifications
       currentRoomTitleText.textContent = roomName;
       currentRoomHeader.classList.remove("hidden");
-      messagesDisplay.innerHTML = "";
+      clearMessagesDOM();
       lastMessagesData = [];
       messageInput.disabled = false;
       fileAttachButton.disabled = false;
@@ -8525,6 +8538,14 @@
 
     messagesDisplay.addEventListener("scroll", async () => {
       if (!allowPagination) return;
+      
+      const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
+      if (isJumpMode || messagesDisplay.scrollTop > 300) {
+        jumpModeExitBtn.classList.remove("hidden");
+      } else {
+        jumpModeExitBtn.classList.add("hidden");
+      }
+
       const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
       
       // 過去への読み込み (scrollTop大=上スクロール)
@@ -8590,11 +8611,14 @@
     }
 
     window.exitJumpMode = function() {
-      if (!isJumpMode) return;
-      isJumpMode = false;
+      if (isJumpMode) {
+        isJumpMode = false;
+        isInitialMessageLoad = true;
+        subscribeToMessages();
+      } else {
+        messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
+      }
       document.getElementById('jumpModeExitBtn').classList.add('hidden');
-      isInitialMessageLoad = true;
-      subscribeToMessages();
     };
 
     // PCでのマウスホイールによるスクロール方向逆転の修正
@@ -8627,7 +8651,7 @@
         currentRoomId = null;
         updateUserStatus('online');
         currentRoomHeader.classList.add("hidden");
-        messagesDisplay.innerHTML = "";
+        clearMessagesDOM();
         messageInput.disabled = true;
         sendMessageButton.disabled = true;
         if (unsubscribeMessages) unsubscribeMessages();
@@ -8910,7 +8934,7 @@
             if (currentRoomId === btn.dataset.roomId) {
               currentRoomId = null;
               currentRoomHeader.classList.add("hidden");
-              messagesDisplay.innerHTML = "";
+              clearMessagesDOM();
               messageInput.disabled = true;
               sendMessageButton.disabled = true;
             }
@@ -10583,13 +10607,12 @@
         messagesIndexMap = {};
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
         
-        // DOM全クリアして再描画
+        // 既存のDOMとの差分で描画を更新し、spinnerなどの静的要素を温存する
         messagesDisplay.style.transition = 'none';
         messagesDisplay.style.opacity = '0';
-        messagesDisplay.innerHTML = '';
         if (spinner) {
           spinner.style.display = 'none';
-          messagesDisplay.appendChild(spinner);
+          // spinnerはそのまま
         }
         renderMessagesWithReadReceipts();
         
@@ -10635,7 +10658,7 @@
         const d = ts.toDate ? ts.toDate() : new Date(ts);
         const today = new Date();
         const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-        if (isToday) return "今日";
+        if (isToday) return null;
         const yday = new Date(today); yday.setDate(today.getDate() - 1);
         const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
         if (isYday) return "昨日";
@@ -11827,7 +11850,7 @@
       currentRoomId = null;
       if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
       if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
-      messagesDisplay.innerHTML = "";
+      clearMessagesDOM();
       lastMessagesData = [];
       messageInput.disabled = true;
       fileAttachButton.disabled = true;
