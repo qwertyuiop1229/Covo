@@ -4045,22 +4045,24 @@
           </div>
           <div id="pinnedMessagesArea" class="hidden flex-shrink-0"></div>
 
-          <!-- フローティング日付ヘッダー -->
-          <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-opacity duration-300 opacity-0" style="top: 1rem;">
-            <div id="floatingDateBadge" class="bg-black bg-opacity-40 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs shadow-md"></div>
-          </div>
-
-          <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
-            <!-- 過去メッセージ読み込みスピナー -->
-            <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
-              <div class="top-spinner"></div>
-              <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
+          <div class="relative flex-1 flex flex-col min-h-0">
+            <!-- フローティング日付ヘッダー -->
+            <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-opacity duration-300 opacity-0" style="top: 0.5rem;">
+              <div id="floatingDateBadge" class="bg-black bg-opacity-40 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs shadow-md"></div>
             </div>
-            <!-- メッセージはここに動的に追加されます -->
+
+            <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
+              <!-- 過去メッセージ読み込みスピナー -->
+              <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
+                <div class="top-spinner"></div>
+                <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
+              </div>
+              <!-- メッセージはここに動的に追加されます -->
+            </div>
+            <button id="jumpModeExitBtn" class="hidden absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all opacity-90 hover:opacity-100" onclick="window.exitJumpMode()">
+              <i class="fas fa-arrow-down text-xl"></i>
+            </button>
           </div>
-          <button id="jumpModeExitBtn" class="hidden absolute bottom-28 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all opacity-90 hover:opacity-100" onclick="window.exitJumpMode()">
-            <i class="fas fa-arrow-down text-xl"></i>
-          </button>
 
           <div id="typingIndicator" class="px-4 pb-1 text-xs text-gray-400 italic min-h-[1.25rem] hidden"></div>
           <!-- メッセージ入力エリア -->
