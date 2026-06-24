@@ -8577,20 +8577,39 @@
       const floatingContainer = document.getElementById('floatingDateContainer');
       const floatingBadge = document.getElementById('floatingDateBadge');
       if (floatingContainer && floatingBadge) {
-        let activeDivider = null;
         const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
-        const dividers = messagesDisplay.querySelectorAll('.date-divider');
+        const dividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
         
-        // すべてのディバイダーの表示をリセット
+        // 1. チャット内ディバイダーは一切いじらない（そのまま残す）
         dividers.forEach(div => {
           const inner = div.querySelector('.date-divider-inner');
           if (inner) inner.style.opacity = '1';
         });
 
+        // 2. viewTop（画面最上部）の直下に存在する「現在の日付」と、衝突しつつある「押し出し日付」を特定する
+        // DOMツリー上は上が最新(offsetTop小)、下が過去(offsetTop大)。
+        // viewTop以下のうち最もoffsetTopが大きいもの（画面最上部に位置するもの）が activeDivider となる
+        let activeDivider = null;
+        let pushingDivider = null;
+
         for (let i = 0; i < dividers.length; i++) {
-          // viewTop付近（画面上部付近）を超えたディバイダーを検知
-          if (dividers[i].offsetTop <= viewTop - 20) {
-            activeDivider = dividers[i];
+          const top = dividers[i].offsetTop;
+          if (top <= viewTop) {
+            if (!activeDivider || top > activeDivider.offsetTop) {
+              activeDivider = dividers[i];
+            }
+          }
+        }
+
+        // 次に、activeDivider の1つ新しい側（offsetTopが小さい側＝下から昇ってくる側）のディバイダーが、
+        // viewTopから下方向へ 38px 以内（バッジの高さ付近）にめり込んでいるかを判定する
+        if (activeDivider) {
+          for (let j = 0; j < dividers.length; j++) {
+            const top = dividers[j].offsetTop;
+            if (top < activeDivider.offsetTop && top > viewTop - 38) {
+              pushingDivider = dividers[j];
+              break;
+            }
           }
         }
 
@@ -8600,9 +8619,15 @@
             if (floatingBadge.textContent !== text) {
               floatingBadge.textContent = text;
             }
-            // 元のチャット内ディバイダーを透明にして、フローティング側を出す（吸着演出）
-            const activeInner = activeDivider.querySelector('.date-divider-inner');
-            if (activeInner) activeInner.style.opacity = '0';
+            
+            // 押し出しアニメーション（Sticky Pushing Replacement Effect）の計算
+            if (pushingDivider) {
+              const diff = viewTop - pushingDivider.offsetTop; // 0px 〜 38px
+              const translateY = -(diff); // ぶつかり始め(0px)から上に押し出されていく(-38px)
+              floatingContainer.style.transform = `translateY(${translateY}px)`;
+            } else {
+              floatingContainer.style.transform = `translateY(0px)`;
+            }
             
             floatingContainer.classList.remove('opacity-0');
             floatingContainer.classList.add('opacity-100');
@@ -8611,8 +8636,7 @@
             floatingDateTimer = setTimeout(() => {
               floatingContainer.classList.add('opacity-0');
               floatingContainer.classList.remove('opacity-100');
-              // フェードアウト後は元のバッジを表示状態に戻しておく
-              if (activeInner) activeInner.style.opacity = '1';
+              setTimeout(() => { floatingContainer.style.transform = `translateY(0px)`; }, 300);
             }, 1400);
           } else {
             floatingContainer.classList.add('opacity-0');
