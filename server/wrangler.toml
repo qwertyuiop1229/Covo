@@ -23,3 +23,8 @@ CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
 # [dev]
 # ローカル開発用のポート
 # port = 8787
+
+[[d1_databases]]
+binding = "DB"
+database_name = "covo-db"
+database_id = "covo-d1-db-id"

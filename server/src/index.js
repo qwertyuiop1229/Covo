@@ -52,6 +52,9 @@ export default {
       return await handleBulkDeleteFiles(request, env);
     }
 
+    if (url.pathname.startsWith("/api/d1/")) {
+      return await handleD1Api(request, env, url);
+    }
 
     return new Response(JSON.stringify({ error: "Not Found" }), {
       status: 404,
@@ -1209,5 +1212,707 @@ async function handleSetOffline(request, env) {
   } catch (error) {
     console.error("setOffline Error:", error);
     return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsSetOffline });
+  }
+}
+
+// -------------------------------------------------------------
+// Cloudflare D1 連携 API エンドポイント群
+// -------------------------------------------------------------
+async function handleD1Api(request, env, url) {
+  const origin = request.headers.get("Origin") || "*";
+  const d1Cors = {
+    ...corsHeaders,
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+  };
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: d1Cors });
+  }
+
+  if (!env.DB) {
+    return new Response(JSON.stringify({ error: "D1 database not bound to env.DB" }), { status: 500, headers: d1Cors });
+  }
+
+  // リクエスト認証 (Authorization: Bearer <ID_TOKEN>)
+  const authHeader = request.headers.get("Authorization") || "";
+  const idToken = authHeader.replace("Bearer ", "").trim();
+  let verifiedUser = null;
+  if (idToken) {
+    verifiedUser = await verifyFirebaseIdToken(idToken, env);
+  }
+
+  try {
+    const subpath = url.pathname.replace("/api/d1/", "");
+    
+    // 1. 設定管理 (settings)
+    if (subpath.startsWith("settings")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const settingId = url.searchParams.get("settingId");
+        if (!appId || !settingId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, settingId).first();
+        if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+        return new Response(JSON.stringify({ empty: false, data: JSON.parse(row.setting_data) }), { status: 200, headers: d1Cors });
+      }
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const { appId, settingId, data } = await request.json();
+        await env.DB.prepare("INSERT INTO settings (app_id, setting_id, setting_data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, setting_id) DO UPDATE SET setting_data = excluded.setting_data, updated_at = excluded.updated_at")
+          .bind(appId, settingId, JSON.stringify(data), Date.now()).run();
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 2. ユーザー情報・プロファイル・鍵管理 (users)
+    if (subpath.startsWith("users")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const userId = url.searchParams.get("userId");
+        const keyType = url.searchParams.get("keyType"); // 'keys' or 'escrowKey' etc.
+        const type = url.searchParams.get("type"); // 'profile' or 'keys' or 'user'
+        if (!appId || !userId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        
+        if (type === "keys") {
+          const row = await env.DB.prepare("SELECT key_data FROM user_private_keys WHERE user_id = ? AND app_id = ? AND key_type = ?").bind(userId, appId, keyType || 'keys').first();
+          if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+          return new Response(JSON.stringify({ empty: false, data: JSON.parse(row.key_data) }), { status: 200, headers: d1Cors });
+        }
+        // 通常のユーザー情報取得
+        const row = await env.DB.prepare("SELECT * FROM users WHERE user_id = ? AND app_id = ?").bind(userId, appId).first();
+        if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+        const data = {
+          nickname: row.nickname,
+          avatarUrl: row.avatar_url,
+          publicKeyJwk: row.public_key_jwk ? JSON.parse(row.public_key_jwk) : null,
+          fcmTokens: row.fcm_tokens ? JSON.parse(row.fcm_tokens) : []
+        };
+        return new Response(JSON.stringify({ empty: false, data }), { status: 200, headers: d1Cors });
+      }
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, userId, type, keyType, keyData, nickname, avatarUrl, publicKeyJwk, fcmToken, removeFcmToken } = body;
+        
+        if (type === "keys") {
+          await env.DB.prepare("INSERT INTO user_private_keys (user_id, app_id, key_type, key_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, app_id, key_type) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+            .bind(userId, appId, keyType || 'keys', JSON.stringify(keyData), Date.now()).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        
+        // ユーザー情報の upsert
+        const userRow = await env.DB.prepare("SELECT * FROM users WHERE user_id = ? AND app_id = ?").bind(userId, appId).first();
+        let curTokens = userRow && userRow.fcm_tokens ? JSON.parse(userRow.fcm_tokens) : [];
+        if (fcmToken && !curTokens.includes(fcmToken)) curTokens.push(fcmToken);
+        if (removeFcmToken) curTokens = curTokens.filter(t => t !== removeFcmToken);
+        
+        const nextNickname = nickname !== undefined ? nickname : (userRow ? userRow.nickname : null);
+        const nextAvatar = avatarUrl !== undefined ? avatarUrl : (userRow ? userRow.avatar_url : null);
+        const nextJwk = publicKeyJwk !== undefined ? JSON.stringify(publicKeyJwk) : (userRow ? userRow.public_key_jwk : null);
+
+        await env.DB.prepare("INSERT INTO users (user_id, app_id, nickname, avatar_url, public_key_jwk, fcm_tokens, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET nickname = excluded.nickname, avatar_url = excluded.avatar_url, public_key_jwk = excluded.public_key_jwk, fcm_tokens = excluded.fcm_tokens, updated_at = excluded.updated_at")
+          .bind(userId, appId, nextNickname, nextAvatar, nextJwk, JSON.stringify(curTokens), Date.now(), Date.now()).run();
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 3. サーバー管理 (servers)
+    if (subpath.startsWith("servers")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const serverId = url.searchParams.get("serverId");
+        const userId = url.searchParams.get("userId");
+        const type = url.searchParams.get("type"); // 'all' or 'joined' or 'list' or 'single' or 'stamps' or 'stampGroups' or 'profiles' or 'inviteCodes'
+        
+        if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: d1Cors });
+        
+        if (type === "stamps") {
+          const rows = (await env.DB.prepare("SELECT * FROM server_stamps WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows }), { status: 200, headers: d1Cors });
+        }
+        if (type === "stampGroups") {
+          const rows = (await env.DB.prepare("SELECT * FROM server_stamp_groups WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.group_id, data: JSON.parse(r.group_data) })) }), { status: 200, headers: d1Cors });
+        }
+        if (type === "inviteCodes") {
+          const rows = (await env.DB.prepare("SELECT * FROM server_invite_codes WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows }), { status: 200, headers: d1Cors });
+        }
+        if (type === "inviteIndex") {
+          const code = url.searchParams.get("code");
+          const row = await env.DB.prepare("SELECT server_id FROM server_invite_codes WHERE code = ? AND app_id = ?").bind(code, appId).first();
+          if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+          return new Response(JSON.stringify({ empty: false, data: { serverId: row.server_id } }), { status: 200, headers: d1Cors });
+        }
+        if (type === "profiles") {
+          if (userId) {
+            const row = await env.DB.prepare("SELECT profile_data FROM server_profiles WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, userId, appId).first();
+            if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+            return new Response(JSON.stringify({ empty: false, data: JSON.parse(row.profile_data) }), { status: 200, headers: d1Cors });
+          }
+          const rows = (await env.DB.prepare("SELECT user_id, profile_data FROM server_profiles WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.user_id, data: JSON.parse(r.profile_data) })) }), { status: 200, headers: d1Cors });
+        }
+        
+        if (serverId) {
+          // 単一サーバー取得
+          const row = await env.DB.prepare("SELECT * FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+          const data = row.server_data ? JSON.parse(row.server_data) : {};
+          data.name = row.name;
+          data.description = row.description;
+          data.isPublic = row.is_public === 1;
+          data.memberCount = row.member_count;
+          // joinedUsers 配列の復元
+          const joinedRows = (await env.DB.prepare("SELECT user_id FROM server_joined_users WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+          data.joinedUsers = joinedRows.map(r => r.user_id);
+          return new Response(JSON.stringify({ empty: false, id: row.server_id, data }), { status: 200, headers: d1Cors });
+        }
+        
+        // サーバー一覧取得
+        let rows = [];
+        if (userId) {
+          rows = (await env.DB.prepare("SELECT s.* FROM servers s JOIN server_joined_users j ON s.server_id = j.server_id WHERE j.user_id = ? AND s.app_id = ?").bind(userId, appId).all()).results;
+        } else {
+          rows = (await env.DB.prepare("SELECT * FROM servers WHERE app_id = ?").bind(appId).all()).results;
+        }
+        
+        const docs = [];
+        for (const r of rows) {
+          const d = r.server_data ? JSON.parse(r.server_data) : {};
+          d.name = r.name;
+          d.description = r.description;
+          d.isPublic = r.is_public === 1;
+          d.memberCount = r.member_count;
+          const jRows = (await env.DB.prepare("SELECT user_id FROM server_joined_users WHERE server_id = ? AND app_id = ?").bind(r.server_id, appId).all()).results;
+          d.joinedUsers = jRows.map(jr => jr.user_id);
+          docs.push({ id: r.server_id, data: d });
+        }
+        return new Response(JSON.stringify({ empty: docs.length === 0, docs }), { status: 200, headers: d1Cors });
+      }
+
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, serverId, type, name, description, isPublic, data, passwordHash, userId, profileData, stampId, stampName, stampUrl, groupId, groupData, code, inviteData, deleteFieldVal } = body;
+        
+        if (type === "create" || type === "update") {
+          const cur = await env.DB.prepare("SELECT server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          let mergedData = cur && cur.server_data ? JSON.parse(cur.server_data) : {};
+          if (data) mergedData = { ...mergedData, ...data };
+          if (deleteFieldVal && mergedData[deleteFieldVal] !== undefined) delete mergedData[deleteFieldVal];
+          
+          const nextName = name !== undefined ? name : (mergedData.name || "Untitled");
+          const nextDesc = description !== undefined ? description : (mergedData.description || "");
+          const nextPub = isPublic !== undefined ? (isPublic ? 1 : 0) : (mergedData.isPublic ? 1 : 0);
+          const memberCount = cur ? cur.member_count : 1;
+
+          await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
+            .bind(serverId, appId, nextName, nextDesc, nextPub, verifiedUser.uid, Date.now(), memberCount, JSON.stringify(mergedData)).run();
+          
+          if (userId && type === "create") {
+            await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
+          }
+          if (passwordHash) {
+            await env.DB.prepare("INSERT INTO server_secrets (server_id, app_id, password_hash, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at")
+              .bind(serverId, appId, passwordHash, Date.now()).run();
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        
+        if (type === "join") {
+          const { password, inviteCode } = body;
+          if (password) {
+            const sec = await env.DB.prepare("SELECT password_hash FROM server_secrets WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+            if (!sec || sec.password_hash !== password) {
+              return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: d1Cors });
+            }
+          } else if (inviteCode) {
+            const inv = await env.DB.prepare("SELECT * FROM server_invite_codes WHERE code = ? AND server_id = ? AND app_id = ?").bind(inviteCode, serverId, appId).first();
+            if (!inv || inv.disabled === 1) {
+              return new Response(JSON.stringify({ success: false, error: "Invalid or disabled invite code" }), { status: 404, headers: d1Cors });
+            }
+            if (inv.expires_at && inv.expires_at < Date.now()) {
+              return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: d1Cors });
+            }
+            if (inv.max_uses > 0 && inv.uses >= inv.max_uses) {
+              return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: d1Cors });
+            }
+            await env.DB.prepare("UPDATE server_invite_codes SET uses = uses + 1 WHERE code = ?").bind(inviteCode).run();
+          } else {
+            return new Response(JSON.stringify({ success: false, error: "Auth required" }), { status: 400, headers: d1Cors });
+          }
+          
+          await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
+          await env.DB.prepare("UPDATE servers SET member_count = member_count + 1 WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "leave") {
+          await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, userId, appId).run();
+          await env.DB.prepare("UPDATE servers SET member_count = MAX(1, member_count - 1) WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "profile") {
+          await env.DB.prepare("INSERT INTO server_profiles (server_id, user_id, app_id, profile_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(server_id, user_id) DO UPDATE SET profile_data = excluded.profile_data, updated_at = excluded.updated_at")
+            .bind(serverId, userId, appId, JSON.stringify(profileData), Date.now()).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "stamp") {
+          await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(stampId, serverId || "general", appId, stampName || "", stampUrl || "", verifiedUser.uid, Date.now()).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "stampGroup") {
+          await env.DB.prepare("INSERT OR REPLACE INTO server_stamp_groups (group_id, server_id, app_id, group_data, created_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(groupId, serverId, appId, JSON.stringify(groupData), Date.now()).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "inviteCode") {
+          await env.DB.prepare("INSERT OR REPLACE INTO server_invite_codes (code, server_id, app_id, created_by, created_at, expires_at, uses, max_uses, disabled, invite_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(code, serverId, appId, verifiedUser.uid, Date.now(), inviteData.expiresAt || null, inviteData.uses || 0, inviteData.maxUses || 0, inviteData.disabled ? 1 : 0, JSON.stringify(inviteData)).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        return new Response(JSON.stringify({ error: "Unknown action type" }), { status: 400, headers: d1Cors });
+      }
+
+      if (request.method === "DELETE") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const appId = url.searchParams.get("appId");
+        const serverId = url.searchParams.get("serverId");
+        const type = url.searchParams.get("type"); // 'server' or 'inviteCode' or 'stamp'
+        if (type === "inviteCode") {
+          const code = url.searchParams.get("code");
+          await env.DB.prepare("DELETE FROM server_invite_codes WHERE code = ? AND app_id = ?").bind(code, appId).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        if (type === "stamp") {
+          const stampId = url.searchParams.get("stampId");
+          await env.DB.prepare("DELETE FROM server_stamps WHERE stamp_id = ? AND app_id = ?").bind(stampId, appId).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        // サーバー削除
+        await env.DB.prepare("DELETE FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+        await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+        await env.DB.prepare("DELETE FROM rooms WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+        await env.DB.prepare("DELETE FROM messages WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 4. ルーム管理 (rooms)
+    if (subpath.startsWith("rooms")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const serverId = url.searchParams.get("serverId");
+        const roomId = url.searchParams.get("roomId");
+        const type = url.searchParams.get("type"); // 'list' or 'single' or 'keys'
+        if (!appId || !serverId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        
+        if (type === "keys") {
+          const rows = (await env.DB.prepare("SELECT user_id, key_data FROM room_keys WHERE room_id = ? AND app_id = ?").bind(roomId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.user_id, data: JSON.parse(r.key_data) })) }), { status: 200, headers: d1Cors });
+        }
+        if (roomId) {
+          const row = await env.DB.prepare("SELECT * FROM rooms WHERE room_id = ? AND server_id = ? AND app_id = ?").bind(roomId, serverId, appId).first();
+          if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+          const data = row.room_data ? JSON.parse(row.room_data) : {};
+          data.name = row.name;
+          data.type = row.type;
+          data.currentKeyVersion = row.current_key_version;
+          return new Response(JSON.stringify({ empty: false, id: row.room_id, data }), { status: 200, headers: d1Cors });
+        }
+        
+        const rows = (await env.DB.prepare("SELECT * FROM rooms WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
+        const docs = rows.map(r => {
+          const d = r.room_data ? JSON.parse(r.room_data) : {};
+          d.name = r.name;
+          d.type = r.type;
+          d.currentKeyVersion = r.current_key_version;
+          return { id: r.room_id, data: d };
+        });
+        return new Response(JSON.stringify({ empty: docs.length === 0, docs }), { status: 200, headers: d1Cors });
+      }
+
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, serverId, roomId, type, name, roomType, data, keys, currentKeyVersion } = body;
+        
+        if (type === "create" || type === "update") {
+          const cur = await env.DB.prepare("SELECT room_data, current_key_version FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).first();
+          let mergedData = cur && cur.room_data ? JSON.parse(cur.room_data) : {};
+          if (data) mergedData = { ...mergedData, ...data };
+          const nextName = name !== undefined ? name : (mergedData.name || "General");
+          const nextType = roomType !== undefined ? roomType : (mergedData.type || "chat");
+          const nextVer = currentKeyVersion !== undefined ? currentKeyVersion : (cur ? cur.current_key_version : 1);
+
+          await env.DB.prepare("INSERT INTO rooms (room_id, server_id, app_id, name, type, created_by, created_at, current_key_version, room_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET name = excluded.name, type = excluded.type, current_key_version = excluded.current_key_version, room_data = excluded.room_data")
+            .bind(roomId, serverId, appId, nextName, nextType, verifiedUser.uid, Date.now(), nextVer, JSON.stringify(mergedData)).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "keys") {
+          // roomKeys 一括更新 (writeBatchの代わり)
+          for (const kObj of keys) {
+            await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+              .bind(roomId, kObj.userId, serverId, appId, JSON.stringify(kObj.keyData), Date.now()).run();
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+      }
+
+      if (request.method === "DELETE") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const appId = url.searchParams.get("appId");
+        const roomId = url.searchParams.get("roomId");
+        await env.DB.prepare("DELETE FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
+        await env.DB.prepare("DELETE FROM messages WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
+        await env.DB.prepare("DELETE FROM room_keys WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 5. メッセージ管理＆RTDB通知 (messages)
+    if (subpath.startsWith("messages")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const roomId = url.searchParams.get("roomId");
+        const messageId = url.searchParams.get("messageId");
+        if (!appId || !roomId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        
+        if (messageId) {
+          const row = await env.DB.prepare("SELECT * FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
+          if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+          const data = row.additional_data ? JSON.parse(row.additional_data) : {};
+          data.text = row.text;
+          data.senderId = row.sender_id;
+          data.createdAt = row.created_at;
+          data.isPinned = row.is_pinned === 1;
+          data.reactions = row.reactions ? JSON.parse(row.reactions) : {};
+          return new Response(JSON.stringify({ empty: false, id: row.message_id, data }), { status: 200, headers: d1Cors });
+        }
+        
+        const rows = (await env.DB.prepare("SELECT * FROM messages WHERE room_id = ? AND app_id = ? ORDER BY created_at ASC").bind(roomId, appId).all()).results;
+        const docs = rows.map(r => {
+          const d = r.additional_data ? JSON.parse(r.additional_data) : {};
+          d.text = r.text;
+          d.senderId = r.sender_id;
+          d.createdAt = r.created_at;
+          d.isPinned = r.is_pinned === 1;
+          d.reactions = r.reactions ? JSON.parse(r.reactions) : {};
+          return { id: r.message_id, data: d };
+        });
+        return new Response(JSON.stringify({ empty: docs.length === 0, docs }), { status: 200, headers: d1Cors });
+      }
+
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, serverId, roomId, messageId, type, data, isPinned, reactionUserId, reactionEmoji } = body;
+        
+        if (type === "add") {
+          const text = data.text || "";
+          const created_at = data.createdAt || Date.now();
+          const senderId = data.senderId || verifiedUser.uid;
+          const additionalData = { ...data };
+          delete additionalData.text; delete additionalData.createdAt; delete additionalData.senderId;
+          
+          await env.DB.prepare("INSERT INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, 0, '{}', ?)")
+            .bind(messageId, roomId, serverId, appId, senderId, text, created_at, JSON.stringify(additionalData)).run();
+          
+          // ★★★ RTDB へ通知をPUT (リアルタイムプッシュ) ★★★
+          if (env.SERVICE_ACCOUNT_JSON) {
+            try {
+              const projectId = env.FIREBASE_PROJECT_ID;
+              const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+              const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+              const notifyData = {
+                messageId,
+                roomId,
+                senderId,
+                text,
+                createdAt: created_at,
+                data: data
+              };
+              await fetch(`${rtdbUrl}/rooms/${roomId}/latestMessage.json?access_token=${rtdbToken}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(notifyData)
+              });
+            } catch (rtdbErr) { console.error("RTDB Notify Error:", rtdbErr); }
+          }
+          
+          return new Response(JSON.stringify({ success: true, id: messageId }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "pin") {
+          await env.DB.prepare("UPDATE messages SET is_pinned = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(isPinned ? 1 : 0, messageId, roomId, appId).run();
+          // ピン留め変更もRTDBへ通知
+          if (env.SERVICE_ACCOUNT_JSON) {
+            try {
+              const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+              const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+              await fetch(`${rtdbUrl}/rooms/${roomId}/latestPin.json?access_token=${rtdbToken}`, {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId, isPinned, updatedAt: Date.now() })
+              });
+            } catch(e){}
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+
+        if (type === "reaction") {
+          const row = await env.DB.prepare("SELECT reactions FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
+          if (!row) return new Response(JSON.stringify({ error: "Message not found" }), { status: 404, headers: d1Cors });
+          const rx = row.reactions ? JSON.parse(row.reactions) : {};
+          if (!reactionEmoji) { delete rx[reactionUserId]; } else { rx[reactionUserId] = reactionEmoji; }
+          await env.DB.prepare("UPDATE messages SET reactions = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(JSON.stringify(rx), messageId, roomId, appId).run();
+          
+          // リアクション変更もRTDBへ通知
+          if (env.SERVICE_ACCOUNT_JSON) {
+            try {
+              const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+              const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+              await fetch(`${rtdbUrl}/rooms/${roomId}/latestReaction.json?access_token=${rtdbToken}`, {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId, reactions: rx, updatedAt: Date.now() })
+              });
+            } catch(e){}
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+      }
+
+      if (request.method === "DELETE") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const appId = url.searchParams.get("appId");
+        const roomId = url.searchParams.get("roomId");
+        const messageId = url.searchParams.get("messageId");
+        await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).run();
+        // 削除通知
+        if (env.SERVICE_ACCOUNT_JSON) {
+          try {
+            const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+            const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+            await fetch(`${rtdbUrl}/rooms/${roomId}/latestDelete.json?access_token=${rtdbToken}`, {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId, updatedAt: Date.now() })
+            });
+          } catch(e){}
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 6. 既読＆タイピング (activity)
+    if (subpath.startsWith("activity")) {
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, serverId, roomId, userId, nickname, type, lastReadMessageId } = body;
+        
+        if (type === "read") {
+          await env.DB.prepare("INSERT INTO read_receipts (room_id, user_id, server_id, app_id, last_read_at, last_read_message_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at, last_read_message_id = excluded.last_read_message_id")
+            .bind(roomId, userId, serverId, appId, Date.now(), lastReadMessageId || "").run();
+          await env.DB.prepare("INSERT INTO user_read_states (user_id, app_id, room_id, last_read_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, app_id, room_id) DO UPDATE SET last_read_at = excluded.last_read_at")
+            .bind(userId, appId, roomId, Date.now()).run();
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        
+        if (type === "typing") {
+          // タイピング状態は RTDB に直接 PUT
+          if (env.SERVICE_ACCOUNT_JSON) {
+            try {
+              const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+              const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+              await fetch(`${rtdbUrl}/rooms/${roomId}/typing/${userId}.json?access_token=${rtdbToken}`, {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname, updatedAt: Date.now() })
+              });
+            } catch(e){}
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+      }
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const roomId = url.searchParams.get("roomId");
+        const userId = url.searchParams.get("userId");
+        const type = url.searchParams.get("type"); // 'receipts' or 'readStates'
+        if (type === "receipts") {
+          const rows = (await env.DB.prepare("SELECT user_id, last_read_at, last_read_message_id FROM read_receipts WHERE room_id = ? AND app_id = ?").bind(roomId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.user_id, data: { lastReadAt: r.last_read_at, lastReadMessageId: r.last_read_message_id } })) }), { status: 200, headers: d1Cors });
+        }
+        if (type === "readStates") {
+          const rows = (await env.DB.prepare("SELECT room_id, last_read_at FROM user_read_states WHERE user_id = ? AND app_id = ?").bind(userId, appId).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.room_id, data: { lastReadAt: r.last_read_at } })) }), { status: 200, headers: d1Cors });
+        }
+      }
+    }
+
+    // 7. WebRTC シグナリング (webrtc)
+    if (subpath.startsWith("webrtc")) {
+      if (request.method === "GET") {
+        const appId = url.searchParams.get("appId");
+        const id = url.searchParams.get("id"); // callId or fsId
+        const type = url.searchParams.get("type"); // 'call' or 'fs' or 'candidates'
+        const candType = url.searchParams.get("candType");
+        if (!appId || !id) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        
+        if (type === "candidates") {
+          const table = url.searchParams.get("for") === "fs" ? "webrtc_fileshare_candidates" : "webrtc_call_candidates";
+          const idCol = url.searchParams.get("for") === "fs" ? "fs_id" : "call_id";
+          const rows = (await env.DB.prepare(`SELECT candidate_id, candidate_data FROM ${table} WHERE ${idCol} = ? AND app_id = ? AND candidate_type = ?`).bind(id, appId, candType).all()).results;
+          return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.candidate_id, data: JSON.parse(r.candidate_data) })) }), { status: 200, headers: d1Cors });
+        }
+        
+        const table = type === "fs" ? "webrtc_fileshares" : "webrtc_calls";
+        const idCol = type === "fs" ? "fs_id" : "call_id";
+        const dataCol = type === "fs" ? "fs_data" : "call_data";
+        const row = await env.DB.prepare(`SELECT ${dataCol} FROM ${table} WHERE ${idCol} = ? AND app_id = ?`).bind(id, appId).first();
+        if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
+        return new Response(JSON.stringify({ empty: false, id, data: JSON.parse(row[dataCol]) }), { status: 200, headers: d1Cors });
+      }
+
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, id, type, candType, data, candidate } = body;
+        
+        if (type === "candidate") {
+          const table = body.for === "fs" ? "webrtc_fileshare_candidates" : "webrtc_call_candidates";
+          const idCol = body.for === "fs" ? "fs_id" : "call_id";
+          const candId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          await env.DB.prepare(`INSERT INTO ${table} (candidate_id, ${idCol}, app_id, candidate_type, candidate_data, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+            .bind(candId, id, appId, candType, JSON.stringify(candidate), Date.now()).run();
+          
+          // RTDBへ候補通知
+          if (env.SERVICE_ACCOUNT_JSON) {
+            try {
+              const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+              const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+              await fetch(`${rtdbUrl}/webrtc/${id}/${candType}.json?access_token=${rtdbToken}`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: candId, candidate })
+              });
+            } catch(e){}
+          }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        
+        const table = type === "fs" ? "webrtc_fileshares" : "webrtc_calls";
+        const idCol = type === "fs" ? "fs_id" : "call_id";
+        const dataCol = type === "fs" ? "fs_data" : "call_data";
+        
+        const cur = await env.DB.prepare(`SELECT ${dataCol} FROM ${table} WHERE ${idCol} = ? AND app_id = ?`).bind(id, appId).first();
+        let mergedData = cur && cur[dataCol] ? JSON.parse(cur[dataCol]) : {};
+        if (data) mergedData = { ...mergedData, ...data };
+        
+        await env.DB.prepare(`INSERT INTO ${table} (${idCol}, app_id, ${dataCol}, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(${idCol}) DO UPDATE SET ${dataCol} = excluded.${dataCol}, updated_at = excluded.updated_at`)
+          .bind(id, appId, JSON.stringify(mergedData), Date.now(), Date.now()).run();
+        
+        // RTDBへシグナリング状態通知
+        if (env.SERVICE_ACCOUNT_JSON) {
+          try {
+            const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+            const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+            await fetch(`${rtdbUrl}/webrtc/${id}/data.json?access_token=${rtdbToken}`, {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mergedData)
+            });
+          } catch(e){}
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+      }
+    }
+
+    // 8. 全データ一括マイグレーション (migrate)
+    if (subpath.startsWith("migrate")) {
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, migrateType, data } = body;
+        
+        if (migrateType === "users" && Array.isArray(data)) {
+          for (const u of data) {
+            try {
+              await env.DB.prepare("INSERT INTO users (user_id, app_id, nickname, avatar_url, public_key_jwk, fcm_tokens, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET nickname = excluded.nickname, avatar_url = excluded.avatar_url, public_key_jwk = excluded.public_key_jwk, fcm_tokens = excluded.fcm_tokens, updated_at = excluded.updated_at")
+                .bind(u.id, appId, u.nickname || null, u.avatarUrl || null, u.publicKeyJwk ? JSON.stringify(u.publicKeyJwk) : null, JSON.stringify(u.fcmTokens || []), Date.now(), Date.now()).run();
+            } catch(e){ console.warn("Migrate user err:", e); }
+          }
+          return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
+        }
+        if (migrateType === "servers" && Array.isArray(data)) {
+          for (const s of data) {
+            try {
+              const merged = { ...s };
+              delete merged.id; delete merged.joinedUsers; delete merged.rooms;
+              await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
+                .bind(s.id, appId, s.name || "Untitled", s.description || "", s.isPublic ? 1 : 0, verifiedUser.uid, Date.now(), (s.joinedUsers || []).length || 1, JSON.stringify(merged)).run();
+              if (Array.isArray(s.joinedUsers)) {
+                for (const uid of s.joinedUsers) {
+                  try {
+                    await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(s.id, uid, appId, Date.now()).run();
+                  } catch(e){ console.warn("Migrate joinedUser err:", e); }
+                }
+              }
+            } catch(e){ console.warn("Migrate server err:", e); }
+          }
+          return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
+        }
+        if (migrateType === "rooms" && Array.isArray(data)) {
+          for (const r of data) {
+            try {
+              const merged = { ...r };
+              delete merged.id; delete merged.serverId; delete merged.messages; delete merged.roomKeys;
+              await env.DB.prepare("INSERT INTO rooms (room_id, server_id, app_id, name, type, created_by, created_at, current_key_version, room_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET name = excluded.name, type = excluded.type, current_key_version = excluded.current_key_version, room_data = excluded.room_data")
+                .bind(r.id, r.serverId, appId, r.name || "General", r.type || "chat", verifiedUser.uid, Date.now(), r.currentKeyVersion || 1, JSON.stringify(merged)).run();
+              if (Array.isArray(r.roomKeys)) {
+                for (const k of r.roomKeys) {
+                  try {
+                    await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+                      .bind(r.id, k.userId, r.serverId, appId, JSON.stringify(k.keyData), Date.now()).run();
+                  } catch(e){ console.warn("Migrate roomKey err:", e); }
+                }
+              }
+            } catch(e){ console.warn("Migrate room err:", e); }
+          }
+          return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
+        }
+        if (migrateType === "messages" && Array.isArray(data)) {
+          for (const m of data) {
+            try {
+              const merged = { ...m };
+              delete merged.id; delete merged.roomId; delete merged.serverId; delete merged.text; delete merged.senderId; delete merged.createdAt; delete merged.isPinned; delete merged.reactions;
+              await env.DB.prepare("INSERT OR REPLACE INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(m.id, m.roomId, m.serverId, appId, m.senderId || verifiedUser.uid, m.text || "", m.createdAt || Date.now(), m.isPinned ? 1 : 0, JSON.stringify(m.reactions || {}), JSON.stringify(merged)).run();
+            } catch(e){ console.warn("Migrate message err:", e); }
+          }
+          return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
+        }
+        if (migrateType === "stamps" && Array.isArray(data)) {
+          for (const st of data) {
+            try {
+              await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                .bind(st.id, st.serverId || "general", appId, st.name || "", st.url || "", verifiedUser.uid, Date.now()).run();
+            } catch(e){ console.warn("Migrate stamp err:", e); }
+          }
+          return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
+        }
+        if (migrateType === "settings") {
+          try {
+            await env.DB.prepare("INSERT INTO settings (app_id, setting_id, setting_data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, setting_id) DO UPDATE SET setting_data = excluded.setting_data, updated_at = excluded.updated_at")
+              .bind(appId, data.settingId || "escrowKey", JSON.stringify(data), Date.now()).run();
+          } catch(e){ console.warn("Migrate setting err:", e); }
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+        }
+        return new Response(JSON.stringify({ error: "Invalid migrate payload" }), { status: 400, headers: d1Cors });
+      }
+    }
+
+    return new Response(JSON.stringify({ error: "Unknown D1 API subpath" }), { status: 404, headers: d1Cors });
+  } catch (err) {
+    console.error("D1 API Error:", err);
+    return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 500, headers: d1Cors });
   }
 }

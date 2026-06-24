@@ -3876,6 +3876,20 @@
               <div id="admintoolsSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">管理者ツール</div>
                 <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
+                  <div class="flex justify-between items-center bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                    <div>
+                      <div class="text-sm font-bold text-indigo-900">🧪 D1バックエンド検証モード</div>
+                      <div class="text-xs text-indigo-700 mt-1">Cloudflare D1 + Workers + RTDB を使用します (管理者専用)</div>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="pcToggleD1Mode" onchange="toggleD1Mode(this.checked)"><span class="toggle-slider"></span></label>
+                  </div>
+                  <div class="flex justify-between items-center bg-amber-50 p-4 rounded-xl border border-amber-200">
+                    <div>
+                      <div class="text-sm font-bold text-amber-900">🚀 FirestoreからD1へ全データ一括移行</div>
+                      <div class="text-xs text-amber-700 mt-1">既存の全データを読み込み、Cloudflare D1へ安全に移行・格納します</div>
+                    </div>
+                    <button onclick="startFirestoreToD1Migration()" style="padding:8px 16px;background:#d97706;color:white;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer;box-shadow:0 2px 4px rgba(217,119,6,0.2);">一括移行</button>
+                  </div>
                   <div class="flex justify-between items-center">
                     <div>
                       <div class="text-sm font-bold text-gray-800">要素を検査</div>
@@ -4975,6 +4989,10 @@
 
     async function _backupKeysToFirestore(privJwk, pubJwk) {
       if (!userId) return;
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        await backupD1Keys(privJwk, pubJwk);
+        return;
+      }
       // 公開鍵を users/{uid} に（全員が読めてOK）
       try {
         await setDoc(doc(db, `artifacts/${appId}/users/${userId}`), { publicKeyJwk: pubJwk }, { merge: true });
@@ -4989,6 +5007,10 @@
     // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き）。無ければnull。
     async function _getUserPublicKey(uid) {
       if (_e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        const key = await getD1UserPublicKey(uid);
+        if (key) { _e2ee.pubKeyCache[uid] = key; return key; }
+      }
       try {
         const snap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}`));
         const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
@@ -5001,6 +5023,10 @@
 
     // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
     async function _getEscrowPublicKey() {
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        const key = await getD1EscrowPublicKey();
+        if (key) return key;
+      }
       try {
         const snap = await getDoc(doc(db, `artifacts/${appId}/settings/escrowKey`));
         const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
@@ -5015,6 +5041,25 @@
     async function ensureEscrowKey() {
       if (!_subtleOK || !userId || !isAdmin) return;
       try {
+        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+          const d1Key = await getD1EscrowPublicKey();
+          if (d1Key) return;
+          const pair = await _genUserKeyPair();
+          const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
+          const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, userId, type: "keys", keyType: "escrowKey", keyData: { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: Date.now() } })
+          });
+          await fetch(`${WORKER_BASE_URL}/api/d1/settings`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, settingId: "escrowKey", data: { publicKeyJwk: pubJwk, createdBy: userId, updatedAt: Date.now() } })
+          });
+          console.log("[E2EE] D1エスクロー鍵を生成しました");
+          return;
+        }
+
         const escrowRef = doc(db, `artifacts/${appId}/settings/escrowKey`);
         const snap = await getDoc(escrowRef);
         if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
@@ -5043,12 +5088,18 @@
         return null;
       }
 
-      // 1) 自分宛のwrapped room keyがFirestoreにあるかをまずチェック
+      // 1) 自分宛のwrapped room keyがFirestore/D1にあるかをまずチェック
       try {
-        const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
-        const myWrapSnap = await getDoc(myWrapRef);
-        if (myWrapSnap.exists()) {
-          const data = myWrapSnap.data();
+        let data = null;
+        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+          data = await getD1RoomKeyForUser(serverId, roomId);
+        } else {
+          const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
+          const myWrapSnap = await getDoc(myWrapRef);
+          if (myWrapSnap.exists()) data = myWrapSnap.data();
+        }
+
+        if (data) {
           const versions = data.versions || {};
           if (data.wrappedKey && !versions["1"]) versions["1"] = data.wrappedKey; // migration
           
@@ -5106,6 +5157,32 @@
     async function rotateAllRoomKeys(serverId, remainingMembers) {
        if (!_subtleOK) return;
        try {
+         if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+           const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
+           const data = await res.json();
+           if (!data.empty && data.docs) {
+             const promises = [];
+             for (const rDoc of data.docs) {
+               const roomId = rDoc.id;
+               promises.push((async () => {
+                 let nextVer = (rDoc.data.currentKeyVersion || 1) + 1;
+                 const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+                 const raw = await window.crypto.subtle.exportKey("raw", key);
+                 await _distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
+                 await fetch(`${WORKER_BASE_URL}/api/d1/rooms`, {
+                   method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                   body: JSON.stringify({ appId, serverId, roomId, type: "update", currentKeyVersion: nextVer })
+                 });
+                 delete _e2ee.roomKeyCache[roomId];
+               })());
+             }
+             await Promise.all(promises);
+             console.log(`[E2EE] All D1 room keys rotated for server ${serverId}`);
+           }
+           return;
+         }
+
          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
          const promises = [];
          roomsSnap.forEach(roomSnap => {
@@ -5129,61 +5206,85 @@
 
     async function _distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
       const ids = Array.from(new Set([...(memberIds || []), userId]));
+      const isD1 = isAdmin && localStorage.getItem('covo_use_d1') === '1';
       const writes = [];
+      const d1Keys = [];
       for (const uid of ids) {
         const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
         if (!pub) continue; 
         try {
           const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
-          writes.push(setDoc(
-            doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-            { 
-               [`versions.${version}`]: _abToB64(wrapped),
-               latestVersion: version,
-               wrappedKey: _abToB64(wrapped), // fallback
-               updatedAt: serverTimestamp() 
-            }, { merge: true }
-          ));
+          if (isD1) {
+            d1Keys.push({ userId: uid, keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
+          } else {
+            writes.push(setDoc(
+              doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+              { 
+                 [`versions.${version}`]: _abToB64(wrapped),
+                 latestVersion: version,
+                 wrappedKey: _abToB64(wrapped), // fallback
+                 updatedAt: serverTimestamp() 
+              }, { merge: true }
+            ));
+          }
         } catch (e) {}
       }
       const escrowPub = await _getEscrowPublicKey();
       if (escrowPub) {
         try {
           const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
-          writes.push(setDoc(
-            doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
-            { 
-               [`versions.${version}`]: _abToB64(wrapped),
-               latestVersion: version,
-               wrappedKey: _abToB64(wrapped),
-               updatedAt: serverTimestamp() 
-            }, { merge: true }
-          ));
+          if (isD1) {
+            d1Keys.push({ userId: "__escrow__", keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
+          } else {
+            writes.push(setDoc(
+              doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
+              { 
+                 [`versions.${version}`]: _abToB64(wrapped),
+                 latestVersion: version,
+                 wrappedKey: _abToB64(wrapped),
+                 updatedAt: serverTimestamp() 
+              }, { merge: true }
+            ));
+          }
         } catch (e) {}
       }
-      await Promise.all(writes);
+      if (isD1 && d1Keys.length > 0) {
+        await saveD1RoomKeys(serverId, roomId, d1Keys);
+      } else {
+        await Promise.all(writes);
+      }
     }
+
 
     async function backfillRoomKeysForMembers(serverId, roomId, memberIds) {
       if (!_subtleOK || !userId) return;
       try {
+        const isD1 = isAdmin && localStorage.getItem('covo_use_d1') === '1';
         const roomKeyObj = _e2ee.roomKeyCache[roomId];
         if (!roomKeyObj) return; 
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion') continue;
           const rawKey = await window.crypto.subtle.exportKey("raw", roomKeyObj[ver]);
           const ids = Array.from(new Set(memberIds || []));
+          const d1Keys = [];
           for (const uid of ids) {
             try {
               const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
               if (!pub) continue; 
               const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
-              await setDoc(
-                doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-                { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: serverTimestamp() }, 
-                { merge: true }
-              );
+              if (isD1) {
+                d1Keys.push({ userId: uid, keyData: { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: Date.now() } });
+              } else {
+                await setDoc(
+                  doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+                  { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: serverTimestamp() }, 
+                  { merge: true }
+                );
+              }
             } catch (e) { }
+          }
+          if (isD1 && d1Keys.length > 0) {
+            await saveD1RoomKeys(serverId, roomId, d1Keys);
           }
         }
       } catch (e) {}
@@ -7682,6 +7783,384 @@
       return _rtdb;
     }
 
+    // =========================================================================
+    // Cloudflare D1 + Workers + RTDB 並行稼働・検証システム
+    // =========================================================================
+    window.toggleD1Mode = function(checked) {
+      if (!isAdmin) return;
+      localStorage.setItem('covo_use_d1', checked ? '1' : '0');
+      const pcToggle = document.getElementById('pcToggleD1Mode');
+      const mobToggle = document.getElementById('mobileToggleD1Mode');
+      if (pcToggle) pcToggle.checked = checked;
+      if (mobToggle) mobToggle.checked = checked;
+      alertMessage(checked ? "🧪 D1バックエンド検証モードを有効にしました" : "🔥 Firebase Firestoreモードに戻しました", "success");
+      setTimeout(() => location.reload(), 600);
+    };
+
+    // 画面読み込み時にトグルの状態を反映
+    document.addEventListener("DOMContentLoaded", () => {
+      const useD1 = localStorage.getItem('covo_use_d1') === '1';
+      setTimeout(() => {
+        const pcToggle = document.getElementById('pcToggleD1Mode');
+        const mobToggle = document.getElementById('mobileToggleD1Mode');
+        if (pcToggle) pcToggle.checked = useD1;
+        if (mobToggle) mobToggle.checked = useD1;
+      }, 1000);
+    });
+
+    let _d1CurrentRealtimeUnsubs = [];
+    async function initD1RealtimeListeners(roomId) {
+      while (_d1CurrentRealtimeUnsubs.length > 0) {
+        const unsub = _d1CurrentRealtimeUnsubs.pop();
+        if (typeof unsub === 'function') unsub();
+      }
+      try {
+        const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        
+        const msgRef = ref(rtdb, `rooms/${roomId}/latestMessage`);
+        const unsubMsg = onValue(msgRef, (snap) => {
+          if (snap.exists()) {
+            // 新しいメッセージがRTDBに届いたので、D1から最新を取得して画面を同期
+            fetchD1Messages(currentServerId, roomId, true);
+          }
+        });
+        _d1CurrentRealtimeUnsubs.push(() => unsubMsg());
+
+        const pinRef = ref(rtdb, `rooms/${roomId}/latestPin`);
+        const unsubPin = onValue(pinRef, (snap) => {
+          if (snap.exists()) {
+            fetchD1Messages(currentServerId, roomId, true);
+          }
+        });
+        _d1CurrentRealtimeUnsubs.push(() => unsubPin());
+
+        const reactionRef = ref(rtdb, `rooms/${roomId}/latestReaction`);
+        const unsubReaction = onValue(reactionRef, (snap) => {
+          if (snap.exists()) {
+            fetchD1Messages(currentServerId, roomId, true);
+          }
+        });
+        _d1CurrentRealtimeUnsubs.push(() => unsubReaction());
+      } catch (e) {
+        console.error("D1 RTDB Realtime init error:", e);
+      }
+    }
+
+    async function fetchD1Servers() {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/servers?appId=${appId}`);
+        const data = await res.json();
+        const servers = data.docs ? data.docs.map(d => ({ id: d.id, ...d.data })) : [];
+        allServersCache = servers;
+        window.renderServerList();
+      } catch (e) {
+        console.error("fetchD1Servers error:", e);
+      }
+    }
+
+    async function fetchD1Rooms(serverId) {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
+        const data = await res.json();
+        roomList.innerHTML = "";
+        const docs = data.docs || [];
+        docs.forEach(docSnap => {
+          const room = docSnap.data;
+          roomNames[docSnap.id] = room.name;
+          const div = document.createElement("div");
+          div.className = "flex items-center justify-between p-3 mb-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg cursor-pointer room-list-anim room-item-animate border border-indigo-200";
+          div.id = `room-item-${docSnap.id}`;
+          div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
+
+          const nameDiv = document.createElement("div");
+          nameDiv.className = "flex-1 truncate font-bold text-indigo-900";
+          nameDiv.textContent = `# ${room.name} (D1)`;
+
+          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+          const lastRead = rm[docSnap.id] || 0;
+          const lastMsgAt = room.lastMessageAt || 0;
+          const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
+          const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+          
+          if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
+             try {
+                const newRead = Math.max(Date.now(), lastMsgAt) + 10000;
+                rm[docSnap.id] = newRead;
+                localStorage.setItem('covo_last_read', JSON.stringify(rm));
+             } catch(e) {}
+          }
+          
+          const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
+          unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+          const badgeSpan = document.createElement("span");
+          badgeSpan.className = "unread-badge";
+          badgeSpan.id = `unread-badge-${docSnap.id}`;
+          badgeSpan.style.display = isUnread ? "block" : "none";
+
+          div.appendChild(nameDiv);
+          div.appendChild(badgeSpan);
+          roomList.appendChild(div);
+        });
+      } catch (e) {
+        console.error("fetchD1Rooms error:", e);
+      }
+    }
+
+    async function fetchD1Messages(serverId, roomId, isUpdate = false) {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}`);
+        const data = await res.json();
+        const msgs = data.docs ? data.docs.map(d => ({ id: d.id, ...d.data })) : [];
+        
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        for (let i = 0; i < msgs.length; i++) {
+          if (msgs[i].text && isEncrypted(msgs[i].text)) {
+            msgs[i].text = await decryptText(msgs[i].text, serverId, roomId, _members).catch(() => msgs[i].text);
+          }
+        }
+        
+        allLoadedMessages = msgs;
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        
+        currentPinnedMessages = msgs.filter(m => m.isPinned);
+        renderPinnedMessages();
+        renderMessagesWithReadReceipts();
+      } catch (e) {
+        console.error("fetchD1Messages error:", e);
+      }
+    }
+
+    async function sendD1Message(messageId, data) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const payload = {
+          appId, serverId: currentServerId, roomId: currentRoomId, messageId, type: "add", data
+        };
+        await fetch(`${WORKER_BASE_URL}/api/d1/messages`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` }, body: JSON.stringify(payload)
+        });
+      } catch (e) { console.error("sendD1Message error:", e); }
+    }
+
+    async function pinD1Message(messageId, isPinned) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        await fetch(`${WORKER_BASE_URL}/api/d1/messages`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` }, body: JSON.stringify({ appId, roomId: currentRoomId, messageId, type: "pin", isPinned })
+        });
+        alertMessage(isPinned ? "ピン留めしました (D1)" : "ピン留めを解除しました (D1)", "success");
+      } catch (e) { console.error("pinD1Message error:", e); }
+    }
+
+    async function toggleD1Reaction(messageId, emoji) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const msg = lastMessagesData.find(m => m.id === messageId);
+        if (!msg) return;
+        const curRx = msg.reactions || {};
+        const isSame = curRx[userId] === emoji;
+        await fetch(`${WORKER_BASE_URL}/api/d1/messages`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` }, body: JSON.stringify({ appId, roomId: currentRoomId, messageId, type: "reaction", reactionUserId: userId, reactionEmoji: isSame ? null : emoji })
+        });
+      } catch (e) { console.error("toggleD1Reaction error:", e); }
+    }
+
+    // -------------------------------------------------------------
+    // D1 拡張ラッパー関数群＆全データ一括マイグレーション機能
+    // -------------------------------------------------------------
+    window.startFirestoreToD1Migration = async function() {
+      if (!isAdmin) return;
+      if (!confirm("Firestore上の全データ（ユーザー、サーバー、ルーム、メッセージ、鍵、スタンプ等）をCloudflare D1に一括移行しますか？\n（データ量に応じて数十秒〜数分かかる場合があります）")) return;
+      
+      alertMessage("🚀 FirestoreからD1への一括移行を開始しました。そのままお待ちください...", "info");
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        
+        // 1. ユーザー＆秘密鍵移行
+        const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+        const usersData = [];
+        for (const snap of usersSnap.docs) {
+          usersData.push({ id: snap.id, ...snap.data() });
+          try {
+            const privSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/keys`));
+            if (privSnap.exists() && privSnap.data().privateKeyJwk) {
+              await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "keys", keyData: privSnap.data() })
+              });
+            }
+            const escSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/escrowKey`));
+            if (escSnap.exists() && escSnap.data().privateKeyJwk) {
+              await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "escrowKey", keyData: escSnap.data() })
+              });
+            }
+          } catch(e){}
+        }
+        if (usersData.length > 0) {
+          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, migrateType: "users", data: usersData })
+          });
+          console.log(`[Migrate] ${usersData.length} users migrated.`);
+        }
+
+        // 1-2. エスクロー設定移行
+        try {
+          const escRef = doc(db, `artifacts/${appId}/settings/escrowKey`);
+          const escSnap = await getDoc(escRef);
+          if (escSnap.exists() && escSnap.data().publicKeyJwk) {
+            await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, migrateType: "settings", data: { settingId: "escrowKey", ...escSnap.data() } })
+            });
+            console.log("[Migrate] Escrow key settings migrated.");
+          }
+        } catch(e){}
+
+        // 2. スタンプ移行
+        const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/server_stamps`));
+        const stampsData = [];
+        stampsSnap.forEach(snap => {
+          stampsData.push({ id: snap.id, ...snap.data() });
+        });
+        if (stampsData.length > 0) {
+          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, migrateType: "stamps", data: stampsData })
+          });
+          console.log(`[Migrate] ${stampsData.length} stamps migrated.`);
+        }
+
+        // 3. サーバー、ルーム、メッセージ移行
+        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+        const serversData = [];
+        for (const sSnap of serversSnap.docs) {
+          const sData = { id: sSnap.id, ...sSnap.data() };
+          serversData.push(sData);
+          
+          // ルーム移行
+          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms`));
+          const roomsData = [];
+          for (const rSnap of roomsSnap.docs) {
+            const rData = { id: rSnap.id, serverId: sSnap.id, ...rSnap.data() };
+            
+            // ルーム鍵取得
+            try {
+              const rKeysSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/roomKeys`));
+              const rKeys = [];
+              rKeysSnap.forEach(kSnap => rKeys.push({ userId: kSnap.id, keyData: kSnap.data() }));
+              rData.roomKeys = rKeys;
+            } catch(e){}
+            
+            roomsData.push(rData);
+
+            // メッセージ移行
+            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/messages`));
+            const msgsData = [];
+            msgsSnap.forEach(mSnap => {
+              msgsData.push({ id: mSnap.id, roomId: rSnap.id, serverId: sSnap.id, ...mSnap.data() });
+            });
+            if (msgsData.length > 0) {
+              await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                body: JSON.stringify({ appId, migrateType: "messages", data: msgsData })
+              });
+              console.log(`[Migrate] ${msgsData.length} messages migrated for room ${rSnap.id}.`);
+            }
+          }
+          if (roomsData.length > 0) {
+            await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, migrateType: "rooms", data: roomsData })
+            });
+            console.log(`[Migrate] ${roomsData.length} rooms migrated for server ${sSnap.id}.`);
+          }
+        }
+        if (serversData.length > 0) {
+          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, migrateType: "servers", data: serversData })
+          });
+          console.log(`[Migrate] ${serversData.length} servers migrated.`);
+        }
+
+        alertMessage("✨ FirestoreからD1への全データ一括移行が正常に完了しました！", "success");
+      } catch (err) {
+        console.error("Migration Error:", err);
+        alertMessage("❌ 一括移行中にエラーが発生しました: " + err.message, "error");
+      }
+    };
+
+    async function getD1UserPublicKey(uid) {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/users?appId=${appId}&userId=${uid}`);
+        const data = await res.json();
+        if (!data.empty && data.data && data.data.publicKeyJwk) return await _importPub(data.data.publicKeyJwk);
+      } catch(e){}
+      return null;
+    }
+
+    async function getD1EscrowPublicKey() {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/settings?appId=${appId}&settingId=escrowKey`);
+        const data = await res.json();
+        if (!data.empty && data.data && data.data.publicKeyJwk) return await _importPub(data.data.publicKeyJwk);
+      } catch(e){}
+      return null;
+    }
+
+    async function backupD1Keys(privJwk, pubJwk) {
+      if (!userId) return;
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+          body: JSON.stringify({ appId, userId, type: "user", publicKeyJwk: pubJwk })
+        });
+        await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+          body: JSON.stringify({ appId, userId, type: "keys", keyType: "keys", keyData: { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: Date.now() } })
+        });
+      } catch(e){}
+    }
+
+    async function getD1RoomKeyForUser(serverId, roomId) {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}&roomId=${roomId}&type=keys`);
+        const data = await res.json();
+        if (!data.empty && data.docs) {
+          const doc = data.docs.find(d => d.id === userId);
+          if (doc) return doc.data;
+        }
+      } catch(e){}
+      return null;
+    }
+
+    async function saveD1RoomKeys(serverId, roomId, keysArray) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        await fetch(`${WORKER_BASE_URL}/api/d1/rooms`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+          body: JSON.stringify({ appId, serverId, roomId, type: "keys", keys: keysArray })
+        });
+      } catch(e){}
+    }
+
+    async function deleteD1Message(messageId) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        await fetch(`${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${currentRoomId}&messageId=${messageId}`, {
+          method: "DELETE", headers: { "Authorization": `Bearer ${idToken}` }
+        });
+      } catch(e){}
+    }
+
     async function updateUserStatus(state) {
       if (!userId || !userNickname) return;
 
@@ -8109,6 +8588,11 @@
       updateServerListUserBtn();
       if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        fetchD1Servers();
+        return;
+      }
+
       // 管理者は全件取得、一般ユーザーは自分が参加しているサーバーのみをFirestore側でフィルタリング
       const serversQuery = isAdmin
         ? query(collection(db, `artifacts/${appId}/servers`))
@@ -8475,8 +8959,12 @@
     // Room Features (Server-based)
     // =========================================================================
     function loadServerRooms(serverId, _retry = 0) {
-      const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
       if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        fetchD1Rooms(serverId);
+        return;
+      }
+      const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
 
       let hasLoaded = false;
 
@@ -8730,6 +9218,9 @@
     function subscribeToPinnedMessages() {
       if (unsubscribePinnedMessages) unsubscribePinnedMessages();
       currentPinnedMessages = [];
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        return;
+      }
       const q = query(
         collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
         where("isPinned", "==", true)
@@ -8763,6 +9254,12 @@
       isLoadingOlderMessages = false;
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) spinner.style.display = 'none';
+
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        fetchD1Messages(currentServerId, currentRoomId);
+        initD1RealtimeListeners(currentRoomId);
+        return;
+      }
 
       // 最新20件だけをリアルタイム監視（定数制限）
       const q = query(
@@ -10130,19 +10627,24 @@
         if (replyingToMessage) {
           data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
         }
-        const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
-        const newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
-        // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
         const wasEncrypted = isEncrypted(textToStore);
-        
-        try {
-          await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
-            lastMessageAt: data.timestamp,
-            lastMessageSender: userId,
-            lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
-          });
-        } catch (updateErr) {
-          console.warn("プレビュー情報の更新に失敗しました:", updateErr);
+        let newMessageId;
+        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+          newMessageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          await sendD1Message(newMessageId, data);
+        } else {
+          const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+          newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
+          // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
+          try {
+            await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+              lastMessageAt: data.timestamp,
+              lastMessageSender: userId,
+              lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+            });
+          } catch (updateErr) {
+            console.warn("プレビュー情報の更新に失敗しました:", updateErr);
+          }
         }
 
         // FCMプッシュ通知（サーバーメンバー全員に送信）
@@ -10718,6 +11220,10 @@
 
     window.toggleReaction = async function(messageId, emoji) {
       if (!currentServerId || !currentRoomId || !userId) return;
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        await toggleD1Reaction(messageId, emoji);
+        return;
+      }
       const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, messageId);
       const msgSnap = await getDoc(msgRef);
       if (!msgSnap.exists()) return;
@@ -11827,9 +12333,13 @@
         }
       }
 
-      // 3. Firestore メッセージ削除
+      // 3. Firestore / D1 メッセージ削除
       try {
-        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+          await deleteD1Message(msgToDelete.id);
+        } else {
+          await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        }
         allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
@@ -11838,7 +12348,7 @@
         renderPinnedMessages();
         alertMessage("削除しました", "success");
       } catch (e) {
-        console.error('[deleteMessage] Firestore delete failed:', msgToDelete.id, e);
+        console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
         alertMessage("削除に失敗しました", "error");
       }
     });
@@ -12595,6 +13105,11 @@
     pinMessageButton.addEventListener("click", async (e) => {
       if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
       if (selectedMessageForContext) {
+        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+          await pinD1Message(selectedMessageForContext.id, !selectedMessageForContext.isPinned);
+          messageContextMenu.classList.add("hidden");
+          return;
+        }
         const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
         const isPinned = !selectedMessageForContext.isPinned;
         await updateDoc(msgRef, { isPinned: isPinned });
@@ -15235,6 +15750,16 @@
     </div>
     <div style="padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom, 0px))">
       <div class="mobile-settings-group">
+        <div class="mobile-settings-row" style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:16px;margin-bottom:8px">
+          <div class="mobile-settings-row-icon" style="background:#4f46e5;color:white"><i class="fas fa-database"></i></div>
+          <span class="mobile-settings-row-text" style="color:#312e81">🧪 D1バックエンド検証<span style="display:block;font-size:0.7rem;color:#4338ca;font-weight:400;margin-top:1px">D1 + Workers + RTDBを使用</span></span>
+          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="mobileToggleD1Mode" onchange="toggleD1Mode(this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="mobile-settings-row" onclick="startFirestoreToD1Migration()" style="background:#fffbeb;border:1px solid #fde68a;border-radius:16px;margin-bottom:8px">
+          <div class="mobile-settings-row-icon" style="background:#d97706;color:white"><i class="fas fa-rocket"></i></div>
+          <span class="mobile-settings-row-text" style="color:#92400e">🚀 FirestoreからD1へ一括移行<span style="display:block;font-size:0.7rem;color:#b45309;font-weight:400;margin-top:1px">全データをD1に安全に格納</span></span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow" style="color:#d97706"></i>
+        </div>
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
           <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
