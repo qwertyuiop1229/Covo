@@ -3146,8 +3146,19 @@
       background: rgba(255,255,255,0.14);
       color: white;
     }
+    #settingsModal #adminPanelContainer {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    #settingsModal #adminPanelContainer.hidden {
+      display: none;
+    }
     #settingsModal .settings-nav-item.danger {
       color: #f87171;
+      margin-top: 0.5rem;
+      flex: 0 0 auto;
     }
     #settingsModal .settings-nav-item.danger:hover {
       background: rgba(239,68,68,0.15);
@@ -8598,16 +8609,6 @@
       updateServerListUserBtn();
       if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
-        fetchD1Servers();
-        return;
-      }
-
-      // 管理者は全件取得、一般ユーザーは自分が参加しているサーバーのみをFirestore側でフィルタリング
-      const serversQuery = isAdmin
-        ? query(collection(db, `artifacts/${appId}/servers`))
-        : query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId));
-
       function appendServerCard(server, idx) {
         const card = document.createElement("div");
         card.className = "server-card anim-card";
@@ -8647,7 +8648,6 @@
         el.textContent = text;
         serverGrid.appendChild(el);
       }
-
 
       window.renderServerList = function() {
         if (!allServersCache) return;
@@ -8694,6 +8694,16 @@
           notJoined.forEach((s, i) => appendServerCard(s, joined.length + i));
         }
       };
+
+      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        fetchD1Servers();
+        return;
+      }
+
+      // 管理者は全件取得、一般ユーザーは自分が参加しているサーバーのみをFirestore側でフィルタリング
+      const serversQuery = isAdmin
+        ? query(collection(db, `artifacts/${appId}/servers`))
+        : query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId));
 
       serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
         const servers = [];
