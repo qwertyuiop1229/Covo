@@ -140,7 +140,7 @@
       margin: 1.5rem 0;
       width: 100%;
     }
-    .date-divider-inner {
+    .date-divider-inner, #floatingDateBadge {
       display: inline-block;
       padding: 4px 16px;
       background-color: rgba(71, 85, 105, 0.85);
@@ -152,9 +152,12 @@
       border-radius: 9999px;
       box-shadow: none;
       border: none;
-      transition: transform 0.3s ease, opacity 0.3s ease;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
     }
-    body.dark-server-theme .date-divider-inner {
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge {
       background-color: rgba(51, 65, 85, 0.85);
       color: #ffffff;
       border: none;
@@ -4062,8 +4065,8 @@
 
           <div class="relative flex-1 flex flex-col min-h-0">
             <!-- フローティング日付ヘッダー -->
-            <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-all duration-500 opacity-0 -translate-y-2" style="top: 0.75rem;">
-              <div id="floatingDateBadge" class="bg-gray-600/90 dark:bg-gray-700/90 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-medium border border-transparent tracking-wider transition-transform duration-300 transform scale-95"></div>
+            <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-opacity duration-300 opacity-0" style="top: 1rem;">
+              <div id="floatingDateBadge"></div>
             </div>
 
             <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
@@ -4074,7 +4077,7 @@
               </div>
               <!-- メッセージはここに動的に追加されます -->
             </div>
-            <button id="jumpModeExitBtn" class="hidden absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all opacity-90 hover:opacity-100" onclick="window.exitJumpMode()">
+            <button id="jumpModeExitBtn" class="absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-300 opacity-0 pointer-events-none translate-y-2" onclick="window.exitJumpMode()">
               <i class="fas fa-arrow-down text-xl"></i>
             </button>
           </div>
@@ -8395,11 +8398,6 @@
         
         // E2EE: UIに追加する前に暗号文を平文へ復号
         await decryptMessagesInPlace(latestMessages, currentServerId, currentRoomId, _members).catch(() => {});
-        
-        if (isJumpMode) {
-          // ジャンプ中は現在のタイムラインに最新20件をマージさせない（ただし内部的な受信バッジなどは更新できる）
-          return;
-        }
 
         if (isInitialMessageLoad) {
           allLoadedMessages = [...latestMessages];
@@ -8564,46 +8562,59 @@
         let activeDivider = null;
         const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
         const dividers = messagesDisplay.querySelectorAll('.date-divider');
+        
+        // すべてのディバイダーの表示をリセット
+        dividers.forEach(div => {
+          const inner = div.querySelector('.date-divider-inner');
+          if (inner) inner.style.opacity = '1';
+        });
+
         for (let i = 0; i < dividers.length; i++) {
-          if (dividers[i].offsetTop <= viewTop) {
+          // viewTop付近（画面上部付近）を超えたディバイダーを検知
+          if (dividers[i].offsetTop <= viewTop - 20) {
             activeDivider = dividers[i];
           }
         }
-        if (activeDivider) {
+
+        if (activeDivider && messagesDisplay.scrollTop > 50) {
           const text = activeDivider.textContent.trim();
           if (text) {
             if (floatingBadge.textContent !== text) {
-              floatingBadge.style.transform = 'scale(1.08)';
-              setTimeout(() => { floatingBadge.style.transform = 'scale(1)'; }, 200);
               floatingBadge.textContent = text;
             }
-            floatingContainer.classList.remove('opacity-0', '-translate-y-2');
-            floatingContainer.classList.add('opacity-100', 'translate-y-0');
-            floatingBadge.classList.remove('scale-95');
-            floatingBadge.classList.add('scale-100');
+            // 元のチャット内ディバイダーを透明にして、フローティング側を出す（吸着演出）
+            const activeInner = activeDivider.querySelector('.date-divider-inner');
+            if (activeInner) activeInner.style.opacity = '0';
+            
+            floatingContainer.classList.remove('opacity-0');
+            floatingContainer.classList.add('opacity-100');
             
             if (floatingDateTimer) clearTimeout(floatingDateTimer);
             floatingDateTimer = setTimeout(() => {
-              floatingContainer.classList.add('opacity-0', '-translate-y-2');
-              floatingContainer.classList.remove('opacity-100', 'translate-y-0');
-              floatingBadge.classList.add('scale-95');
-              floatingBadge.classList.remove('scale-100');
+              floatingContainer.classList.add('opacity-0');
+              floatingContainer.classList.remove('opacity-100');
+              // フェードアウト後は元のバッジを表示状態に戻しておく
+              if (activeInner) activeInner.style.opacity = '1';
             }, 1400);
           } else {
-            floatingContainer.classList.add('opacity-0', '-translate-y-2');
-            floatingContainer.classList.remove('opacity-100', 'translate-y-0');
+            floatingContainer.classList.add('opacity-0');
+            floatingContainer.classList.remove('opacity-100');
           }
         } else {
-          floatingContainer.classList.add('opacity-0', '-translate-y-2');
-          floatingContainer.classList.remove('opacity-100', 'translate-y-0');
+          floatingContainer.classList.add('opacity-0');
+          floatingContainer.classList.remove('opacity-100');
         }
       }
 
       const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
-      if (isJumpMode || messagesDisplay.scrollTop > 300) {
-        jumpModeExitBtn.classList.remove("hidden");
-      } else {
-        jumpModeExitBtn.classList.add("hidden");
+      if (messagesDisplay.scrollTop <= 20) {
+        // 一番下にきたら絶対消える（フェードアウト）
+        jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+        jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+      } else if (messagesDisplay.scrollTop > 300) {
+        // フェードイン表示
+        jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
+        jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
       }
 
       const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
@@ -8612,73 +8623,17 @@
       if (scrollDistanceToTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
         await loadOlderMessages();
       }
-
-      // ジャンプ中の未来への読み込み (scrollTop小=下スクロール)
-      if (isJumpMode && messagesDisplay.scrollTop < 300 && !isLoadingNewerMessages && hasMoreNewerMessages) {
-        await loadNewerMessages();
-      }
     });
 
-    async function loadNewerMessages() {
-      if (isLoadingNewerMessages || !hasMoreNewerMessages || !allLoadedMessages.length) return;
-      
-      isLoadingNewerMessages = true;
-      try {
-        const newestMsg = allLoadedMessages[allLoadedMessages.length - 1]; // 一番新しいメッセージ（配列最後）
-        if (!newestMsg || !newestMsg.timestamp) {
-          hasMoreNewerMessages = false;
-          return;
-        }
-
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "asc"),
-          startAfter(newestMsg.timestamp),
-          limit(20)
-        );
-        const snap = await getDocs(q);
-        if (snap.empty || snap.docs.length < 20) {
-          hasMoreNewerMessages = false;
-        }
-        if (!snap.empty) {
-          const newerMessages = [];
-          snap.forEach(doc => {
-            const d = doc.data(); d.id = doc.id;
-            newerMessages.push(d);
-          });
-          // ascで取得しているので、そのままallLoadedMessagesの後ろに足せば時系列(asc)になる
-          try {
-            const _members = (currentServerData && currentServerData.joinedUsers) || [];
-            await decryptMessagesInPlace(newerMessages, currentServerId, currentRoomId, _members);
-          } catch (e) {}
-
-          const oldScrollHeight = messagesDisplay.scrollHeight;
-          const oldScrollTop = messagesDisplay.scrollTop;
-
-          allLoadedMessages = [...allLoadedMessages, ...newerMessages];
-          lastMessagesData = [...allLoadedMessages];
-          messagesIndexMap = {};
-          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-          renderMessagesWithReadReceipts();
-          messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
-        }
-      } catch (e) {
-        console.error("Failed to load newer messages:", e);
-      } finally {
-        isLoadingNewerMessages = false;
-      }
-    }
+    // 未来へのフェッチ(loadNewerMessages)は常時リアルタイム維持のため不要化
+    async function loadNewerMessages() {}
 
     window.exitJumpMode = function() {
-      if (isJumpMode) {
-        isJumpMode = false;
-        isInitialMessageLoad = true;
-        subscribeToMessages();
-      } else {
-        messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-      document.getElementById('jumpModeExitBtn').classList.add('hidden');
+      const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
+      jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+      jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+      
+      messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     // PCでのマウスホイールによるスクロール方向逆転の修正
@@ -10599,16 +10554,21 @@
       const modal = document.getElementById("messagePreviewModal");
       if (modal) modal.classList.add("hidden");
       
+      let existingEl = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+      if (existingEl) {
+        doJumpHighlight(existingEl);
+        return;
+      }
+
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) {
-        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">ジャンプ中...</span>';
+        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">過去ログをロード中...</span>';
         spinner.style.display = 'flex';
       }
 
-      // ジャンプモードに移行
-      isJumpMode = true;
-      allowPagination = false;
-      document.getElementById('jumpModeExitBtn').classList.remove('hidden');
+      const _exitBtn = document.getElementById('jumpModeExitBtn');
+      _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
 
       try {
         const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
@@ -10620,60 +10580,67 @@
         }
         const targetMsg = { id: docSnap.id, ...docSnap.data() };
         
-        // ターゲットメッセージを中心として、過去20件・未来20件を取得
-        const fetchLimit = 20;
-        
-        // 過去分（ターゲット含む）
+        const oldestMsg = allLoadedMessages[0];
+        if (!oldestMsg || !oldestMsg.timestamp) {
+          if (spinner) spinner.style.display = 'none';
+          return;
+        }
+
+        // 既存の最古メッセージから、ターゲットメッセージのタイムスタンプ（さらに余裕を見て過去へ10件分先まで）を一括取得
+        // 常にリアルタイムリスナーと連結した地続きのタイムラインを形成する
         const qPast = query(
           collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
           orderBy("timestamp", "desc"),
-          startAt(targetMsg.timestamp),
-          limit(fetchLimit)
+          startAfter(oldestMsg.timestamp),
+          endAt(targetMsg.timestamp)
         );
-        const snapPast = await getDocs(qPast);
-        const pastMsgs = [];
-        snapPast.forEach(doc => pastMsgs.push({ id: doc.id, ...doc.data() }));
-        pastMsgs.reverse(); // descをascに戻す
-
-        // 未来分
-        const qFuture = query(
+        
+        // ターゲットメッセージ自体を含むさらに過去の10件分も追加で確保しておく
+        const qPastExtra = query(
           collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "asc"),
-          startAfter(targetMsg.timestamp),
-          limit(fetchLimit)
+          orderBy("timestamp", "desc"),
+          startAt(targetMsg.timestamp),
+          limit(15)
         );
-        const snapFuture = await getDocs(qFuture);
-        const futureMsgs = [];
-        snapFuture.forEach(doc => futureMsgs.push({ id: doc.id, ...doc.data() }));
+
+        const [snapPast, snapPastExtra] = await Promise.all([getDocs(qPast), getDocs(qPastExtra)]);
         
-        hasMoreOlderMessages = snapPast.docs.length === fetchLimit;
-        hasMoreNewerMessages = snapFuture.docs.length === fetchLimit;
+        const fetchedMap = new Map();
+        snapPast.forEach(doc => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        snapPastExtra.forEach(doc => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() }));
         
-        const combinedMsgs = [...pastMsgs, ...futureMsgs];
-        
+        const olderMessages = Array.from(fetchedMap.values());
+        // timestamp順に正しくソート（古い順 = asc）
+        olderMessages.sort((a, b) => {
+          const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp?.seconds || 0);
+          const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp?.seconds || 0);
+          return tA - tB;
+        });
+
         const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        for (let i = 0; i < combinedMsgs.length; i++) {
-          if (combinedMsgs[i].text && isEncrypted(combinedMsgs[i].text)) {
-            combinedMsgs[i].text = await decryptText(combinedMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>combinedMsgs[i].text);
+        for (let i = 0; i < olderMessages.length; i++) {
+          if (olderMessages[i].text && isEncrypted(olderMessages[i].text)) {
+            olderMessages[i].text = await decryptText(olderMessages[i].text, currentServerId, currentRoomId, _members).catch(()=>olderMessages[i].text);
           }
         }
 
-        allLoadedMessages = combinedMsgs;
+        // 既存のメッセージと重複しないようにマージ
+        const existingIds = new Set(allLoadedMessages.map(m => m.id));
+        const newOlderMessages = olderMessages.filter(m => !existingIds.has(m.id));
+
+        allLoadedMessages = [...newOlderMessages, ...allLoadedMessages];
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
         
-        // 既存のDOMとの差分で描画を更新し、spinnerなどの静的要素を温存する
         messagesDisplay.style.transition = 'none';
         messagesDisplay.style.opacity = '0';
-        if (spinner) {
-          spinner.style.display = 'none';
-          // spinnerはそのまま
-        }
+        if (spinner) spinner.style.display = 'none';
+        
         renderMessagesWithReadReceipts();
         
       } catch (e) {
-        console.error("Jump error:", e);
+        console.error("Jump fetch error:", e);
       }
       
       setTimeout(() => {
