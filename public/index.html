@@ -3317,6 +3317,68 @@
         background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
       }
 
+      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
+      #createServerModal:not(.hidden) .modal-box,
+      #joinServerModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #deleteRoomConfirmModal:not(.hidden) .modal-box,
+      #customConfirmModal:not(.hidden) .modal-box,
+      #customAlertModal:not(.hidden) .modal-box,
+      #messagePreviewModal:not(.hidden) .modal-box {
+        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 90px 24px !important;
+        overflow-y: auto !important;
+        justify-content: center !important;
+      }
+
+      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 60 !important;
+        width: 100% !important;
+        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 20px 24px !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        box-sizing: border-box !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        background: rgba(30, 41, 59, 0.94) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
+        color: #ffffff !important;
+      }
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(100, 116, 139, 0.15) !important;
+        color: #64748b !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+      }
+      /* スタンプ管理画面のコンテンツエリア */
+      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
+        flex: 1 1 auto !important;
+        max-height: none !important;
+        padding: 20px 20px 90px 20px !important;
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
       /* =======================================
          ★スマホ設定画面の息をのむほど美しいパーツ群
          ======================================= */
@@ -4557,7 +4619,7 @@
       </div>
       <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex flex-col gap-6">
         <!-- 管理者用サーバー選択 -->
-        <div id="stampAdminServerSelectContainer" class="hidden relative">
+        <div id="stampAdminServerSelectContainer" class="hidden relative z-50">
           <label class="block text-sm font-bold text-gray-600 mb-2">対象サーバーを選択</label>
           <div class="relative">
             <button type="button" id="saCustomSelectBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-gray-700 font-medium">
@@ -4578,7 +4640,7 @@
         </div>
 
         <!-- 新規追加セクション -->
-        <div id="saSectionNew" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm block">
+        <div id="saSectionNew" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative z-30 block">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">新規スタンプグループ作成</h3>
           <div class="flex flex-col gap-4">
             <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 outline-none text-sm" />
@@ -4599,7 +4661,7 @@
         </div>
 
         <!-- 既存グループへ追加セクション -->
-        <div id="saSectionExisting" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hidden">
+        <div id="saSectionExisting" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative z-40 hidden">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">既存グループへスタンプを追加</h3>
           <div class="flex flex-col gap-4">
             <div>
@@ -4628,7 +4690,7 @@
         </div>
 
         <!-- 登録済みリスト -->
-        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex-1">
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex-1 relative z-10">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">登録済みスタンプ</h3>
           <div id="saStampsList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
