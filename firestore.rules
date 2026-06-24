@@ -48,6 +48,12 @@ service cloud.firestore {
         allow write: if isListAdmin(appId);
       }
 
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
       // 招待コードインデックス（コード→サーバーID の逆引き）
       // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
       match /inviteIndex/{code} {

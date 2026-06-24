@@ -3865,7 +3865,7 @@
               <!-- 設定セクション -->
 
               <!-- 管理者セクション -->
-              <div id="adminNavSection" class="settings-content-section space-y-6">
+              <div id="adminNavSection" class="settings-content-section space-y-3">
                 <div class="settings-section-title">管理者パネル</div>
                 <div id="pcAdminContainer">
                   <!-- 共有コンテンツはここに挿入される -->
@@ -4089,8 +4089,8 @@
       </div>
     </div>
     
-    <div class="mt-4 pt-4 border-t border-gray-100 flex-shrink-0">
-      <div id="adminMessage" class="text-center text-sm text-gray-500 mb-4 min-h-[1.5rem]"></div>
+    <div class="mt-2 pt-2 border-t border-gray-100 flex-shrink-0">
+      <div id="adminMessage" class="text-center text-sm text-gray-500 mb-1 min-h-[1.2rem]"></div>
       <div class="admin-only-section hidden">
       </div>
     </div>
@@ -7981,34 +7981,36 @@
         const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
         
         // 1. ユーザー＆秘密鍵移行
-        const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-        const usersData = [];
-        for (const snap of usersSnap.docs) {
-          usersData.push({ id: snap.id, ...snap.data() });
-          try {
-            const privSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/keys`));
-            if (privSnap.exists() && privSnap.data().privateKeyJwk) {
-              await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "keys", keyData: privSnap.data() })
-              });
-            }
-            const escSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/escrowKey`));
-            if (escSnap.exists() && escSnap.data().privateKeyJwk) {
-              await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "escrowKey", keyData: escSnap.data() })
-              });
-            }
-          } catch(e){}
-        }
-        if (usersData.length > 0) {
-          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-            body: JSON.stringify({ appId, migrateType: "users", data: usersData })
-          });
-          console.log(`[Migrate] ${usersData.length} users migrated.`);
-        }
+        try {
+          const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+          const usersData = [];
+          for (const snap of usersSnap.docs) {
+            usersData.push({ id: snap.id, ...snap.data() });
+            try {
+              const privSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/keys`));
+              if (privSnap.exists() && privSnap.data().privateKeyJwk) {
+                await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+                  method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                  body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "keys", keyData: privSnap.data() })
+                });
+              }
+              const escSnap = await getDoc(doc(db, `artifacts/${appId}/users/${snap.id}/private/escrowKey`));
+              if (escSnap.exists() && escSnap.data().privateKeyJwk) {
+                await fetch(`${WORKER_BASE_URL}/api/d1/users`, {
+                  method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                  body: JSON.stringify({ appId, userId: snap.id, type: "keys", keyType: "escrowKey", keyData: escSnap.data() })
+                });
+              }
+            } catch(e){}
+          }
+          if (usersData.length > 0) {
+            await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, migrateType: "users", data: usersData })
+            });
+            console.log(`[Migrate] ${usersData.length} users migrated.`);
+          }
+        } catch(e) { console.warn("[Migrate] Users migration skipped or failed:", e); }
 
         // 1-2. エスクロー設定移行
         try {
@@ -8024,71 +8026,79 @@
         } catch(e){}
 
         // 2. スタンプ移行
-        const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/server_stamps`));
-        const stampsData = [];
-        stampsSnap.forEach(snap => {
-          stampsData.push({ id: snap.id, ...snap.data() });
-        });
-        if (stampsData.length > 0) {
-          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-            body: JSON.stringify({ appId, migrateType: "stamps", data: stampsData })
+        try {
+          const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/server_stamps`));
+          const stampsData = [];
+          stampsSnap.forEach(snap => {
+            stampsData.push({ id: snap.id, ...snap.data() });
           });
-          console.log(`[Migrate] ${stampsData.length} stamps migrated.`);
-        }
-
-        // 3. サーバー、ルーム、メッセージ移行
-        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-        const serversData = [];
-        for (const sSnap of serversSnap.docs) {
-          const sData = { id: sSnap.id, ...sSnap.data() };
-          serversData.push(sData);
-          
-          // ルーム移行
-          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms`));
-          const roomsData = [];
-          for (const rSnap of roomsSnap.docs) {
-            const rData = { id: rSnap.id, serverId: sSnap.id, ...rSnap.data() };
-            
-            // ルーム鍵取得
-            try {
-              const rKeysSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/roomKeys`));
-              const rKeys = [];
-              rKeysSnap.forEach(kSnap => rKeys.push({ userId: kSnap.id, keyData: kSnap.data() }));
-              rData.roomKeys = rKeys;
-            } catch(e){}
-            
-            roomsData.push(rData);
-
-            // メッセージ移行
-            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/messages`));
-            const msgsData = [];
-            msgsSnap.forEach(mSnap => {
-              msgsData.push({ id: mSnap.id, roomId: rSnap.id, serverId: sSnap.id, ...mSnap.data() });
-            });
-            if (msgsData.length > 0) {
-              await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                body: JSON.stringify({ appId, migrateType: "messages", data: msgsData })
-              });
-              console.log(`[Migrate] ${msgsData.length} messages migrated for room ${rSnap.id}.`);
-            }
-          }
-          if (roomsData.length > 0) {
+          if (stampsData.length > 0) {
             await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-              body: JSON.stringify({ appId, migrateType: "rooms", data: roomsData })
+              body: JSON.stringify({ appId, migrateType: "stamps", data: stampsData })
             });
-            console.log(`[Migrate] ${roomsData.length} rooms migrated for server ${sSnap.id}.`);
+            console.log(`[Migrate] ${stampsData.length} stamps migrated.`);
           }
-        }
-        if (serversData.length > 0) {
-          await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-            body: JSON.stringify({ appId, migrateType: "servers", data: serversData })
-          });
-          console.log(`[Migrate] ${serversData.length} servers migrated.`);
-        }
+        } catch(e) { console.warn("[Migrate] Stamps migration skipped or failed:", e); }
+
+        // 3. サーバー、ルーム、メッセージ移行
+        try {
+          const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+          const serversData = [];
+          for (const sSnap of serversSnap.docs) {
+            const sData = { id: sSnap.id, ...sSnap.data() };
+            serversData.push(sData);
+            
+            // ルーム移行
+            try {
+              const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms`));
+              const roomsData = [];
+              for (const rSnap of roomsSnap.docs) {
+                const rData = { id: rSnap.id, serverId: sSnap.id, ...rSnap.data() };
+                
+                // ルーム鍵取得
+                try {
+                  const rKeysSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/roomKeys`));
+                  const rKeys = [];
+                  rKeysSnap.forEach(kSnap => rKeys.push({ userId: kSnap.id, keyData: kSnap.data() }));
+                  rData.roomKeys = rKeys;
+                } catch(e){}
+                
+                roomsData.push(rData);
+
+                // メッセージ移行
+                try {
+                  const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sSnap.id}/rooms/${rSnap.id}/messages`));
+                  const msgsData = [];
+                  msgsSnap.forEach(mSnap => {
+                    msgsData.push({ id: mSnap.id, roomId: rSnap.id, serverId: sSnap.id, ...mSnap.data() });
+                  });
+                  if (msgsData.length > 0) {
+                    await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+                      method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                      body: JSON.stringify({ appId, migrateType: "messages", data: msgsData })
+                    });
+                    console.log(`[Migrate] ${msgsData.length} messages migrated for room ${rSnap.id}.`);
+                  }
+                } catch(e) { console.warn(`[Migrate] Messages migration skipped for room ${rSnap.id}:`, e); }
+              }
+              if (roomsData.length > 0) {
+                await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+                  method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                  body: JSON.stringify({ appId, migrateType: "rooms", data: roomsData })
+                });
+                console.log(`[Migrate] ${roomsData.length} rooms migrated for server ${sSnap.id}.`);
+              }
+            } catch(e) { console.warn(`[Migrate] Rooms migration skipped for server ${sSnap.id}:`, e); }
+          }
+          if (serversData.length > 0) {
+            await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, migrateType: "servers", data: serversData })
+            });
+            console.log(`[Migrate] ${serversData.length} servers migrated.`);
+          }
+        } catch(e) { console.warn("[Migrate] Servers migration skipped or failed:", e); }
 
         alertMessage("✨ FirestoreからD1への全データ一括移行が正常に完了しました！", "success");
       } catch (err) {
