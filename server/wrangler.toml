@@ -27,4 +27,4 @@ CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
 [[d1_databases]]
 binding = "DB"
 database_name = "covo-db"
-database_id = "covo-d1-db-id"
+database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
