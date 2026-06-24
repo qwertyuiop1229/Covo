@@ -3865,9 +3865,9 @@
               <!-- 設定セクション -->
 
               <!-- 管理者セクション -->
-              <div id="adminNavSection" class="settings-content-section space-y-6 h-full" style="padding-bottom: 2rem;">
+              <div id="adminNavSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">管理者パネル</div>
-                <div id="pcAdminContainer" class="h-full">
+                <div id="pcAdminContainer">
                   <!-- 共有コンテンツはここに挿入される -->
                 </div>
               </div>
@@ -4006,15 +4006,15 @@
       <!-- 管理者モーダル (Admin Panel) -->
       
   <!-- 共有管理者コンテンツ -->
-  <div id="adminPanelSharedContent" class="flex flex-col h-full hidden">
-    <div class="flex border-b border-gray-100 mb-4 flex-shrink-0 flex-wrap gap-y-1">
+  <div id="adminPanelSharedContent" class="hidden">
+    <div class="flex border-b border-gray-100 mb-4 flex-wrap gap-y-1">
       <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 text-gray-900 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
       <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
       <button id="adminTabStorageBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-database mr-1.5 text-xs"></i>ストレージ</button>
     </div>
     
-    <div class="flex-1 overflow-y-auto pr-2">
+    <div class="pr-2">
       <div id="adminTabAllowedContent" class="space-y-4">
         <p class="text-xs text-gray-400 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
@@ -15265,7 +15265,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdmin')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">管理者パネル</span>
     </div>
-    <div id="mobileAdminContainer" style="padding:1rem; height: calc(100% - 60px); display: flex; flex-direction: column; overflow: hidden;">
+    <div id="mobileAdminContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
     </div>
   </div>
 
