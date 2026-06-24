@@ -8620,6 +8620,17 @@
               floatingBadge.textContent = text;
             }
             
+            // ★PC・スマホ両方でチャット内の日付バッジとミリ単位で座標を完全一致させる神業
+            const activeInner = activeDivider.querySelector('.date-divider-inner');
+            if (activeInner) {
+              const rect = activeInner.getBoundingClientRect();
+              const containerRect = floatingContainer.getBoundingClientRect();
+              const offsetLeft = rect.left - containerRect.left;
+              floatingBadge.style.position = 'absolute';
+              floatingBadge.style.left = `${offsetLeft}px`;
+              floatingBadge.style.width = `${rect.width}px`;
+            }
+            
             // 押し出しアニメーション（Sticky Pushing Replacement Effect）の計算
             if (pushingDivider) {
               const diff = viewTop - pushingDivider.offsetTop; // 0px 〜 38px
@@ -10805,13 +10816,22 @@
           (msg.senderNickname && msg.senderNickname.toLowerCase().includes(searchQuery));
       });
 
-      // 既存のDOMとの差分同期（innerHTML = "" によるカクつき防止）
+      // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
       const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
       const existingRowsMap = new Map();
       existingRows.forEach(row => {
         const bubble = row.querySelector('.message-bubble');
         if (bubble && bubble.dataset.messageId) {
           existingRowsMap.set(bubble.dataset.messageId, row);
+        }
+      });
+
+      const existingDividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
+      const existingDividersMap = new Map();
+      existingDividers.forEach(div => {
+        const inner = div.querySelector('.date-divider-inner');
+        if (inner) {
+          existingDividersMap.set(inner.textContent.trim(), div);
         }
       });
 
@@ -10831,10 +10851,8 @@
         return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} (${days[d.getDay()]})`;
       };
 
-      const existingDividers = messagesDisplay.querySelectorAll('.date-divider');
-      existingDividers.forEach(el => el.remove());
-
-      let currentChild = messagesDisplay.firstElementChild;
+      // 1. まず表示するべき全DOM要素をリスト化する（既存要素は再利用し、位置も維持する）
+      const expectedElements = [];
 
       reversedMessages.forEach((msg, i) => {
         const idx = messagesIndexMap[msg.id];
@@ -10842,7 +10860,6 @@
         
         let row = existingRowsMap.get(msg.id);
         if (row) {
-          // 既存行があれば既読状態やテキスト、送信時間を更新
           const readSpan = row.querySelector('.read-receipt');
           if (readSpan) {
             if (readCount > 0) {
@@ -10852,8 +10869,6 @@
               readSpan.style.display = "none";
             }
           }
-
-          // 送信時間（送信中... からの更新）。msg-timestamp 限定でPDFラベル等との誤マッチを防ぐ
           const timestampSpan = row.querySelector('.msg-timestamp');
           if (timestampSpan) {
             if (msg.timestamp && msg.timestamp.toDate) {
@@ -10863,44 +10878,48 @@
               timestampSpan.textContent = "送信中...";
             }
           }
-
-          // メッセージテキスト（編集された場合の対応）
           const textSpan = row.querySelector('.message-content');
           if (textSpan && msg.text) {
              textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
           }
-
-          // リアクションの更新
           const bubbleElement = row.querySelector('.message-bubble');
           if (bubbleElement) updateReactionsUI(bubbleElement, msg);
 
           existingRowsMap.delete(msg.id);
-          // 順序が違えば移動
-          if (currentChild !== row) {
-            messagesDisplay.insertBefore(row, currentChild);
-          }
-          currentChild = row.nextSibling;
         } else {
-          // 新規メッセージ要素作成
           row = createMessageElement(msg, msg.id, readCount);
-          messagesDisplay.insertBefore(row, currentChild);
         }
+        expectedElements.push(row);
 
-        // 日付の境界線を追加
         const currentDay = getDayString(msg.timestamp);
         const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(reversedMessages[i+1].timestamp) : null;
         if (currentDay && currentDay !== nextMsgDay) {
-          const div = document.createElement("div");
-          div.className = "date-divider flipped";
-          div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
-          messagesDisplay.insertBefore(div, currentChild);
+          let div = existingDividersMap.get(currentDay);
+          if (div) {
+            existingDividersMap.delete(currentDay);
+          } else {
+            div = document.createElement("div");
+            div.className = "date-divider flipped";
+            div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
+          }
+          expectedElements.push(div);
         }
       });
 
-      // 削除されたメッセージ要素を取り除く
-      existingRowsMap.forEach(row => {
-        row.remove();
-      });
+      // 2. 実際のDOMとexpectedElementsを先頭から順に照合。同一要素ならinsertBefore等の再配置を一切スキップ！
+      // これにより既存要素のLayout Thrashingやアニメーション再発火（パッとなる現象）が100%根絶される
+      let currentChild = messagesDisplay.firstElementChild;
+      for (const expectedEl of expectedElements) {
+        if (currentChild === expectedEl) {
+          currentChild = currentChild.nextElementSibling;
+        } else {
+          messagesDisplay.insertBefore(expectedEl, currentChild);
+        }
+      }
+
+      // 3. 削除された不要なメッセージや古くなったディバイダーを取り除く
+      existingRowsMap.forEach(row => row.remove());
+      existingDividersMap.forEach(div => div.remove());
 
       // スピナーや終端メッセージは過去のメッセージの「さらに上」（DOM上は最後尾）に配置
       const spinner = document.getElementById('topLoadingSpinner');
