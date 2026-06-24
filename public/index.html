@@ -137,19 +137,27 @@
     
     .date-divider {
       text-align: center;
-      margin: 1rem 0;
+      margin: 1.5rem 0;
       width: 100%;
     }
     .date-divider-inner {
       display: inline-block;
-      padding: 4px 12px;
-      background-color: rgba(0,0,0,0.2);
-      color: #fff;
+      padding: 4px 16px;
+      background-color: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #f8fafc;
       font-size: 0.75rem;
-      border-radius: 999px;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      transition: transform 0.3s ease, opacity 0.3s ease;
     }
     body.dark-server-theme .date-divider-inner {
-      background-color: rgba(255,255,255,0.2);
+      background-color: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #f1f5f9;
     }
     
     .reply-quote {
@@ -186,6 +194,7 @@
       border-right: 2px solid #9ca3af;
       border-top: 2px solid #9ca3af;
       border-top-right-radius: 6px;
+      border-top-left-radius: 0;
     }
     .reaction-badge {
       display: inline-flex;
@@ -4047,8 +4056,8 @@
 
           <div class="relative flex-1 flex flex-col min-h-0">
             <!-- フローティング日付ヘッダー -->
-            <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-opacity duration-300 opacity-0" style="top: 0.5rem;">
-              <div id="floatingDateBadge" class="bg-black bg-opacity-40 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs shadow-md"></div>
+            <div id="floatingDateContainer" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none transition-all duration-500 opacity-0 -translate-y-2" style="top: 0.75rem;">
+              <div id="floatingDateBadge" class="bg-slate-900/60 dark:bg-slate-100/20 backdrop-blur-md text-white dark:text-slate-100 px-4 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/10 tracking-wider transition-transform duration-300 transform scale-95"></div>
             </div>
 
             <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
@@ -4310,6 +4319,7 @@
     <div class="custom-context-menu-inner">
       <button class="" id="replyMessageButton">リプライ</button>
       <button class="" id="copyMessageButton">コピー</button>
+      <button class="" id="downloadMessageButton" style="display: none;">ダウンロード</button>
       <button class="" id="pinMessageButton">ピン留め / 解除</button>
       <button class="" id="deleteMessageButton">削除</button>
     </div>
@@ -5256,6 +5266,7 @@
     const messageContextMenu = document.getElementById("messageContextMenu");
     const replyMessageButton = document.getElementById("replyMessageButton");
     const copyMessageButton = document.getElementById("copyMessageButton");
+    const downloadMessageButton = document.getElementById("downloadMessageButton");
     const deleteMessageButton = document.getElementById("deleteMessageButton");
     const toggleSearchButton = document.getElementById("toggleSearchButton");
     const searchContainer = document.getElementById("searchContainer");
@@ -8537,6 +8548,7 @@
       membersSidebar.classList.remove("hidden");
     }
 
+    let floatingDateTimer = null;
     messagesDisplay.addEventListener("scroll", async () => {
       if (!allowPagination) return;
       
@@ -8554,13 +8566,30 @@
         if (activeDivider) {
           const text = activeDivider.textContent.trim();
           if (text) {
-            floatingBadge.textContent = text;
-            floatingContainer.classList.remove('opacity-0');
+            if (floatingBadge.textContent !== text) {
+              floatingBadge.style.transform = 'scale(1.08)';
+              setTimeout(() => { floatingBadge.style.transform = 'scale(1)'; }, 200);
+              floatingBadge.textContent = text;
+            }
+            floatingContainer.classList.remove('opacity-0', '-translate-y-2');
+            floatingContainer.classList.add('opacity-100', 'translate-y-0');
+            floatingBadge.classList.remove('scale-95');
+            floatingBadge.classList.add('scale-100');
+            
+            if (floatingDateTimer) clearTimeout(floatingDateTimer);
+            floatingDateTimer = setTimeout(() => {
+              floatingContainer.classList.add('opacity-0', '-translate-y-2');
+              floatingContainer.classList.remove('opacity-100', 'translate-y-0');
+              floatingBadge.classList.add('scale-95');
+              floatingBadge.classList.remove('scale-100');
+            }, 1400);
           } else {
-            floatingContainer.classList.add('opacity-0');
+            floatingContainer.classList.add('opacity-0', '-translate-y-2');
+            floatingContainer.classList.remove('opacity-100', 'translate-y-0');
           }
         } else {
-          floatingContainer.classList.add('opacity-0');
+          floatingContainer.classList.add('opacity-0', '-translate-y-2');
+          floatingContainer.classList.remove('opacity-100', 'translate-y-0');
         }
       }
 
@@ -10508,11 +10537,7 @@
         kvDiv.appendChild(infoDiv);
         kvDiv.appendChild(dlIcon);
         kvDiv.addEventListener("click", () => {
-          const a = document.createElement('a');
-          a.href = message.kvFileUrl;
-          a.download = message.fileName;
-          a.target = '_blank';
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
         });
         messageElement.appendChild(kvDiv);
       }
@@ -11024,6 +11049,12 @@
         _twemojiParse(reactionBar);
       }
 
+      const fileUrl = msgData._decryptedFileUrl || msgData.fileData || msgData.kvFileUrl;
+      if (fileUrl) {
+        if (downloadMessageButton) downloadMessageButton.style.display = 'block';
+      } else {
+        if (downloadMessageButton) downloadMessageButton.style.display = 'none';
+      }
 
       messageContextMenu.classList.remove("hidden");
 
@@ -11084,13 +11115,90 @@
       messageContextMenu.classList.add("hidden");
     });
 
-    copyMessageButton.addEventListener("click", (e) => {
+    downloadMessageButton.addEventListener("click", async (e) => {
       if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-      if (selectedMessageForContext && selectedMessageForContext.text) {
+      messageContextMenu.classList.add("hidden");
+      if (!selectedMessageForContext) return;
+      const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+      if (fileUrl) {
+        try {
+          if (fileUrl.startsWith('blob:')) {
+            const a = document.createElement('a');
+            a.href = fileUrl;
+            a.download = selectedMessageForContext.fileName || 'download';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          } else {
+            const res = await fetch(fileUrl, { mode: 'cors' });
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = selectedMessageForContext.fileName || 'download';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          }
+        } catch (err) {
+          console.error("Direct download failed:", err);
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = selectedMessageForContext.fileName || 'download';
+          a.target = '_blank';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+      }
+    });
+
+    copyMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      messageContextMenu.classList.add("hidden");
+      if (!selectedMessageForContext) return;
+
+      const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+      if (fileUrl && (fileUrl.startsWith('http') || fileUrl.startsWith('blob:'))) {
+        try {
+          const res = await fetch(fileUrl, { mode: 'cors' });
+          const blob = await res.blob();
+          if (navigator.clipboard && navigator.clipboard.write) {
+            try {
+              let copyBlob = blob;
+              let type = blob.type || selectedMessageForContext.fileType || 'application/octet-stream';
+              const item = new ClipboardItem({ [type]: copyBlob });
+              await navigator.clipboard.write([item]);
+              alertMessage("ファイルをクリップボードにコピーしました", "success");
+              return;
+            } catch (err) {
+              console.warn("ClipboardItem write failed, trying fallback...", err);
+            }
+          }
+          if (navigator.canShare && navigator.share) {
+            const file = new File([blob], selectedMessageForContext.fileName || "attachment", { type: blob.type || 'application/octet-stream' });
+            if (navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
+                return;
+              } catch (shareErr) {
+                if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
+                  return; // ユーザーキャンセル時は後続のURLコピーを出さない
+                }
+                console.warn("Share failed with error:", shareErr);
+              }
+            }
+          }
+          copyToClipboard(fileUrl);
+          alertMessage("ファイルのURLをクリップボードにコピーしました（ブラウザ制限のためURLをコピーしました）", "success");
+        } catch (err) {
+          console.error("Copy file error:", err);
+          if (selectedMessageForContext.text) {
+            copyToClipboard(selectedMessageForContext.text);
+            alertMessage("テキストをコピーしました", "success");
+          } else {
+            alertMessage("コピーに失敗しました", "error");
+          }
+        }
+      } else if (selectedMessageForContext.text) {
         copyToClipboard(selectedMessageForContext.text);
         alertMessage("コピーしました", "success");
       }
-      messageContextMenu.classList.add("hidden");
     });
 
     deleteMessageButton.addEventListener("click", async (e) => {

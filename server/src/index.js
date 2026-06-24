@@ -901,10 +901,10 @@ async function handleDeleteFile(request, env, url) {
     const meta = fileEntry.metadata;
     const forceDelete = url.searchParams.get('forceDelete') === '1';
 
-    // forceDelete is only allowed if they provide the ADMIN_SECRET_KEY in the request
+    // forceDelete is allowed if they provide the ADMIN_SECRET_KEY in the request OR if a valid Firebase user is authenticated (as client handles serverAdmin/admin logic)
     const adminKey = url.searchParams.get('adminKey') || '';
     if (forceDelete) {
-      if (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY) {
+      if (!verifiedUser && (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY)) {
         return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId) {
