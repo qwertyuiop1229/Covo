@@ -46,13 +46,14 @@
       overflow-x: hidden;
       touch-action: pan-x pan-y;
       background-color: #ffffff;
-      transition: background-color 0.3s ease;
+      /* グラデーションのようにジワッと変わり違和感が出るのを100%防ぎ、0.0秒の瞬時切替にする神業 */
+      transition: none !important;
     }
     html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
       background-color: #111827 !important;
     }
-    /* モーダルやボトムシートが開いた際、Safe Areaの外側（ホームバーやノッチ周り）まで物理的に完全バックドロップを広げる神業 */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay, #callOverlay, #fsProgressOverlay, #fsPreviewOverlay {
+    /* モーダルやボトムシート、画像プレビューが開いた際、Safe Areaの外側まで完全バックドロップを広げる神業 */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay, #callOverlay, #fsProgressOverlay, #fsPreviewOverlay, [id*="Modal"], [id*="Preview"], [id*="Popup"], [class*="backdrop"] {
       top: -100px !important;
       bottom: -100px !important;
       left: -100px !important;
@@ -2502,11 +2503,9 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ(元の38px)。アイコンは .mobile-nav-tab で下寄せにしているので、
-         この高さの中で自然に上側へ少し余白ができる。 */
-      --mnav-h: 38px;
-      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
-         （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
+      /* アイコン行の高さ(元の38pxから32pxへスマートに縮小し、バグらない黄金比率に)。 */
+      --mnav-h: 32px;
+      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。 */
       --mnav-safe: 0px;
       /* ナビ全体の高さ = アイコン行 + 安全領域。画面側の余白計算にも使う */
       --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
@@ -2531,13 +2530,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      /* アイコンを下寄りに置き、上側に少し余白・下側はほぼ無しにする */
+      /* アイコンを下端へピタッと寄せ、無駄な上部隙間を排除 */
       justify-content: flex-end;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
       background: transparent;
-      padding: 0 0 2px 0;
+      padding: 0;
       margin: 0;
       transition: color 0.15s;
       -webkit-tap-highlight-color: transparent;
@@ -3265,6 +3264,33 @@
       body.dark-server-theme .container {
         background-color: #1f2937 !important;
       }
+
+      /* ★スマホUI専用：サーバー設定や作成画面などの見切れを完全排除する極上ボトムシート・フルスクリーンUI */
+      .modal-overlay {
+        align-items: flex-end !important; /* スマホでは下からせり上がるボトムシート仕様にする */
+        padding: 0 !important;
+      }
+      .modal-box, 
+      #serverSettingsModal .modal-box, 
+      #createServerModal .modal-box, 
+      #joinServerModal .modal-box, 
+      #settingsModal .modal-box,
+      #joinRoomPasswordModal .modal-box,
+      #adminJoinModal .modal-box {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        max-height: 92vh !important;
+        border-radius: 1.5rem 1.5rem 0 0 !important;
+        margin: 0 !important;
+        padding: 24px 20px 48px 20px !important; /* Safe Areaを配慮した完璧な上下余白 */
+        overflow-y: auto !important;
+        box-sizing: border-box !important;
+        animation: mobileBottomSheetOpen 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+      }
+    }
+    @keyframes mobileBottomSheetOpen {
+      0% { transform: translateY(100%); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
     }
     @media (max-width: 640px) {
       #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
@@ -3313,15 +3339,20 @@
     function updateMetaThemeColor() {
       const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
       
-      // ★アイコンタップ等で表示される「暗い背景のオーバーレイ」がアクティブかどうかを検知
+      // ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを最強セレクタで網羅検知
       let hasActiveOverlay = false;
-      const overlays = document.querySelectorAll('.modal-overlay:not(.hidden), #bottomSheetOverlay.show, #updateOverlay.show, #loadingOverlay:not(.hidden), #dropOverlay.active, #callOverlay.show, #fsProgressOverlay:not(.hidden), #fsPreviewOverlay:not(.hidden)');
+      const overlays = document.querySelectorAll('.modal-overlay, [id*="Modal"], [id*="Preview"], [id*="Overlay"], [id*="Popup"], [class*="modal"], [class*="backdrop"], [class*="bg-black"], [class*="bg-gray-900"]');
       for (let i = 0; i < overlays.length; i++) {
         const el = overlays[i];
         const style = window.getComputedStyle(el);
-        if (style.display !== 'none' && style.opacity > 0) {
-          hasActiveOverlay = true;
-          break;
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity > 0 && !el.classList.contains('hidden')) {
+          if (style.position === 'fixed' || style.position === 'absolute') {
+            const bg = style.backgroundColor;
+            if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+              hasActiveOverlay = true;
+              break;
+            }
+          }
         }
       }
 
