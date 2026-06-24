@@ -3267,10 +3267,15 @@
         background-color: #1f2937 !important;
       }
 
-      /* ★スマホUI専用：サーバー設定や作成画面などの見切れを完全排除し、息をのむほど洗練された極上ボトムシートUI */
+      /* ★スマホUI専用：サーバー設定や作成画面を最初から美しく作り直した、外側に白い部分や下側の段差が一切ない完全シームレス・フルスクリーン仕様 */
       .modal-overlay {
-        align-items: flex-end !important; /* スマホでは下からせり上がるボトムシート仕様にする */
+        align-items: flex-end !important;
         padding: 0 !important;
+        margin: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
       }
       .modal-box, 
       #serverSettingsModal .modal-box, 
@@ -3281,40 +3286,25 @@
       #adminJoinModal .modal-box {
         width: 100vw !important;
         max-width: 100vw !important;
-        max-height: 90vh !important;
-        border-radius: 1.75rem 1.75rem 0 0 !important;
-        box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
         margin: 0 !important;
-        padding: 16px 24px 48px 24px !important; /* Safe Areaと上部ハンドルを配慮した完璧な黄金比率の余白 */
+        padding: 24px 20px 80px 20px !important; /* Safe Areaや一番下まで完全に白い部分（背景）を届かせる完璧な余白設定 */
         overflow-y: auto !important;
         box-sizing: border-box !important;
-        animation: mobileBottomSheetOpen 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
         position: relative;
-      }
-      /* ボトムシート上部中央に表示する、美しく象徴的なプルハンドル（Grabber Bar） */
-      .modal-box::before, 
-      #serverSettingsModal .modal-box::before, 
-      #createServerModal .modal-box::before, 
-      #joinServerModal .modal-box::before, 
-      #settingsModal .modal-box::before,
-      #joinRoomPasswordModal .modal-box::before,
-      #adminJoinModal .modal-box::before {
-        content: "";
-        display: block;
-        width: 38px;
-        height: 5px;
-        border-radius: 3px;
-        background: rgba(156, 163, 175, 0.4);
-        margin: 0 auto 18px auto;
       }
       /* モーダル内のヘッダーエリアと閉じるボタンの完璧な洗練配置 */
       .modal-box .flex.justify-between {
         align-items: center !important;
-        margin-bottom: 1.25rem !important;
+        margin-bottom: 1.5rem !important;
       }
       .modal-box button.modal-close {
-        padding: 6px !important;
-        margin: -6px !important;
+        padding: 8px !important;
+        margin: -8px !important;
         border-radius: 50% !important;
         background: rgba(156, 163, 175, 0.15) !important;
         transition: background 0.15s !important;
@@ -3323,7 +3313,7 @@
         justify-content: center;
       }
     }
-    @keyframes mobileBottomSheetOpen {
+    @keyframes mobileFullscreenOpen {
       0% { transform: translateY(100%); opacity: 0; }
       100% { transform: translateY(0); opacity: 1; }
     }
@@ -3376,12 +3366,18 @@
       const inChat = document.body.classList.contains('in-chat-view');
       
       // 現在のベース背景色（RGB配列）を特定
-      // ライトチャット: #ffffff (255,255,255), ライトホーム: #1f2937 (31,41,55)
-      // ダークチャット: #1a202c (26,32,44),   ダークホーム: #111827 (17,24,39)
       let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [17, 24, 39] : [31, 41, 55]);
+      let targetHex = isDark ? (inChat ? '#1a202c' : '#111827') : (inChat ? '#ffffff' : '#1f2937');
+      let blendedHex = targetHex;
 
-      // ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを最強セレクタで網羅検知
+      // 1. メンバー一覧（#membersSidebar）が開いているかどうかを検知
+      const membersSidebar = document.getElementById('membersSidebar');
+      const isMembersOpen = membersSidebar && membersSidebar.classList.contains('bottom-sheet-open');
+
+      // 2. ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを検知
       let activeOverlayBg = null;
+      let hasHigherModalOpen = false;
+
       const overlays = document.querySelectorAll('.modal-overlay, [id*="Modal"], [id*="Preview"], [id*="Overlay"], [id*="Popup"], [class*="modal"], [class*="backdrop"], [class*="bg-black"], [class*="bg-gray-900"]');
       for (let i = 0; i < overlays.length; i++) {
         const el = overlays[i];
@@ -3390,18 +3386,22 @@
           if (style.position === 'fixed' || style.position === 'absolute') {
             const bg = style.backgroundColor;
             if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-              activeOverlayBg = bg;
-              break;
+              if (el.id !== 'bottomSheetOverlay') {
+                activeOverlayBg = bg;
+                hasHigherModalOpen = true;
+                break;
+              } else if (!isMembersOpen) {
+                activeOverlayBg = bg;
+              }
             }
           }
         }
       }
 
-      let targetHex = isDark ? (inChat ? '#1a202c' : '#111827') : (inChat ? '#ffffff' : '#1f2937');
-      let blendedHex = targetHex;
-
-      // 真っ黒(#000000)ではなく、実際のオーバーレイ背景色と元背景をアルファブレンド計算して「半透明グレーと全く同じ色」を割り出す！
-      if (activeOverlayBg) {
+      // ★究極のステート優先順位判定：
+      // (A) メンバー一覧の上にさらにアイコンタップ等で別のポップアップ・プレビューが開いた場合 -> 半透明グレー（ブレンド色）
+      // (B) メンバー一覧だけが開いている場合 -> 下側の空白部分は絶対にメンバー一覧コンテナの背景色（ライトなら白色 #ffffff、ダークなら #1f2937）にする！
+      if (hasHigherModalOpen || (activeOverlayBg && !isMembersOpen)) {
         const rgbaMatch = activeOverlayBg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
         if (rgbaMatch) {
           const r = parseInt(rgbaMatch[1], 10);
@@ -3415,8 +3415,10 @@
           
           blendedHex = '#' + [blendedR, blendedG, blendedB].map(x => x.toString(16).padStart(2, '0')).join('');
         } else {
-          blendedHex = '#71717a'; // rgba取得が特殊な場合の美しい半透明グレーフォールバック
+          blendedHex = '#71717a';
         }
+      } else if (isMembersOpen) {
+        blendedHex = isDark ? '#1f2937' : '#ffffff';
       }
 
       let metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
@@ -3431,7 +3433,7 @@
       document.documentElement.classList.toggle('dark-server-theme', isDark);
       document.body.classList.toggle('dark-server-theme', isDark);
       
-      if (activeOverlayBg) {
+      if (hasHigherModalOpen || activeOverlayBg || isMembersOpen) {
         document.documentElement.style.setProperty('background-color', blendedHex, 'important');
         document.body.style.setProperty('background-color', blendedHex, 'important');
       } else {
