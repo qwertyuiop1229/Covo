@@ -3276,20 +3276,20 @@
         justify-content: center !important;
       }
       /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
-      .modal-overlay > div {
+      .modal-overlay:not(.hidden) > div {
         padding: 0 !important;
         margin: 0 !important;
         width: 100% !important;
         height: 100% !important;
       }
-      /* モーダル本体を完璧なフルスクリーン・美しいネイティブシートビューへ大劇変 */
-      .modal-box, 
-      #serverSettingsModal .modal-box, 
-      #createServerModal .modal-box, 
-      #joinServerModal .modal-box, 
-      #settingsModal .modal-box,
-      #joinRoomPasswordModal .modal-box,
-      #adminJoinModal .modal-box {
+      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
+      .modal-overlay:not(.hidden) .modal-box, 
+      #serverSettingsModal:not(.hidden) .modal-box, 
+      #createServerModal:not(.hidden) .modal-box, 
+      #joinServerModal:not(.hidden) .modal-box, 
+      #settingsModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #adminJoinModal:not(.hidden) .modal-box {
         width: 100vw !important;
         max-width: 100vw !important;
         height: 100vh !important;
@@ -3299,13 +3299,13 @@
         margin: 0 !important;
         padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
         overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
-        display: flex !important;
+        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
         flex-direction: column !important;
         box-sizing: border-box !important;
         animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
         background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
       }
-      body.dark-server-theme .modal-box {
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
         background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
       }
 
@@ -3313,8 +3313,8 @@
          ★スマホ設定画面の息をのむほど美しいパーツ群
          ======================================= */
       /* 1. 上部に固定される、重厚感と透明感のある極上のネイティブヘッダー */
-      .modal-box .modal-dark-header,
-      .modal-box .bg-gray-800 {
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
+      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
         position: sticky !important;
         top: 0 !important;
         z-index: 40 !important;
@@ -3329,9 +3329,9 @@
         box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.2) !important;
       }
       /* 閉じるボタンをヘッダーの完璧な右上位置にスタイリング */
-      .modal-box button#closeServerSettingsBtn,
-      .modal-box button.absolute.top-3\.5.right-4,
-      .modal-box button.modal-close {
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
+      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close {
         top: 16px !important;
         right: 18px !important;
         width: 34px !important;
@@ -3345,13 +3345,13 @@
         z-index: 50 !important;
         transition: background 0.2s !important;
       }
-      .modal-box button#closeServerSettingsBtn:hover,
-      .modal-box button.absolute.top-3\.5.right-4:hover {
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
+      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4:hover {
         background: rgba(255, 255, 255, 0.25) !important;
       }
 
       /* 2. iOSのセグメントコントロール風！洗練されたリッチなタブエリア */
-      .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
+      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
         background: inherit !important;
         border-bottom: none !important;
         padding: 12px 16px 8px 16px !important;
@@ -3362,7 +3362,7 @@
         overflow-x: auto !important;
         flex-shrink: 0 !important;
       }
-      .modal-box .ss-tab {
+      .modal-overlay:not(.hidden) .modal-box .ss-tab {
         flex: 1 0 auto !important;
         padding: 10px 16px !important;
         border-radius: 1rem !important;
@@ -3375,24 +3375,24 @@
         align-items: center !important;
         justify-content: center !important;
       }
-      .modal-box .ss-tab.active {
+      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
         color: #ffffff !important;
         background: #334155 !important;
         box-shadow: 0 4px 12px -2px rgba(51, 65, 85, 0.3) !important;
       }
-      body.dark-server-theme .modal-box .ss-tab {
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
         color: #94a3b8 !important;
         background: rgba(255, 255, 255, 0.05) !important;
       }
-      body.dark-server-theme .modal-box .ss-tab.active {
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
         color: #ffffff !important;
         background: #475569 !important;
         box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.4) !important;
       }
 
       /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
-      .modal-box .p-6.max-h-\[60vh\],
-      .modal-box .p-6 {
+      .modal-overlay:not(.hidden) .modal-box .p-6.max-h-\[60vh\],
+      .modal-overlay:not(.hidden) .modal-box .p-6 {
         flex: 1 1 auto !important;
         max-height: none !important; /* 60vhの強制カットを消去！！！ */
         padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
@@ -3402,11 +3402,11 @@
       }
 
       /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
-      .modal-box input[type="text"],
-      .modal-box input[type="password"],
-      .modal-box input[type="email"],
-      .modal-box select,
-      .modal-box textarea {
+      .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      .modal-overlay:not(.hidden) .modal-box select,
+      .modal-overlay:not(.hidden) .modal-box textarea {
         border-radius: 0.85rem !important;
         padding: 12px 16px !important;
         font-size: 16px !important;
@@ -3414,11 +3414,11 @@
         border: 1px solid #e2e8f0 !important;
         box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
       }
-      body.dark-server-theme .modal-box input[type="text"],
-      body.dark-server-theme .modal-box input[type="password"],
-      body.dark-server-theme .modal-box input[type="email"],
-      body.dark-server-theme .modal-box select,
-      body.dark-server-theme .modal-box textarea {
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
         background: #1e293b !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
         color: #f1f5f9 !important;
@@ -3426,11 +3426,11 @@
       }
       
       /* ボタン群のリッチで指に吸い付くようなデザイン */
-      .modal-box button#createRoomInServerBtn,
-      .modal-box button#createInviteCodeBtn,
-      .modal-box button#renameServerBtn,
-      .modal-box button#changeServerPasswordBtn,
-      .modal-box button[onclick*="openStampAdminModal"] {
+      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
+      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
+      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
         border-radius: 0.85rem !important;
         padding: 12px 20px !important;
         font-weight: 700 !important;
