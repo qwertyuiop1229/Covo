@@ -2503,9 +2503,11 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ(元の38pxから32pxへスマートに縮小し、バグらない黄金比率に)。 */
-      --mnav-h: 32px;
-      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。 */
+      /* アイコン行の高さ(元の38px)。アイコンは .mobile-nav-tab で下寄せにしているので、
+         この高さの中で自然に上側へ少し余白ができる。 */
+      --mnav-h: 38px;
+      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
+         （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
       --mnav-safe: 0px;
       /* ナビ全体の高さ = アイコン行 + 安全領域。画面側の余白計算にも使う */
       --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
@@ -2530,13 +2532,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      /* アイコンを下端へピタッと寄せ、無駄な上部隙間を排除 */
+      /* アイコンを下寄りに置き、上側に少し余白・下側はほぼ無しにする */
       justify-content: flex-end;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
       background: transparent;
-      padding: 0;
+      padding: 0 0 2px 0;
       margin: 0;
       transition: color 0.15s;
       -webkit-tap-highlight-color: transparent;
@@ -3265,7 +3267,7 @@
         background-color: #1f2937 !important;
       }
 
-      /* ★スマホUI専用：サーバー設定や作成画面などの見切れを完全排除する極上ボトムシート・フルスクリーンUI */
+      /* ★スマホUI専用：サーバー設定や作成画面などの見切れを完全排除し、息をのむほど洗練された極上ボトムシートUI */
       .modal-overlay {
         align-items: flex-end !important; /* スマホでは下からせり上がるボトムシート仕様にする */
         padding: 0 !important;
@@ -3279,13 +3281,46 @@
       #adminJoinModal .modal-box {
         width: 100vw !important;
         max-width: 100vw !important;
-        max-height: 92vh !important;
-        border-radius: 1.5rem 1.5rem 0 0 !important;
+        max-height: 90vh !important;
+        border-radius: 1.75rem 1.75rem 0 0 !important;
+        box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.3) !important;
         margin: 0 !important;
-        padding: 24px 20px 48px 20px !important; /* Safe Areaを配慮した完璧な上下余白 */
+        padding: 16px 24px 48px 24px !important; /* Safe Areaと上部ハンドルを配慮した完璧な黄金比率の余白 */
         overflow-y: auto !important;
         box-sizing: border-box !important;
         animation: mobileBottomSheetOpen 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        position: relative;
+      }
+      /* ボトムシート上部中央に表示する、美しく象徴的なプルハンドル（Grabber Bar） */
+      .modal-box::before, 
+      #serverSettingsModal .modal-box::before, 
+      #createServerModal .modal-box::before, 
+      #joinServerModal .modal-box::before, 
+      #settingsModal .modal-box::before,
+      #joinRoomPasswordModal .modal-box::before,
+      #adminJoinModal .modal-box::before {
+        content: "";
+        display: block;
+        width: 38px;
+        height: 5px;
+        border-radius: 3px;
+        background: rgba(156, 163, 175, 0.4);
+        margin: 0 auto 18px auto;
+      }
+      /* モーダル内のヘッダーエリアと閉じるボタンの完璧な洗練配置 */
+      .modal-box .flex.justify-between {
+        align-items: center !important;
+        margin-bottom: 1.25rem !important;
+      }
+      .modal-box button.modal-close {
+        padding: 6px !important;
+        margin: -6px !important;
+        border-radius: 50% !important;
+        background: rgba(156, 163, 175, 0.15) !important;
+        transition: background 0.15s !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
     }
     @keyframes mobileBottomSheetOpen {
@@ -3338,9 +3373,15 @@
     // meta theme-color と html の背景色を動的に完全同期させる最強システム
     function updateMetaThemeColor() {
       const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const inChat = document.body.classList.contains('in-chat-view');
       
+      // 現在のベース背景色（RGB配列）を特定
+      // ライトチャット: #ffffff (255,255,255), ライトホーム: #1f2937 (31,41,55)
+      // ダークチャット: #1a202c (26,32,44),   ダークホーム: #111827 (17,24,39)
+      let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [17, 24, 39] : [31, 41, 55]);
+
       // ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを最強セレクタで網羅検知
-      let hasActiveOverlay = false;
+      let activeOverlayBg = null;
       const overlays = document.querySelectorAll('.modal-overlay, [id*="Modal"], [id*="Preview"], [id*="Overlay"], [id*="Popup"], [class*="modal"], [class*="backdrop"], [class*="bg-black"], [class*="bg-gray-900"]');
       for (let i = 0; i < overlays.length; i++) {
         const el = overlays[i];
@@ -3349,15 +3390,35 @@
           if (style.position === 'fixed' || style.position === 'absolute') {
             const bg = style.backgroundColor;
             if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-              hasActiveOverlay = true;
+              activeOverlayBg = bg;
               break;
             }
           }
         }
       }
 
-      // 暗いオーバーレイが表示中なら、meta theme-colorや外枠も完全にモーダル背景色と同化させる！
-      const targetColor = hasActiveOverlay ? '#000000' : (isDark ? '#111827' : '#ffffff');
+      let targetHex = isDark ? (inChat ? '#1a202c' : '#111827') : (inChat ? '#ffffff' : '#1f2937');
+      let blendedHex = targetHex;
+
+      // 真っ黒(#000000)ではなく、実際のオーバーレイ背景色と元背景をアルファブレンド計算して「半透明グレーと全く同じ色」を割り出す！
+      if (activeOverlayBg) {
+        const rgbaMatch = activeOverlayBg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if (rgbaMatch) {
+          const r = parseInt(rgbaMatch[1], 10);
+          const g = parseInt(rgbaMatch[2], 10);
+          const b = parseInt(rgbaMatch[3], 10);
+          const a = rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1;
+          
+          const blendedR = Math.round(r * a + baseRgb[0] * (1 - a));
+          const blendedG = Math.round(g * a + baseRgb[1] * (1 - a));
+          const blendedB = Math.round(b * a + baseRgb[2] * (1 - a));
+          
+          blendedHex = '#' + [blendedR, blendedG, blendedB].map(x => x.toString(16).padStart(2, '0')).join('');
+        } else {
+          blendedHex = '#71717a'; // rgba取得が特殊な場合の美しい半透明グレーフォールバック
+        }
+      }
+
       let metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
       if (!metaTheme) {
         metaTheme = document.createElement('meta');
@@ -3365,14 +3426,14 @@
         metaTheme.id = 'metaThemeColor';
         document.head.appendChild(metaTheme);
       }
-      metaTheme.setAttribute('content', targetColor);
+      metaTheme.setAttribute('content', blendedHex);
       
       document.documentElement.classList.toggle('dark-server-theme', isDark);
       document.body.classList.toggle('dark-server-theme', isDark);
       
-      if (hasActiveOverlay) {
-        document.documentElement.style.setProperty('background-color', '#000000', 'important');
-        document.body.style.setProperty('background-color', '#000000', 'important');
+      if (activeOverlayBg) {
+        document.documentElement.style.setProperty('background-color', blendedHex, 'important');
+        document.body.style.setProperty('background-color', blendedHex, 'important');
       } else {
         document.documentElement.style.removeProperty('background-color');
         document.body.style.removeProperty('background-color');
