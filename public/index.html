@@ -10679,14 +10679,29 @@
       setTimeout(() => {
         let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
         if (el2) {
-          doJumpHighlight(el2);
+          // 画面非表示の間に一瞬で位置を確定させ、カクつきを完全になくす
+          el2.scrollIntoView({ behavior: 'auto', block: 'center' });
+          setTimeout(() => {
+            messagesDisplay.style.transition = 'opacity 0.3s ease';
+            messagesDisplay.style.opacity = '1';
+            allowPagination = true;
+            // 美しいハイライトアニメーションのみを発火
+            const isStamp = el2.querySelector('img[alt^="stamp_"]');
+            if (isStamp) {
+                isStamp.classList.add('stamp-jump-anim');
+                setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+            } else {
+                el2.classList.add('message-highlight');
+                setTimeout(() => el2.classList.remove('message-highlight'), 1200);
+            }
+          }, 50);
         } else {
           alertMessage("ジャンプできませんでした。", "warning");
+          messagesDisplay.style.transition = 'opacity 0.3s ease';
+          messagesDisplay.style.opacity = '1';
+          allowPagination = true;
         }
-        messagesDisplay.style.transition = 'opacity 0.2s ease';
-        messagesDisplay.style.opacity = '1';
-        allowPagination = true;
-      }, 500);
+      }, 400);
     }
 
     function renderMessagesWithReadReceipts() {
@@ -11332,11 +11347,9 @@
         const replyId = q.dataset.replyToId;
         const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${replyId}"]`);
         if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("message-highlight");
-          setTimeout(() => el.classList.remove("message-highlight"), 1200);
+          doJumpHighlight(el);
         } else {
-          showUnloadedMessagePreview(replyId);
+          jumpToUnloadedMessage(replyId);
         }
       }
     });
@@ -11401,9 +11414,8 @@
 
 
     function doJumpHighlight(el) {
-       el.scrollIntoView({ behavior: 'auto', block: 'center' });
-       // 少し経ってからもう一度合わせる（画像読み込みなどでずれた場合への対応）
-       setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+       // 同一画面内のジャンプは、カクつきを完全排除し、初手からsmoothスクロールのみで極めて滑らかに移動する
+       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
        
        const isStamp = el.querySelector('img[alt^="stamp_"]');
        if (isStamp) {
@@ -12088,7 +12100,12 @@
           div.appendChild(pNameSpan);
           div.appendChild(pTextSpan);
           div.addEventListener("click", () => {
-             jumpToUnloadedMessage(msg.id);
+             const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${msg.id}"]`);
+             if (el) {
+               doJumpHighlight(el);
+             } else {
+               jumpToUnloadedMessage(msg.id);
+             }
           });
           pinnedMessagesArea.appendChild(div);
         });
