@@ -15,12 +15,12 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Covo</title>
   <!-- ここにnoindexメタタグを追加してGoogle検索からのインデックス登録を防ぎます -->
   <meta name="robots" content="noindex, nofollow" />
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#3b82f6" />
+  <meta name="theme-color" id="metaThemeColor" content="#ffffff" />
   <link rel="icon" type="image/x-icon" href="favicon.ico?v=6" />
   <link rel="icon" type="image/png" sizes="32x32" href="icon-32x32.png?v=6" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png?v=6" />
@@ -37,6 +37,24 @@
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
+    /* PWAのホームバー余白やステータスバーを完全に背景と同化させる最強のベーススタイル */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      transition: background-color 0.3s ease;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
+    input, textarea, select, button {
+      font-size: 16px !important;
+    }
     .stamp-jump-anim {
       animation: stampWiggle 0.8s ease-in-out;
     }
@@ -3281,10 +3299,54 @@
       document.documentElement.style.setProperty('overflow', 'hidden', 'important');
       document.body.style.setProperty('overflow', 'hidden', 'important');
     }
+    
+    // meta theme-color と html の背景色を動的に完全同期させる最強システム
+    function updateMetaThemeColor() {
+      const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const targetColor = isDark ? '#111827' : '#ffffff';
+      let metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
+      if (!metaTheme) {
+        metaTheme = document.createElement('meta');
+        metaTheme.name = 'theme-color';
+        metaTheme.id = 'metaThemeColor';
+        document.head.appendChild(metaTheme);
+      }
+      metaTheme.setAttribute('content', targetColor);
+      document.documentElement.classList.toggle('dark-server-theme', isDark);
+      document.body.classList.toggle('dark-server-theme', isDark);
+    }
+
     // ダークテーマを最初のレンダリング前に適用（window.onload 待ちだとつなぎ目が見える）
     if (localStorage.getItem('covo_dark_server') === 'true') {
       document.body.classList.add('dark-server-theme');
+      document.documentElement.classList.add('dark-server-theme');
     }
+    updateMetaThemeColor();
+
+    // どんな手段でクラスやテーマが変わっても自動追従する MutationObserver システム
+    const themeObserver = new MutationObserver(() => {
+      updateMetaThemeColor();
+    });
+    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+
+    // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
+    document.addEventListener('touchmove', function(event) {
+      if (event.scale !== undefined && event.scale !== 1) {
+        event.preventDefault();
+      }
+      if (event.touches && event.touches.length > 1) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(event) {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    }, { passive: false });
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
@@ -7371,6 +7433,8 @@
     function setDarkServerTheme(isDark) {
       localStorage.setItem('covo_dark_server', isDark ? 'true' : 'false');
       document.body.classList.toggle('dark-server-theme', isDark);
+      document.documentElement.classList.toggle('dark-server-theme', isDark);
+      if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
       const pcToggle = document.getElementById('toggleDarkServer');
       const mobileToggle = document.getElementById('toggleDarkServerMobile');
       if (pcToggle) pcToggle.checked = isDark;
@@ -7379,6 +7443,8 @@
     function loadDarkServerTheme() {
       const isDark = localStorage.getItem('covo_dark_server') === 'true';
       document.body.classList.toggle('dark-server-theme', isDark);
+      document.documentElement.classList.toggle('dark-server-theme', isDark);
+      if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
       const pcToggle = document.getElementById('toggleDarkServer');
       const mobileToggle = document.getElementById('toggleDarkServerMobile');
       if (pcToggle) pcToggle.checked = isDark;
