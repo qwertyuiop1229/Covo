@@ -51,6 +51,15 @@
     html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
       background-color: #111827 !important;
     }
+    /* モーダルやボトムシートが開いた際、Safe Areaの外側（ホームバーやノッチ周り）まで物理的に完全バックドロップを広げる神業 */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay, #callOverlay, #fsProgressOverlay, #fsPreviewOverlay {
+      top: -100px !important;
+      bottom: -100px !important;
+      left: -100px !important;
+      right: -100px !important;
+      padding-top: 100px !important;
+      padding-bottom: 100px !important;
+    }
     /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
     input, textarea, select, button {
       font-size: 16px !important;
@@ -3303,7 +3312,21 @@
     // meta theme-color と html の背景色を動的に完全同期させる最強システム
     function updateMetaThemeColor() {
       const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
-      const targetColor = isDark ? '#111827' : '#ffffff';
+      
+      // ★アイコンタップ等で表示される「暗い背景のオーバーレイ」がアクティブかどうかを検知
+      let hasActiveOverlay = false;
+      const overlays = document.querySelectorAll('.modal-overlay:not(.hidden), #bottomSheetOverlay.show, #updateOverlay.show, #loadingOverlay:not(.hidden), #dropOverlay.active, #callOverlay.show, #fsProgressOverlay:not(.hidden), #fsPreviewOverlay:not(.hidden)');
+      for (let i = 0; i < overlays.length; i++) {
+        const el = overlays[i];
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.opacity > 0) {
+          hasActiveOverlay = true;
+          break;
+        }
+      }
+
+      // 暗いオーバーレイが表示中なら、meta theme-colorや外枠も完全にモーダル背景色と同化させる！
+      const targetColor = hasActiveOverlay ? '#000000' : (isDark ? '#111827' : '#ffffff');
       let metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
       if (!metaTheme) {
         metaTheme = document.createElement('meta');
@@ -3312,8 +3335,17 @@
         document.head.appendChild(metaTheme);
       }
       metaTheme.setAttribute('content', targetColor);
+      
       document.documentElement.classList.toggle('dark-server-theme', isDark);
       document.body.classList.toggle('dark-server-theme', isDark);
+      
+      if (hasActiveOverlay) {
+        document.documentElement.style.setProperty('background-color', '#000000', 'important');
+        document.body.style.setProperty('background-color', '#000000', 'important');
+      } else {
+        document.documentElement.style.removeProperty('background-color');
+        document.body.style.removeProperty('background-color');
+      }
     }
 
     // ダークテーマを最初のレンダリング前に適用（window.onload 待ちだとつなぎ目が見える）
@@ -3323,11 +3355,11 @@
     }
     updateMetaThemeColor();
 
-    // どんな手段でクラスやテーマが変わっても自動追従する MutationObserver システム
+    // どんな手段でクラスやテーマ、モーダルが開閉されても自動追従する MutationObserver システム
     const themeObserver = new MutationObserver(() => {
       updateMetaThemeColor();
     });
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
 
     // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
     document.addEventListener('touchmove', function(event) {
