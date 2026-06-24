@@ -5151,9 +5151,15 @@
     let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
     let isLoadingOlderMessages = false; // 二重ローディング防止
     let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
-    let isJumpMode = false;
-    let isLoadingNewerMessages = false;
-    let hasMoreNewerMessages = false;
+
+    // --- リアルタイム維持＆極省リード・ジャンプ用管理変数 ---
+    let isJumpView = false;             // 過去の周辺ログを部分表示している状態
+    let realTimeMessagesCache = [];     // onSnapshotが常に最新を更新し続けるタイムライン
+    let jumpViewMessages = [];          // ジャンプ周辺ログ（上下スクロールで部分的に増える）
+    let hasMoreJumpOlder = true;
+    let hasMoreJumpNewer = true;
+    let isLoadingJumpOlder = false;
+    let isLoadingJumpNewer = false;
     let unsubscribePinnedMessages = null;
     let currentPinnedMessages = [];
     // onAuthStateChanged の再入防止
@@ -8400,13 +8406,25 @@
         await decryptMessagesInPlace(latestMessages, currentServerId, currentRoomId, _members).catch(() => {});
 
         if (isInitialMessageLoad) {
-          allLoadedMessages = [...latestMessages];
+          realTimeMessagesCache = [...latestMessages];
+          if (!isJumpView) {
+            allLoadedMessages = [...realTimeMessagesCache];
+          }
         } else {
-          // 既存のリストから、今回取得した最新20件に含まれるものを除去し、新しい最新20件を結合する
-          // これにより、追加読み込みした古いメッセージを維持しつつ、最新部分は更新・追加される
+          // リアルタイムキャッシュ側のマージ・更新
           const latestIds = new Set(latestMessages.map(m => m.id));
-          const olderKeptMessages = allLoadedMessages.filter(m => !latestIds.has(m.id));
-          allLoadedMessages = [...olderKeptMessages, ...latestMessages];
+          const olderKeptCache = realTimeMessagesCache.filter(m => !latestIds.has(m.id));
+          realTimeMessagesCache = [...olderKeptCache, ...latestMessages];
+
+          if (!isJumpView) {
+            const olderKeptMessages = allLoadedMessages.filter(m => !latestIds.has(m.id));
+            allLoadedMessages = [...olderKeptMessages, ...latestMessages];
+          } else {
+            // ジャンプ中の場合、最新メッセージが届いたことや既読変更を jumpViewMessages 側にも反映（該当があれば）
+            const latestMap = new Map(latestMessages.map(m => [m.id, m]));
+            jumpViewMessages = jumpViewMessages.map(m => latestMap.has(m.id) ? latestMap.get(m.id) : m);
+            allLoadedMessages = [...jumpViewMessages];
+          }
         }
 
         lastMessagesData = [...allLoadedMessages];
@@ -8608,32 +8626,126 @@
 
       const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
       if (messagesDisplay.scrollTop <= 20) {
-        // 一番下にきたら絶対消える（フェードアウト）
         jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
         jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
-      } else if (messagesDisplay.scrollTop > 300) {
-        // フェードイン表示
+        
+        // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
+        if (isJumpView && !hasMoreJumpNewer) {
+          isJumpView = false;
+          allLoadedMessages = [...realTimeMessagesCache];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+        }
+      } else if (isJumpView || messagesDisplay.scrollTop > 300) {
         jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
         jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
       }
 
       const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
       
-      // 過去への読み込み (scrollTop大=上スクロール)
-      if (scrollDistanceToTop < 300 && !isLoadingOlderMessages && hasMoreOlderMessages) {
-        await loadOlderMessages();
+      // 過去への読み込み (scrollTop大 = 上スクロール)
+      if (scrollDistanceToTop < 300) {
+        if (!isJumpView && !isLoadingOlderMessages && hasMoreOlderMessages) {
+          await loadOlderMessages();
+        } else if (isJumpView && !isLoadingJumpOlder && hasMoreJumpOlder) {
+          await loadJumpOlderMessages();
+        }
+      }
+
+      // ジャンプ中のみ、未来への読み込み (scrollTop小 = 下スクロール)
+      if (isJumpView && messagesDisplay.scrollTop < 300 && !isLoadingJumpNewer && hasMoreJumpNewer) {
+        await loadJumpNewerMessages();
       }
     });
 
-    // 未来へのフェッチ(loadNewerMessages)は常時リアルタイム維持のため不要化
-    async function loadNewerMessages() {}
+    async function loadJumpOlderMessages() {
+      if (isLoadingJumpOlder || !hasMoreJumpOlder || !jumpViewMessages.length) return;
+      isLoadingJumpOlder = true;
+      try {
+        const oldestMsg = jumpViewMessages[0];
+        if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAfter(oldestMsg.timestamp),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
+        if (!snap.empty) {
+          const fetched = [];
+          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          fetched.reverse();
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
+          
+          jumpViewMessages = [...fetched, ...jumpViewMessages];
+          allLoadedMessages = [...jumpViewMessages];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+        }
+      } catch (e) { console.error("loadJumpOlderMessages error:", e); }
+      finally { isLoadingJumpOlder = false; }
+    }
+
+    async function loadJumpNewerMessages() {
+      if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
+      isLoadingJumpNewer = true;
+      try {
+        const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
+        if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(newestMsg.timestamp),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
+        if (!snap.empty) {
+          const fetched = [];
+          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
+          
+          const oldScrollHeight = messagesDisplay.scrollHeight;
+          const oldScrollTop = messagesDisplay.scrollTop;
+          
+          jumpViewMessages = [...jumpViewMessages, ...fetched];
+          allLoadedMessages = [...jumpViewMessages];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+          
+          messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+        }
+      } catch (e) { console.error("loadJumpNewerMessages error:", e); }
+      finally { isLoadingJumpNewer = false; }
+    }
 
     window.exitJumpMode = function() {
       const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
       jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
       jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
       
-      messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
+      if (isJumpView) {
+        isJumpView = false;
+        // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
+        allLoadedMessages = [...realTimeMessagesCache];
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        
+        renderMessagesWithReadReceipts();
+        messagesDisplay.scrollTop = 0;
+      } else {
+        messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     };
 
     // PCでのマウスホイールによるスクロール方向逆転の修正
@@ -10580,55 +10692,46 @@
         }
         const targetMsg = { id: docSnap.id, ...docSnap.data() };
         
-        const oldestMsg = allLoadedMessages[0];
-        if (!oldestMsg || !oldestMsg.timestamp) {
-          if (spinner) spinner.style.display = 'none';
-          return;
-        }
-
-        // 既存の最古メッセージから、ターゲットメッセージのタイムスタンプ（さらに余裕を見て過去へ10件分先まで）を一括取得
-        // 常にリアルタイムリスナーと連結した地続きのタイムラインを形成する
+        // ターゲットメッセージの周辺（過去15件・未来15件）のみを最小限フェッチ（極小リード数）
+        const fetchLimit = 15;
         const qPast = query(
           collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
           orderBy("timestamp", "desc"),
-          startAfter(oldestMsg.timestamp),
-          endAt(targetMsg.timestamp)
-        );
-        
-        // ターゲットメッセージ自体を含むさらに過去の10件分も追加で確保しておく
-        const qPastExtra = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "desc"),
           startAt(targetMsg.timestamp),
-          limit(15)
+          limit(fetchLimit)
+        );
+        const qFuture = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(targetMsg.timestamp),
+          limit(fetchLimit)
         );
 
-        const [snapPast, snapPastExtra] = await Promise.all([getDocs(qPast), getDocs(qPastExtra)]);
+        const [snapPast, snapFuture] = await Promise.all([getDocs(qPast), getDocs(qFuture)]);
         
-        const fetchedMap = new Map();
-        snapPast.forEach(doc => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() }));
-        snapPastExtra.forEach(doc => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() }));
-        
-        const olderMessages = Array.from(fetchedMap.values());
-        // timestamp順に正しくソート（古い順 = asc）
-        olderMessages.sort((a, b) => {
-          const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp?.seconds || 0);
-          const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp?.seconds || 0);
-          return tA - tB;
-        });
+        const pastMsgs = [];
+        snapPast.forEach(doc => pastMsgs.push({ id: doc.id, ...doc.data() }));
+        pastMsgs.reverse(); // descをascに戻す
 
+        const futureMsgs = [];
+        snapFuture.forEach(doc => futureMsgs.push({ id: doc.id, ...doc.data() }));
+        
+        hasMoreJumpOlder = snapPast.docs.length === fetchLimit;
+        hasMoreJumpNewer = snapFuture.docs.length === fetchLimit;
+        
+        const combinedMsgs = [...pastMsgs, ...futureMsgs];
+        
         const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        for (let i = 0; i < olderMessages.length; i++) {
-          if (olderMessages[i].text && isEncrypted(olderMessages[i].text)) {
-            olderMessages[i].text = await decryptText(olderMessages[i].text, currentServerId, currentRoomId, _members).catch(()=>olderMessages[i].text);
+        for (let i = 0; i < combinedMsgs.length; i++) {
+          if (combinedMsgs[i].text && isEncrypted(combinedMsgs[i].text)) {
+            combinedMsgs[i].text = await decryptText(combinedMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>combinedMsgs[i].text);
           }
         }
 
-        // 既存のメッセージと重複しないようにマージ
-        const existingIds = new Set(allLoadedMessages.map(m => m.id));
-        const newOlderMessages = olderMessages.filter(m => !existingIds.has(m.id));
-
-        allLoadedMessages = [...newOlderMessages, ...allLoadedMessages];
+        // 常時リアルタイムリスナーは稼働させたまま、画面用配列をジャンプ先ログへスッ切り替え
+        isJumpView = true;
+        jumpViewMessages = combinedMsgs;
+        allLoadedMessages = [...jumpViewMessages];
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
