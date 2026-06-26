@@ -1170,6 +1170,24 @@ async function verifyFirebaseIdToken(idToken, env) {
   }
 }
 
+async function isD1Admin(appId, verifiedUser, env) {
+  if (!appId || !verifiedUser) return false;
+  try {
+    const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
+    if (row && row.setting_data) {
+      const data = JSON.parse(row.setting_data);
+      const emailMatch = data && Array.isArray(data.emails) && verifiedUser.email && data.emails.includes(verifiedUser.email);
+      const uidMatch = data && Array.isArray(data.admins) && verifiedUser.uid && data.admins.includes(verifiedUser.uid);
+      if (emailMatch || uidMatch) {
+        return true;
+      }
+    }
+  } catch(e) {
+    console.error("isD1Admin error:", e);
+  }
+  return false;
+}
+
 async function handleSetOffline(request, env) {
   // sendBeaconはcredentials=includeで送るためAccess-Control-Allow-Origin: *が使えない
   const origin = request.headers.get("Origin") || "*";
@@ -1251,6 +1269,8 @@ async function handleD1Api(request, env, url) {
         const appId = url.searchParams.get("appId");
         const settingId = url.searchParams.get("settingId");
         if (!appId || !settingId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        // 設定読み取りには認証が必要（Firestoreと同等）
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, settingId).first();
         if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
         return new Response(JSON.stringify({ empty: false, data: JSON.parse(row.setting_data) }), { status: 200, headers: d1Cors });
@@ -1258,6 +1278,13 @@ async function handleD1Api(request, env, url) {
       if (request.method === "POST") {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const { appId, settingId, data } = await request.json();
+        const existingAdminRow = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
+        if (existingAdminRow && existingAdminRow.setting_data) {
+          const isAdmin = await isD1Admin(appId, verifiedUser, env);
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: "Forbidden: Only admins can update settings" }), { status: 403, headers: d1Cors });
+          }
+        }
         await env.DB.prepare("INSERT INTO settings (app_id, setting_id, setting_data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, setting_id) DO UPDATE SET setting_data = excluded.setting_data, updated_at = excluded.updated_at")
           .bind(appId, settingId, JSON.stringify(data), Date.now()).run();
         return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -1272,8 +1299,14 @@ async function handleD1Api(request, env, url) {
         const keyType = url.searchParams.get("keyType"); // 'keys' or 'escrowKey' etc.
         const type = url.searchParams.get("type"); // 'profile' or 'keys' or 'user'
         if (!appId || !userId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        // ユーザー情報読み取りには認証が必要
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         
         if (type === "keys") {
+          // 秘密鍵は本人のみ（Firestoreルールと同等）
+          if (verifiedUser.uid !== userId) {
+            return new Response(JSON.stringify({ error: "Forbidden: Private key access restricted to owner" }), { status: 403, headers: d1Cors });
+          }
           const row = await env.DB.prepare("SELECT key_data FROM user_private_keys WHERE user_id = ? AND app_id = ? AND key_type = ?").bind(userId, appId, keyType || 'keys').first();
           if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
           return new Response(JSON.stringify({ empty: false, data: JSON.parse(row.key_data) }), { status: 200, headers: d1Cors });
@@ -1583,8 +1616,25 @@ async function handleD1Api(request, env, url) {
       if (request.method === "GET") {
         const appId = url.searchParams.get("appId");
         const roomId = url.searchParams.get("roomId");
+        const serverId = url.searchParams.get("serverId");
         const messageId = url.searchParams.get("messageId");
         if (!appId || !roomId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
+        
+        // 認証チェック: メッセージ読み取りには Firebase ID トークンが必要
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        
+        // サーバーメンバーシップチェック: 指定されたserverId に参加しているユーザーまたは管理者のみ許可
+        if (serverId) {
+          const memberRow = await env.DB.prepare(
+            "SELECT 1 FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?"
+          ).bind(serverId, verifiedUser.uid, appId).first();
+          if (!memberRow) {
+            const isAdmin = await isD1Admin(appId, verifiedUser, env);
+            if (!isAdmin) {
+              return new Response(JSON.stringify({ error: "Forbidden: Not a server member or admin" }), { status: 403, headers: d1Cors });
+            }
+          }
+        }
         
         if (messageId) {
           const row = await env.DB.prepare("SELECT * FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
@@ -1832,6 +1882,13 @@ async function handleD1Api(request, env, url) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, migrateType, data } = body;
+        const existingAdminRow = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
+        if (existingAdminRow && existingAdminRow.setting_data) {
+          const isAdmin = await isD1Admin(appId, verifiedUser, env);
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: "Forbidden: Only admins can run migration" }), { status: 403, headers: d1Cors });
+          }
+        }
         
         if (migrateType === "users" && Array.isArray(data)) {
           for (const u of data) {

@@ -11,7 +11,8 @@ service cloud.firestore {
     function isGlobalAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails);
+        ((request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+         (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins));
     }
 
     function isListAdmin(appId) {
@@ -41,7 +42,7 @@ service cloud.firestore {
       // 1. 全体設定
       match /settings/{docId} {
         allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
+        allow write: if !exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) || isGlobalAdmin(appId);
       }
       // リスト管理者は allowedEmails のみ書き込み可
       match /settings/allowedEmails {
@@ -274,7 +275,8 @@ service cloud.firestore {
 
         // 招待コード
         match /inviteCodes/{code} {
-          allow read: if isServerAdmin(appId, serverId);
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
           allow write: if isServerAdmin(appId, serverId);
         }
       }

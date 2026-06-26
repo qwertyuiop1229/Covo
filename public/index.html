@@ -53,7 +53,7 @@
       background-color: #111827 !important;
     }
     /* モーダルやボトムシート、画像プレビューが開いた際、Safe Areaの外側まで完全バックドロップを広げる神業 */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay, #callOverlay, #fsProgressOverlay, #fsPreviewOverlay, [id*="Modal"], [id*="Preview"], [id*="Popup"], [class*="backdrop"] {
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
       top: -100px !important;
       bottom: -100px !important;
       left: -100px !important;
@@ -2309,10 +2309,13 @@
       border-radius: 1.5rem 1.5rem 0 0;
       width: 100%;
       max-width: 480px;
-      max-height: 75vh;
+      /* スマホ・PCどちらでも画面に収まるよう max-height を調整 */
+      max-height: min(75vh, calc(100dvh - 60px));
       overflow-y: auto;
-      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       animation: slideUpSheet 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+      font-size: 14px; /* button{font-size:16px!important} の影響をリセット */
     }
     .call-picker-handle {
       width: 36px;
@@ -2323,7 +2326,7 @@
     }
     .call-picker-header {
       padding: 10px 20px 14px;
-      font-size: 1rem;
+      font-size: 1rem !important;
       font-weight: 700;
       color: white;
       border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -2339,6 +2342,7 @@
       cursor: pointer;
       transition: background 0.12s;
       -webkit-tap-highlight-color: transparent;
+      font-size: 14px !important; /* グローバルのbutton{16px}上書き防止 */
     }
     .call-picker-item:hover, .call-picker-item:active { background: rgba(255,255,255,0.07); }
     .call-picker-avatar {
@@ -2357,8 +2361,8 @@
       border: 1.5px solid rgba(255,255,255,0.12);
     }
     .call-picker-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .call-picker-name { font-size: 0.95rem; color: #f1f5f9; font-weight: 500; }
-    .call-picker-status { font-size: 0.75rem; color: rgba(255,255,255,0.4); margin-top: 1px; }
+    .call-picker-name { font-size: 0.95rem !important; color: #f1f5f9; font-weight: 500; }
+    .call-picker-status { font-size: 0.75rem !important; color: rgba(255,255,255,0.4); margin-top: 1px; }
 
     /* === ルームリストアイテムアニメーション === */
     @keyframes roomSlideIn {
@@ -3123,28 +3127,31 @@
       padding: 8px 8px 4px;
     }
     #settingsModal .settings-nav-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 10px;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: rgba(255,255,255,0.55);
-      cursor: pointer;
-      transition: background 0.12s, color 0.12s;
-      border: none;
-      background: transparent;
-      width: 100%;
-      text-align: left;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      padding: 7px 10px !important;
+      border-radius: 6px !important;
+      font-size: 0.85rem !important;
+      font-weight: 500 !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      transition: background 0.12s, color 0.12s !important;
+      border: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      text-align: left !important;
+      min-height: unset !important;
+      height: auto !important;
+      line-height: 1.4 !important;
     }
     #settingsModal .settings-nav-item:hover {
-      background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.85);
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(255,255,255,0.85) !important;
     }
     #settingsModal .settings-nav-item.active {
-      background: rgba(255,255,255,0.14);
-      color: white;
+      background: rgba(255,255,255,0.14) !important;
+      color: white !important;
     }
     #settingsModal #adminPanelContainer {
       display: flex;
@@ -3156,13 +3163,13 @@
       display: none;
     }
     #settingsModal .settings-nav-item.danger {
-      color: #f87171;
-      margin-top: 0.5rem;
-      flex: 0 0 auto;
+      color: #f87171 !important;
+      margin-top: 0.5rem !important;
+      flex: 0 0 auto !important;
     }
     #settingsModal .settings-nav-item.danger:hover {
-      background: rgba(239,68,68,0.15);
-      color: #f87171;
+      background: rgba(239,68,68,0.15) !important;
+      color: #f87171 !important;
     }
     #settingsModal .settings-nav-divider {
       height: 1px;
@@ -4765,6 +4772,22 @@
   <script type="module">
     // ========= Cloudflare Worker ベースURL =========
     const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+
+    // D1 API の認証付きfetchヘルパー（GET/POSTどちらも使用可）
+    // 認証されていない場合はトークンなしでリクエストするが、サーバー側で401を返す
+    async function d1Fetch(path, options = {}) {
+      try {
+        const idToken = (typeof auth !== 'undefined' && auth.currentUser)
+          ? await auth.currentUser.getIdToken()
+          : "";
+        const headers = { ...(options.headers || {}) };
+        if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+        return await fetch(`${WORKER_BASE_URL}${path}`, { ...options, headers });
+      } catch (e) {
+        console.error("[d1Fetch] error:", e);
+        throw e;
+      }
+    }
 
     // ========= バージョン管理 =========
     // 唯一のバージョン管理ファイル: public/version.json
@@ -7860,7 +7883,7 @@
 
     async function fetchD1Servers() {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/servers?appId=${appId}`);
+        const res = await d1Fetch(`/api/d1/servers?appId=${appId}`);
         const data = await res.json();
         const servers = data.docs ? data.docs.map(d => ({ id: d.id, ...d.data })) : [];
         allServersCache = servers;
@@ -7872,7 +7895,7 @@
 
     async function fetchD1Rooms(serverId) {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
+        const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
         const data = await res.json();
         roomList.innerHTML = "";
         const docs = data.docs || [];
@@ -7920,9 +7943,40 @@
 
     async function fetchD1Messages(serverId, roomId, isUpdate = false) {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}`);
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const res = await fetch(
+          `${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}&serverId=${serverId}`,
+          { headers: { "Authorization": `Bearer ${idToken}` } }
+        );
         const data = await res.json();
-        const msgs = data.docs ? data.docs.map(d => ({ id: d.id, ...d.data })) : [];
+        const msgs = data.docs ? data.docs.map(d => {
+          const m = { id: d.id, ...d.data };
+          // D1メッセージはcreatedAt(数値ms)を持つが、既存コードはtimestamp(Firestoreオブジェクト)を期待する。
+          // timestamp を数値互換のシムオブジェクトに統一して、toMillis/toDate の呼び出しをすべて安全にする。
+          if (!m.timestamp && m.createdAt) {
+            const ms = typeof m.createdAt === 'number' ? m.createdAt : parseInt(m.createdAt, 10);
+            m.timestamp = {
+              _isTimestampSim: true,
+              _ms: ms,
+              toMillis() { return this._ms; },
+              toDate()   { return new Date(this._ms); },
+              seconds:   Math.floor(ms / 1000),
+              nanoseconds: (ms % 1000) * 1e6,
+            };
+          } else if (m.timestamp && typeof m.timestamp === 'number') {
+            // すでに数値の場合もシムに変換
+            const ms = m.timestamp;
+            m.timestamp = {
+              _isTimestampSim: true,
+              _ms: ms,
+              toMillis() { return this._ms; },
+              toDate()   { return new Date(this._ms); },
+              seconds:   Math.floor(ms / 1000),
+              nanoseconds: (ms % 1000) * 1e6,
+            };
+          }
+          return m;
+        }) : [];
         
         const _members = (currentServerData && currentServerData.joinedUsers) || [];
         for (let i = 0; i < msgs.length; i++) {
@@ -8036,6 +8090,19 @@
           }
         } catch(e){}
 
+        // 1-3. 管理者リスト設定移行
+        try {
+          const admRef = doc(db, `artifacts/${appId}/settings/adminList`);
+          const admSnap = await getDoc(admRef);
+          if (admSnap.exists() && admSnap.data().admins) {
+            await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, migrateType: "settings", data: { settingId: "adminList", ...admSnap.data() } })
+            });
+            console.log("[Migrate] Admin list settings migrated.");
+          }
+        } catch(e){}
+
         // 2. スタンプ移行
         try {
           const stampsSnap = await getDocs(collection(db, `artifacts/${appId}/server_stamps`));
@@ -8120,7 +8187,7 @@
 
     async function getD1UserPublicKey(uid) {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/users?appId=${appId}&userId=${uid}`);
+        const res = await d1Fetch(`/api/d1/users?appId=${appId}&userId=${uid}`);
         const data = await res.json();
         if (!data.empty && data.data && data.data.publicKeyJwk) return await _importPub(data.data.publicKeyJwk);
       } catch(e){}
@@ -8129,7 +8196,7 @@
 
     async function getD1EscrowPublicKey() {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/settings?appId=${appId}&settingId=escrowKey`);
+        const res = await d1Fetch(`/api/d1/settings?appId=${appId}&settingId=escrowKey`);
         const data = await res.json();
         if (!data.empty && data.data && data.data.publicKeyJwk) return await _importPub(data.data.publicKeyJwk);
       } catch(e){}
@@ -8153,7 +8220,7 @@
 
     async function getD1RoomKeyForUser(serverId, roomId) {
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}&roomId=${roomId}&type=keys`);
+        const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${serverId}&roomId=${roomId}&type=keys`);
         const data = await res.json();
         if (!data.empty && data.docs) {
           const doc = data.docs.find(d => d.id === userId);
@@ -10651,7 +10718,10 @@
         let newMessageId;
         if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
           newMessageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-          await sendD1Message(newMessageId, data);
+          // D1用: Firestoreの serverTimestamp() はJSON化できないため、数値に変換
+          const d1Data = { ...data, createdAt: Date.now() };
+          delete d1Data.timestamp; // serverTimestamp()オブジェクトを削除
+          await sendD1Message(newMessageId, d1Data);
         } else {
           const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
           newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
@@ -11586,9 +11656,16 @@
 
       const timestampSpan = document.createElement("span");
       timestampSpan.className = "msg-timestamp text-[10px] text-gray-500 whitespace-nowrap";
-      if (message.timestamp && message.timestamp.toDate) {
-        const date = message.timestamp.toDate();
-        timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+      // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
+      const _getDate = (ts) => {
+        if (!ts) return null;
+        if (typeof ts.toDate === 'function') return ts.toDate();
+        if (typeof ts === 'number') return new Date(ts);
+        return null;
+      };
+      const _tsDate = _getDate(message.timestamp) || _getDate(message.createdAt);
+      if (_tsDate) {
+        timestampSpan.textContent = `${String(_tsDate.getHours()).padStart(2, "0")}:${String(_tsDate.getMinutes()).padStart(2, "0")}`;
       } else {
         timestampSpan.textContent = "送信中...";
       }
@@ -11803,9 +11880,16 @@
           }
           const timestampSpan = row.querySelector('.msg-timestamp');
           if (timestampSpan) {
-            if (msg.timestamp && msg.timestamp.toDate) {
-              const date = msg.timestamp.toDate();
-              timestampSpan.textContent = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+            // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
+            const _getDateU = (ts) => {
+              if (!ts) return null;
+              if (typeof ts.toDate === 'function') return ts.toDate();
+              if (typeof ts === 'number') return new Date(ts);
+              return null;
+            };
+            const _tsDU = _getDateU(msg.timestamp) || _getDateU(msg.createdAt);
+            if (_tsDU) {
+              timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
             } else {
               timestampSpan.textContent = "送信中...";
             }
@@ -11912,10 +11996,17 @@
 
     function computeReadByCount(message, msgIndex) {
       let count = 0;
+      // タイムスタンプをmsに変換するヘルパー（Firestoreオブジェクト・数値・シムすべて対応）
+      const toMs = (ts) => {
+        if (!ts) return 0;
+        if (typeof ts === 'number') return ts;
+        if (typeof ts.toMillis === 'function') return ts.toMillis();
+        return 0;
+      };
       Object.entries(roomReadReceipts).forEach(([rid, receipt]) => {
         if (!rid || rid === message.senderId) return;
         if (receipt.lastReadMessageId && messagesIndexMap[receipt.lastReadMessageId] >= msgIndex) count++;
-        else if (receipt.lastReadAt && message.timestamp && receipt.lastReadAt.toMillis() >= message.timestamp.toMillis()) count++;
+        else if (receipt.lastReadAt && message.timestamp && toMs(receipt.lastReadAt) >= toMs(message.timestamp)) count++;
       });
       return count;
     }
