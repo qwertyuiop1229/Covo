@@ -3733,27 +3733,127 @@
       }
       lastTouchEnd = now;
     }, { passive: false });
+
+    // =========================================================================
+    // 🛡️ 最強フェイルセーフ：画面真っ白・起動フリーズを完全防止するシステムリカバリー＆ウォッチドッグ
+    // =========================================================================
+    window.__app_fully_loaded__ = false;
+
+    window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
+      const panel = document.getElementById('emergencyRecoveryOverlay');
+      if (!panel) return;
+      panel.classList.remove('hidden');
+      panel.style.display = 'flex';
+      const detailArea = document.getElementById('emergencyErrorDetail');
+      if (detailArea && errMsg) {
+        detailArea.value = `エラー発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
+      }
+      if (typeof fetchGitHubReleasesHistory === 'function') {
+        fetchGitHubReleasesHistory('emergencyPastVersions');
+      }
+    };
+
+    window.addEventListener('error', function(e) {
+      console.error('[Global Error Catcher]', e.message, e.error);
+      if (!window.__app_fully_loaded__) {
+        showEmergencyRecoveryPanel(e.message || 'JavaScript 実行エラー', e.error);
+      }
+    });
+
+    window.addEventListener('unhandledrejection', function(e) {
+      console.error('[Global Unhandled Rejection]', e.reason);
+      if (!window.__app_fully_loaded__) {
+        showEmergencyRecoveryPanel(e.reason?.message || '非同期処理エラー (Unhandled Rejection)', e.reason);
+      }
+    });
+
+    // 8秒間のウォッチドッグタイマー：タイムアウト時に強制的にリカバリーパネルを展開
+    setTimeout(function() {
+      if (!window.__app_fully_loaded__) {
+        console.warn('[Watchdog Timer] 8秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
+        showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（フリーズまたは通信遮断の可能性）', null);
+      }
+    }, 8000);
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
-    <div class="update-card">
+    <div class="update-card" id="updateCardContent">
       <button class="update-close-btn hidden" id="updateCloseButton" onclick="closeUpdateOverlay()" title="アップデートをスキップして続行">
         <i class="fas fa-times"></i>
       </button>
       <div class="update-icon"><i class="fas fa-arrow-up"></i></div>
-      <div class="update-title">アップデートがあります</div>
+      <div class="update-title" id="updateMainTitle">アップデートがあります</div>
       <div class="update-version" id="updateVersionText">新しいバージョンが利用可能です</div>
       <div class="update-body" id="updateBodyText"></div>
       <button class="update-btn" id="updateButton" onclick="performUpdate()">
         <i class="fas fa-download"></i>&nbsp;&nbsp;アップデートする
       </button>
       <div class="update-progress" id="updateProgress">
-        <span class="update-spinner"></span>
+        <span class="update-spinner" id="updateSpinnerIcon"></span>
         <span id="updateProgressText">ダウンロード中...</span>
+      </div>
+      <div id="updateRestartContainer" class="hidden" style="margin-top:1.5rem;">
+        <button class="update-btn" onclick="window.location.reload()" style="background:#22c55e;color:white;font-weight:bold;padding:0.8rem 2rem;border-radius:1rem;width:100%;box-shadow:0 10px 25px rgba(34,197,94,0.4);">
+          <i class="fas fa-redo"></i>&nbsp;&nbsp;再起動して更新を適用
+        </button>
       </div>
       <div id="updateErrorBox" class="hidden" style="margin-top:1rem;text-align:left">
         <textarea id="updateErrorDetail" readonly></textarea>
         <button class="" id="copyErrorBtn">エラーをコピー</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛡️ システムリカバリー＆過去バージョン復旧パネル -->
+  <div id="emergencyRecoveryOverlay" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-4" style="z-index:999999;backdrop-filter:blur(25px);background:rgba(15,23,42,0.85);">
+    <div class="bg-gray-900 border border-red-500/30 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-6 flex flex-col space-y-6 animate-pop-in text-white max-h-[90dvh]">
+      <div class="flex items-center justify-between border-b border-gray-800 pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-500 text-2xl animate-pulse">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-gray-100">システムリカバリーモード</h2>
+            <p class="text-xs text-gray-400">アプリ起動処理中に問題が発生・またはタイムアウトしました</p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="w-9 h-9 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-6 pr-2">
+        <div class="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-between">
+          <div>
+            <div class="text-sm font-bold text-blue-400"><i class="fas fa-arrow-up mr-2"></i>最新の修正アップデートを確認</div>
+            <div class="text-xs text-gray-300 mt-1">新たな修正プログラム（ホットフィックス）が配信されているか直ちにチェックします。</div>
+          </div>
+          <button onclick="emergencyCheckUpdate(this)" class="px-4 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg shadow-blue-600/30 flex-shrink-0">
+            更新をチェック
+          </button>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3"><i class="fas fa-history mr-2"></i>過去の安定バージョンへ復旧（ロールバック）</h3>
+          <p class="text-xs text-gray-400 mb-3">不具合のない過去のバージョンを選択して再インストールできます。復旧後は起動時の自動アプデが自動回避されます。</p>
+          <div id="emergencyPastVersions" class="space-y-2 min-h-[100px] flex flex-col justify-center">
+            <div class="text-center text-xs text-gray-500 py-4"><i class="fas fa-spinner fa-spin mr-2"></i>過去のバージョン履歴を取得中...</div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2"><i class="fas fa-terminal mr-2"></i>エラー詳細ログ</h3>
+          <textarea id="emergencyErrorDetail" readonly class="w-full h-28 p-3 bg-black/60 border border-gray-800 rounded-xl text-red-400 font-mono text-xs focus:outline-none resize-none"></textarea>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between border-t border-gray-800 pt-4 gap-4">
+        <button onclick="localStorage.clear();if(window.caches){caches.keys().then(k=>k.forEach(c=>caches.delete(c)))};window.location.reload()" class="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition flex items-center gap-2">
+          <i class="fas fa-trash-alt"></i>キャッシュ＆ストレージをリセットして再起動
+        </button>
+        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
+          閉じて続行を試みる
+        </button>
       </div>
     </div>
   </div>
@@ -3989,6 +4089,26 @@
                       <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">デスクトップにショートカットを作成</button>
                       <span id="pcCreateShortcutStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
+                  </div>
+                </div>
+
+                <!-- 強制アップデートの回避モードバナー -->
+                <div class="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-sm">
+                  <div>
+                    <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>強制アップデートの回避モード</div>
+                    <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">過去のバージョンを維持するため、起動時の自動強制アップデートを自動スキップします。</div>
+                  </div>
+                  <button id="toggleForceOverrideBtn" onclick="toggleForceOverride()" class="px-4 py-2 rounded-xl font-bold text-xs bg-yellow-500 text-black hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20 flex-shrink-0">
+                    設定を確認中...
+                  </button>
+                </div>
+
+                <!-- バージョン管理と履歴 -->
+                <div class="space-y-3">
+                  <div class="settings-section-title">バージョン管理と履歴</div>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">過去のリリース履歴の確認、および安定版へのロールバック（再インストール）が行えます。</p>
+                  <div id="settingsPastVersionsContainer" class="space-y-2 min-h-[150px]">
+                    <div class="text-center text-xs text-gray-500 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>GitHubからリリース履歴を取得中...</div>
                   </div>
                 </div>
               </div>
@@ -6435,8 +6555,10 @@
           }
         } catch (authErr) {
           console.error('[Auth] onAuthStateChanged handler error:', authErr);
+          if (typeof showEmergencyRecoveryPanel === 'function') showEmergencyRecoveryPanel(authErr.message || '認証初期化エラー', authErr);
         } finally {
           _authHandlerBusy = false;
+          window.__app_fully_loaded__ = true;
         }
         });
       } catch (error) {
@@ -6948,6 +7070,8 @@
         }
         updateE2EEStatusUI();
         updateLayoutDebugUI();
+        if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+        if (typeof fetchGitHubReleasesHistory === 'function') fetchGitHubReleasesHistory('settingsPastVersionsContainer');
       }
       const sec = document.getElementById(smap[tab] || 'profileSection');
       if (sec) sec.classList.add('active');
@@ -15156,25 +15280,28 @@
           const versionText = document.getElementById('updateVersionText');
           const bodyText = document.getElementById('updateBodyText');
           const closeBtn = document.getElementById('updateCloseButton');
+          const updateBtn = document.getElementById('updateButton');
+          const updateMainTitle = document.getElementById('updateMainTitle');
 
-          versionText.textContent = `v${metadata.version} が利用可能です`;
-          bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
-          
-          // Firebase Hosting上の最新 version.json を取得して強制アップデートか任意かを判定
-          try {
-            const res = await fetch('https://simplechat-65a0d.web.app/version.json?_t=' + Date.now(), { cache: 'no-store' });
-            const vdata = await res.json();
-            if (vdata && vdata.force === true) {
-              if (closeBtn) closeBtn.classList.add('hidden');
-            } else {
-              if (closeBtn) closeBtn.classList.remove('hidden');
-            }
-          } catch (e) {
-            // エラー時はフェイルセーフとして通常の閉じるボタンを表示
-            if (closeBtn) closeBtn.classList.remove('hidden');
+          // 回避モードの確認（ロールバック時など）
+          if (localStorage.getItem('covo_ignore_force_update') === '1') {
+            console.log('[Update] ユーザーが強制アップデート回避モードを有効にしているため、自動アップデートをスキップします。');
+            return false;
           }
 
+          versionText.textContent = `v${metadata.version} を自動でダウンロード中...`;
+          bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+          
+          if (closeBtn) closeBtn.classList.add('hidden');
+          if (updateBtn) updateBtn.classList.add('hidden');
+          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+
           overlay.classList.add('show');
+
+          // 自動ダウンロード＆インストールの開始（Discord風）
+          setTimeout(() => {
+            performUpdate();
+          }, 500);
 
           return true; // アプリ起動をブロック
         }
@@ -15196,6 +15323,116 @@
         initializeFirebase();
         if ('Notification' in window) Notification.requestPermission();
         if (typeof initializeResizer === 'function') initializeResizer();
+      }
+    };
+
+    // =========================================================================
+    // 🛡️ リリース履歴取得＆強制アプデ回避機能管理（設定モーダル＆リカバリー用）
+    // =========================================================================
+    window.updateForceOverrideUI = function() {
+      const btn = document.getElementById('toggleForceOverrideBtn');
+      if (!btn) return;
+      const isActive = localStorage.getItem('covo_ignore_force_update') === '1';
+      if (isActive) {
+        btn.textContent = '有効 (起動時アプデを自動回避中)';
+        btn.style.background = '#22c55e';
+        btn.style.color = 'white';
+      } else {
+        btn.textContent = '無効 (起動時に全自動アップデート)';
+        btn.style.background = '#eab308';
+        btn.style.color = 'black';
+      }
+    };
+
+    window.toggleForceOverride = function() {
+      const isActive = localStorage.getItem('covo_ignore_force_update') === '1';
+      if (isActive) {
+        localStorage.setItem('covo_ignore_force_update', '0');
+      } else {
+        localStorage.setItem('covo_ignore_force_update', '1');
+      }
+      updateForceOverrideUI();
+    };
+
+    window.fetchGitHubReleasesHistory = async function(containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '<div class="text-center text-xs text-gray-500 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>GitHubからリリース履歴を取得中...</div>';
+      try {
+        const res = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases', { cache: 'no-store' });
+        const releases = await res.json();
+        if (!Array.isArray(releases) || releases.length === 0) {
+          container.innerHTML = '<div class="text-center text-xs text-gray-500 py-4">リリース履歴が見つかりませんでした。</div>';
+          return;
+        }
+
+        container.innerHTML = '';
+        releases.forEach(rel => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith('.exe'));
+          const tag = rel.tag_name || '不明';
+          const dateStr = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
+          const bodyStr = (rel.body || '説明なし').substring(0, 100) + (rel.body?.length > 100 ? '...' : '');
+
+          const card = document.createElement('div');
+          card.className = 'p-4 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow transition';
+          card.innerHTML = `
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold font-mono text-gray-800 dark:text-gray-100">${tag}</span>
+                <span class="text-xs text-gray-400">(${dateStr})</span>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
+            </div>
+            <button class="px-4 py-2 bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}')">
+              <i class="fas fa-download"></i>このバージョンをインストール
+            </button>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        console.warn('Failed to fetch GitHub releases:', e);
+        container.innerHTML = '<div class="text-center text-xs text-red-500 py-4">リリース履歴の取得に失敗しました。</div>';
+      }
+    };
+
+    window.installPastRelease = function(url, tag) {
+      if (!url) return;
+      console.log(`[Install Past Release] ${tag} -> ${url}`);
+      // 過去バージョンをインストールした直後に再び強制アップデートされないよう、自動で回避モードを有効化
+      localStorage.setItem('covo_ignore_force_update', '1');
+      if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+      alert(`バージョン ${tag} のインストーラーをダウンロードします。\nダウンロード完了後、実行してインストールしてください。\n\n※起動時の強制アップデートを回避するため「強制アップデートの回避モード」を自動で有効にしました。`);
+      
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+      } else {
+        window.open(url, '_blank');
+      }
+    };
+
+    window.emergencyCheckUpdate = async function(btn) {
+      const origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '確認中...';
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri API unavailable');
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata) {
+          alert(`最新バージョン v${metadata.version} が利用可能です！ただちに自動更新を開始します。`);
+          document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');
+          document.getElementById('emergencyRecoveryOverlay').style.display = 'none';
+          localStorage.setItem('covo_ignore_force_update', '0');
+          await blockingUpdateCheck();
+        } else {
+          alert('現在提供されている最新バージョンです。更新プログラムはありません。');
+        }
+      } catch (e) {
+        alert('アップデートの確認に失敗しました: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
       }
     };
 
@@ -15240,28 +15477,27 @@
         if (metadata) {
           resetBtn();
           if (statusEl) { statusEl.textContent = ''; }
-          // 既存のアップデートオーバーレイを使用して通常のアップデートフローへ
+          
+          // 手動確認時は回避モードを無効化して進行
+          localStorage.setItem('covo_ignore_force_update', '0');
+          if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+
           const result = await blockingUpdateCheck();
           if (!result) {
             const overlay = document.getElementById('updateOverlay');
             const versionText = document.getElementById('updateVersionText');
             const bodyText = document.getElementById('updateBodyText');
             const closeBtn = document.getElementById('updateCloseButton');
+            const updateBtn = document.getElementById('updateButton');
+            const updateMainTitle = document.getElementById('updateMainTitle');
             if (overlay && versionText) {
-              versionText.textContent = `v${metadata.version} が利用可能です`;
+              versionText.textContent = `v${metadata.version} を自動でダウンロード中...`;
               if (bodyText) bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
-              try {
-                const res = await fetch('https://simplechat-65a0d.web.app/version.json?_t=' + Date.now(), { cache: 'no-store' });
-                const vdata = await res.json();
-                if (vdata && vdata.force === true) {
-                  if (closeBtn) closeBtn.classList.add('hidden');
-                } else {
-                  if (closeBtn) closeBtn.classList.remove('hidden');
-                }
-              } catch (e) {
-                if (closeBtn) closeBtn.classList.remove('hidden');
-              }
+              if (closeBtn) closeBtn.classList.add('hidden');
+              if (updateBtn) updateBtn.classList.add('hidden');
+              if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
               overlay.classList.add('show');
+              setTimeout(() => { performUpdate(); }, 500);
             }
           }
         } else {
@@ -15309,20 +15545,24 @@
       const btn = document.getElementById('updateButton');
       const progress = document.getElementById('updateProgress');
       const progressText = document.getElementById('updateProgressText');
+      const restartContainer = document.getElementById('updateRestartContainer');
 
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>&nbsp;&nbsp;ダウンロード中...';
-      progress.classList.add('show');
-      progressText.textContent = 'ダウンロードしてインストール中...';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>&nbsp;&nbsp;ダウンロード中...';
+        btn.classList.add('hidden');
+      }
+      if (progress) progress.classList.add('show');
+      if (progressText) progressText.textContent = 'ダウンロードしてインストール中...';
 
       try {
         await pendingUpdate.downloadAndInstall();
-        progressText.textContent = 'インストール完了！アプリを再起動してください。';
-        btn.innerHTML = '<i class="fas fa-redo"></i>&nbsp;&nbsp;再起動が必要です';
-        // 少し待ってからリロード（Tauri v2ではprocess pluginがないとrestartできないので）
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
+        if (progressText) progressText.textContent = 'アップデートのダウンロードが完了しました！';
+        if (progress) {
+          const spinnerIcon = document.getElementById('updateSpinnerIcon');
+          if (spinnerIcon) spinnerIcon.style.display = 'none';
+        }
+        if (restartContainer) restartContainer.classList.remove('hidden');
       } catch (error) {
         console.error('Update failed:', error);
         const detail = error instanceof Error
@@ -15340,29 +15580,34 @@
           } else {
             window.open(url, '_blank');
           }
-          btn.innerHTML = '<i class="fas fa-external-link-alt"></i>&nbsp;&nbsp;ダウンロードページへ';
-          btn.disabled = false;
-          btn.onclick = () => {
-            if (window.__TAURI__?.core?.invoke) {
-              window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
-            } else {
-              window.open(url, '_blank');
-            }
-          };
-          progressText.textContent = '手動でのアップデートが必要です。';
+          if (btn) {
+            btn.innerHTML = '<i class="fas fa-external-link-alt"></i>&nbsp;&nbsp;ダウンロードページへ';
+            btn.disabled = false;
+            btn.classList.remove('hidden');
+            btn.onclick = () => {
+              if (window.__TAURI__?.core?.invoke) {
+                window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+              } else {
+                window.open(url, '_blank');
+              }
+            };
+          }
+          if (progressText) progressText.textContent = '手動でのアップデートが必要です。';
           return;
         }
 
-        progressText.textContent = 'アップデート失敗（詳細は下のエラー欄を確認）';
-        // エラー詳細欄に展開
+        if (progressText) progressText.textContent = 'アップデート失敗（詳細は下のエラー欄を確認）';
         const errBox = document.getElementById('updateErrorBox');
         const errArea = document.getElementById('updateErrorDetail');
         if (errBox && errArea) {
           errArea.value = detail;
           errBox.classList.remove('hidden');
         }
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-download"></i>&nbsp;&nbsp;もう一度試す';
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove('hidden');
+          btn.innerHTML = '<i class="fas fa-download"></i>&nbsp;&nbsp;もう一度試す';
+        }
       }
     };
     // エラーコピー
