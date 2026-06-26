@@ -4986,22 +4986,41 @@
           return true;
         }
 
-        // 2) Firestoreの本人専用ドキュメントから復元
+        // 2) Firestore/D1の本人専用ドキュメントから復元
         try {
-          const privRef = doc(db, `artifacts/${appId}/users/${userId}/private/keys`);
-          const privSnap = await getDoc(privRef);
-          if (privSnap.exists() && privSnap.data().privateKeyJwk) {
-            const privJwk = privSnap.data().privateKeyJwk;
-            const pubJwk = privSnap.data().publicKeyJwk;
-            _e2ee.privateKey = await _importPriv(privJwk);
-            _e2ee.publicKey = await _importPub(pubJwk);
-            _e2ee.publicKeyJwk = pubJwk;
-            _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
-            _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
-            _e2ee.ready = true;
-            return true;
+          if (localStorage.getItem('covo_use_d1') === '1') {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const res = await fetch(`${WORKER_BASE_URL}/api/d1/users?appId=${appId}&userId=${userId}&type=keys&keyType=keys`, {
+              headers: { "Authorization": `Bearer ${idToken}` }
+            });
+            const d1Key = await res.json();
+            if (!d1Key.empty && d1Key.data && d1Key.data.privateKeyJwk) {
+              const privJwk = d1Key.data.privateKeyJwk;
+              const pubJwk = d1Key.data.publicKeyJwk;
+              _e2ee.privateKey = await _importPriv(privJwk);
+              _e2ee.publicKey = await _importPub(pubJwk);
+              _e2ee.publicKeyJwk = pubJwk;
+              _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+              _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+              _e2ee.ready = true;
+              return true;
+            }
+          } else {
+            const privRef = doc(db, `artifacts/${appId}/users/${userId}/private/keys`);
+            const privSnap = await getDoc(privRef);
+            if (privSnap.exists() && privSnap.data().privateKeyJwk) {
+              const privJwk = privSnap.data().privateKeyJwk;
+              const pubJwk = privSnap.data().publicKeyJwk;
+              _e2ee.privateKey = await _importPriv(privJwk);
+              _e2ee.publicKey = await _importPub(pubJwk);
+              _e2ee.publicKeyJwk = pubJwk;
+              _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+              _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+              _e2ee.ready = true;
+              return true;
+            }
           }
-        } catch (e) { /* Firestore読取失敗→新規生成へ */ }
+        } catch (e) { /* Firestore/D1読取失敗→新規生成へ */ }
 
         // 3) 新規生成して保存（ローカル＋Firestoreバックアップ）
         const pair = await _genUserKeyPair();
@@ -5023,7 +5042,7 @@
 
     async function _backupKeysToFirestore(privJwk, pubJwk) {
       if (!userId) return;
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         await backupD1Keys(privJwk, pubJwk);
         return;
       }
@@ -5041,7 +5060,7 @@
     // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き）。無ければnull。
     async function _getUserPublicKey(uid) {
       if (_e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         const key = await getD1UserPublicKey(uid);
         if (key) { _e2ee.pubKeyCache[uid] = key; return key; }
       }
@@ -5057,7 +5076,7 @@
 
     // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
     async function _getEscrowPublicKey() {
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         const key = await getD1EscrowPublicKey();
         if (key) return key;
       }
@@ -5075,7 +5094,7 @@
     async function ensureEscrowKey() {
       if (!_subtleOK || !userId || !isAdmin) return;
       try {
-        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        if (localStorage.getItem('covo_use_d1') === '1') {
           const d1Key = await getD1EscrowPublicKey();
           if (d1Key) return;
           const pair = await _genUserKeyPair();
@@ -5125,7 +5144,7 @@
       // 1) 自分宛のwrapped room keyがFirestore/D1にあるかをまずチェック
       try {
         let data = null;
-        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        if (localStorage.getItem('covo_use_d1') === '1') {
           data = await getD1RoomKeyForUser(serverId, roomId);
         } else {
           const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
@@ -5256,7 +5275,7 @@
     async function rotateAllRoomKeys(serverId, remainingMembers) {
        if (!_subtleOK) return;
        try {
-         if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+         if (localStorage.getItem('covo_use_d1') === '1') {
            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
            const res = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
            const data = await res.json();
@@ -5305,7 +5324,7 @@
 
     async function _distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
       const ids = Array.from(new Set([...(memberIds || []), userId]));
-      const isD1 = isAdmin && localStorage.getItem('covo_use_d1') === '1';
+      const isD1 = localStorage.getItem('covo_use_d1') === '1';
       const writes = [];
       const d1Keys = [];
       for (const uid of ids) {
@@ -5358,7 +5377,7 @@
     async function backfillRoomKeysForMembers(serverId, roomId, memberIds) {
       if (!_subtleOK || !userId) return;
       try {
-        const isD1 = isAdmin && localStorage.getItem('covo_use_d1') === '1';
+        const isD1 = localStorage.getItem('covo_use_d1') === '1';
         const roomKeyObj = _e2ee.roomKeyCache[roomId];
         if (!roomKeyObj) return; 
         for (const ver in roomKeyObj) {
@@ -8228,7 +8247,7 @@
               if (roomsData.length > 0) {
                 await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
                   method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                  body: JSON.stringify({ appId, migrateType: "rooms", data: roomsData })
+                  body: JSON.stringify({ appId, migrateType: "rooms", data: roomsData, serverId: sSnap.id })
                 });
                 console.log(`[Migrate] ${roomsData.length} rooms migrated for server ${sSnap.id}.`);
               }
@@ -8829,7 +8848,7 @@
         }
       };
 
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         fetchD1Servers();
         return;
       }
@@ -9114,7 +9133,7 @@
     // =========================================================================
     function loadServerRooms(serverId, _retry = 0) {
       if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         fetchD1Rooms(serverId);
         return;
       }
@@ -9372,7 +9391,7 @@
     function subscribeToPinnedMessages() {
       if (unsubscribePinnedMessages) unsubscribePinnedMessages();
       currentPinnedMessages = [];
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         return;
       }
       const q = query(
@@ -9409,7 +9428,7 @@
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) spinner.style.display = 'none';
 
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         fetchD1Messages(currentServerId, currentRoomId);
         initD1RealtimeListeners(currentRoomId);
         return;
@@ -10783,7 +10802,7 @@
         }
         const wasEncrypted = isEncrypted(textToStore);
         let newMessageId;
-        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        if (localStorage.getItem('covo_use_d1') === '1') {
           newMessageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
           // D1用: Firestoreの serverTimestamp() はJSON化できないため、数値に変換
           const d1Data = { ...data, createdAt: Date.now() };
@@ -11377,7 +11396,7 @@
 
     window.toggleReaction = async function(messageId, emoji) {
       if (!currentServerId || !currentRoomId || !userId) return;
-      if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+      if (localStorage.getItem('covo_use_d1') === '1') {
         await toggleD1Reaction(messageId, emoji);
         return;
       }
@@ -12513,7 +12532,7 @@
 
       // 3. Firestore / D1 メッセージ削除
       try {
-        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        if (localStorage.getItem('covo_use_d1') === '1') {
           await deleteD1Message(msgToDelete.id);
         } else {
           await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
@@ -13283,7 +13302,7 @@
     pinMessageButton.addEventListener("click", async (e) => {
       if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
       if (selectedMessageForContext) {
-        if (isAdmin && localStorage.getItem('covo_use_d1') === '1') {
+        if (localStorage.getItem('covo_use_d1') === '1') {
           await pinD1Message(selectedMessageForContext.id, !selectedMessageForContext.isPinned);
           messageContextMenu.classList.add("hidden");
           return;

@@ -1346,6 +1346,9 @@ async function handleD1Api(request, env, url) {
         const { appId, userId, type, keyType, keyData, nickname, avatarUrl, publicKeyJwk, fcmToken, removeFcmToken } = body;
         
         if (type === "keys") {
+          if (verifiedUser.uid !== userId) {
+            return new Response(JSON.stringify({ error: "Forbidden: Only owner can write private keys" }), { status: 403, headers: d1Cors });
+          }
           await env.DB.prepare("INSERT INTO user_private_keys (user_id, app_id, key_type, key_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, app_id, key_type) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
             .bind(userId, appId, keyType || 'keys', JSON.stringify(keyData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -1760,6 +1763,15 @@ async function handleD1Api(request, env, url) {
         const appId = url.searchParams.get("appId");
         const roomId = url.searchParams.get("roomId");
         const messageId = url.searchParams.get("messageId");
+        
+        const msgRow = await env.DB.prepare("SELECT sender_id FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
+        if (msgRow && msgRow.sender_id !== verifiedUser.uid) {
+          const isAdmin = await isD1Admin(appId, verifiedUser, env);
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete messages" }), { status: 403, headers: d1Cors });
+          }
+        }
+
         await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).run();
         // 削除通知
         if (env.SERVICE_ACCOUNT_JSON) {
@@ -1940,8 +1952,13 @@ async function handleD1Api(request, env, url) {
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }
         if (migrateType === "rooms" && Array.isArray(data)) {
-          await env.DB.prepare("DELETE FROM rooms WHERE app_id = ?").bind(appId).run();
-          await env.DB.prepare("DELETE FROM room_keys WHERE app_id = ?").bind(appId).run();
+          if (body.serverId) {
+            await env.DB.prepare("DELETE FROM rooms WHERE app_id = ? AND server_id = ?").bind(appId, body.serverId).run();
+            await env.DB.prepare("DELETE FROM room_keys WHERE app_id = ? AND server_id = ?").bind(appId, body.serverId).run();
+          } else {
+            await env.DB.prepare("DELETE FROM rooms WHERE app_id = ?").bind(appId).run();
+            await env.DB.prepare("DELETE FROM room_keys WHERE app_id = ?").bind(appId).run();
+          }
           const stmts = [];
           for (const r of data) {
             const merged = { ...r };
