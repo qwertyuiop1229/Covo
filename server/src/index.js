@@ -1154,7 +1154,19 @@ async function handleShareFile(request, env) {
 
 
 
+const tokenCache = new Map();
+
 async function verifyFirebaseIdToken(idToken, env) {
+  if (!idToken) return null;
+  const now = Date.now();
+  if (tokenCache.has(idToken)) {
+    const cached = tokenCache.get(idToken);
+    if (now < cached.expiresAt) {
+      return cached.user;
+    } else {
+      tokenCache.delete(idToken);
+    }
+  }
   try {
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${env.FIREBASE_API_KEY}`;
     const res = await fetch(url, {
@@ -1164,7 +1176,13 @@ async function verifyFirebaseIdToken(idToken, env) {
     });
     const data = await res.json();
     if (data.error || !data.users || data.users.length === 0) return null;
-    return { uid: data.users[0].localId, email: data.users[0].email };
+    const user = { uid: data.users[0].localId, email: data.users[0].email };
+    tokenCache.set(idToken, { user, expiresAt: now + 900000 });
+    if (tokenCache.size > 1000) {
+      const firstKey = tokenCache.keys().next().value;
+      tokenCache.delete(firstKey);
+    }
+    return user;
   } catch (e) {
     return null;
   }
@@ -1891,68 +1909,82 @@ async function handleD1Api(request, env, url) {
         }
         
         if (migrateType === "users" && Array.isArray(data)) {
+          const stmts = [];
           for (const u of data) {
-            try {
-              await env.DB.prepare("INSERT INTO users (user_id, app_id, nickname, avatar_url, public_key_jwk, fcm_tokens, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET nickname = excluded.nickname, avatar_url = excluded.avatar_url, public_key_jwk = excluded.public_key_jwk, fcm_tokens = excluded.fcm_tokens, updated_at = excluded.updated_at")
-                .bind(u.id, appId, u.nickname || null, u.avatarUrl || null, u.publicKeyJwk ? JSON.stringify(u.publicKeyJwk) : null, JSON.stringify(u.fcmTokens || []), Date.now(), Date.now()).run();
-            } catch(e){ console.warn("Migrate user err:", e); }
+            stmts.push(env.DB.prepare("INSERT INTO users (user_id, app_id, nickname, avatar_url, public_key_jwk, fcm_tokens, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET nickname = excluded.nickname, avatar_url = excluded.avatar_url, public_key_jwk = excluded.public_key_jwk, fcm_tokens = excluded.fcm_tokens, updated_at = excluded.updated_at")
+              .bind(u.id, appId, u.nickname || null, u.avatarUrl || null, u.publicKeyJwk ? JSON.stringify(u.publicKeyJwk) : null, JSON.stringify(u.fcmTokens || []), Date.now(), Date.now()));
+          }
+          for (let i = 0; i < stmts.length; i += 100) {
+            await env.DB.batch(stmts.slice(i, i + 100));
           }
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }
         if (migrateType === "servers" && Array.isArray(data)) {
+          await env.DB.prepare("DELETE FROM servers WHERE app_id = ?").bind(appId).run();
+          await env.DB.prepare("DELETE FROM server_joined_users WHERE app_id = ?").bind(appId).run();
+          const stmts = [];
           for (const s of data) {
-            try {
-              const merged = { ...s };
-              delete merged.id; delete merged.joinedUsers; delete merged.rooms;
-              await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
-                .bind(s.id, appId, s.name || "Untitled", s.description || "", s.isPublic ? 1 : 0, verifiedUser.uid, Date.now(), (s.joinedUsers || []).length || 1, JSON.stringify(merged)).run();
-              if (Array.isArray(s.joinedUsers)) {
-                for (const uid of s.joinedUsers) {
-                  try {
-                    await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(s.id, uid, appId, Date.now()).run();
-                  } catch(e){ console.warn("Migrate joinedUser err:", e); }
-                }
+            const merged = { ...s };
+            delete merged.id; delete merged.joinedUsers; delete merged.rooms;
+            stmts.push(env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
+              .bind(s.id, appId, s.name || "Untitled", s.description || "", s.isPublic ? 1 : 0, verifiedUser.uid, Date.now(), (s.joinedUsers || []).length || 1, JSON.stringify(merged)));
+            if (Array.isArray(s.joinedUsers)) {
+              for (const uid of s.joinedUsers) {
+                stmts.push(env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(s.id, uid, appId, Date.now()));
               }
-            } catch(e){ console.warn("Migrate server err:", e); }
+            }
+          }
+          for (let i = 0; i < stmts.length; i += 100) {
+            await env.DB.batch(stmts.slice(i, i + 100));
           }
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }
         if (migrateType === "rooms" && Array.isArray(data)) {
+          await env.DB.prepare("DELETE FROM rooms WHERE app_id = ?").bind(appId).run();
+          await env.DB.prepare("DELETE FROM room_keys WHERE app_id = ?").bind(appId).run();
+          const stmts = [];
           for (const r of data) {
-            try {
-              const merged = { ...r };
-              delete merged.id; delete merged.serverId; delete merged.messages; delete merged.roomKeys;
-              await env.DB.prepare("INSERT INTO rooms (room_id, server_id, app_id, name, type, created_by, created_at, current_key_version, room_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET name = excluded.name, type = excluded.type, current_key_version = excluded.current_key_version, room_data = excluded.room_data")
-                .bind(r.id, r.serverId, appId, r.name || "General", r.type || "chat", verifiedUser.uid, Date.now(), r.currentKeyVersion || 1, JSON.stringify(merged)).run();
-              if (Array.isArray(r.roomKeys)) {
-                for (const k of r.roomKeys) {
-                  try {
-                    await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
-                      .bind(r.id, k.userId, r.serverId, appId, JSON.stringify(k.keyData), Date.now()).run();
-                  } catch(e){ console.warn("Migrate roomKey err:", e); }
-                }
+            const merged = { ...r };
+            delete merged.id; delete merged.serverId; delete merged.messages; delete merged.roomKeys;
+            stmts.push(env.DB.prepare("INSERT INTO rooms (room_id, server_id, app_id, name, type, created_by, created_at, current_key_version, room_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET name = excluded.name, type = excluded.type, current_key_version = excluded.current_key_version, room_data = excluded.room_data")
+              .bind(r.id, r.serverId, appId, r.name || "General", r.type || "chat", verifiedUser.uid, Date.now(), r.currentKeyVersion || 1, JSON.stringify(merged)));
+            if (Array.isArray(r.roomKeys)) {
+              for (const k of r.roomKeys) {
+                stmts.push(env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+                  .bind(r.id, k.userId, r.serverId, appId, JSON.stringify(k.keyData), Date.now()));
               }
-            } catch(e){ console.warn("Migrate room err:", e); }
+            }
+          }
+          for (let i = 0; i < stmts.length; i += 100) {
+            await env.DB.batch(stmts.slice(i, i + 100));
           }
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }
         if (migrateType === "messages" && Array.isArray(data)) {
+          if (body.roomId) {
+            await env.DB.prepare("DELETE FROM messages WHERE room_id = ? AND app_id = ?").bind(body.roomId, appId).run();
+          }
+          const stmts = [];
           for (const m of data) {
-            try {
-              const merged = { ...m };
-              delete merged.id; delete merged.roomId; delete merged.serverId; delete merged.text; delete merged.senderId; delete merged.createdAt; delete merged.isPinned; delete merged.reactions;
-              await env.DB.prepare("INSERT OR REPLACE INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                .bind(m.id, m.roomId, m.serverId, appId, m.senderId || verifiedUser.uid, m.text || "", m.createdAt || Date.now(), m.isPinned ? 1 : 0, JSON.stringify(m.reactions || {}), JSON.stringify(merged)).run();
-            } catch(e){ console.warn("Migrate message err:", e); }
+            const merged = { ...m };
+            delete merged.id; delete merged.roomId; delete merged.serverId; delete merged.text; delete merged.senderId; delete merged.createdAt; delete merged.isPinned; delete merged.reactions;
+            stmts.push(env.DB.prepare("INSERT OR REPLACE INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+              .bind(m.id, m.roomId, m.serverId, appId, m.senderId || verifiedUser.uid, m.text || "", m.createdAt || Date.now(), m.isPinned ? 1 : 0, JSON.stringify(m.reactions || {}), JSON.stringify(merged)));
+          }
+          for (let i = 0; i < stmts.length; i += 100) {
+            await env.DB.batch(stmts.slice(i, i + 100));
           }
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }
         if (migrateType === "stamps" && Array.isArray(data)) {
+          await env.DB.prepare("DELETE FROM server_stamps WHERE app_id = ?").bind(appId).run();
+          const stmts = [];
           for (const st of data) {
-            try {
-              await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                .bind(st.id, st.serverId || "general", appId, st.name || "", st.url || "", verifiedUser.uid, Date.now()).run();
-            } catch(e){ console.warn("Migrate stamp err:", e); }
+            stmts.push(env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .bind(st.id, st.serverId || "general", appId, st.name || "", st.url || "", verifiedUser.uid, Date.now()));
+          }
+          for (let i = 0; i < stmts.length; i += 100) {
+            await env.DB.batch(stmts.slice(i, i + 100));
           }
           return new Response(JSON.stringify({ success: true, count: data.length }), { status: 200, headers: d1Cors });
         }

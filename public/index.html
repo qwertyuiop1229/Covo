@@ -5133,11 +5133,18 @@
           if (myWrapSnap.exists()) data = myWrapSnap.data();
         }
 
+        let keysObj = {};
         if (data) {
           const versions = data.versions || {};
+          for (const k in data) {
+            if (k.startsWith("versions.")) {
+              const ver = k.replace("versions.", "");
+              versions[ver] = data[k];
+            }
+          }
           if (data.wrappedKey && !versions["1"]) versions["1"] = data.wrappedKey; // migration
+          data.versions = versions;
           
-          const keysObj = {};
           let maxVer = 1;
           for (const ver in versions) {
              try {
@@ -5153,6 +5160,64 @@
              keysObj.latestVersion = latestVerStr;
              _e2ee.roomKeyCache[roomId] = keysObj;
              return keysObj;
+          }
+        }
+
+        // 管理者エスクロー鍵フォールバック（本人のルーム鍵が存在しない、または復号できない場合）
+        if (isAdmin && Object.keys(keysObj).length === 0) {
+          let escrowKeyData = null;
+          if (localStorage.getItem('covo_use_d1') === '1') {
+            escrowKeyData = await getD1RoomKeyForUser(serverId, roomId, "__escrow__");
+          } else {
+            const escWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
+            if (escWrapSnap.exists()) escrowKeyData = escWrapSnap.data();
+          }
+          if (escrowKeyData) {
+            let escrowPrivJwk = null;
+            if (localStorage.getItem('covo_use_d1') === '1') {
+              try {
+                const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+                const res = await fetch(`${WORKER_BASE_URL}/api/d1/users?appId=${appId}&userId=${userId}&type=keys&keyType=escrowKey`, { headers: { "Authorization": `Bearer ${idToken}` } });
+                const escData = await res.json();
+                if (!escData.empty && escData.data && escData.data.privateKeyJwk) escrowPrivJwk = escData.data.privateKeyJwk;
+              } catch(e){}
+            } else {
+              try {
+                const escPrivSnap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`));
+                if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) escrowPrivJwk = escPrivSnap.data().privateKeyJwk;
+              } catch(e){}
+            }
+            if (escrowPrivJwk) {
+              try {
+                const escrowPrivKey = await _importPriv(escrowPrivJwk);
+                const versions = escrowKeyData.versions || {};
+                for (const k in escrowKeyData) {
+                  if (k.startsWith("versions.")) {
+                    const ver = k.replace("versions.", "");
+                    versions[ver] = escrowKeyData[k];
+                  }
+                }
+                if (escrowKeyData.wrappedKey && !versions["1"]) versions["1"] = escrowKeyData.wrappedKey;
+                
+                let maxVer = 1;
+                const escKeysObj = {};
+                for (const ver in versions) {
+                   try {
+                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(versions[ver]));
+                     const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                     escKeysObj[ver] = key;
+                     if (parseInt(ver) > maxVer) maxVer = parseInt(ver);
+                   } catch(e) {}
+                }
+                if (Object.keys(escKeysObj).length > 0) {
+                   const latestVerStr = escrowKeyData.latestVersion ? escrowKeyData.latestVersion.toString() : maxVer.toString();
+                   escKeysObj.latest = escKeysObj[latestVerStr] || escKeysObj[Object.keys(escKeysObj).pop()];
+                   escKeysObj.latestVersion = latestVerStr;
+                   _e2ee.roomKeyCache[roomId] = escKeysObj;
+                   return escKeysObj;
+                }
+              } catch(e) { console.warn("[E2EE] エスクロー鍵での復号に失敗:", e); }
+            }
           }
         }
       } catch (e) {
@@ -8094,7 +8159,7 @@
         try {
           const admRef = doc(db, `artifacts/${appId}/settings/adminList`);
           const admSnap = await getDoc(admRef);
-          if (admSnap.exists() && admSnap.data().admins) {
+          if (admSnap.exists() && (admSnap.data().emails || admSnap.data().admins)) {
             await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
               body: JSON.stringify({ appId, migrateType: "settings", data: { settingId: "adminList", ...admSnap.data() } })
@@ -8218,12 +8283,13 @@
       } catch(e){}
     }
 
-    async function getD1RoomKeyForUser(serverId, roomId) {
+    async function getD1RoomKeyForUser(serverId, roomId, targetUserId = null) {
       try {
+        const uid = targetUserId || userId;
         const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${serverId}&roomId=${roomId}&type=keys`);
         const data = await res.json();
         if (!data.empty && data.docs) {
-          const doc = data.docs.find(d => d.id === userId);
+          const doc = data.docs.find(d => d.id === uid);
           if (doc) return doc.data;
         }
       } catch(e){}
