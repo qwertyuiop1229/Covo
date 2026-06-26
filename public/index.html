@@ -1346,6 +1346,10 @@
       transition: all 0.2s;
     }
 
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+
     .update-close-btn:hover {
       background: rgba(255, 255, 255, 0.25);
       transform: scale(1.05);
@@ -15242,9 +15246,21 @@
             const overlay = document.getElementById('updateOverlay');
             const versionText = document.getElementById('updateVersionText');
             const bodyText = document.getElementById('updateBodyText');
+            const closeBtn = document.getElementById('updateCloseButton');
             if (overlay && versionText) {
               versionText.textContent = `v${metadata.version} が利用可能です`;
               if (bodyText) bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+              try {
+                const res = await fetch('https://simplechat-65a0d.web.app/version.json?_t=' + Date.now(), { cache: 'no-store' });
+                const vdata = await res.json();
+                if (vdata && vdata.force === true) {
+                  if (closeBtn) closeBtn.classList.add('hidden');
+                } else {
+                  if (closeBtn) closeBtn.classList.remove('hidden');
+                }
+              } catch (e) {
+                if (closeBtn) closeBtn.classList.remove('hidden');
+              }
               overlay.classList.add('show');
             }
           }
