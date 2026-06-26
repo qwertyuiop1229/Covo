@@ -1,9 +1,13 @@
 # Covo Deploy Script
 # Usage: .\deploy.ps1       (Confirm)
 #        .\deploy.ps1 -y    (No Confirm)
-#        npm run deploy     (No Confirm / Auto)
+#        npm run deploy     (No Confirm / Auto / Optional Update)
+#        npm run deploy:force (No Confirm / Auto / Forced Update)
 
-param([switch]$y)
+param(
+    [switch]$y,
+    [switch]$force
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -58,15 +62,22 @@ if (-not $y) {
 }
 
 Write-Host "Deploying v$newVersion..." -ForegroundColor Green
+if ($force) {
+    Write-Host "Update Mode: FORCED (強制アップデート / バツボタン非表示)" -ForegroundColor Red
+} else {
+    Write-Host "Update Mode: OPTIONAL (通常アップデート / バツボタン表示)" -ForegroundColor Green
+}
+Write-Host ""
 
 # [0/5] Build Tailwind CSS
 Write-Host "[0/5] Building Tailwind CSS..." -ForegroundColor Green
 node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/styles.css --minify
 
 # [1/5] Update version.json + sync tauri.conf.json (must match git tag)
-$versionJsonContent = "{`n  `"version`": `"$newVersion`"`n}`n"
+$forceStr = if ($force) { "true" } else { "false" }
+$versionJsonContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": $forceStr`n}`n"
 [System.IO.File]::WriteAllText($versionJsonPath, $versionJsonContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json to $newVersion" -ForegroundColor Green
+Write-Host "[1/5] Updated version.json to $newVersion (force: $forceStr)" -ForegroundColor Green
 
 $tauriConfPath = Join-Path $PSScriptRoot "src-tauri\tauri.conf.json"
 if (Test-Path $tauriConfPath) {

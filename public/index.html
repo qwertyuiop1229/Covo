@@ -1315,6 +1315,7 @@
     }
 
     .update-card {
+      position: relative;
       background: rgba(255, 255, 255, 0.08);
       backdrop-filter: blur(20px);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1325,6 +1326,29 @@
       text-align: center;
       box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
       animation: updateCardFadeIn 0.6s ease-out;
+    }
+
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .update-close-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: scale(1.05);
     }
 
     @keyframes updateCardFadeIn {
@@ -3709,6 +3733,9 @@
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
     <div class="update-card">
+      <button class="update-close-btn hidden" id="updateCloseButton" onclick="closeUpdateOverlay()" title="アップデートをスキップして続行">
+        <i class="fas fa-times"></i>
+      </button>
       <div class="update-icon"><i class="fas fa-arrow-up"></i></div>
       <div class="update-title">アップデートがあります</div>
       <div class="update-version" id="updateVersionText">新しいバージョンが利用可能です</div>
@@ -15124,9 +15151,25 @@
           const overlay = document.getElementById('updateOverlay');
           const versionText = document.getElementById('updateVersionText');
           const bodyText = document.getElementById('updateBodyText');
+          const closeBtn = document.getElementById('updateCloseButton');
 
           versionText.textContent = `v${metadata.version} が利用可能です`;
           bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+          
+          // Firebase Hosting上の最新 version.json を取得して強制アップデートか任意かを判定
+          try {
+            const res = await fetch('https://simplechat-65a0d.web.app/version.json?_t=' + Date.now(), { cache: 'no-store' });
+            const vdata = await res.json();
+            if (vdata && vdata.force === true) {
+              if (closeBtn) closeBtn.classList.add('hidden');
+            } else {
+              if (closeBtn) closeBtn.classList.remove('hidden');
+            }
+          } catch (e) {
+            // エラー時はフェイルセーフとして通常の閉じるボタンを表示
+            if (closeBtn) closeBtn.classList.remove('hidden');
+          }
+
           overlay.classList.add('show');
 
           return true; // アプリ起動をブロック
@@ -15137,6 +15180,20 @@
       }
       return false;
     }
+
+    // アップデートオーバーレイを閉じる（任意アップデートスキップ時）
+    window.closeUpdateOverlay = function() {
+      const overlay = document.getElementById('updateOverlay');
+      if (overlay) {
+        overlay.classList.remove('show');
+      }
+      // 起動時のブロッキングでFirebase初期化がスキップされていた場合は初期化を再開
+      if (!app) {
+        initializeFirebase();
+        if ('Notification' in window) Notification.requestPermission();
+        if (typeof initializeResizer === 'function') initializeResizer();
+      }
+    };
 
     // 手動アップデート確認（設定のアプリ情報から呼ばれる）
     window.manualCheckUpdate = async function(btnId, statusId) {
