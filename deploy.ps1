@@ -63,9 +63,9 @@ if (-not $y) {
 
 Write-Host "Deploying v$newVersion..." -ForegroundColor Green
 if ($force) {
-    Write-Host "Update Mode: FORCED (強制アップデート / バツボタン非表示)" -ForegroundColor Red
+    Write-Host "Update Mode: FORCED (Mandatory Update / Close Button Hidden)" -ForegroundColor Red
 } else {
-    Write-Host "Update Mode: OPTIONAL (通常アップデート / バツボタン表示)" -ForegroundColor Green
+    Write-Host "Update Mode: OPTIONAL (Standard Update / Close Button Enabled)" -ForegroundColor Green
 }
 Write-Host ""
 
