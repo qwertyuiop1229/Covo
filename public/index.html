@@ -4642,14 +4642,14 @@
   <!-- スタンプ詳細管理モーダル -->
   <!-- スタンプ詳細管理モーダル -->
   <div id="stampAdminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-box animate-pop-in relative">
+    <div class="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-box animate-pop-in relative">
       <div class="flex justify-between items-center p-6 border-b border-gray-100">
         <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-icons mr-2 text-gray-600"></i>スタンプ管理</h2>
         <button onclick="document.getElementById('stampAdminModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors">
           <i class="fas fa-times text-xl"></i>
         </button>
       </div>
-      <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex flex-col gap-6">
+      <div class="p-6 overflow-y-auto flex-1 bg-gray-50 rounded-b-2xl flex flex-col gap-6">
         <!-- 管理者用サーバー選択 -->
         <div id="stampAdminServerSelectContainer" class="hidden relative z-50">
           <label class="block text-sm font-bold text-gray-600 mb-2">対象サーバーを選択</label>
@@ -8219,7 +8219,7 @@
                   if (msgsData.length > 0) {
                     await fetch(`${WORKER_BASE_URL}/api/d1/migrate`, {
                       method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                      body: JSON.stringify({ appId, migrateType: "messages", data: msgsData })
+                      body: JSON.stringify({ appId, migrateType: "messages", data: msgsData, roomId: rSnap.id })
                     });
                     console.log(`[Migrate] ${msgsData.length} messages migrated for room ${rSnap.id}.`);
                   }
@@ -8243,6 +8243,7 @@
           }
         } catch(e) { console.warn("[Migrate] Servers migration skipped or failed:", e); }
 
+        _e2ee.roomKeyCache = {}; // 移行完了時に古い鍵キャッシュをクリアして正しく復元
         alertMessage("✨ FirestoreからD1への全データ一括移行が正常に完了しました！", "success");
       } catch (err) {
         console.error("Migration Error:", err);
