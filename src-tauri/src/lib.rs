@@ -706,34 +706,86 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
     let temp_dir = std::env::temp_dir();
     let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", tag));
 
-    // reqwest でインストーラーをダウンロード
+    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
     let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
-    let bytes = response.bytes().await.map_err(|e| format!("Failed to read bytes: {}", e))?;
-    std::fs::write(&exe_path, bytes).map_err(|e| format!("Failed to write exe: {}", e))?;
+    let total = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
 
-    log::info!("Downloaded installer to: {:?}", exe_path);
+    let mut file = std::fs::File::create(&exe_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
 
+    let mut stream = response;
+    loop {
+        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
+        match chunk {
+            None => break,
+            Some(bytes) => {
+                use std::io::Write;
+                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
+                downloaded += bytes.len() as u64;
+                let progress = if total > 0 {
+                    ((downloaded as f64 / total as f64) * 100.0) as u32
+                } else {
+                    0
+                };
+                let _ = app_handle.emit("download-progress", serde_json::json!({
+                    "tag": tag,
+                    "downloaded": downloaded,
+                    "total": total,
+                    "progress": progress
+                }));
+            }
+        }
+    }
+    drop(file);
+
+    log::info!("Downloaded installer to: {:?} ({} bytes)", exe_path, downloaded);
+
+    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        // NSIS: /S, Inno Setup: /VERYSILENT /SUPPRESSMSGBOXES /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS
-        let status = std::process::Command::new(&exe_path)
-            .args(["/S", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SP-", "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS"])
+
+        let covo_exe = std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "Covo.exe".to_string());
+
+        let installer_path = exe_path.to_string_lossy().to_string();
+
+        // PowerShell スクリプト:
+        //   1. 2秒待機（現在のプロセスが終了するのを待つ）
+        //   2. インストーラーをサイレント実行・完了まで待つ
+        //   3. Covo.exe を起動して再起動
+        let ps_script = format!(
+            "Start-Sleep -Seconds 2; \
+             Start-Process -FilePath '{installer}' \
+               -ArgumentList '/S','/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS' \
+               -Wait; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{covo}'",
+            installer = installer_path.replace('\'', "''"),
+            covo = covo_exe.replace('\'', "''"),
+        );
+
+        std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("Failed to spawn installer: {}", e))?;
-        log::info!("Spawned silent installer: {:?}", status);
+            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
 
-        // インストーラーが Covo.exe を確実に上書きできるよう、IPC応答を返した直後に現在のプロセスを終了する
+        log::info!("Spawned silent installer via PowerShell; exiting current process.");
+
+        // IPC 応答を返した直後にプロセスを終了
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             app_handle.exit(0);
         });
     }
 
     Ok(())
 }
+
 
 // ===========================================================================
 // run()

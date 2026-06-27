@@ -3788,14 +3788,46 @@
       <button class="update-btn" id="updateButton" onclick="performUpdate()">
         <i class="fas fa-download"></i>&nbsp;&nbsp;アップデートする
       </button>
-      <div class="update-progress" id="updateProgress">
-        <span class="update-spinner" id="updateSpinnerIcon"></span>
-        <span id="updateProgressText">ダウンロード中...</span>
+
+      <!-- モダン進捗エリア -->
+      <div id="updateProgressArea" class="hidden" style="margin-top:1.5rem;width:100%;">
+        <!-- ステータスライン -->
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+          <span id="updateSpinnerIcon" style="font-size:1rem;animation:spin 1s linear infinite;display:inline-block;">⠋</span>
+          <span id="updateProgressText" style="font-size:0.85rem;color:#a5b4fc;font-weight:600;">準備中...</span>
+        </div>
+        <!-- プログレスバー -->
+        <div style="background:rgba(99,102,241,0.15);border-radius:999px;height:8px;overflow:hidden;margin-bottom:0.5rem;border:1px solid rgba(99,102,241,0.3);">
+          <div id="updateProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#a78bfa,#818cf8);border-radius:999px;transition:width 0.3s ease;box-shadow:0 0 10px rgba(99,102,241,0.6);"></div>
+        </div>
+        <!-- バイト数・パーセント詳細 -->
+        <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#64748b;margin-bottom:0.5rem;">
+          <span id="updateBytesText"></span>
+          <span id="updatePercentText" style="font-weight:700;color:#818cf8;">0%</span>
+        </div>
+        <!-- ステップ詳細 -->
+        <div id="updateStepText" style="font-size:0.75rem;color:#64748b;"></div>
       </div>
+
+      <!-- 旧プログレス（互換性のため残す） -->
+      <div class="update-progress hidden" id="updateProgress">
+        <span class="update-spinner hidden" id="updateSpinnerIconOld"></span>
+        <span id="updateProgressTextOld"></span>
+      </div>
+
       <div id="updateRestartContainer" class="hidden" style="margin-top:1.5rem;">
-        <button class="update-btn" onclick="window.location.reload()" style="background:#22c55e;color:white;font-weight:bold;padding:0.8rem 2rem;border-radius:1rem;width:100%;box-shadow:0 10px 25px rgba(34,197,94,0.4);">
-          <i class="fas fa-redo"></i>&nbsp;&nbsp;再起動して更新を適用
-        </button>
+        <!-- 自動再起動カウントダウン表示 -->
+        <div style="text-align:center;padding:1rem;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:1rem;">
+          <div style="font-size:1rem;font-weight:700;color:#22c55e;margin-bottom:0.5rem;">
+            <i class="fas fa-check-circle mr-2"></i>アップデート完了！
+          </div>
+          <div style="font-size:0.8rem;color:#a5b4fc;margin-bottom:1rem;" id="autoRestartCountdown">
+            <span id="countdownSec">3</span>秒後に自動で再起動します...
+          </div>
+          <button onclick="forceRestartNow()" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:white;font-weight:700;padding:0.7rem 1.5rem;border-radius:0.75rem;border:none;cursor:pointer;font-size:0.85rem;box-shadow:0 4px 15px rgba(34,197,94,0.4);">
+            <i class="fas fa-redo mr-1"></i>今すぐ再起動
+          </button>
+        </div>
       </div>
       <div id="updateErrorBox" class="hidden" style="margin-top:1rem;text-align:left">
         <textarea id="updateErrorDetail" readonly></textarea>
@@ -4177,7 +4209,7 @@
                     <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">過去のバージョンを維持するため、起動時の自動強制アップデートを自動スキップします。</div>
                   </div>
                   <label class="toggle-switch flex-shrink-0 cursor-pointer">
-                    <input type="checkbox" id="toggleForceOverrideCheckbox" onclick="handleForceOverrideToggle(event)">
+                    <input type="checkbox" id="toggleForceOverrideCheckbox" onchange="handleForceOverrideToggle(event)">
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
@@ -15434,16 +15466,36 @@
             window.__bgDownloading = true;
             window.__bgProgressText = '裏側で最新アップデートをダウンロード中...';
             
-            pendingUpdate.downloadAndInstall().then(() => {
-              window.__bgDownloading = false;
-              window.__bgDownloaded = true;
-              window.__bgProgressText = 'ダウンロード完了。再起動待ちです。';
-              const banner = document.getElementById('bgUpdateReadyBanner');
-              if (banner) banner.classList.remove('hidden');
-            }).catch(err => {
-              window.__bgDownloading = false;
-              window.__bgProgressText = 'ダウンロード失敗: ' + err.message;
-            });
+            // バックグラウンドでも performUpdate 相当の処理（サイレントインストール経路）
+            (async () => {
+              try {
+                const invoke = window.__TAURI__?.core?.invoke;
+                if (invoke && metadata.version) {
+                  const apiUrl = `https://api.github.com/repos/qwertyuiop1229/Covo/releases/tags/v${metadata.version}`;
+                  const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
+                  if (res.ok) {
+                    const release = await res.json();
+                    const asset = (release.assets || []).find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
+                    if (asset) {
+                      await invoke('silent_install_past_version', { url: asset.browser_download_url, tag: `v${metadata.version}` });
+                      window.__bgDownloaded = true;
+                      window.__bgProgressText = 'インストール完了。再起動中...';
+                      return;
+                    }
+                  }
+                }
+                // フォールバック: 旧 Tauri updater
+                await pendingUpdate.downloadAndInstall();
+                window.__bgDownloading = false;
+                window.__bgDownloaded = true;
+                window.__bgProgressText = 'ダウンロード完了。再起動待ちです。';
+                const banner = document.getElementById('bgUpdateReadyBanner');
+                if (banner) banner.classList.remove('hidden');
+              } catch (err) {
+                window.__bgDownloading = false;
+                window.__bgProgressText = 'ダウンロード失敗: ' + err.message;
+              }
+            })();
 
             return false; // アプリ起動をブロックしない
           }
@@ -15461,7 +15513,7 @@
           
           if (closeBtn) closeBtn.classList.add('hidden');
           if (updateBtn) updateBtn.classList.add('hidden');
-          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをインストール中';
 
           overlay.classList.add('show');
 
@@ -15500,17 +15552,19 @@
     };
 
     window.handleForceOverrideToggle = function(event) {
-      event.preventDefault();
-      const isActive = localStorage.getItem('covo_ignore_force_update') === '1';
-      if (isActive) {
-        localStorage.setItem('covo_ignore_force_update', '0');
-        updateForceOverrideUI();
-      } else {
+      const checked = event.target.checked;
+      if (checked) {
+        // オンにしようとしている → 確認モーダルを表示し、まずチェックをキャンセル
+        event.target.checked = false;
         const modal = document.getElementById('forceOverrideConfirmModal');
         if (modal) {
           modal.classList.remove('hidden');
           modal.style.display = 'flex';
         }
+      } else {
+        // オフにする → そのまま保存
+        localStorage.setItem('covo_ignore_force_update', '0');
+        updateForceOverrideUI();
       }
     };
 
@@ -15621,30 +15675,99 @@
       }
     };
 
-    window.installPastRelease = function(url, tag, btnEl) {
+    window.installPastRelease = async function(url, tag, btnEl) {
       if (!url) return;
       console.log(`[Install Past Release] ${tag} -> ${url}`);
       localStorage.setItem('covo_ignore_force_update', '1');
       if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
-      
+
+      // カード内に進捗UIを動的挿入
+      let progressEl = null;
       if (btnEl) {
         btnEl.disabled = true;
-        btnEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>裏側でサイレントダウンロード＆インストール中...';
-        btnEl.className = 'px-4 py-2 bg-yellow-500 text-black font-bold text-xs rounded-xl flex-shrink-0 flex items-center gap-1.5 shadow-sm animate-pulse';
+        const card = btnEl.closest('.past-version-card') || btnEl.parentElement;
+        if (card) {
+          progressEl = document.createElement('div');
+          progressEl.style.cssText = 'margin-top:0.75rem;';
+          progressEl.innerHTML = `
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;">
+              <span class="past-spinner" style="font-size:0.9rem;">⠋</span>
+              <span class="past-progress-text" style="font-size:0.8rem;color:#a5b4fc;font-weight:600;">準備中...</span>
+            </div>
+            <div style="background:rgba(99,102,241,0.15);border-radius:999px;height:6px;overflow:hidden;border:1px solid rgba(99,102,241,0.3);">
+              <div class="past-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#a78bfa);border-radius:999px;transition:width 0.25s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b;margin-top:0.3rem;">
+              <span class="past-bytes-text"></span>
+              <span class="past-pct-text" style="font-weight:700;color:#818cf8;">0%</span>
+            </div>
+          `;
+          card.appendChild(progressEl);
+        }
+
+        // スピナーアニメーション
+        const SPINNERS = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+        let si = 0;
+        const spinTimer = setInterval(() => {
+          const sp = progressEl?.querySelector('.past-spinner');
+          if (sp) sp.textContent = SPINNERS[si++ % SPINNERS.length];
+        }, 80);
+        progressEl._spinTimer = spinTimer;
       }
+
+      const updatePastProgress = ({ progress = 0, downloaded = 0, total = 0, text = '' } = {}) => {
+        if (!progressEl) return;
+        const bar = progressEl.querySelector('.past-progress-bar');
+        const pct = progressEl.querySelector('.past-pct-text');
+        const bytes = progressEl.querySelector('.past-bytes-text');
+        const txt = progressEl.querySelector('.past-progress-text');
+        if (bar) bar.style.width = Math.min(progress, 100) + '%';
+        if (pct) pct.textContent = progress + '%';
+        if (bytes && total > 0) bytes.textContent = (downloaded / (1024*1024)).toFixed(1) + ' MB / ' + (total / (1024*1024)).toFixed(1) + ' MB';
+        else if (bytes && downloaded > 0) bytes.textContent = (downloaded / (1024*1024)).toFixed(1) + ' MB ダウンロード済み';
+        if (txt && text) txt.textContent = text;
+      };
 
       const invoke = window.__TAURI__?.core?.invoke;
       if (invoke && url.endsWith('.exe')) {
-        invoke('silent_install_past_version', { url: url, tag: tag }).catch(err => {
+        // download-progress イベントをリッスン
+        let unlisten = null;
+        try {
+          const tauriEvent = window.__TAURI__?.event;
+          if (tauriEvent?.listen) {
+            unlisten = await tauriEvent.listen('download-progress', (event) => {
+              const { progress, downloaded, total } = event.payload;
+              updatePastProgress({
+                progress: Math.min(95, Math.round(5 + progress * 0.9)),
+                downloaded, total,
+                text: `ダウンロード中... (${progress}%)`
+              });
+            });
+          }
+        } catch(e) { console.warn('past version event listen unavailable:', e); }
+
+        updatePastProgress({ progress: 2, text: 'ダウンロードを開始中...' });
+        try {
+          await invoke('silent_install_past_version', { url, tag });
+          if (unlisten) unlisten();
+          if (progressEl) clearInterval(progressEl._spinTimer);
+          updatePastProgress({ progress: 100, text: '再起動します。更新を適用中...' });
+          const sp = progressEl?.querySelector('.past-spinner');
+          if (sp) { sp.textContent = '✔'; sp.style.animation = 'none'; }
+        } catch (err) {
           console.warn('silent_install_past_version failed, fallback to shell open', err);
+          if (unlisten) unlisten();
+          if (progressEl) clearInterval(progressEl._spinTimer);
+          updatePastProgress({ progress: 0, text: 'ブラウザでダウンロードページを開いています...' });
           invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
-        });
+        }
       } else if (invoke) {
         invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
       } else {
         window.open(url, '_blank');
       }
     };
+
 
     window.emergencyCheckUpdate = async function(btn) {
       const origText = btn.textContent;
@@ -15772,77 +15895,221 @@
       }
     };
 
+    // ─────────────────────────────────────────────────────────────
+    // 進捗UI ヘルパー
+    // ─────────────────────────────────────────────────────────────
+    const SPINNERS = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    let _spinIdx = 0;
+    let _spinTimer = null;
+
+    function startSpinner() {
+      const el = document.getElementById('updateSpinnerIcon');
+      if (!el) return;
+      _spinIdx = 0;
+      _spinTimer = setInterval(() => {
+        if (el) el.textContent = SPINNERS[_spinIdx++ % SPINNERS.length];
+      }, 80);
+    }
+    function stopSpinner(symbol = '✔') {
+      clearInterval(_spinTimer);
+      _spinTimer = null;
+      const el = document.getElementById('updateSpinnerIcon');
+      if (el) { el.textContent = symbol; el.style.animation = 'none'; }
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function updateProgressUI({ progress = 0, downloaded = 0, total = 0, text = '' } = {}) {
+      const bar = document.getElementById('updateProgressBar');
+      const pct = document.getElementById('updatePercentText');
+      const bytes = document.getElementById('updateBytesText');
+      const statusText = document.getElementById('updateProgressText');
+      const area = document.getElementById('updateProgressArea');
+
+      if (area && area.classList.contains('hidden')) area.classList.remove('hidden');
+      if (bar) bar.style.width = Math.min(progress, 100) + '%';
+      if (pct) pct.textContent = progress + '%';
+      if (bytes && total > 0) bytes.textContent = formatBytes(downloaded) + ' / ' + formatBytes(total);
+      else if (bytes && downloaded > 0) bytes.textContent = formatBytes(downloaded) + ' ダウンロード済み';
+      if (statusText && text) statusText.textContent = text;
+    }
+
+    // 自動再起動カウントダウン
+    function startAutoRestartCountdown(seconds = 3) {
+      const el = document.getElementById('countdownSec');
+      const restartContainer = document.getElementById('updateRestartContainer');
+      if (restartContainer) restartContainer.classList.remove('hidden');
+      let remaining = seconds;
+      if (el) el.textContent = remaining;
+      const timer = setInterval(() => {
+        remaining--;
+        if (el) el.textContent = Math.max(0, remaining);
+        if (remaining <= 0) {
+          clearInterval(timer);
+          forceRestartNow();
+        }
+      }, 1000);
+    }
+
+    window.forceRestartNow = function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        // Tauri環境では app.restart() 相当のコマンドを呼ぶ
+        invoke('plugin:process|restart').catch(() => {
+          // フォールバック: reload
+          window.location.reload();
+        });
+      } else {
+        window.location.reload();
+      }
+    };
+
     // アップデート実行（HTMLのonclickから呼ばれる）
     window.performUpdate = async function () {
       if (!pendingUpdate) return;
       const btn = document.getElementById('updateButton');
-      const progress = document.getElementById('updateProgress');
-      const progressText = document.getElementById('updateProgressText');
-      const restartContainer = document.getElementById('updateRestartContainer');
+      const invoke = window.__TAURI__?.core?.invoke;
+      const Channel = window.__TAURI__?.core?.Channel;
 
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>&nbsp;&nbsp;ダウンロード中...';
-        btn.classList.add('hidden');
-      }
-      if (progress) progress.classList.add('show');
-      if (progressText) progressText.textContent = 'ダウンロードしてインストール中...';
+      if (btn) { btn.disabled = true; btn.classList.add('hidden'); }
+      updateProgressUI({ progress: 0, text: 'アップデートを準備中...' });
+      startSpinner();
 
       try {
-        await pendingUpdate.downloadAndInstall();
-        if (progressText) progressText.textContent = 'アップデートのダウンロードが完了しました！';
-        if (progress) {
-          const spinnerIcon = document.getElementById('updateSpinnerIcon');
-          if (spinnerIcon) spinnerIcon.style.display = 'none';
+        // ── GitHub Releases から最新の .exe アセット URL を取得してサイレントインストール ──
+        // Tauri updater の metadata に version があれば GitHub から直接インストーラーを取得し
+        // silent_install_past_version 経由でサイレント適用＆自動再起動する。
+        // これにより外部のセットアップウィンドウが一切出なくなる。
+
+        let exeUrl = null;
+        const version = pendingUpdate?.version;
+
+        if (version && invoke) {
+          try {
+            updateProgressUI({ progress: 5, text: 'リリース情報を取得中...' });
+            const apiUrl = `https://api.github.com/repos/qwertyuiop1229/Covo/releases/tags/v${version}`;
+            const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
+            if (res.ok) {
+              const release = await res.json();
+              const asset = (release.assets || []).find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
+              if (asset) exeUrl = asset.browser_download_url;
+            }
+          } catch (e) {
+            console.warn('[Update] GitHub API failed, falling back to Tauri updater:', e);
+          }
         }
-        if (restartContainer) restartContainer.classList.remove('hidden');
+
+        if (exeUrl && invoke) {
+          // ── サイレントインストール + ストリーミング進捗 ──
+          // download-progress イベントをリッスン
+          const handleProgress = (payload) => {
+            const { progress, downloaded, total, tag } = payload;
+            updateProgressUI({
+              progress: Math.min(95, 5 + progress * 0.9), // 5%~95%
+              downloaded,
+              total,
+              text: `ダウンロード中... (${progress}%)`
+            });
+          };
+          let unlisten = null;
+          try {
+            const { listen } = await import('/node_modules/@tauri-apps/api/event.js').catch(() => window.__TAURI__?.event || {});
+            if (listen) {
+              unlisten = await listen('download-progress', (event) => handleProgress(event.payload));
+            }
+          } catch(e) { console.warn('event listen unavailable:', e); }
+
+          updateProgressUI({ progress: 5, text: 'インストーラーをダウンロード中...' });
+          await invoke('silent_install_past_version', { url: exeUrl, tag: `v${version}` });
+
+          if (unlisten) unlisten();
+          updateProgressUI({ progress: 100, text: 'インストール完了！再起動します...' });
+          stopSpinner('✔');
+          startAutoRestartCountdown(3);
+
+        } else {
+          // ── Tauri updater fallback (Channel で進捗取得) ──
+          updateProgressUI({ progress: 10, text: 'アップデートをダウンロード中...' });
+
+          const rid = pendingUpdate?.rid;
+          let totalSize = 0;
+          let downloadedSize = 0;
+
+          const tryInvokeWithRidVariants = async (cmd, extraArgs) => {
+            const variants = [{ rid }, { updateRid: rid }, { rid, updateRid: rid }];
+            let lastErr = null;
+            for (const v of variants) {
+              try {
+                return await invoke(cmd, { ...v, ...extraArgs });
+              } catch (e) {
+                lastErr = e;
+                const msg = String(e?.message || e || '').toLowerCase();
+                if (msg.includes('missing required key') || msg.includes('invalid args')) continue;
+                throw e;
+              }
+            }
+            throw lastErr || new Error(`${cmd}: all variants failed`);
+          };
+
+          if (Channel) {
+            const ch = new Channel();
+            ch.onmessage = (msg) => {
+              if (msg.event === 'Started') {
+                totalSize = msg.data?.contentLength || 0;
+                updateProgressUI({ progress: 10, total: totalSize, text: 'ダウンロード開始...' });
+              } else if (msg.event === 'Progress') {
+                downloadedSize += (msg.data?.chunkLength || 0);
+                const pct = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 80) + 10 : 10;
+                updateProgressUI({ progress: pct, downloaded: downloadedSize, total: totalSize, text: 'ダウンロード中...' });
+              } else if (msg.event === 'Finished') {
+                updateProgressUI({ progress: 90, downloaded: totalSize || downloadedSize, total: totalSize, text: 'インストール中...' });
+              }
+            };
+            await tryInvokeWithRidVariants('plugin:updater|download_and_install', { onEvent: ch });
+          } else {
+            await tryInvokeWithRidVariants('plugin:updater|download_and_install', {});
+          }
+
+          updateProgressUI({ progress: 100, text: 'インストール完了！再起動します...' });
+          stopSpinner('✔');
+          startAutoRestartCountdown(3);
+        }
+
       } catch (error) {
+        stopSpinner('✖');
         console.error('Update failed:', error);
         const detail = error instanceof Error
           ? (error.message + (error.stack ? '\n\n' + error.stack : ''))
           : (typeof error === 'object' ? JSON.stringify(error, null, 2) : String(error));
-        
-        if (detail.includes("The signature was created with a different key")) {
-          alert("重要なセキュリティアップデートがあります。今回は新しいセキュリティシステムへの移行のため、手動でのインストールが必要です。");
-          const url = "https://github.com/qwertyuiop1229/covo/releases/latest";
-          if (window.__TAURI__?.core?.invoke) {
-            window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(e => {
-              console.warn('Failed to open shell', e);
-              window.open(url, '_blank');
-            });
+
+        if (detail.includes('The signature was created with a different key')) {
+          const url = 'https://github.com/qwertyuiop1229/covo/releases/latest';
+          if (invoke) {
+            invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
           } else {
             window.open(url, '_blank');
           }
+          updateProgressUI({ progress: 0, text: '手動でのアップデートが必要です。ブラウザを開いています...' });
           if (btn) {
             btn.innerHTML = '<i class="fas fa-external-link-alt"></i>&nbsp;&nbsp;ダウンロードページへ';
-            btn.disabled = false;
-            btn.classList.remove('hidden');
-            btn.onclick = () => {
-              if (window.__TAURI__?.core?.invoke) {
-                window.__TAURI__.core.invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
-              } else {
-                window.open(url, '_blank');
-              }
-            };
+            btn.disabled = false; btn.classList.remove('hidden');
+            btn.onclick = () => { if (invoke) invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank')); else window.open(url, '_blank'); };
           }
-          if (progressText) progressText.textContent = '手動でのアップデートが必要です。';
           return;
         }
 
-        if (progressText) progressText.textContent = 'アップデート失敗（詳細は下のエラー欄を確認）';
+        updateProgressUI({ progress: 0, text: 'アップデート失敗（詳細は下のエラー欄を確認）' });
         const errBox = document.getElementById('updateErrorBox');
         const errArea = document.getElementById('updateErrorDetail');
-        if (errBox && errArea) {
-          errArea.value = detail;
-          errBox.classList.remove('hidden');
-        }
-        if (btn) {
-          btn.disabled = false;
-          btn.classList.remove('hidden');
-          btn.innerHTML = '<i class="fas fa-download"></i>&nbsp;&nbsp;もう一度試す';
-        }
+        if (errBox && errArea) { errArea.value = detail; errBox.classList.remove('hidden'); }
+        if (btn) { btn.disabled = false; btn.classList.remove('hidden'); btn.innerHTML = '<i class="fas fa-download"></i>&nbsp;&nbsp;もう一度試す'; }
       }
     };
+
     // エラーコピー
     document.addEventListener('click', (e) => {
       if (e.target?.id === 'copyErrorBtn') {
