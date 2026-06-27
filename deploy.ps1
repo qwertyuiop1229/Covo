@@ -1,12 +1,10 @@
 ﻿# Covo Deploy Script
 # Usage: .\deploy.ps1       (interactive confirm)
 #        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (optional update)
-#        npm run deploy:force (forced update)
+#        npm run deploy      (deploy update)
 
 param(
-    [switch]$y,
-    [switch]$force
+    [switch]$y
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,11 +56,6 @@ if (-not $y) {
 }
 
 Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-if ($force) {
-    Write-Host 'Update Mode: FORCED  (force:true  / close button hidden)' -ForegroundColor Red
-} else {
-    Write-Host 'Update Mode: OPTIONAL (force:false / close button shown)'  -ForegroundColor Green
-}
 Write-Host ''
 
 # [0/5] Tailwind CSS
@@ -70,10 +63,9 @@ Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
 node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/styles.css --minify
 
 # [1/5] version.json + tauri.conf.json
-$forceStr = if ($force) { 'true' } else { 'false' }
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": $forceStr`n}`n"
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
 [System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion  (force: $forceStr)" -ForegroundColor Green
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
 
 $tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
 if (Test-Path $tauriConfPath) {
@@ -112,11 +104,7 @@ Write-Host '====================================' -ForegroundColor Cyan
 Write-Host '  Deploy complete!' -ForegroundColor Green
 Write-Host "  Version : $newVersion" -ForegroundColor Green
 Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-if ($force) {
-    Write-Host '  Mode    : FORCED UPDATE  (force:true)' -ForegroundColor Red
-} else {
-    Write-Host '  Mode    : OPTIONAL UPDATE (force:false)' -ForegroundColor Green
-}
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
 Write-Host '====================================' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow

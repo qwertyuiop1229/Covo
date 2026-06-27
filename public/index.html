@@ -1298,7 +1298,7 @@
       background-color: #f3f4f6;
     }
 
-    /* === アップデートオーバーレイ === */
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
     #updateOverlay {
       position: fixed;
       inset: 0;
@@ -1306,7 +1306,8 @@
       display: none;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1e3a5f 100%);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(20px);
       flex-direction: column;
     }
 
@@ -1316,16 +1317,15 @@
 
     .update-card {
       position: relative;
-      background: rgba(255, 255, 255, 0.08);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 1.5rem;
-      padding: 3rem;
-      max-width: 440px;
+      padding: 2.5rem;
+      max-width: 420px;
       width: 90%;
       text-align: center;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
-      animation: updateCardFadeIn 0.6s ease-out;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .update-close-btn {
@@ -1335,13 +1335,13 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       cursor: pointer;
       transition: all 0.2s;
     }
@@ -1351,16 +1351,16 @@
     }
 
     .update-close-btn:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
       transform: scale(1.05);
     }
 
-    @keyframes updateCardFadeIn {
+    @keyframes updateCardPopIn {
       from {
         opacity: 0;
-        transform: translateY(30px) scale(0.95);
+        transform: translateY(20px) scale(0.97);
       }
-
       to {
         opacity: 1;
         transform: translateY(0) scale(1);
@@ -1368,29 +1368,29 @@
     }
 
     .update-icon {
-      width: 64px;
-      height: 64px;
-      margin: 0 auto 1.5rem;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #3b82f6;
       border-radius: 1rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.75rem;
+      font-size: 1.5rem;
       color: white;
-      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35);
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
     }
 
     .update-title {
       color: white;
-      font-size: 1.5rem;
+      font-size: 1.35rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.4rem;
     }
 
     .update-version {
-      color: #93c5fd;
-      font-size: 0.95rem;
+      color: #94a3b8;
+      font-size: 0.9rem;
       margin-bottom: 1.25rem;
     }
 
@@ -1398,32 +1398,38 @@
       color: #cbd5e1;
       font-size: 0.85rem;
       line-height: 1.6;
-      margin-bottom: 2rem;
-      max-height: 120px;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
       overflow-y: auto;
       text-align: left;
-      padding: 0.75rem;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 0.75rem;
+      padding: 1rem;
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .update-btn {
       width: 100%;
-      padding: 0.9rem;
+      padding: 0.85rem;
       border: none;
       border-radius: 0.75rem;
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s;
-      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      background: #3b82f6;
       color: white;
-      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
     }
 
     .update-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
+      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
     }
 
     .update-btn:disabled {
@@ -15461,40 +15467,7 @@
             }
           };
 
-          if (!isForced) {
-            console.log('[Update] force: false のため、起動画面をブロックせず裏側でサイレントダウンロードを開始します。');
-            window.__bgDownloading = true;
-            window.__bgProgressText = '裏側で最新アップデートをダウンロード中...';
-            
-            // バックグラウンドでも performUpdate 相当の処理（サイレントインストール経路）
-            (async () => {
-              try {
-                const invoke = window.__TAURI__?.core?.invoke;
-                if (invoke && metadata.version) {
-                  // GitHub API を使わず、公式最新リリースのインストーラーURLを直接指定！ (403エラーを100%回避)
-                  const directExeUrl = `https://github.com/qwertyuiop1229/Covo/releases/download/v${metadata.version}/Covo_${metadata.version}_x64-setup.exe`;
-                  await invoke('silent_install_past_version', { url: directExeUrl, tag: `v${metadata.version}` });
-                  window.__bgDownloaded = true;
-                  window.__bgProgressText = 'インストール完了。再起動中...';
-                  return;
-                }
-                // フォールバック: 旧 Tauri updater
-                await pendingUpdate.downloadAndInstall();
-                window.__bgDownloading = false;
-                window.__bgDownloaded = true;
-                window.__bgProgressText = 'ダウンロード完了。再起動待ちです。';
-                const banner = document.getElementById('bgUpdateReadyBanner');
-                if (banner) banner.classList.remove('hidden');
-              } catch (err) {
-                window.__bgDownloading = false;
-                window.__bgProgressText = 'ダウンロード失敗: ' + err.message;
-              }
-            })();
-
-            return false; // アプリ起動をブロックしない
-          }
-
-          // アップデートオーバーレイを表示 (force: true)
+          // アップデートオーバーレイを表示して自動でアップデートを開始する
           const overlay = document.getElementById('updateOverlay');
           const versionText = document.getElementById('updateVersionText');
           const bodyText = document.getElementById('updateBodyText');
@@ -15507,7 +15480,7 @@
           
           if (closeBtn) closeBtn.classList.add('hidden');
           if (updateBtn) updateBtn.classList.add('hidden');
-          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをインストール中';
+          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
 
           overlay.classList.add('show');
 
@@ -15980,108 +15953,23 @@
       }
     };
 
-    // アップデート実行（HTMLのonclickから呼ばれる）
+    // アップデート実行（HTMLのonclickまたは自動更新から呼ばれる）
     window.performUpdate = async function () {
       if (!pendingUpdate) return;
       const btn = document.getElementById('updateButton');
       const invoke = window.__TAURI__?.core?.invoke;
-      const Channel = window.__TAURI__?.core?.Channel;
 
       if (btn) { btn.disabled = true; btn.classList.add('hidden'); }
-      updateProgressUI({ progress: 0, text: 'アップデートを準備中...' });
+      updateProgressUI({ progress: 20, text: 'アップデートを準備中...' });
       startSpinner();
 
       try {
-        // ── GitHub Releases から最新の .exe アセット URL を取得してサイレントインストール ──
-        // Tauri updater の metadata に version があれば GitHub から直接インストーラーを取得し
-        // silent_install_past_version 経由でサイレント適用＆自動再起動する。
-        // これにより外部のセットアップウィンドウが一切出なくなる。
-
-        let exeUrl = null;
-        const version = pendingUpdate?.version;
-
-        if (version && invoke) {
-          // GitHub API (api.github.com) は60回制限で403エラーになりやすいため、
-          // 制限のない直接ダウンロードURLを静的に組み立てます！
-          exeUrl = `https://github.com/qwertyuiop1229/Covo/releases/download/v${version}/Covo_${version}_x64-setup.exe`;
-        }
-
-        if (exeUrl && invoke) {
-          // ── サイレントインストール + ストリーミング進捗 ──
-          // download-progress イベントをリッスン
-          const handleProgress = (payload) => {
-            const { progress, downloaded, total, tag } = payload;
-            updateProgressUI({
-              progress: Math.min(95, 5 + progress * 0.9), // 5%~95%
-              downloaded,
-              total,
-              text: `ダウンロード中... (${progress}%)`
-            });
-          };
-          let unlisten = null;
-          try {
-            const { listen } = await import('/node_modules/@tauri-apps/api/event.js').catch(() => window.__TAURI__?.event || {});
-            if (listen) {
-              unlisten = await listen('download-progress', (event) => handleProgress(event.payload));
-            }
-          } catch(e) { console.warn('event listen unavailable:', e); }
-
-          updateProgressUI({ progress: 5, text: 'インストーラーをダウンロード中...' });
-          await invoke('silent_install_past_version', { url: exeUrl, tag: `v${version}` });
-
-          if (unlisten) unlisten();
-          updateProgressUI({ progress: 100, text: 'インストール完了！再起動します...' });
-          stopSpinner('✔');
-          startAutoRestartCountdown(3);
-
-        } else {
-          // ── Tauri updater fallback (Channel で進捗取得) ──
-          updateProgressUI({ progress: 10, text: 'アップデートをダウンロード中...' });
-
-          const rid = pendingUpdate?.rid;
-          let totalSize = 0;
-          let downloadedSize = 0;
-
-          const tryInvokeWithRidVariants = async (cmd, extraArgs) => {
-            const variants = [{ rid }, { updateRid: rid }, { rid, updateRid: rid }];
-            let lastErr = null;
-            for (const v of variants) {
-              try {
-                return await invoke(cmd, { ...v, ...extraArgs });
-              } catch (e) {
-                lastErr = e;
-                const msg = String(e?.message || e || '').toLowerCase();
-                if (msg.includes('missing required key') || msg.includes('invalid args')) continue;
-                throw e;
-              }
-            }
-            throw lastErr || new Error(`${cmd}: all variants failed`);
-          };
-
-          if (Channel) {
-            const ch = new Channel();
-            ch.onmessage = (msg) => {
-              if (msg.event === 'Started') {
-                totalSize = msg.data?.contentLength || 0;
-                updateProgressUI({ progress: 10, total: totalSize, text: 'ダウンロード開始...' });
-              } else if (msg.event === 'Progress') {
-                downloadedSize += (msg.data?.chunkLength || 0);
-                const pct = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 80) + 10 : 10;
-                updateProgressUI({ progress: pct, downloaded: downloadedSize, total: totalSize, text: 'ダウンロード中...' });
-              } else if (msg.event === 'Finished') {
-                updateProgressUI({ progress: 90, downloaded: totalSize || downloadedSize, total: totalSize, text: 'インストール中...' });
-              }
-            };
-            await tryInvokeWithRidVariants('plugin:updater|download_and_install', { onEvent: ch });
-          } else {
-            await tryInvokeWithRidVariants('plugin:updater|download_and_install', {});
-          }
-
-          updateProgressUI({ progress: 100, text: 'インストール完了！再起動します...' });
-          stopSpinner('✔');
-          startAutoRestartCountdown(3);
-        }
-
+        // Tauri標準の確実なビルトインアップデーターを実行
+        // 完了後に自動的にインストーラー(Covoセットアップ)が起動して確実に更新されます
+        updateProgressUI({ progress: 60, text: '更新データを取得中...' });
+        await pendingUpdate.downloadAndInstall();
+        updateProgressUI({ progress: 100, text: 'ダウンロード完了。セットアップを起動します...' });
+        stopSpinner('✔');
       } catch (error) {
         stopSpinner('✖');
         console.error('Update failed:', error);
