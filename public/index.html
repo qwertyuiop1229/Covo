@@ -16523,6 +16523,102 @@
       initializeFirebase();
       if ('Notification' in window) Notification.requestPermission();
       initializeResizer();
+
+      const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') === 'true';
+      setDiscordUIMode(isDiscordMode);
+    };
+
+    // === Discord風UIモード制御JSロジック ===
+    window.setDiscordUIMode = function(enabled) {
+      localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
+      document.body.classList.toggle('discord-ui-mode', enabled);
+      const pcToggle = document.getElementById('toggleDiscordUI');
+      const mobileToggle = document.getElementById('toggleDiscordUIMobile');
+      if (pcToggle) pcToggle.checked = enabled;
+      if (mobileToggle) mobileToggle.checked = enabled;
+
+      if (enabled) {
+        if (!currentServerId) {
+          document.body.classList.add("discord-home-view");
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.remove("hidden");
+        } else {
+          document.body.classList.remove("discord-home-view");
+        }
+        renderDiscordServerNav();
+      } else {
+        document.body.classList.remove("discord-home-view");
+        if (!currentServerId) {
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.add("hidden");
+          const sls = document.getElementById("serverListScreen");
+          if (sls) sls.classList.remove("hidden");
+        }
+      }
+    };
+
+    window.renderDiscordServerNav = function() {
+      const navList = document.getElementById("discordServerNavList");
+      const homeBtn = document.querySelector(".discord-home-btn");
+      if (!navList) return;
+      navList.innerHTML = "";
+
+      if (!currentServerId) {
+        if (homeBtn) homeBtn.classList.add("active");
+      } else {
+        if (homeBtn) homeBtn.classList.remove("active");
+      }
+
+      if (typeof allServersCache !== 'undefined' && allServersCache) {
+        const servers = [...allServersCache];
+        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
+        
+        // 未読情報の取得
+        let globalItems = [];
+        try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
+
+        servers.forEach(server => {
+          if (!isAdmin && !(server.joinedUsers || []).includes(userId)) return;
+          const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+          const hasUnread = globalItems.some(it => it.serverId === server.id);
+          const isActive = currentServerId === server.id;
+
+          const item = document.createElement("div");
+          item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
+          item.title = server.name || server.id;
+
+          const pill = document.createElement("div");
+          pill.className = "discord-server-pill";
+          item.appendChild(pill);
+
+          const icon = document.createElement("div");
+          icon.className = "discord-server-icon bg-[#313338] text-[#dbdee1]";
+          if (server.iconUrl) {
+            icon.className += " custom-bg";
+            icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+          } else {
+            icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+            icon.style.backgroundColor = "#374151";
+          }
+          item.appendChild(icon);
+
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (currentServerId !== server.id) {
+              enterServer(server.id, server);
+            }
+          });
+
+          navList.appendChild(item);
+        });
+      }
+    };
+
+    // 既存のrenderServerList実行時に連動させるためのフックを強化
+    const _origRenderServerList = window.renderServerList;
+    window.renderServerList = function() {
+      if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
     };
   </script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
@@ -16889,104 +16985,6 @@
         } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
       }, 'image/jpeg', 0.95);
     });
-
-    // === Discord風UIモード制御JSロジック ===
-    window.setDiscordUIMode = function(enabled) {
-      localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
-      document.body.classList.toggle('discord-ui-mode', enabled);
-      const pcToggle = document.getElementById('toggleDiscordUI');
-      const mobileToggle = document.getElementById('toggleDiscordUIMobile');
-      if (pcToggle) pcToggle.checked = enabled;
-      if (mobileToggle) mobileToggle.checked = enabled;
-
-      if (enabled) {
-        if (!currentServerId) {
-          document.body.classList.add("discord-home-view");
-          const appCont = document.getElementById("appContainer");
-          if (appCont) appCont.classList.remove("hidden");
-        } else {
-          document.body.classList.remove("discord-home-view");
-        }
-        renderDiscordServerNav();
-      } else {
-        document.body.classList.remove("discord-home-view");
-        if (!currentServerId) {
-          const appCont = document.getElementById("appContainer");
-          if (appCont) appCont.classList.add("hidden");
-          const sls = document.getElementById("serverListScreen");
-          if (sls) sls.classList.remove("hidden");
-        }
-      }
-    };
-
-    window.renderDiscordServerNav = function() {
-      const navList = document.getElementById("discordServerNavList");
-      const homeBtn = document.querySelector(".discord-home-btn");
-      if (!navList) return;
-      navList.innerHTML = "";
-
-      if (!currentServerId) {
-        if (homeBtn) homeBtn.classList.add("active");
-      } else {
-        if (homeBtn) homeBtn.classList.remove("active");
-      }
-
-      if (!typeof allServersCache !== 'undefined' && window.allServersCache) {
-        const servers = [...window.allServersCache];
-        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
-        
-        // 未読情報の取得
-        let globalItems = [];
-        try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
-
-        servers.forEach(server => {
-          if (!isAdmin && !(server.joinedUsers || []).includes(userId)) return;
-          const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
-          const hasUnread = globalItems.some(it => it.serverId === server.id);
-          const isActive = currentServerId === server.id;
-
-          const item = document.createElement("div");
-          item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
-          item.title = server.name || server.id;
-
-          const pill = document.createElement("div");
-          pill.className = "discord-server-pill";
-          item.appendChild(pill);
-
-          const icon = document.createElement("div");
-          icon.className = "discord-server-icon bg-[#313338] text-[#dbdee1]";
-          if (server.iconUrl) {
-            icon.className += " custom-bg";
-            icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-          } else {
-            icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-            icon.style.backgroundColor = "#374151";
-          }
-          item.appendChild(icon);
-
-          item.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (currentServerId !== server.id) {
-              enterServer(server.id, server);
-            }
-          });
-
-          navList.appendChild(item);
-        });
-      }
-    };
-
-    window.addEventListener('DOMContentLoaded', () => {
-      const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') === 'true';
-      setDiscordUIMode(isDiscordMode);
-    });
-
-    // 既存のrenderServerList実行時に連動させるためのフックを強化
-    const _origRenderServerList = window.renderServerList;
-    window.renderServerList = function() {
-      if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
-      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
-    };
   </script>
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
