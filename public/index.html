@@ -15917,7 +15917,7 @@
       if (el) { el.textContent = symbol; el.style.animation = 'none'; }
     }
 
-    function formatBytes(bytes) {
+    function formatDownloadBytes(bytes) {
       if (bytes < 1024) return bytes + ' B';
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -15933,8 +15933,8 @@
       if (area && area.classList.contains('hidden')) area.classList.remove('hidden');
       if (bar) bar.style.width = Math.min(progress, 100) + '%';
       if (pct) pct.textContent = progress + '%';
-      if (bytes && total > 0) bytes.textContent = formatBytes(downloaded) + ' / ' + formatBytes(total);
-      else if (bytes && downloaded > 0) bytes.textContent = formatBytes(downloaded) + ' ダウンロード済み';
+      if (bytes && total > 0) bytes.textContent = formatDownloadBytes(downloaded) + ' / ' + formatDownloadBytes(total);
+      else if (bytes && downloaded > 0) bytes.textContent = formatDownloadBytes(downloaded) + ' ダウンロード済み';
       if (statusText && text) statusText.textContent = text;
     }
 

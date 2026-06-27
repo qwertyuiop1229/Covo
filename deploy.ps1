@@ -135,7 +135,7 @@ Write-Host ''
 $REPO             = 'qwertyuiop1229/Covo'
 $GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
 
-# Move cursor up N lines (ANSI - assembled without & operator)
+# Move cursor up N lines (ANSI)
 function Move-CursorUp {
     param([int]$Lines)
     if ($Lines -gt 0) {
@@ -166,7 +166,6 @@ function Invoke-GHApi {
 
 function Get-LatestRun {
     param([string]$Tag)
-    # & inside a string literal is safe in PowerShell
     $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
     if (-not $res) { return $null }
     $run = $res.workflow_runs | Where-Object {
@@ -174,12 +173,7 @@ function Get-LatestRun {
         ($_.head_commit.message -like ('*' + $Tag + '*')) -or
         ($_.display_title -like ('*' + $Tag + '*'))
     } | Select-Object -First 1
-    if (-not $run) {
-        $run = $res.workflow_runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1
-    }
-    if (-not $run) {
-        $run = $res.workflow_runs | Select-Object -First 1
-    }
+    # 誤検知を防ぐため、タグに一致しない古いRunへのフォールバックは行いません
     return $run
 }
 
@@ -190,19 +184,21 @@ function Get-RunJobs {
     return @()
 }
 
-# Detect latest run (up to 30 s)
-Write-Host '>> Searching for GitHub Actions run...' -ForegroundColor Cyan
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
 $run = $null
-for ($i = 1; $i -le 10; $i++) {
+for ($i = 1; $i -le 15; $i++) {
     Start-Sleep -Seconds 3
     $run = Get-LatestRun -Tag $tagName
     if ($run) { break }
-    Write-Host ('   Attempt ' + $i + '/10 ...') -ForegroundColor DarkGray
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
 }
 
 if (-not $run) {
     Write-Host ''
-    Write-Host '!! Run not found. Check manually:' -ForegroundColor Yellow
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push & Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
     Write-Host ('   https://github.com/' + $REPO + '/actions') -ForegroundColor Yellow
     exit 0
 }
