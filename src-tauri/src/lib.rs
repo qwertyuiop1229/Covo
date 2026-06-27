@@ -754,14 +754,15 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
         let installer_path = exe_path.to_string_lossy().to_string();
 
         // PowerShell スクリプト:
-        //   1. 2秒待機（現在のプロセスが終了するのを待つ）
-        //   2. インストーラーをサイレント実行・完了まで待つ
-        //   3. Covo.exe を起動して再起動
+        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
+        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
+        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
+        //   4. Covo.exe を再起動
         let ps_script = format!(
-            "Start-Sleep -Seconds 2; \
-             Start-Process -FilePath '{installer}' \
-               -ArgumentList '/S','/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS' \
-               -Wait; \
+            "Start-Sleep -Seconds 5; \
+             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
              Start-Sleep -Seconds 1; \
              Start-Process -FilePath '{covo}'",
             installer = installer_path.replace('\'', "''"),
@@ -774,11 +775,11 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
             .spawn()
             .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
 
-        log::info!("Spawned silent installer via PowerShell; exiting current process.");
+        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
 
-        // IPC 応答を返した直後にプロセスを終了
+        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
             app_handle.exit(0);
         });
     }

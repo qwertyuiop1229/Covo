@@ -132,8 +132,20 @@ Write-Host '====================================' -ForegroundColor DarkCyan
 Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
 Write-Host ''
 
-$REPO             = 'qwertyuiop1229/Covo'
+$REPO = 'qwertyuiop1229/Covo'
+
+# ターミナル未再起動でもレジストリから直接 GITHUB_TOKEN を取得する強力な仕組み！
 $GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
 
 # Move cursor up N lines (ANSI)
 function Move-CursorUp {
@@ -185,7 +197,7 @@ function Get-LatestRun {
 function Get-RunJobs {
     param([string]$RunId)
     $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res) { return $res.jobs }
+    if ($res -and $res.jobs) { return @($res.jobs) }
     return @()
 }
 
@@ -251,7 +263,7 @@ Write-Host ''
 for ($poll = 0; $poll -lt $maxPolls; $poll++) {
 
     $global:RateLimitHit = $false
-    $jobs = Get-RunJobs -RunId $runId
+    $jobs = @(Get-RunJobs -RunId $runId)
     $spin = $Spinners[$spinIdx % $Spinners.Length]
     $spinIdx++
 
@@ -272,7 +284,7 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
         $jobStatus     = $job.status
         $jobConclusion = $job.conclusion
         $jobUrl        = $job.html_url
-        $steps         = $job.steps
+        $steps         = @($job.steps)
 
         $completedWeight    = 0
         $completedStepCount = 0
