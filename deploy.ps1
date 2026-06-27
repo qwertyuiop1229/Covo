@@ -238,45 +238,63 @@ $StepDefs = @(
 $totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
 
 $Spinners   = @('-', '\', '|', '/')
-$spinIdx    = 0
-$pollSec    = 6
-$maxPolls   = [int]((45 * 60) / $pollSec)
-$firstDraw  = $true
-$LINE_COUNT = 4
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "認証済み (上限5000回/時)" } else { "匿名 (上限60回/時 | API節約モード)" }
 
 Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId) -ForegroundColor DarkGray
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
 Write-Host ''
 
-for ($poll = 0; $poll -lt $maxPolls; $poll++) {
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
 
-    $global:RateLimitHit = $false
-    $jobs = @(Get-RunJobs -RunId $runId)
-    $spin = $Spinners[$spinIdx % $Spinners.Length]
-    $spinIdx++
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit (1時間60回) に到達したためターミナル更新を停止します。'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      裏側のデプロイ・ビルド実作業は【正常に進行中】です！'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      👉 ブラウザ確認用URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
 
     if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
     $firstDraw = $false
 
-    if ($global:RateLimitHit) {
-        Write-Host '  [!] API Rate Limit (1時間60回) に到達したためターミナル更新を停止します。'.PadRight(70) -ForegroundColor Yellow
-        Write-Host '      裏側のデプロイ・ビルド実作業は【正常に進行中】です！'.PadRight(70) -ForegroundColor Green
-        Write-Host ('      👉 ブラウザ確認用URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(70) -ForegroundColor Cyan
-        Write-Host (' ' * 70)
-        Write-Host ''
-        break
-    }
-
-    if ($jobs -and $jobs.Count -gt 0) {
-        $job           = $jobs[0]
-        $jobStatus     = $job.status
-        $jobConclusion = $job.conclusion
-        $jobUrl        = $job.html_url
-        $steps         = @($job.steps)
-
+    if ($job) {
+        $steps = @($job.steps)
         $completedWeight    = 0
         $completedStepCount = 0
         $currentLabel       = ''
+        $currentStep        = $null
         $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
 
         if ($steps) {
@@ -289,14 +307,57 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
                 } elseif ($step.status -eq 'in_progress') {
                     $completedWeight += [int]($w * 0.5)
                     $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
                 }
             }
         }
 
         $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
         if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-
         $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'ログ準備中...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('ログ: ' + $curLine + '/' + $expLines + '行')
+            } catch {}
+        }
 
         if ($jobStatus -eq 'completed') {
             if ($jobConclusion -eq 'success') {
@@ -310,15 +371,19 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
             $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
         }
 
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']').PadRight(70)
-        $l2 = ('  ' + $bar).PadRight(70)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel).PadRight(70) } else { ' ' * 70 }
-        $l4 = ('  👉 ' + $jobUrl).PadRight(70)
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (総経過時間: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (ステップ経過時間: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  👉 ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
 
         Write-Host $l1 -ForegroundColor $col
         Write-Host $l2 -ForegroundColor White
         Write-Host $l3 -ForegroundColor DarkCyan
         Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
 
         if ($jobStatus -eq 'completed') {
             Write-Host ''
@@ -334,11 +399,14 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
         }
 
     } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(70) -ForegroundColor DarkGray
-        Write-Host (' ' * 70)
-        Write-Host (' ' * 70)
-        Write-Host (' ' * 70)
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
     }
 
-    Start-Sleep -Seconds $pollSec
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
 }

@@ -3898,7 +3898,7 @@
     </div>
   </div>
 
-  <!-- 🛡️ 強制アップデート回避モード確認ダイアログ -->
+  <!-- 🛡️ バージョンロック確認ダイアログ -->
   <div id="forceOverrideConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-4" style="z-index:999999;backdrop-filter:blur(25px);background:rgba(15,23,42,0.85);">
     <div class="bg-gray-900 border border-yellow-500/40 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden p-6 flex flex-col space-y-6 animate-pop-in text-white">
       <div class="flex items-center gap-4 border-b border-gray-800 pb-4">
@@ -3906,15 +3906,15 @@
           <i class="fas fa-shield-halved"></i>
         </div>
         <div>
-          <h2 class="text-lg font-bold text-gray-100">強制アップデート回避モードの有効化</h2>
-          <p class="text-xs text-gray-400">この機能の仕組みと注意点を必ずご確認ください</p>
+          <h2 class="text-lg font-bold text-gray-100">バージョンロックの有効化</h2>
+          <p class="text-xs text-gray-400">現在のバージョンを固定し、自動更新を停止します</p>
         </div>
       </div>
       <div class="space-y-4 text-xs text-gray-300 leading-relaxed">
-        <p>「強制アップデート回避モード」は、万が一最新アップデートに予期せぬ不具合があった場合や、過去の安定バージョンを維持したいときに、<strong>起動時の自動強制アップデートをストップする保護機能</strong>です。</p>
+        <p>「バージョンロック」は、お気に入りの安定バージョンを維持したい場合や、最新アップデートをすぐには適用したくない場合に、<strong>起動時の自動アップデートをスキップする保護機能</strong>です。</p>
         <p class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl text-yellow-400">
-          <i class="fas fa-exclamation-triangle mr-1.5"></i><strong>注意点</strong><br>
-          このモードを有効にしている間は、ユーザーご自身で「アップデートを確認」を押さない限り自動更新されなくなります。最新の機能やセキュリティ修正を受け取るためには、定期的な手動チェックをお勧めします。
+          <i class="fas fa-exclamation-triangle mr-1.5"></i><strong>有効化中のご注意</strong><br>
+          ロック中は自動更新が行われなくなりますが、設定画面の「アップデートを確認」ボタンからいつでも手動で最新バージョンへ更新できます。
         </p>
       </div>
       <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
@@ -4208,11 +4208,11 @@
                   </div>
                 </div>
 
-                <!-- 強制アップデートの回避モードバナー -->
+                <!-- バージョンロックバナー -->
                 <div class="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-sm">
                   <div>
-                    <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>強制アップデートの回避モード</div>
-                    <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">過去のバージョンを維持するため、起動時の自動強制アップデートを自動スキップします。</div>
+                    <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>バージョンロック</div>
+                    <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">現在の安定バージョンを保護し、アプリ起動時の自動アップデートを一時的にストップします。</div>
                   </div>
                   <label class="toggle-switch flex-shrink-0 cursor-pointer">
                     <input type="checkbox" id="toggleForceOverrideCheckbox" onchange="handleForceOverrideToggle(event)">
@@ -5769,7 +5769,7 @@
       try {
         const ok = await ensureE2EEKeys();
         if (ok && _e2ee.ready) {
-          set('有効（自動暗号化）', '#16a34a'); // 緑
+          set('有効（自動暗号化）', '#0d9488'); // ティール (Covoスタイル)
         } else {
           set('準備中…（まだ鍵がありません）', '#d97706'); // オレンジ
         }
@@ -15397,7 +15397,7 @@
           } catch(e) { console.warn('Failed to fetch version.json:', e); }
 
           if (localStorage.getItem('covo_ignore_force_update') === '1') {
-            console.log('[Update] ユーザーが強制アップデート回避モードを有効にしているため、自動アップデートをスキップします。');
+            console.log('[Update] バージョンロックが有効なため、自動アップデートをスキップします。');
             return false;
           }
 
@@ -15842,7 +15842,7 @@
             }
           }
         } else {
-          if (statusEl) { statusEl.textContent = '最新バージョンです'; statusEl.style.color = '#22c55e'; }
+          if (statusEl) { statusEl.textContent = '最新バージョンです'; statusEl.style.color = '#4f46e5'; }
           resetBtn();
         }
       } catch (e) {
@@ -15870,7 +15870,7 @@
         const invoke = window.__TAURI__?.core?.invoke;
         if (!invoke) throw new Error('Tauri unavailable');
         await invoke('create_desktop_shortcut');
-        if (statusEl) { statusEl.textContent = 'ショートカットを作成しました'; statusEl.style.color = '#22c55e'; }
+        if (statusEl) { statusEl.textContent = 'ショートカットを作成しました'; statusEl.style.color = '#4f46e5'; }
         reset();
         setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
       } catch (e) {
