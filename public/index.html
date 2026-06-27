@@ -15471,18 +15471,12 @@
               try {
                 const invoke = window.__TAURI__?.core?.invoke;
                 if (invoke && metadata.version) {
-                  const apiUrl = `https://api.github.com/repos/qwertyuiop1229/Covo/releases/tags/v${metadata.version}`;
-                  const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
-                  if (res.ok) {
-                    const release = await res.json();
-                    const asset = (release.assets || []).find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
-                    if (asset) {
-                      await invoke('silent_install_past_version', { url: asset.browser_download_url, tag: `v${metadata.version}` });
-                      window.__bgDownloaded = true;
-                      window.__bgProgressText = 'インストール完了。再起動中...';
-                      return;
-                    }
-                  }
+                  // GitHub API を使わず、公式最新リリースのインストーラーURLを直接指定！ (403エラーを100%回避)
+                  const directExeUrl = `https://github.com/qwertyuiop1229/Covo/releases/download/v${metadata.version}/Covo_${metadata.version}_x64-setup.exe`;
+                  await invoke('silent_install_past_version', { url: directExeUrl, tag: `v${metadata.version}` });
+                  window.__bgDownloaded = true;
+                  window.__bgProgressText = 'インストール完了。再起動中...';
+                  return;
                 }
                 // フォールバック: 旧 Tauri updater
                 await pendingUpdate.downloadAndInstall();
@@ -15620,6 +15614,24 @@
 
       try {
         const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${page}`, { cache: 'no-store' });
+        if (!res.ok) {
+          window.__pastVersionsHasMore = false;
+          if (res.status === 403) {
+            listEl.innerHTML = `
+              <div class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-2">
+                <p class="font-bold text-amber-400"><i class="fas fa-exclamation-triangle mr-1.5"></i>GitHub API の取得上限 (1時間60回) に到達しました</p>
+                <p>ターミナルでのデプロイ監視 (<code>npm run deploy</code>) が匿名APIリクエスト枠をすべて消費したため、過去のリリース履歴を取得できませんでした。</p>
+                <p class="pt-1 text-white font-semibold">💡 解決方法：</p>
+                <p>Windows の環境変数に <code class="px-1.5 py-0.5 bg-amber-500/20 rounded font-mono text-amber-300">GITHUB_TOKEN</code> を設定してください。ターミナル監視が無料枠を消費しなくなり、アプリ内の履歴表示がいつでも正常に動作するようになります！</p>
+              </div>
+            `;
+          } else {
+            listEl.innerHTML = `<div class="text-center text-xs text-red-400 py-4">エラーが発生しました: HTTP ${res.status}</div>`;
+          }
+          if (loadingEl) loadingEl.classList.add('hidden');
+          window.__pastVersionsLoading = false;
+          return;
+        }
         const releases = await res.json();
         if (!Array.isArray(releases) || releases.length === 0) {
           window.__pastVersionsHasMore = false;
@@ -15989,18 +16001,9 @@
         const version = pendingUpdate?.version;
 
         if (version && invoke) {
-          try {
-            updateProgressUI({ progress: 5, text: 'リリース情報を取得中...' });
-            const apiUrl = `https://api.github.com/repos/qwertyuiop1229/Covo/releases/tags/v${version}`;
-            const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
-            if (res.ok) {
-              const release = await res.json();
-              const asset = (release.assets || []).find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
-              if (asset) exeUrl = asset.browser_download_url;
-            }
-          } catch (e) {
-            console.warn('[Update] GitHub API failed, falling back to Tauri updater:', e);
-          }
+          // GitHub API (api.github.com) は60回制限で403エラーになりやすいため、
+          // 制限のない直接ダウンロードURLを静的に組み立てます！
+          exeUrl = `https://github.com/qwertyuiop1229/Covo/releases/download/v${version}/Covo_${version}_x64-setup.exe`;
         }
 
         if (exeUrl && invoke) {

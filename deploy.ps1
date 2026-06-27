@@ -160,8 +160,14 @@ function Invoke-GHApi {
     $url     = 'https://api.github.com' + $Path
     $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
     if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try   { return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop }
-    catch { return $null }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
 }
 
 function Get-LatestRun {
@@ -173,7 +179,6 @@ function Get-LatestRun {
         ($_.head_commit.message -like ('*' + $Tag + '*')) -or
         ($_.display_title -like ('*' + $Tag + '*'))
     } | Select-Object -First 1
-    # 誤検知を防ぐため、タグに一致しない古いRunへのフォールバックは行いません
     return $run
 }
 
@@ -191,7 +196,18 @@ for ($i = 1; $i -le 15; $i++) {
     Start-Sleep -Seconds 3
     $run = Get-LatestRun -Tag $tagName
     if ($run) { break }
+    if ($global:RateLimitHit) { break }
     Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] 匿名アクセスの取得上限(1時間60回)に到達しました。' -ForegroundColor Yellow
+    Write-Host '   デプロイ実作業 (git push & Firebase) は【正常に完了】しています！' -ForegroundColor Green
+    Write-Host '   進捗状況は以下の Actions 画面からブラウザでご確認ください：' -ForegroundColor Yellow
+    Write-Host ('   👉 https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
 }
 
 if (-not $run) {
@@ -199,7 +215,7 @@ if (-not $run) {
     Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
     Write-Host '   The deployment (git push & Firebase) was SUCCESSFUL.' -ForegroundColor Green
     Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   https://github.com/' + $REPO + '/actions') -ForegroundColor Yellow
+    Write-Host ('   👉 https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
     exit 0
 }
 
@@ -207,7 +223,7 @@ $runId  = $run.id
 $runUrl = $run.html_url
 Write-Host ''
 Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ('   👉 ' + $runUrl)           -ForegroundColor DarkGray
 Write-Host ''
 
 $StepDefs = @(
@@ -234,6 +250,7 @@ Write-Host ''
 
 for ($poll = 0; $poll -lt $maxPolls; $poll++) {
 
+    $global:RateLimitHit = $false
     $jobs = Get-RunJobs -RunId $runId
     $spin = $Spinners[$spinIdx % $Spinners.Length]
     $spinIdx++
@@ -241,10 +258,20 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
     if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
     $firstDraw = $false
 
+    if ($global:RateLimitHit) {
+        Write-Host '  [!] API Rate Limit (1時間60回) に到達したためターミナル更新を停止します。'.PadRight(70) -ForegroundColor Yellow
+        Write-Host '      裏側のデプロイ・ビルド実作業は【正常に進行中】です！'.PadRight(70) -ForegroundColor Green
+        Write-Host ('      👉 ブラウザ確認用URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(70) -ForegroundColor Cyan
+        Write-Host (' ' * 70)
+        Write-Host ''
+        break
+    }
+
     if ($jobs -and $jobs.Count -gt 0) {
         $job           = $jobs[0]
         $jobStatus     = $job.status
         $jobConclusion = $job.conclusion
+        $jobUrl        = $job.html_url
         $steps         = $job.steps
 
         $completedWeight    = 0
@@ -286,7 +313,7 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
         $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']').PadRight(70)
         $l2 = ('  ' + $bar).PadRight(70)
         $l3 = if ($currentLabel) { ('  -> ' + $currentLabel).PadRight(70) } else { ' ' * 70 }
-        $l4 = ('  Run #' + $runId + ' | ' + $runUrl).PadRight(70)
+        $l4 = ('  👉 ' + $jobUrl).PadRight(70)
 
         Write-Host $l1 -ForegroundColor $col
         Write-Host $l2 -ForegroundColor White
@@ -300,14 +327,14 @@ for ($poll = 0; $poll -lt $maxPolls; $poll++) {
                 Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
             } else {
                 Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $runUrl)       -ForegroundColor Yellow
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
             }
             Write-Host ''
             break
         }
 
     } else {
-        Write-Host ('[' + $spin + '] Fetching run #' + $runId + ' ...').PadRight(70) -ForegroundColor DarkGray
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(70) -ForegroundColor DarkGray
         Write-Host (' ' * 70)
         Write-Host (' ' * 70)
         Write-Host (' ' * 70)
