@@ -2583,17 +2583,6 @@
       box-sizing: border-box;
       transition: background 0.2s ease;
     }
-    /* ライトテーマ時は上位コンテナと美しく連動させ、真っ黒な余白を排除 */
-    body:not(.dark-server-theme) #mobileBottomNav {
-      background: #ffffff;
-      border-top: 1px solid #f1f5f9 !important;
-    }
-    body:not(.dark-server-theme) .mobile-nav-tab {
-      color: #94a3b8;
-    }
-    body:not(.dark-server-theme) .mobile-nav-tab.active {
-      color: #0f172a;
-    }
     .mobile-nav-tab {
       flex: 1 1 0;
       display: flex;
@@ -3634,11 +3623,16 @@
       }
     }
     /* === Discord風UIモード専用スタイル === */
+    body.discord-ui-mode #serverListScreen {
+      display: none !important; /* 既存のカード群リストを完全遮断 */
+    }
+
     body.discord-ui-mode #appContainer {
       display: flex !important;
-      flex-direction: row;
-      width: 100%;
-      height: 100%;
+      flex-direction: row !important;
+      width: 100% !important;
+      height: 100% !important;
+      flex: 1 1 0 !important;
     }
 
     body.discord-ui-mode #discordServerNav {
@@ -3724,46 +3718,63 @@
     }
 
     /* ホーム画面・サーバービュー切替ロジック (DiscordUIモード時) */
-    body.discord-ui-mode #serverListScreen {
-      flex: 1;
-      display: none;
-      overflow-y: auto;
-      background: #f3f4f6;
+    body.discord-ui-mode.discord-home-view #discordHomeView {
+      display: flex !important;
     }
-    body.discord-ui-mode.dark-server-theme #serverListScreen {
-      background: #313338;
-    }
-    body.discord-ui-mode.discord-home-view #serverListScreen {
-      display: block !important;
-    }
-    body.discord-ui-mode.discord-home-view #sidebar,
-    body.discord-ui-mode.discord-home-view #resizer,
-    body.discord-ui-mode.discord-home-view #chatArea {
+    body.discord-ui-mode.discord-home-view #chatArea,
+    body.discord-ui-mode.discord-home-view #roomList,
+    body.discord-ui-mode.discord-home-view #serverHeader {
       display: none !important;
     }
+    body.discord-ui-mode.discord-home-view #discordHomeSidebar {
+      display: flex !important;
+    }
+
+    /* ダークモード＆ライトモードの配色定義 */
+    /* ダークモード (Discord公式ダーク) */
+    body.dark-server-theme.discord-ui-mode #discordServerNav { background: #1e1f22 !important; border-right: 1px solid #1a1b1e !important; }
+    body.dark-server-theme.discord-ui-mode #sidebar { background: #2b2d31 !important; color: #dbdee1 !important; }
+    body.dark-server-theme.discord-ui-mode #discordHomeView { background: #313338 !important; color: #dbdee1 !important; }
+    body.dark-server-theme.discord-ui-mode #discordHomeView h1,
+    body.dark-server-theme.discord-ui-mode #discordHomeView h2 { color: #f2f3f5 !important; }
+    body.dark-server-theme.discord-ui-mode #mobileBottomNav { background: #111214 !important; } /* モバイルボトムナビの純正ダーク化 */
+
+    /* ライトモード (本アプリに合わせた美学) */
+    body:not(.dark-server-theme).discord-ui-mode #discordServerNav { background: #e3e5e8 !important; border-right: 1px solid #d1d5db !important; }
+    body:not(.dark-server-theme).discord-ui-mode #sidebar { background: #f2f3f5 !important; color: #313338 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView { background: #ffffff !important; color: #313338 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h1,
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h2 { color: #06b6d4 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #mobileBottomNav { background: #ffffff !important; border-top: 1px solid #e5e7eb !important; }
+    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab { color: #9ca3af !important; }
+    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab.active { color: #111827 !important; }
 
     /* モバイルビューのDiscordレイアウト適応 */
     @media (max-width: 768px) {
       body.discord-ui-mode #appContainer {
         flex-direction: row !important;
+        display: flex !important;
+        width: 100% !important;
+        height: 100% !important;
+        flex: 1 1 0 !important;
       }
       body.discord-ui-mode #discordServerNav {
-        width: 68px;
+        width: 68px !important;
         py: 2px;
         z-index: 40;
       }
       body.discord-ui-mode #sidebar {
-        flex: 1;
-        width: auto !important;
+        flex: 1 !important;
+        width: calc(100% - 68px) !important;
         display: flex !important;
       }
       body.discord-ui-mode.in-chat-view #chatArea {
-        position: fixed;
-        inset: 0;
-        z-index: 50;
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 50 !important;
         display: flex !important;
-        width: 100%;
-        height: 100%;
+        width: 100% !important;
+        height: 100% !important;
       }
     }
 </style>
@@ -4887,6 +4898,22 @@
             <span id="serverNameDisplay">サーバー</span>
             <button id="serverSettingsBtn" title="サーバー設定" class="hidden"><i class="fas fa-cog"></i></button>
           </div>
+          <!-- Discord風ホームサイドバー (サーバー未選択時に表示) -->
+          <div id="discordHomeSidebar" class="hidden flex-col p-3 text-sm flex-1 space-y-1">
+            <div class="px-2 py-1.5 rounded-lg bg-gray-200/60 dark:bg-white/10 font-bold text-gray-800 dark:text-white flex items-center gap-3 cursor-pointer">
+              <i class="fas fa-compass text-lg text-indigo-500"></i> 探索 / ホーム
+            </div>
+            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="document.getElementById('joinServerBtn').click()">
+              <i class="fas fa-sign-in-alt text-lg text-emerald-500"></i> サーバーに参加
+            </div>
+            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="document.getElementById('createServerBtn').click()">
+              <i class="fas fa-plus text-lg text-blue-500"></i> 新規サーバー作成
+            </div>
+            <div class="pt-4 px-2 text-[11px] font-bold text-gray-400 uppercase tracking-wider">ヘルプ＆サポート</div>
+            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="openNotifModal()">
+              <i class="fas fa-bell text-lg text-amber-500"></i> 通知履歴
+            </div>
+          </div>
           <!-- ルームリスト -->
           <div id="roomList" class="flex-1 scrollable p-4 pb-0">
             <!-- ルームはここに動的に追加されます -->
@@ -4911,6 +4938,31 @@
 
         <!-- リサイズハンドル -->
         <div id="resizer"></div>
+
+        <!-- Discord風探索ビュー (サーバー未選択時にチャットエリアの代わりに表示) -->
+        <div id="discordHomeView" class="flex-1 hidden flex-col overflow-y-auto p-8 bg-[#313338] select-none text-[#dbdee1] relative">
+          <!-- 美しいヒーローバナー -->
+          <div class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-xl mb-8 relative overflow-hidden flex flex-col justify-center">
+            <div class="relative z-10 max-w-lg">
+              <h1 class="text-3xl font-extrabold tracking-tight mb-2 text-white">Covoへようこそ</h1>
+              <p class="text-white/80 text-sm leading-relaxed mb-6">身内だけのセキュアな空間へようこそ。Discordさながらの高品質なレイアウトで、快適なコミュニケーションをお楽しみください。</p>
+              <div class="flex gap-3">
+                <button onclick="document.getElementById('joinServerBtn').click()" class="bg-white text-indigo-600 font-bold px-6 py-2.5 rounded-xl shadow hover:bg-gray-100 transition-all text-sm">サーバーに参加</button>
+                <button onclick="document.getElementById('createServerBtn').click()" class="bg-indigo-500/30 hover:bg-indigo-500/50 border border-white/30 text-white font-bold px-6 py-2.5 rounded-xl transition-all text-sm">新規作成</button>
+              </div>
+            </div>
+            <div class="absolute right-6 top-1/2 -translate-y-1/2 opacity-20 pointer-events-none hidden md:block">
+              <i class="fas fa-layer-group text-[140px]"></i>
+            </div>
+          </div>
+          <!-- サーバー探索一覧 -->
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold tracking-tight text-white">マイ サーバー</h2>
+          </div>
+          <div id="discordHomeServerGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="text-gray-400 font-medium col-span-full">サーバーがありません。上のボタンから参加しましょう。</div>
+          </div>
+        </div>
 
         <!-- チャットエリア -->
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
@@ -16559,9 +16611,11 @@
 
     window.renderDiscordServerNav = function() {
       const navList = document.getElementById("discordServerNavList");
+      const homeGrid = document.getElementById("discordHomeServerGrid");
       const homeBtn = document.querySelector(".discord-home-btn");
       if (!navList) return;
       navList.innerHTML = "";
+      if (homeGrid) homeGrid.innerHTML = "";
 
       if (!currentServerId) {
         if (homeBtn) homeBtn.classList.add("active");
@@ -16577,12 +16631,15 @@
         let globalItems = [];
         try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
 
+        let validCount = 0;
         servers.forEach(server => {
           if (!isAdmin && !(server.joinedUsers || []).includes(userId)) return;
+          validCount++;
           const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
           const hasUnread = globalItems.some(it => it.serverId === server.id);
           const isActive = currentServerId === server.id;
 
+          // 1. 左側サーバーナビゲーションへの追加
           const item = document.createElement("div");
           item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
           item.title = server.name || server.id;
@@ -16608,9 +16665,52 @@
               enterServer(server.id, server);
             }
           });
-
           navList.appendChild(item);
+
+          // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
+          if (homeGrid) {
+            const card = document.createElement("div");
+            card.className = "bg-[#2b2d31] hover:bg-[#35373c] p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-[#1a1b1e]/50 shadow-md group";
+            
+            const cardIcon = document.createElement("div");
+            cardIcon.className = "w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden text-white transition-all duration-300 group-hover:rounded-2xl";
+            if (server.iconUrl) {
+              cardIcon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+            } else {
+              cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+              cardIcon.style.backgroundColor = "#374151";
+            }
+            card.appendChild(cardIcon);
+
+            const cardInfo = document.createElement("div");
+            cardInfo.className = "flex-1 min-w-0";
+            cardInfo.innerHTML = `
+              <div class="font-bold text-white text-base truncate">${escapeHtml(server.name || server.id)}</div>
+              <div class="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                <span>${(server.joinedUsers || []).length} 名のメンバー</span>
+              </div>
+            `;
+            card.appendChild(cardInfo);
+
+            const enterBtn = document.createElement("button");
+            enterBtn.className = "bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold px-4 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
+            enterBtn.textContent = "開く";
+            card.appendChild(enterBtn);
+
+            card.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (currentServerId !== server.id) {
+                enterServer(server.id, server);
+              }
+            });
+            homeGrid.appendChild(card);
+          }
         });
+
+        if (validCount === 0 && homeGrid) {
+          homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
+        }
       }
     };
 
