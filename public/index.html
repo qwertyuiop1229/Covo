@@ -3681,12 +3681,12 @@
     }
 
     .discord-server-item:hover .discord-server-icon:not(.custom-bg) {
-      background-color: #5865F2 !important;
+      background-color: #2563eb !important;
       color: white !important;
     }
 
     .discord-server-item.active .discord-server-icon:not(.custom-bg) {
-      background-color: #5865F2 !important;
+      background-color: #2563eb !important;
       color: white !important;
     }
 
@@ -3731,20 +3731,20 @@
     }
 
     /* ダークモード＆ライトモードの配色定義 */
-    /* ダークモード (Discord公式ダーク) */
-    body.dark-server-theme.discord-ui-mode #discordServerNav { background: #1e1f22 !important; border-right: 1px solid #1a1b1e !important; }
-    body.dark-server-theme.discord-ui-mode #sidebar { background: #2b2d31 !important; color: #dbdee1 !important; }
-    body.dark-server-theme.discord-ui-mode #discordHomeView { background: #313338 !important; color: #dbdee1 !important; }
+    /* ダークモード (Covo極上ピュアダーク) */
+    body.dark-server-theme.discord-ui-mode #discordServerNav { background: #121316 !important; border-right: 1px solid #18191d !important; }
+    body.dark-server-theme.discord-ui-mode #sidebar { background: #1a1b1e !important; color: #dbdee1 !important; }
+    body.dark-server-theme.discord-ui-mode #discordHomeView { background: #212226 !important; color: #dbdee1 !important; }
     body.dark-server-theme.discord-ui-mode #discordHomeView h1,
     body.dark-server-theme.discord-ui-mode #discordHomeView h2 { color: #f2f3f5 !important; }
-    body.dark-server-theme.discord-ui-mode #mobileBottomNav { background: #111214 !important; } /* モバイルボトムナビの純正ダーク化 */
+    body.dark-server-theme.discord-ui-mode #mobileBottomNav { background: #121316 !important; }
 
-    /* ライトモード (本アプリに合わせた美学) */
-    body:not(.dark-server-theme).discord-ui-mode #discordServerNav { background: #e3e5e8 !important; border-right: 1px solid #d1d5db !important; }
-    body:not(.dark-server-theme).discord-ui-mode #sidebar { background: #f2f3f5 !important; color: #313338 !important; }
-    body:not(.dark-server-theme).discord-ui-mode #discordHomeView { background: #ffffff !important; color: #313338 !important; }
+    /* ライトモード (本アプリに合わせた洗練美) */
+    body:not(.dark-server-theme).discord-ui-mode #discordServerNav { background: #e5e7eb !important; border-right: 1px solid #d1d5db !important; }
+    body:not(.dark-server-theme).discord-ui-mode #sidebar { background: #f3f4f6 !important; color: #1f2937 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView { background: #ffffff !important; color: #1f2937 !important; }
     body:not(.dark-server-theme).discord-ui-mode #discordHomeView h1,
-    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h2 { color: #06b6d4 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h2 { color: #0284c7 !important; }
     body:not(.dark-server-theme).discord-ui-mode #mobileBottomNav { background: #ffffff !important; border-top: 1px solid #e5e7eb !important; }
     body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab { color: #9ca3af !important; }
     body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab.active { color: #111827 !important; }
@@ -3767,6 +3767,15 @@
         flex: 1 !important;
         width: calc(100% - 68px) !important;
         display: flex !important;
+      }
+      /* スマホ表示のホーム状態ではサイドバーを隠し、ディスカバリー画面をフル活用 */
+      body.discord-ui-mode.discord-home-view #sidebar {
+        display: none !important;
+      }
+      body.discord-ui-mode.discord-home-view #discordHomeView {
+        width: calc(100% - 68px) !important;
+        display: flex !important;
+        padding: 1.5rem !important;
       }
       body.discord-ui-mode.in-chat-view #chatArea {
         position: fixed !important;
@@ -4406,7 +4415,7 @@
                       <label class="toggle-switch"><input type="checkbox" id="toggleDarkServer" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
                     </div>
                     <div class="setting-row">
-                      <div class="setting-label"><i class="fas fa-layer-group"></i> Discord風UIモード</div>
+                      <div class="setting-label"><i class="fas fa-layer-group"></i> モダンUIモード</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleDiscordUI" onchange="setDiscordUIMode(this.checked)"><span class="toggle-slider"></span></label>
                     </div>
                   </div>
@@ -4653,11 +4662,58 @@
           <div id="pcNotifList" class="space-y-1"></div>
         </div>
       </div>
+      <!-- サーバー追加統合選択モーダル -->
+      <div id="addServerSelectModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md modal-box animate-pop-in text-gray-800 select-none">
+          <div class="text-center mb-6">
+            <h2 class="text-2xl font-extrabold tracking-tight mb-2">サーバーを追加</h2>
+            <p class="text-xs text-gray-500 leading-relaxed">新しいコミュニティを作成するか、既存のサーバーに参加しましょう。</p>
+          </div>
+          <div class="space-y-4">
+            <div onclick="document.getElementById('addServerSelectModal').classList.add('hidden'); document.getElementById('createServerBtn').click()" class="p-5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-2xl shadow-md flex items-center gap-4 cursor-pointer transition-all transform hover:scale-[1.02] group">
+              <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-white font-bold text-2xl flex-shrink-0">
+                <i class="fas fa-plus"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-lg">オリジナルのサーバーを作成</div>
+                <div class="text-xs text-white/80 mt-0.5">自分だけの空間を新しく立ち上げます</div>
+              </div>
+              <i class="fas fa-arrow-right text-white/70 group-hover:text-white transition-colors"></i>
+            </div>
+            <div onclick="document.getElementById('addServerSelectModal').classList.add('hidden'); document.getElementById('joinServerBtn').click()" class="p-5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-2xl flex items-center gap-4 cursor-pointer transition-all transform hover:scale-[1.02] group">
+              <div class="w-12 h-12 bg-gray-300 rounded-xl flex items-center justify-center text-gray-700 font-bold text-2xl flex-shrink-0">
+                <i class="fas fa-sign-in-alt"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-lg">既存のサーバーに参加</div>
+                <div class="text-xs text-gray-500 mt-0.5">招待コードやIDを入力して参加します</div>
+              </div>
+              <i class="fas fa-arrow-right text-gray-400 group-hover:text-gray-600 transition-colors"></i>
+            </div>
+          </div>
+          <div class="mt-6 pt-4 border-t border-gray-100 flex justify-center">
+            <button onclick="document.getElementById('addServerSelectModal').classList.add('hidden')" class="text-xs font-bold text-gray-500 hover:text-gray-700 py-2 px-4 rounded-lg transition-all">キャンセル</button>
+          </div>
+        </div>
+      </div>
 <!-- サーバー作成モーダル -->
       <div id="createServerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md modal-box animate-pop-in">
           <h2 class="text-xl font-bold text-gray-800 mb-6"><i class="fas fa-plus-circle mr-2"></i>新しいサーバーを作成</h2>
           <div class="space-y-4">
+            <div class="flex flex-col items-center justify-center mb-4">
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">サーバーアイコン (任意)</label>
+              <div id="newServerIconPreviewWrapper" onclick="openNewServerIconPicker()" class="relative group cursor-pointer w-20 h-20 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 hover:border-blue-500 flex items-center justify-center transition-all duration-300 group-hover:rounded-2xl overflow-hidden shadow-sm">
+                <div id="newServerIconPreviewContent" class="w-full h-full flex items-center justify-center text-gray-400 group-hover:text-blue-500 transition-colors">
+                  <i class="fas fa-camera text-2xl"></i>
+                </div>
+                <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span class="text-[10px] text-white font-bold tracking-wider">調整する</span>
+                </div>
+              </div>
+              <input type="file" id="newServerIconUploadInput" accept="image/*" class="hidden" />
+              <p class="text-[11px] text-gray-400 mt-2">クリックして画像を選択・拡大縮小調整</p>
+            </div>
             <div>
               <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名</label>
               <input type="text" id="newServerName" placeholder="例: 私のサーバー"
@@ -4883,7 +4939,7 @@
           <!-- サーバーアイコン一覧 -->
           <div id="discordServerNavList" class="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto hide-scrollbar"></div>
           <!-- サーバー追加ボタン -->
-          <div class="discord-server-item group mt-2" onclick="document.getElementById('createServerBtn').click()" title="サーバー追加">
+          <div class="discord-server-item group mt-2" onclick="document.getElementById('addServerSelectModal').classList.remove('hidden')" title="サーバー追加">
             <div class="discord-server-pill"></div>
             <div class="discord-server-icon bg-[#313338] text-[#23a55a] group-hover:bg-[#23a55a] group-hover:text-white">
               <i class="fas fa-plus text-lg"></i>
@@ -9333,6 +9389,15 @@
 
       window.renderServerList = function() {
         if (!allServersCache) return;
+        if (document.body.classList.contains('discord-ui-mode')) {
+          if (!currentServerId) {
+            document.body.classList.add("discord-home-view");
+            const appCont = document.getElementById("appContainer");
+            if (appCont) appCont.classList.remove("hidden");
+            const sls = document.getElementById("serverListScreen");
+            if (sls) sls.classList.add("hidden");
+          }
+        }
         serverGrid.innerHTML = "";
         const servers = [...allServersCache];
         // 最近開いた順ソート
@@ -9496,9 +9561,21 @@
     // サーバー作成
     async function createServer(name, customId, password) {
       const passwordHash = await hashPassword(password, customId);
+      let iconUrl = null;
+      if (window.pendingNewServerIconBlob) {
+        try {
+          iconUrl = await uploadToExternalService(
+            new File([window.pendingNewServerIconBlob], 'server_icon.jpg', { type: 'image/jpeg' }),
+            (pct) => {},
+            'simplechat/servericons'
+          );
+        } catch(e) { console.error(e); }
+        window.pendingNewServerIconBlob = null;
+      }
       const serverData = {
         name,
         serverId: customId,
+        iconUrl,
         joinedUsers: [userId],
         serverAdmins: [userId],
         createdBy: userId,
@@ -16625,7 +16702,7 @@
 
       if (typeof allServersCache !== 'undefined' && allServersCache) {
         const servers = [...allServersCache];
-        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
+        // 順序を一定に固定するため、過去のアクセス順ソート処理を完全排除
         
         // 未読情報の取得
         let globalItems = [];
@@ -16649,7 +16726,7 @@
           item.appendChild(pill);
 
           const icon = document.createElement("div");
-          icon.className = "discord-server-icon bg-[#313338] text-[#dbdee1]";
+          icon.className = "discord-server-icon bg-[#212226] text-[#dbdee1]";
           if (server.iconUrl) {
             icon.className += " custom-bg";
             icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
@@ -16670,7 +16747,7 @@
           // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
           if (homeGrid) {
             const card = document.createElement("div");
-            card.className = "bg-[#2b2d31] hover:bg-[#35373c] p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-[#1a1b1e]/50 shadow-md group";
+            card.className = "bg-[#1a1b1e] hover:bg-[#25262b] p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-white/5 shadow-md group";
             
             const cardIcon = document.createElement("div");
             cardIcon.className = "w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden text-white transition-all duration-300 group-hover:rounded-2xl";
@@ -16694,7 +16771,7 @@
             card.appendChild(cardInfo);
 
             const enterBtn = document.createElement("button");
-            enterBtn.className = "bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold px-4 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
+            enterBtn.className = "bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-bold px-4 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
             enterBtn.textContent = "開く";
             card.appendChild(enterBtn);
 
@@ -16931,45 +17008,70 @@
 
   <!-- サーバーアイコン専用クロップモーダル -->
   <div id="serverIconCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3" style="z-index: 99999;">
-    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center modal-box animate-pop-in">
-      <h3 class="text-lg font-bold text-gray-800 mb-2">サーバーアイコンの調整</h3>
-      <p class="text-xs text-gray-500 mb-4">ドラッグで位置を、スライダーで拡大率を調整します</p>
-      <div class="relative mx-auto mb-4 bg-gray-100 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center" style="width: 240px; height: 240px;">
-        <canvas id="serverIconCropCanvas" width="240" height="240" class="cursor-grab"></canvas>
+    <div class="bg-white rounded-2xl shadow-2xl w-full flex flex-col modal-box animate-pop-in select-none" style="max-width:340px;max-height:calc(100dvh - 24px);overflow-y:auto;">
+      <div class="h-12 bg-gray-800 flex-shrink-0 flex items-center px-5 rounded-t-2xl sticky top-0 z-10">
+        <span class="text-white/80 text-sm font-bold tracking-wide">サーバーアイコンを調整</span>
       </div>
-      <div class="flex items-center gap-3 mb-6 px-2">
-        <i class="fas fa-search-minus text-gray-400 text-sm"></i>
-        <input type="range" id="serverIconZoomSlider" min="1" max="4" step="0.01" value="1" class="w-full accent-indigo-600" />
-        <i class="fas fa-search-plus text-gray-400 text-sm"></i>
-      </div>
-      <div id="serverIconUploadProgress" class="hidden mb-4">
-        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-          <div id="serverIconUploadProgressFill" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 0%;"></div>
+      <div class="p-4 flex flex-col items-center gap-3">
+        <p class="text-xs text-gray-400">ドラッグで位置調整・スライダーでズーム</p>
+        <div class="relative flex-shrink-0" style="width:240px;height:240px;">
+          <canvas id="serverIconCropCanvas" width="240" height="240" class="rounded-2xl border-2 border-gray-200 cursor-grab" style="touch-action:none;display:block;-webkit-user-select:none;user-select:none;"></canvas>
+          <svg class="absolute inset-0 pointer-events-none" width="240" height="240">
+            <defs>
+              <mask id="squircleMaskSvg">
+                <rect width="240" height="240" fill="white" />
+                <rect x="0" y="0" width="240" height="240" rx="48" fill="black" />
+              </mask>
+            </defs>
+            <rect width="240" height="240" fill="rgba(255,255,255,0.5)" mask="url(#squircleMaskSvg)" />
+            <rect x="0" y="0" width="240" height="240" rx="48" fill="none" stroke="#d1d5db" stroke-width="1.5" />
+          </svg>
         </div>
-        <p id="serverIconUploadProgressText" class="text-xs text-gray-500 mt-1">アップロード中... 0%</p>
+        <div class="flex items-center gap-3 w-full px-2">
+          <i class="fas fa-search-minus text-gray-400 text-xs text-center w-4"></i>
+          <input type="range" id="serverIconZoomSlider" min="1" max="4" step="0.01" value="1" class="flex-1 accent-gray-700" style="-webkit-appearance:auto; appearance:auto;">
+          <i class="fas fa-search-plus text-gray-400 text-xs text-center w-4"></i>
+        </div>
       </div>
-      <div class="grid grid-cols-2 gap-3">
-        <button id="serverIconCropCancel" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-sm transition-all modal-btn">キャンセル</button>
-        <button id="serverIconCropConfirm" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all modal-btn">決定</button>
+      <div id="serverIconUploadProgress" class="hidden px-4 pb-2">
+        <div class="w-full bg-gray-100 rounded-full h-1.5">
+          <div id="serverIconUploadProgressFill" class="bg-gray-700 h-1.5 rounded-full transition-all" style="width:0%"></div>
+        </div>
+        <p id="serverIconUploadProgressText" class="text-xs text-gray-500 mt-1 text-center">アップロード中...</p>
+      </div>
+      <div class="px-4 pb-4 flex gap-3">
+        <button id="serverIconCropCancel" class="flex-1 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition-all text-sm">
+          キャンセル
+        </button>
+        <button id="serverIconCropConfirm" class="flex-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-900 text-white font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
+          <i class="fas fa-check"></i> 確定
+        </button>
       </div>
     </div>
   </div>
   <script>
     // サーバーアイコン変更用JSロジック
     const serverIconUploadInput = document.getElementById("serverIconUploadInput");
+    const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
     const serverIconCropModal = document.getElementById("serverIconCropModal");
     const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
     const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
     let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
     let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
     let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
+    let isNewServerIconCrop = false;
+    window.pendingNewServerIconBlob = null;
     const SICON_SIZE = 240;
 
     if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
-      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => serverIconUploadInput.click());
+      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => { isNewServerIconCrop = false; serverIconUploadInput.click(); });
     }
+    window.openNewServerIconPicker = function() {
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
+    };
 
-    serverIconUploadInput.addEventListener("change", (e) => {
+    function handleSIconFileChange(e) {
       const file = e.target.files[0];
       if (!file) return;
       const objectUrl = URL.createObjectURL(file);
@@ -16990,9 +17092,12 @@
         serverIconCropModal.classList.remove('hidden');
         drawSIconPreview();
       };
-      sIconImage.src = objectUrl;
-      serverIconUploadInput.value = '';
-    });
+      e.target.value = '';
+      if (sIconImage) sIconImage.src = objectUrl;
+    }
+
+    if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
+    if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
 
     function clampSIconOffset() {
       if (!sIconImage) return;
@@ -17037,11 +17142,16 @@
     });
 
     document.getElementById('serverIconCropCancel').addEventListener('click', () => {
-      serverIconCropModal.classList.add('hidden'); sIconImage = null; serverIconUploadInput.value = '';
+      serverIconCropModal.classList.add('hidden'); sIconImage = null;
+      if (serverIconUploadInput) serverIconUploadInput.value = '';
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) newFileInput.value = '';
     });
 
     document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
-      if (!sIconImage || !currentServerId) return;
+      if (!sIconImage) return;
+      if (!isNewServerIconCrop && !currentServerId) return;
+
       const OUTPUT = 640;
       const offscreen = document.createElement('canvas');
       offscreen.width = OUTPUT; offscreen.height = OUTPUT;
@@ -17052,6 +17162,22 @@
 
       offscreen.toBlob(async (blob) => {
         if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+        
+        if (isNewServerIconCrop) {
+          window.pendingNewServerIconBlob = blob;
+          const previewContent = document.getElementById("newServerIconPreviewContent");
+          const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
+          if (previewContent && previewWrapper) {
+            const tempUrl = URL.createObjectURL(blob);
+            previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
+            previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
+          }
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンのプレビューを設定しました", "success");
+          return;
+        }
+
         const progressDiv = document.getElementById('serverIconUploadProgress');
         const progressFill = document.getElementById('serverIconUploadProgressFill');
         const progressText = document.getElementById('serverIconUploadProgressText');
@@ -17125,7 +17251,7 @@
         </div>
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-layer-group"></i></div>
-          <span class="mobile-settings-row-text">Discord風UIモード</span>
+          <span class="mobile-settings-row-text">モダンUIモード</span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleDiscordUIMobile" onchange="setDiscordUIMode(this.checked)"><span class="toggle-slider"></span></label>
         </div>
       </div>
