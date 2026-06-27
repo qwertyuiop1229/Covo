@@ -1306,8 +1306,8 @@
       display: none;
       align-items: center;
       justify-content: center;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(20px);
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
       flex-direction: column;
     }
 
@@ -1320,12 +1320,12 @@
       background: #ffffff;
       color: #1f2937;
       border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.5rem;
-      padding: 2.5rem;
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
       max-width: 420px;
       width: 90%;
       text-align: center;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.22);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
       animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -1379,7 +1379,7 @@
       justify-content: center;
       font-size: 1.5rem;
       color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.3);
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
     }
 
     .update-title {
@@ -1420,7 +1420,7 @@
       transition: all 0.2s;
       background: #4f46e5;
       color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.3);
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1430,7 +1430,7 @@
     .update-btn:hover {
       background: #4338ca;
       transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
     }
 
     .update-btn:disabled {
@@ -1452,12 +1452,12 @@
 
     .update-spinner {
       display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-top-color: #93c5fd;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       margin-right: 8px;
       vertical-align: middle;
     }
@@ -1805,39 +1805,56 @@
 
     .server-card {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 1.125rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
       cursor: pointer;
-      transition: box-shadow 0.18s, transform 0.18s, border-color 0.18s;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       flex-direction: column;
-      gap: 7px;
+      gap: 10px;
       position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
     }
 
     .server-card:hover {
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
       transform: translateY(-2px);
-      border-color: #d1d5db;
+      border-color: #cbd5e1;
     }
 
     .server-card:active {
       transform: translateY(0);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
     }
 
     .server-card-icon {
-      width: 44px;
-      height: 44px;
-      background: #1f2937;
-      border-radius: 11px;
+      width: 48px;
+      height: 48px;
+      background: #4f46e5;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.25rem;
+      font-size: 1.35rem;
       color: white;
       margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: scale(1.04);
+      background: #4338ca;
     }
 
     .server-card-name {
@@ -4591,9 +4608,19 @@
             <button id="closeServerSettingsBtn"
               class="absolute top-3.5 right-4 text-gray-400 hover:text-gray-700 z-10"><i
                 class="fas fa-times text-lg"></i></button>
-            <div class="bg-gray-800 text-white px-6 py-4 flex-shrink-0 modal-dark-header">
-              <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
-              <p id="serverSettingsTitle" class="font-bold text-lg"></p>
+            <div class="bg-gray-800 text-white px-6 py-5 flex-shrink-0 modal-dark-header flex items-center justify-between">
+              <div>
+                <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
+                <p id="serverSettingsTitle" class="font-bold text-xl mt-0.5"></p>
+              </div>
+              <!-- サーバーアイコン設定UI -->
+              <div id="serverIconSettingsWrapper" class="relative group cursor-pointer hidden">
+                <div id="serverIconSettingsPreview" class="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-md border-2 border-white/10 transition-all duration-300 group-hover:rounded-2xl overflow-hidden"></div>
+                <div class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-hover:rounded-2xl transition-all duration-300">
+                  <i class="fas fa-camera text-white text-lg"></i>
+                </div>
+                <input type="file" id="serverIconUploadInput" accept="image/*" class="hidden" />
+              </div>
             </div>
             <!-- タブ -->
             <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100 overflow-x-auto whitespace-nowrap hide-scrollbar">
@@ -9057,9 +9084,17 @@
         const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
         let hasUnread = false;
         try { const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); hasUnread = items.some(it => it.serverId === server.id); } catch(e) {}
+        const serverName = escapeHtml(server.name || server.id);
+        const initial = (server.name || server.id).charAt(0).toUpperCase();
+        // サーバーIDからハッシュ値を計算して美しいカラーパレットを選択
+        const colors = ['#4f46e5', '#059669', '#7c3aed', '#db2777', '#2563eb', '#d97706', '#0284c7', '#9333ea'];
+        const colorIdx = Math.abs(server.id.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % colors.length;
+        const bgColor = colors[colorIdx];
+        const iconHtml = server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />` : initial;
+        
         card.innerHTML = `
-            <div class="server-card-icon"><i class="fas fa-server"></i></div>
-            <div class="server-card-info"><div class="server-card-name">${escapeHtml(server.name || server.id)}</div>
+            <div class="server-card-icon" style="background-color: ${server.iconUrl ? 'transparent' : bgColor}">${iconHtml}</div>
+            <div class="server-card-info"><div class="server-card-name">${serverName}</div>
             <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div></div>
             ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
             ${isAdmin && !isMine && (server.joinedUsers || []).includes(userId) ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
@@ -10456,6 +10491,24 @@
       const isOwner = currentServerData?.createdBy === userId ||
         (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
       const hasAdminRights = isOwner || isAdmin;
+
+      // サーバーアイコン設定の表示・更新
+      const iconWrapper = document.getElementById("serverIconSettingsWrapper");
+      const iconPreview = document.getElementById("serverIconSettingsPreview");
+      if (iconWrapper && iconPreview) {
+        iconWrapper.style.display = (hasAdminRights || isListAdmin) ? "" : "none";
+        iconWrapper.classList.toggle("hidden", !(hasAdminRights || isListAdmin));
+        if (currentServerData?.iconUrl) {
+          iconPreview.innerHTML = `<img src="${currentServerData.iconUrl}" class="w-full h-full object-cover" />`;
+          iconPreview.style.backgroundColor = "transparent";
+        } else {
+          const initial = (currentServerData?.name || currentServerId).charAt(0).toUpperCase();
+          const colors = ['#4f46e5', '#059669', '#7c3aed', '#db2777', '#2563eb', '#d97706', '#0284c7', '#9333ea'];
+          const colorIdx = Math.abs(currentServerId.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % colors.length;
+          iconPreview.textContent = initial;
+          iconPreview.style.backgroundColor = colors[colorIdx];
+        }
+      }
 
       // 削除ボタンは管理者向け
       const deleteBtn = document.getElementById("deleteServerBtn");
@@ -16515,6 +16568,163 @@
       <i class="fas fa-trash w-4 text-center text-xs"></i>削除する
     </div>
   </div>
+
+  <!-- サーバーアイコン専用クロップモーダル -->
+  <div id="serverIconCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3" style="z-index: 99999;">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center modal-box animate-pop-in">
+      <h3 class="text-lg font-bold text-gray-800 mb-2">サーバーアイコンの調整</h3>
+      <p class="text-xs text-gray-500 mb-4">ドラッグで位置を、スライダーで拡大率を調整します</p>
+      <div class="relative mx-auto mb-4 bg-gray-100 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center" style="width: 240px; height: 240px;">
+        <canvas id="serverIconCropCanvas" width="240" height="240" class="cursor-grab"></canvas>
+      </div>
+      <div class="flex items-center gap-3 mb-6 px-2">
+        <i class="fas fa-search-minus text-gray-400 text-sm"></i>
+        <input type="range" id="serverIconZoomSlider" min="1" max="4" step="0.01" value="1" class="w-full accent-indigo-600" />
+        <i class="fas fa-search-plus text-gray-400 text-sm"></i>
+      </div>
+      <div id="serverIconUploadProgress" class="hidden mb-4">
+        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+          <div id="serverIconUploadProgressFill" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 0%;"></div>
+        </div>
+        <p id="serverIconUploadProgressText" class="text-xs text-gray-500 mt-1">アップロード中... 0%</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <button id="serverIconCropCancel" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-sm transition-all modal-btn">キャンセル</button>
+        <button id="serverIconCropConfirm" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all modal-btn">決定</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    // サーバーアイコン変更用JSロジック
+    const serverIconUploadInput = document.getElementById("serverIconUploadInput");
+    const serverIconCropModal = document.getElementById("serverIconCropModal");
+    const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
+    const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
+    let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
+    let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
+    let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
+    const SICON_SIZE = 240;
+
+    if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
+      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => serverIconUploadInput.click());
+    }
+
+    serverIconUploadInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const objectUrl = URL.createObjectURL(file);
+      sIconImage = new Image();
+      sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
+      sIconImage.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scaleX = SICON_SIZE / sIconImage.naturalWidth;
+        const scaleY = SICON_SIZE / sIconImage.naturalHeight;
+        sIconMinScale = Math.max(scaleX, scaleY);
+        sIconScale = sIconMinScale;
+        serverIconZoomSlider.min = sIconMinScale;
+        serverIconZoomSlider.max = sIconMinScale * 4;
+        serverIconZoomSlider.value = sIconScale;
+        sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
+        sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
+        document.getElementById('serverIconUploadProgress').classList.add('hidden');
+        serverIconCropModal.classList.remove('hidden');
+        drawSIconPreview();
+      };
+      sIconImage.src = objectUrl;
+      serverIconUploadInput.value = '';
+    });
+
+    function clampSIconOffset() {
+      if (!sIconImage) return;
+      const maxW = sIconImage.naturalWidth * sIconScale;
+      const maxH = sIconImage.naturalHeight * sIconScale;
+      if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
+      else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
+      if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
+      else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
+    }
+
+    function drawSIconPreview() {
+      if (!sIconImage) return;
+      const ctx = serverIconCropCanvas.getContext('2d');
+      ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
+      ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
+    }
+
+    serverIconCropCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault(); sIconIsDragging = true;
+      sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
+      sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
+      serverIconCropCanvas.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    });
+    document.addEventListener('mouseup', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+    });
+
+    serverIconZoomSlider.addEventListener('input', () => {
+      if (!sIconImage) return;
+      const newScale = parseFloat(serverIconZoomSlider.value);
+      const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
+      sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
+      sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
+      sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
+    });
+
+    document.getElementById('serverIconCropCancel').addEventListener('click', () => {
+      serverIconCropModal.classList.add('hidden'); sIconImage = null; serverIconUploadInput.value = '';
+    });
+
+    document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
+      if (!sIconImage || !currentServerId) return;
+      const OUTPUT = 640;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = OUTPUT; offscreen.height = OUTPUT;
+      const offCtx = offscreen.getContext('2d');
+      offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
+      const sf = OUTPUT / SICON_SIZE;
+      offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
+
+      offscreen.toBlob(async (blob) => {
+        if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+        const progressDiv = document.getElementById('serverIconUploadProgress');
+        const progressFill = document.getElementById('serverIconUploadProgressFill');
+        const progressText = document.getElementById('serverIconUploadProgressText');
+        const confirmBtn = document.getElementById('serverIconCropConfirm');
+        const cancelBtn = document.getElementById('serverIconCropCancel');
+        progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
+        confirmBtn.disabled = true; cancelBtn.disabled = true;
+        try {
+          const fileUrl = await uploadToExternalService(
+            new File([blob], 'server_icon.jpg', { type: 'image/jpeg' }),
+            (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
+            'simplechat/servericons'
+          );
+          await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+          if (currentServerData) currentServerData.iconUrl = fileUrl;
+          if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
+            window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
+          }
+          const iconPreview = document.getElementById("serverIconSettingsPreview");
+          if (iconPreview) {
+            iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
+            iconPreview.style.backgroundColor = "transparent";
+          }
+          if (typeof renderServerList === 'function') renderServerList();
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンを更新しました", "success");
+        } catch (err) {
+          console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
+        } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
+      }, 'image/jpeg', 0.95);
+    });
+  </script>
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
     <div class="mobile-profile-header">
