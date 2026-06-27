@@ -3633,6 +3633,139 @@
         background: rgba(255, 255, 255, 0.28) !important;
       }
     }
+    /* === Discord風UIモード専用スタイル === */
+    body.discord-ui-mode #appContainer {
+      display: flex !important;
+      flex-direction: row;
+      width: 100%;
+      height: 100%;
+    }
+
+    body.discord-ui-mode #discordServerNav {
+      display: flex !important;
+    }
+
+    body.discord-ui-mode #backToServerListBtn {
+      display: none !important; /* Discord風ヘッダーのため不要 */
+    }
+
+    /* サーバーナビゲーション内の要素 */
+    .discord-server-item {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+
+    .discord-server-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .discord-server-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .discord-server-item:hover .discord-server-icon,
+    .discord-server-item.active .discord-server-icon {
+      border-radius: 16px; /* Discord調の美しいスクワークル変形 */
+    }
+
+    .discord-server-item:hover .discord-server-icon:not(.custom-bg) {
+      background-color: #5865F2 !important;
+      color: white !important;
+    }
+
+    .discord-server-item.active .discord-server-icon:not(.custom-bg) {
+      background-color: #5865F2 !important;
+      color: white !important;
+    }
+
+    /* 左側のアクティブインジケーター（ピル） */
+    .discord-server-pill {
+      position: absolute;
+      left: -12px;
+      width: 8px;
+      height: 0px;
+      background: white;
+      border-radius: 0 4px 4px 0;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .discord-server-item:hover .discord-server-pill {
+      height: 20px;
+    }
+
+    .discord-server-item.active .discord-server-pill {
+      height: 40px !important;
+    }
+
+    .discord-server-item.has-unread .discord-server-pill {
+      height: 8px;
+      display: block;
+    }
+    .discord-server-item.has-unread:hover .discord-server-pill {
+      height: 20px;
+    }
+
+    /* ホーム画面・サーバービュー切替ロジック (DiscordUIモード時) */
+    body.discord-ui-mode #serverListScreen {
+      flex: 1;
+      display: none;
+      overflow-y: auto;
+      background: #f3f4f6;
+    }
+    body.discord-ui-mode.dark-server-theme #serverListScreen {
+      background: #313338;
+    }
+    body.discord-ui-mode.discord-home-view #serverListScreen {
+      display: block !important;
+    }
+    body.discord-ui-mode.discord-home-view #sidebar,
+    body.discord-ui-mode.discord-home-view #resizer,
+    body.discord-ui-mode.discord-home-view #chatArea {
+      display: none !important;
+    }
+
+    /* モバイルビューのDiscordレイアウト適応 */
+    @media (max-width: 768px) {
+      body.discord-ui-mode #appContainer {
+        flex-direction: row !important;
+      }
+      body.discord-ui-mode #discordServerNav {
+        width: 68px;
+        py: 2px;
+        z-index: 40;
+      }
+      body.discord-ui-mode #sidebar {
+        flex: 1;
+        width: auto !important;
+        display: flex !important;
+      }
+      body.discord-ui-mode.in-chat-view #chatArea {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex !important;
+        width: 100%;
+        height: 100%;
+      }
+    }
 </style>
 </head>
 <!-- Google tag (gtag.js) -->
@@ -4261,6 +4394,10 @@
                       <div class="setting-label"><i class="fas fa-moon"></i> ダークモード</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleDarkServer" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
                     </div>
+                    <div class="setting-row">
+                      <div class="setting-label"><i class="fas fa-layer-group"></i> Discord風UIモード</div>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleDiscordUI" onchange="setDiscordUIMode(this.checked)"><span class="toggle-slider"></span></label>
+                    </div>
                   </div>
                 </div>
                 <div id="desktopSettingsContainer" class="hidden">
@@ -4720,7 +4857,28 @@
       </div>
 
       <!-- チャットアプリ本体 -->
+      <!-- チャットアプリ本体 -->
       <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
+        <!-- Discord風 左側サーバーナビゲーションバー -->
+        <div id="discordServerNav" class="bg-[#1e1f22] w-[72px] hidden flex-col items-center py-3 flex-shrink-0 z-20 select-none border-r border-[#1a1b1e]">
+          <!-- ダイレクトメッセージ等/ホームアイコン (Discord風) -->
+          <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="サーバー一覧 / ホーム">
+            <div class="discord-server-pill" id="discordHomePill"></div>
+            <div class="discord-server-icon bg-[#313338] text-[#dbdee1] group-hover:bg-[#5865F2] group-hover:text-white">
+              <i class="fas fa-compass text-xl"></i>
+            </div>
+          </div>
+          <div class="w-8 h-[2px] bg-[#35363c] my-2 rounded"></div>
+          <!-- サーバーアイコン一覧 -->
+          <div id="discordServerNavList" class="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto hide-scrollbar"></div>
+          <!-- サーバー追加ボタン -->
+          <div class="discord-server-item group mt-2" onclick="document.getElementById('createServerBtn').click()" title="サーバー追加">
+            <div class="discord-server-pill"></div>
+            <div class="discord-server-icon bg-[#313338] text-[#23a55a] group-hover:bg-[#23a55a] group-hover:text-white">
+              <i class="fas fa-plus text-lg"></i>
+            </div>
+          </div>
+        </div>
         <!-- ルームリストサイドバー -->
         <div id="sidebar" class="bg-gray-100 flex flex-col flex-shrink-0" style="width: 250px;">
           <!-- サーバーヘッダー -->
@@ -9086,10 +9244,8 @@
         try { const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); hasUnread = items.some(it => it.serverId === server.id); } catch(e) {}
         const serverName = escapeHtml(server.name || server.id);
         const initial = (server.name || server.id).charAt(0).toUpperCase();
-        // サーバーIDからハッシュ値を計算して美しいカラーパレットを選択
-        const colors = ['#4f46e5', '#059669', '#7c3aed', '#db2777', '#2563eb', '#d97706', '#0284c7', '#9333ea'];
-        const colorIdx = Math.abs(server.id.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % colors.length;
-        const bgColor = colors[colorIdx];
+        // デフォルトアイコンの背景色を上品なCovoグレーに完全統一
+        const bgColor = '#374151';
         const iconHtml = server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />` : initial;
         
         card.innerHTML = `
@@ -9198,6 +9354,10 @@
       document.getElementById("serverListScreen").classList.add("hidden");
       appContainer.classList.remove("hidden");
       appContainer.style.animation = "fadeIn 0.2s ease both";
+      if (document.body.classList.contains("discord-ui-mode")) {
+        document.body.classList.remove("discord-home-view");
+      }
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 
       // ニックネームヘッダーを表示
       const hdr = document.getElementById("globalAppHeader");
@@ -9261,12 +9421,18 @@
       sendMessageButton.disabled = true;
       membersSidebar.classList.add("hidden");
 
-      appContainer.classList.add("hidden");
-      document.getElementById("serverListScreen").classList.remove("hidden");
+      if (document.body.classList.contains("discord-ui-mode")) {
+        document.body.classList.add("discord-home-view");
+        appContainer.classList.remove("hidden");
+      } else {
+        appContainer.classList.add("hidden");
+        document.getElementById("serverListScreen").classList.remove("hidden");
+      }
 
       // ニックネームヘッダーを非表示
       document.getElementById("globalAppHeader")?.classList.remove("server-mode");
       if (window.renderServerList) window.renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
     }
 
     // サーバー存在確認
@@ -10503,10 +10669,8 @@
           iconPreview.style.backgroundColor = "transparent";
         } else {
           const initial = (currentServerData?.name || currentServerId).charAt(0).toUpperCase();
-          const colors = ['#4f46e5', '#059669', '#7c3aed', '#db2777', '#2563eb', '#d97706', '#0284c7', '#9333ea'];
-          const colorIdx = Math.abs(currentServerId.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % colors.length;
           iconPreview.textContent = initial;
-          iconPreview.style.backgroundColor = colors[colorIdx];
+          iconPreview.style.backgroundColor = '#374151';
         }
       }
 
@@ -16716,6 +16880,7 @@
             iconPreview.style.backgroundColor = "transparent";
           }
           if (typeof renderServerList === 'function') renderServerList();
+          if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
           serverIconCropModal.classList.add('hidden');
           sIconImage = null;
           alertMessage("サーバーアイコンを更新しました", "success");
@@ -16724,6 +16889,104 @@
         } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
       }, 'image/jpeg', 0.95);
     });
+
+    // === Discord風UIモード制御JSロジック ===
+    window.setDiscordUIMode = function(enabled) {
+      localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
+      document.body.classList.toggle('discord-ui-mode', enabled);
+      const pcToggle = document.getElementById('toggleDiscordUI');
+      const mobileToggle = document.getElementById('toggleDiscordUIMobile');
+      if (pcToggle) pcToggle.checked = enabled;
+      if (mobileToggle) mobileToggle.checked = enabled;
+
+      if (enabled) {
+        if (!currentServerId) {
+          document.body.classList.add("discord-home-view");
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.remove("hidden");
+        } else {
+          document.body.classList.remove("discord-home-view");
+        }
+        renderDiscordServerNav();
+      } else {
+        document.body.classList.remove("discord-home-view");
+        if (!currentServerId) {
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.add("hidden");
+          const sls = document.getElementById("serverListScreen");
+          if (sls) sls.classList.remove("hidden");
+        }
+      }
+    };
+
+    window.renderDiscordServerNav = function() {
+      const navList = document.getElementById("discordServerNavList");
+      const homeBtn = document.querySelector(".discord-home-btn");
+      if (!navList) return;
+      navList.innerHTML = "";
+
+      if (!currentServerId) {
+        if (homeBtn) homeBtn.classList.add("active");
+      } else {
+        if (homeBtn) homeBtn.classList.remove("active");
+      }
+
+      if (!typeof allServersCache !== 'undefined' && window.allServersCache) {
+        const servers = [...window.allServersCache];
+        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
+        
+        // 未読情報の取得
+        let globalItems = [];
+        try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
+
+        servers.forEach(server => {
+          if (!isAdmin && !(server.joinedUsers || []).includes(userId)) return;
+          const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+          const hasUnread = globalItems.some(it => it.serverId === server.id);
+          const isActive = currentServerId === server.id;
+
+          const item = document.createElement("div");
+          item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
+          item.title = server.name || server.id;
+
+          const pill = document.createElement("div");
+          pill.className = "discord-server-pill";
+          item.appendChild(pill);
+
+          const icon = document.createElement("div");
+          icon.className = "discord-server-icon bg-[#313338] text-[#dbdee1]";
+          if (server.iconUrl) {
+            icon.className += " custom-bg";
+            icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+          } else {
+            icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+            icon.style.backgroundColor = "#374151";
+          }
+          item.appendChild(icon);
+
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (currentServerId !== server.id) {
+              enterServer(server.id, server);
+            }
+          });
+
+          navList.appendChild(item);
+        });
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') === 'true';
+      setDiscordUIMode(isDiscordMode);
+    });
+
+    // 既存のrenderServerList実行時に連動させるためのフックを強化
+    const _origRenderServerList = window.renderServerList;
+    window.renderServerList = function() {
+      if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    };
   </script>
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
@@ -16761,6 +17024,11 @@
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-moon"></i></div>
           <span class="mobile-settings-row-text">ダークモード</span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleDarkServerMobile" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="mobile-settings-row">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-layer-group"></i></div>
+          <span class="mobile-settings-row-text">Discord風UIモード</span>
+          <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleDiscordUIMobile" onchange="setDiscordUIMode(this.checked)"><span class="toggle-slider"></span></label>
         </div>
       </div>
     </div>
