@@ -700,6 +700,41 @@ fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String)
         .show();
 }
 
+#[tauri::command]
+async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
+    log::info!("silent_install_past_version called: {} -> {}", tag, url);
+    let temp_dir = std::env::temp_dir();
+    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", tag));
+
+    // reqwest でインストーラーをダウンロード
+    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
+    let bytes = response.bytes().await.map_err(|e| format!("Failed to read bytes: {}", e))?;
+    std::fs::write(&exe_path, bytes).map_err(|e| format!("Failed to write exe: {}", e))?;
+
+    log::info!("Downloaded installer to: {:?}", exe_path);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        // NSIS: /S, Inno Setup: /VERYSILENT /SUPPRESSMSGBOXES /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS
+        let status = std::process::Command::new(&exe_path)
+            .args(["/S", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SP-", "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn installer: {}", e))?;
+        log::info!("Spawned silent installer: {:?}", status);
+
+        // インストーラーが Covo.exe を確実に上書きできるよう、IPC応答を返した直後に現在のプロセスを終了する
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            app_handle.exit(0);
+        });
+    }
+
+    Ok(())
+}
+
 // ===========================================================================
 // run()
 // ===========================================================================
@@ -730,6 +765,7 @@ pub fn run() {
             create_desktop_shortcut,
             set_badge,
             send_desktop_notification,
+            silent_install_past_version,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();

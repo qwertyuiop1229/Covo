@@ -3833,12 +3833,14 @@
           </button>
         </div>
 
-        <div>
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3"><i class="fas fa-history mr-2"></i>過去の安定バージョンへ復旧（ロールバック）</h3>
-          <p class="text-xs text-gray-400 mb-3">不具合のない過去のバージョンを選択して再インストールできます。復旧後は起動時の自動アプデが自動回避されます。</p>
-          <div id="emergencyPastVersions" class="space-y-2 min-h-[100px] flex flex-col justify-center">
-            <div class="text-center text-xs text-gray-500 py-4"><i class="fas fa-spinner fa-spin mr-2"></i>過去のバージョン履歴を取得中...</div>
+        <div class="p-4 bg-gray-800/60 border border-gray-700/60 rounded-2xl flex items-center justify-between">
+          <div>
+            <div class="text-sm font-bold text-gray-200"><i class="fas fa-history mr-2"></i>過去の安定バージョンへ復旧（ロールバック）</div>
+            <div class="text-xs text-gray-400 mt-1">不具合のない過去のバージョンを選択してサイレント復旧できます。</div>
           </div>
+          <button onclick="openPastVersionsModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
+            過去のバージョン一覧を開く
+          </button>
         </div>
 
         <div>
@@ -3853,6 +3855,82 @@
         </button>
         <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
           閉じて続行を試みる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛡️ 強制アップデート回避モード確認ダイアログ -->
+  <div id="forceOverrideConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-4" style="z-index:999999;backdrop-filter:blur(25px);background:rgba(15,23,42,0.85);">
+    <div class="bg-gray-900 border border-yellow-500/40 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden p-6 flex flex-col space-y-6 animate-pop-in text-white">
+      <div class="flex items-center gap-4 border-b border-gray-800 pb-4">
+        <div class="w-12 h-12 rounded-2xl bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-500 text-2xl flex-shrink-0 animate-pulse">
+          <i class="fas fa-shield-halved"></i>
+        </div>
+        <div>
+          <h2 class="text-lg font-bold text-gray-100">強制アップデート回避モードの有効化</h2>
+          <p class="text-xs text-gray-400">この機能の仕組みと注意点を必ずご確認ください</p>
+        </div>
+      </div>
+      <div class="space-y-4 text-xs text-gray-300 leading-relaxed">
+        <p>「強制アップデート回避モード」は、万が一最新アップデートに予期せぬ不具合があった場合や、過去の安定バージョンを維持したいときに、<strong>起動時の自動強制アップデートをストップする保護機能</strong>です。</p>
+        <p class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl text-yellow-400">
+          <i class="fas fa-exclamation-triangle mr-1.5"></i><strong>注意点</strong><br>
+          このモードを有効にしている間は、ユーザーご自身で「アップデートを確認」を押さない限り自動更新されなくなります。最新の機能やセキュリティ修正を受け取るためには、定期的な手動チェックをお勧めします。
+        </p>
+      </div>
+      <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
+        <button onclick="cancelForceOverrideToggle()" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
+          キャンセル
+        </button>
+        <button onclick="confirmForceOverrideToggle()" class="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition shadow-lg shadow-yellow-500/20">
+          内容を理解して有効にする
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🚀 裏側ダウンロード完了バナー -->
+  <div id="bgUpdateReadyBanner" class="fixed top-5 right-5 z-[999990] bg-gray-900 border border-green-500/40 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-4 hidden animate-slide-in max-w-md w-full">
+    <div class="w-10 h-10 rounded-xl bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-400 text-xl flex-shrink-0 animate-bounce">
+      <i class="fas fa-box-open"></i>
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-bold text-green-400">アップデート準備完了</div>
+      <div class="text-xs text-gray-300 mt-0.5">裏側でのサイレントダウンロードが完了しました。</div>
+    </div>
+    <button onclick="performBackgroundUpdateRestart()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-bold text-xs rounded-xl transition shadow-lg shadow-green-600/30 flex-shrink-0">
+      更新を適用して再起動
+    </button>
+    <button onclick="this.parentElement.classList.add('hidden')" class="w-7 h-7 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition flex-shrink-0">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+
+  <!-- 🛡️ 過去バージョン履歴＆無限スクロール専用モーダル -->
+  <div id="pastVersionsModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-4" style="z-index:999999;backdrop-filter:blur(25px);background:rgba(15,23,42,0.85);">
+    <div class="bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-6 flex flex-col space-y-6 animate-pop-in text-white max-h-[90dvh]">
+      <div class="flex items-center justify-between border-b border-gray-800 pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center text-gray-300 text-2xl">
+            <i class="fas fa-history"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-gray-100">過去のバージョン履歴</h2>
+            <p class="text-xs text-gray-400">安定版へのサイレント復旧（ロールバック）が行えます</p>
+          </div>
+        </div>
+        <button onclick="closePastVersionsModal()" class="w-9 h-9 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div id="pastVersionsScrollContainer" class="flex-1 overflow-y-auto space-y-3 pr-2 min-h-[300px]" onscroll="handlePastVersionsScroll(this)">
+        <div id="pastVersionsList" class="space-y-3"></div>
+        <div id="pastVersionsLoading" class="text-center text-xs text-gray-500 py-6 hidden"><i class="fas fa-spinner fa-spin mr-2"></i>さらに古いバージョンを読み込み中...</div>
+      </div>
+      <div class="flex justify-end border-t border-gray-800 pt-4">
+        <button onclick="closePastVersionsModal()" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
+          閉じる
         </button>
       </div>
     </div>
@@ -4098,18 +4176,21 @@
                     <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>強制アップデートの回避モード</div>
                     <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">過去のバージョンを維持するため、起動時の自動強制アップデートを自動スキップします。</div>
                   </div>
-                  <button id="toggleForceOverrideBtn" onclick="toggleForceOverride()" class="px-4 py-2 rounded-xl font-bold text-xs bg-yellow-500 text-black hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20 flex-shrink-0">
-                    設定を確認中...
-                  </button>
+                  <label class="toggle-switch flex-shrink-0 cursor-pointer">
+                    <input type="checkbox" id="toggleForceOverrideCheckbox" onclick="handleForceOverrideToggle(event)">
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
 
                 <!-- バージョン管理と履歴 -->
-                <div class="space-y-3">
-                  <div class="settings-section-title">バージョン管理と履歴</div>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">過去のリリース履歴の確認、および安定版へのロールバック（再インストール）が行えます。</p>
-                  <div id="settingsPastVersionsContainer" class="space-y-2 min-h-[150px]">
-                    <div class="text-center text-xs text-gray-500 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>GitHubからリリース履歴を取得中...</div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/60 rounded-2xl flex items-center justify-between shadow-sm">
+                  <div>
+                    <div class="text-sm font-bold text-gray-800 dark:text-gray-100"><i class="fas fa-history mr-2"></i>過去のバージョン履歴</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">過去のリリース履歴の確認、および安定版へのサイレント復旧（ロールバック）が行えます。</div>
                   </div>
+                  <button onclick="openPastVersionsModal()" class="px-4 py-2 bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
+                    過去のバージョン一覧を開く
+                  </button>
                 </div>
               </div>
 
@@ -6508,7 +6589,7 @@
               // SW にuserIdを通知（自分のメッセージへの通知バグ防止）
               if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.ready.then(reg => {
-                  if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId });
+                  if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId, appId: appId, idToken: _cachedIdToken });
                 }).catch(() => {});
               }
               // FCMが有効な場合はFirestoreグローバルリスナーは不要（FCMが通知を担当）
@@ -7194,7 +7275,7 @@
           catch (e) { continue; }
           roomsSnap.forEach(rd => {
             const room = rd.data();
-            const lastAt = room.lastMessageAt?.toMillis?.() || 0;
+            const lastAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
             if (!lastAt) return;
             const lastRead = rm[rd.id] || 0;
             // 自分の最後の発言で更新された分は未読にしない
@@ -8013,7 +8094,14 @@
       try {
         const { getAuth } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
         const user = getAuth().currentUser;
-        if (user) _cachedIdToken = await user.getIdToken(false);
+        if (user) {
+          _cachedIdToken = await user.getIdToken(false);
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(reg => {
+              if (reg.active) reg.active.postMessage({ type: 'CACHE_AUTH_TOKEN', idToken: _cachedIdToken, userId: userId, appId: appId });
+            }).catch(() => {});
+          }
+        }
       } catch(e) {}
     }
 
@@ -8152,7 +8240,7 @@
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
-          const lastMsgAt = room.lastMessageAt || 0;
+          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
           const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
           const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
           
@@ -8183,8 +8271,9 @@
     async function fetchD1Messages(serverId, roomId, isUpdate = false) {
       try {
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const fetchLimit = isUpdate ? Math.max(20, allLoadedMessages.length + 5) : 20;
         const res = await fetch(
-          `${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}&serverId=${serverId}`,
+          `${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}&serverId=${serverId}&limit=${fetchLimit}`,
           { headers: { "Authorization": `Bearer ${idToken}` } }
         );
         const data = await res.json();
@@ -9315,7 +9404,7 @@
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
-          const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
+          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
           const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
           const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
           
@@ -9351,7 +9440,7 @@
             snapshot.docChanges().forEach(change => {
                if (change.type === "modified") {
                   const room = change.doc.data();
-                  const lastMsgAt = room.lastMessageAt?.toMillis?.() || 0;
+                  const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
                   const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
                   const lastRead = rm[change.doc.id] || 0;
                   const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
@@ -9473,38 +9562,84 @@
           return;
         }
         
-        // Firestoreからさらに古い20件を取得 (timestampを使って正確にページネーション)
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "desc"),
-          startAfter(oldestMsg.timestamp), // タイムスタンプをカーソルにする
-          limit(20)
-        );
-        
-        const snap = await getDocs(q);
-        clearTimeout(timeoutId);
-        if (isTimeout) return; // タイムアウト後であれば無視
-        
-        if (snap.empty || snap.docs.length < 20) {
-          hasMoreOlderMessages = false;
-        }
-        if (snap.empty) {
-          if (!document.getElementById('endOfMessagesIndicator')) {
-            const endMsg = document.createElement('div');
-            endMsg.id = 'endOfMessagesIndicator';
-            endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0 flipped';
-            endMsg.textContent = 'これ以上過去のメッセージはありません';
-            messagesDisplay.appendChild(endMsg);
+        let olderMessages = [];
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const beforeTs = typeof oldestMsg.timestamp === 'number' ? oldestMsg.timestamp : (oldestMsg.timestamp?.toMillis ? oldestMsg.timestamp.toMillis() : oldestMsg.createdAt);
+          const res = await fetch(
+            `${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${currentRoomId}&serverId=${currentServerId}&limit=20&before=${beforeTs}`,
+            { headers: { "Authorization": `Bearer ${idToken}` } }
+          );
+          const data = await res.json();
+          olderMessages = data.docs ? data.docs.map(d => {
+            const m = { id: d.id, ...d.data };
+            if (!m.timestamp && m.createdAt) {
+              const ms = typeof m.createdAt === 'number' ? m.createdAt : parseInt(m.createdAt, 10);
+              m.timestamp = {
+                _isTimestampSim: true, _ms: ms,
+                toMillis() { return this._ms; }, toDate() { return new Date(this._ms); },
+                seconds: Math.floor(ms / 1000), nanoseconds: (ms % 1000) * 1e6,
+              };
+            } else if (m.timestamp && typeof m.timestamp === 'number') {
+              const ms = m.timestamp;
+              m.timestamp = {
+                _isTimestampSim: true, _ms: ms,
+                toMillis() { return this._ms; }, toDate() { return new Date(this._ms); },
+                seconds: Math.floor(ms / 1000), nanoseconds: (ms % 1000) * 1e6,
+              };
+            }
+            return m;
+          }) : [];
+          clearTimeout(timeoutId);
+          if (isTimeout) return;
+          if (olderMessages.length < 20) {
+            hasMoreOlderMessages = false;
+          }
+          if (olderMessages.length === 0) {
+            if (!document.getElementById('endOfMessagesIndicator')) {
+              const endMsg = document.createElement('div');
+              endMsg.id = 'endOfMessagesIndicator';
+              endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0 flipped';
+              endMsg.textContent = 'これ以上過去のメッセージはありません';
+              messagesDisplay.appendChild(endMsg);
+            }
+          }
+        } else {
+          // Firestoreからさらに古い20件を取得 (timestampを使って正確にページネーション)
+          const q = query(
+            collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+            orderBy("timestamp", "desc"),
+            startAfter(oldestMsg.timestamp), // タイムスタンプをカーソルにする
+            limit(20)
+          );
+          
+          const snap = await getDocs(q);
+          clearTimeout(timeoutId);
+          if (isTimeout) return; // タイムアウト後であれば無視
+          
+          if (snap.empty || snap.docs.length < 20) {
+            hasMoreOlderMessages = false;
+          }
+          if (snap.empty) {
+            if (!document.getElementById('endOfMessagesIndicator')) {
+              const endMsg = document.createElement('div');
+              endMsg.id = 'endOfMessagesIndicator';
+              endMsg.className = 'text-center text-xs text-gray-400 py-3 w-full flex-shrink-0 flipped';
+              endMsg.textContent = 'これ以上過去のメッセージはありません';
+              messagesDisplay.appendChild(endMsg);
+            }
+          }
+          
+          if (!snap.empty) {
+            snap.forEach(doc => {
+              const d = doc.data(); d.id = doc.id;
+              olderMessages.push(d);
+            });
+            olderMessages.reverse();
           }
         }
-        
-        if (!snap.empty) {
-          const olderMessages = [];
-          snap.forEach(doc => {
-            const d = doc.data(); d.id = doc.id;
-            olderMessages.push(d);
-          });
-          olderMessages.reverse();
+
+        if (olderMessages.length > 0) {
 
           // E2EE: 追加分を描画前に復号（失敗してもクラッシュさせない）
           try {
@@ -13216,7 +13351,8 @@
             if (isFirst) {
               isFirst = false;
               snapshot.forEach(doc => {
-                 roomLastNotifTs[doc.id] = doc.data().lastMessageAt?.toMillis?.() || 0;
+                 const d = doc.data();
+                 roomLastNotifTs[doc.id] = typeof d.lastMessageAt === 'number' ? d.lastMessageAt : (d.lastMessageAt?.toMillis?.() || (d.lastMessageAt?.seconds ? d.lastMessageAt.seconds * 1000 : 0));
               });
               return;
             }
@@ -13227,7 +13363,7 @@
                 const roomData = change.doc.data();
                 const rmId = change.doc.id;
                 const rmName = roomData.name || rmId;
-                const ts = roomData.lastMessageAt?.toMillis?.() || 0;
+                const ts = typeof roomData.lastMessageAt === 'number' ? roomData.lastMessageAt : (roomData.lastMessageAt?.toMillis?.() || (roomData.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
                 const prevTs = roomLastNotifTs[rmId] || 0;
 
                 if (ts > prevTs) {
@@ -13587,7 +13723,7 @@
           const sendUserIdToSW = () => {
             const sw = navigator.serviceWorker.controller;
             if (sw && userId) {
-              sw.postMessage({ type: 'SET_USER_ID', userId, appId });
+              sw.postMessage({ type: 'SET_USER_ID', userId, appId, idToken: _cachedIdToken });
             }
           };
           // 即時送信 + コントローラー切り替わり時にも送信
@@ -15182,10 +15318,25 @@
 
     // --- ブロッキングアップデートチェック ---
     let pendingUpdate = null;
+    window.__bgDownloading = false;
+    window.__bgDownloaded = false;
+    window.__bgProgressText = '';
+
+    window.performBackgroundUpdateRestart = async function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (!invoke) { window.location.reload(); return; }
+      try {
+        if (pendingUpdate && pendingUpdate.rid) {
+          await invoke('plugin:updater|install', { rid: pendingUpdate.rid, updateRid: pendingUpdate.rid });
+        }
+      } catch(e) { console.warn(e); }
+      try {
+        await invoke('plugin:process|restart');
+      } catch(e) { window.location.reload(); }
+    };
 
     async function blockingUpdateCheck() {
       if (!isTauri) return false;
-      // Tauri v2: plugin APIs use core.invoke directly (window.__TAURI__.updater is not available without bundler)
       const invoke = window.__TAURI__?.core?.invoke;
       if (!invoke) {
         console.warn('Tauri core.invoke not available, skipping update check.');
@@ -15198,16 +15349,24 @@
         if (metadata) {
           console.log('Update available:', metadata.version);
 
-          // Tauri v2 plugin-updater のパラメーター名はバージョンで揺れる:
-          //   - 古いバージョン: rid
-          //   - 新しいバージョン: updateRid
-          //   - 同一バージョンでも download/install で異なる場合がある
-          // 確実性のため、両方の名前で試行するヘルパーで invoke する
+          let isForced = false;
+          try {
+            const vRes = await fetch('version.json?_t=' + Date.now(), { cache: 'no-store' });
+            const vData = await vRes.json();
+            if (vData && vData.force === true) {
+              isForced = true;
+            }
+          } catch(e) { console.warn('Failed to fetch version.json:', e); }
+
+          if (localStorage.getItem('covo_ignore_force_update') === '1') {
+            console.log('[Update] ユーザーが強制アップデート回避モードを有効にしているため、自動アップデートをスキップします。');
+            return false;
+          }
+
           const Channel = window.__TAURI__?.core?.Channel;
           const rid = metadata.rid;
 
           const tryInvokeWithRidVariants = async (cmd, extraArgs) => {
-            // パラメーター名のバリアントを順に試す
             const variants = [
               { rid },
               { updateRid: rid },
@@ -15221,12 +15380,9 @@
               } catch (e) {
                 lastErr = e;
                 const msg = String(e?.message || e || '').toLowerCase();
-                // 「missing required key」「invalid args」系のエラーだけ次のバリアントに進む
                 if (msg.includes('missing required key') || msg.includes('invalid args')) {
-                  console.warn(`[Updater] ${cmd} variant ${JSON.stringify(v)} not accepted, trying next`);
                   continue;
                 }
-                // 別の種類のエラーは即時 throw
                 throw e;
               }
             }
@@ -15246,7 +15402,6 @@
                 return ch;
               };
 
-              // 1) まず download_and_install 単発を試す
               try {
                 const ch = makeChannel();
                 const extra = ch ? { onEvent: ch } : {};
@@ -15257,7 +15412,6 @@
                 console.warn('[Updater] download_and_install failed, trying download+install', e1);
               }
 
-              // 2) フォールバック: download → install 2段階
               try {
                 const ch = makeChannel();
                 const extra = ch ? { onEvent: ch } : {};
@@ -15275,19 +15429,32 @@
             }
           };
 
-          // アップデートオーバーレイを表示
+          if (!isForced) {
+            console.log('[Update] force: false のため、起動画面をブロックせず裏側でサイレントダウンロードを開始します。');
+            window.__bgDownloading = true;
+            window.__bgProgressText = '裏側で最新アップデートをダウンロード中...';
+            
+            pendingUpdate.downloadAndInstall().then(() => {
+              window.__bgDownloading = false;
+              window.__bgDownloaded = true;
+              window.__bgProgressText = 'ダウンロード完了。再起動待ちです。';
+              const banner = document.getElementById('bgUpdateReadyBanner');
+              if (banner) banner.classList.remove('hidden');
+            }).catch(err => {
+              window.__bgDownloading = false;
+              window.__bgProgressText = 'ダウンロード失敗: ' + err.message;
+            });
+
+            return false; // アプリ起動をブロックしない
+          }
+
+          // アップデートオーバーレイを表示 (force: true)
           const overlay = document.getElementById('updateOverlay');
           const versionText = document.getElementById('updateVersionText');
           const bodyText = document.getElementById('updateBodyText');
           const closeBtn = document.getElementById('updateCloseButton');
           const updateBtn = document.getElementById('updateButton');
           const updateMainTitle = document.getElementById('updateMainTitle');
-
-          // 回避モードの確認（ロールバック時など）
-          if (localStorage.getItem('covo_ignore_force_update') === '1') {
-            console.log('[Update] ユーザーが強制アップデート回避モードを有効にしているため、自動アップデートをスキップします。');
-            return false;
-          }
 
           versionText.textContent = `v${metadata.version} を自動でダウンロード中...`;
           bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
@@ -15298,7 +15465,6 @@
 
           overlay.classList.add('show');
 
-          // 自動ダウンロード＆インストールの開始（Discord風）
           setTimeout(() => {
             performUpdate();
           }, 500);
@@ -15307,18 +15473,16 @@
         }
         console.log('No updates available.');
       } catch (error) {
-        console.warn('Update check failed (will retry via manual check):', error);
+        console.warn('Update check failed:', error);
       }
       return false;
     }
 
-    // アップデートオーバーレイを閉じる（任意アップデートスキップ時）
     window.closeUpdateOverlay = function() {
       const overlay = document.getElementById('updateOverlay');
       if (overlay) {
         overlay.classList.remove('show');
       }
-      // 起動時のブロッキングでFirebase初期化がスキップされていた場合は初期化を再開
       if (!app) {
         initializeFirebase();
         if ('Notification' in window) Notification.requestPermission();
@@ -15330,43 +15494,93 @@
     // 🛡️ リリース履歴取得＆強制アプデ回避機能管理（設定モーダル＆リカバリー用）
     // =========================================================================
     window.updateForceOverrideUI = function() {
-      const btn = document.getElementById('toggleForceOverrideBtn');
-      if (!btn) return;
-      const isActive = localStorage.getItem('covo_ignore_force_update') === '1';
-      if (isActive) {
-        btn.textContent = '有効 (起動時アプデを自動回避中)';
-        btn.style.background = '#22c55e';
-        btn.style.color = 'white';
-      } else {
-        btn.textContent = '無効 (起動時に全自動アップデート)';
-        btn.style.background = '#eab308';
-        btn.style.color = 'black';
-      }
+      const cb = document.getElementById('toggleForceOverrideCheckbox');
+      if (!cb) return;
+      cb.checked = localStorage.getItem('covo_ignore_force_update') === '1';
     };
 
-    window.toggleForceOverride = function() {
+    window.handleForceOverrideToggle = function(event) {
+      event.preventDefault();
       const isActive = localStorage.getItem('covo_ignore_force_update') === '1';
       if (isActive) {
         localStorage.setItem('covo_ignore_force_update', '0');
+        updateForceOverrideUI();
       } else {
-        localStorage.setItem('covo_ignore_force_update', '1');
+        const modal = document.getElementById('forceOverrideConfirmModal');
+        if (modal) {
+          modal.classList.remove('hidden');
+          modal.style.display = 'flex';
+        }
+      }
+    };
+
+    window.confirmForceOverrideToggle = function() {
+      localStorage.setItem('covo_ignore_force_update', '1');
+      updateForceOverrideUI();
+      const modal = document.getElementById('forceOverrideConfirmModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    };
+
+    window.cancelForceOverrideToggle = function() {
+      const modal = document.getElementById('forceOverrideConfirmModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
       }
       updateForceOverrideUI();
     };
 
-    window.fetchGitHubReleasesHistory = async function(containerId) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      container.innerHTML = '<div class="text-center text-xs text-gray-500 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>GitHubからリリース履歴を取得中...</div>';
+    // 無限スクロール対応 過去バージョンモーダル
+    window.openPastVersionsModal = function() {
+      const modal = document.getElementById('pastVersionsModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      }
+      window.__pastVersionsPage = 1;
+      window.__pastVersionsHasMore = true;
+      window.__pastVersionsLoading = false;
+      const listEl = document.getElementById('pastVersionsList');
+      if (listEl) listEl.innerHTML = '';
+      loadPastVersionsPage(1);
+    };
+
+    window.closePastVersionsModal = function() {
+      const modal = document.getElementById('pastVersionsModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    };
+
+    window.loadPastVersionsPage = async function(page) {
+      if (window.__pastVersionsLoading || !window.__pastVersionsHasMore) return;
+      window.__pastVersionsLoading = true;
+      const listEl = document.getElementById('pastVersionsList');
+      const loadingEl = document.getElementById('pastVersionsLoading');
+      if (!listEl) return;
+      if (loadingEl) loadingEl.classList.remove('hidden');
+
       try {
-        const res = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases', { cache: 'no-store' });
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${page}`, { cache: 'no-store' });
         const releases = await res.json();
         if (!Array.isArray(releases) || releases.length === 0) {
-          container.innerHTML = '<div class="text-center text-xs text-gray-500 py-4">リリース履歴が見つかりませんでした。</div>';
+          window.__pastVersionsHasMore = false;
+          if (page === 1) {
+            listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-4">リリース履歴が見つかりませんでした。</div>';
+          }
+          if (loadingEl) loadingEl.classList.add('hidden');
+          window.__pastVersionsLoading = false;
           return;
         }
 
-        container.innerHTML = '';
+        if (releases.length < 10) {
+          window.__pastVersionsHasMore = false;
+        }
+
         releases.forEach(rel => {
           const exeAsset = rel.assets?.find(a => a.name?.endsWith('.exe'));
           const tag = rel.tag_name || '不明';
@@ -15374,37 +15588,58 @@
           const bodyStr = (rel.body || '説明なし').substring(0, 100) + (rel.body?.length > 100 ? '...' : '');
 
           const card = document.createElement('div');
-          card.className = 'p-4 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow transition';
+          card.className = 'p-4 bg-gray-800/60 border border-gray-700/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow transition text-white';
           card.innerHTML = `
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-bold font-mono text-gray-800 dark:text-gray-100">${tag}</span>
+                <span class="text-sm font-bold font-mono text-gray-100">${tag}</span>
                 <span class="text-xs text-gray-400">(${dateStr})</span>
               </div>
-              <p class="text-xs text-gray-500 dark:text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
+              <p class="text-xs text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
             </div>
-            <button class="px-4 py-2 bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}')">
+            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}', this)">
               <i class="fas fa-download"></i>このバージョンをインストール
             </button>
           `;
-          container.appendChild(card);
+          listEl.appendChild(card);
         });
+        window.__pastVersionsPage = page;
       } catch (e) {
         console.warn('Failed to fetch GitHub releases:', e);
-        container.innerHTML = '<div class="text-center text-xs text-red-500 py-4">リリース履歴の取得に失敗しました。</div>';
+        if (page === 1) {
+          listEl.innerHTML = '<div class="text-center text-xs text-red-500 py-4">リリース履歴の取得に失敗しました。</div>';
+        }
+      } finally {
+        if (loadingEl) loadingEl.classList.add('hidden');
+        window.__pastVersionsLoading = false;
       }
     };
 
-    window.installPastRelease = function(url, tag) {
+    window.handlePastVersionsScroll = function(container) {
+      if (container.scrollHeight - container.scrollTop <= container.clientHeight + 150) {
+        loadPastVersionsPage(window.__pastVersionsPage + 1);
+      }
+    };
+
+    window.installPastRelease = function(url, tag, btnEl) {
       if (!url) return;
       console.log(`[Install Past Release] ${tag} -> ${url}`);
-      // 過去バージョンをインストールした直後に再び強制アップデートされないよう、自動で回避モードを有効化
       localStorage.setItem('covo_ignore_force_update', '1');
       if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
-      alert(`バージョン ${tag} のインストーラーをダウンロードします。\nダウンロード完了後、実行してインストールしてください。\n\n※起動時の強制アップデートを回避するため「強制アップデートの回避モード」を自動で有効にしました。`);
       
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>裏側でサイレントダウンロード＆インストール中...';
+        btnEl.className = 'px-4 py-2 bg-yellow-500 text-black font-bold text-xs rounded-xl flex-shrink-0 flex items-center gap-1.5 shadow-sm animate-pulse';
+      }
+
       const invoke = window.__TAURI__?.core?.invoke;
-      if (invoke) {
+      if (invoke && url.endsWith('.exe')) {
+        invoke('silent_install_past_version', { url: url, tag: tag }).catch(err => {
+          console.warn('silent_install_past_version failed, fallback to shell open', err);
+          invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+        });
+      } else if (invoke) {
         invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
       } else {
         window.open(url, '_blank');
@@ -15465,7 +15700,6 @@
             }
           }
         } catch(e) { console.warn('[manualCheckUpdate] cache clear failed:', e); }
-        // Cache-busting reload to ensure the latest index.html is fetched
         window.location.href = window.location.pathname + '?v=' + new Date().getTime();
         return;
       }
@@ -15478,7 +15712,6 @@
           resetBtn();
           if (statusEl) { statusEl.textContent = ''; }
           
-          // 手動確認時は回避モードを無効化して進行
           localStorage.setItem('covo_ignore_force_update', '0');
           if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
 

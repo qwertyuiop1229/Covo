@@ -1639,6 +1639,8 @@ async function handleD1Api(request, env, url) {
         const roomId = url.searchParams.get("roomId");
         const serverId = url.searchParams.get("serverId");
         const messageId = url.searchParams.get("messageId");
+        const limitParam = url.searchParams.get("limit");
+        const beforeParam = url.searchParams.get("before");
         if (!appId || !roomId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
         
         // 認証チェック: メッセージ読み取りには Firebase ID トークンが必要
@@ -1669,7 +1671,19 @@ async function handleD1Api(request, env, url) {
           return new Response(JSON.stringify({ empty: false, id: row.message_id, data }), { status: 200, headers: d1Cors });
         }
         
-        const rows = (await env.DB.prepare("SELECT * FROM messages WHERE room_id = ? AND app_id = ? ORDER BY created_at ASC").bind(roomId, appId).all()).results;
+        let rows = [];
+        if (beforeParam) {
+          const limitCount = parseInt(limitParam, 10) || 20;
+          const beforeTs = parseInt(beforeParam, 10);
+          const rawRows = (await env.DB.prepare("SELECT * FROM messages WHERE room_id = ? AND app_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?").bind(roomId, appId, beforeTs, limitCount).all()).results;
+          rows = rawRows.reverse();
+        } else if (limitParam) {
+          const limitCount = parseInt(limitParam, 10) || 20;
+          const rawRows = (await env.DB.prepare("SELECT * FROM messages WHERE room_id = ? AND app_id = ? ORDER BY created_at DESC LIMIT ?").bind(roomId, appId, limitCount).all()).results;
+          rows = rawRows.reverse();
+        } else {
+          rows = (await env.DB.prepare("SELECT * FROM messages WHERE room_id = ? AND app_id = ? ORDER BY created_at ASC").bind(roomId, appId).all()).results;
+        }
         const docs = rows.map(r => {
           const d = r.additional_data ? JSON.parse(r.additional_data) : {};
           d.text = r.text;
@@ -1696,6 +1710,18 @@ async function handleD1Api(request, env, url) {
           
           await env.DB.prepare("INSERT INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, 0, '{}', ?)")
             .bind(messageId, roomId, serverId, appId, senderId, text, created_at, JSON.stringify(additionalData)).run();
+          
+          // ルーム一覧プレビュー時刻・文言の更新
+          try {
+            const roomRow = await env.DB.prepare("SELECT room_data FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).first();
+            if (roomRow) {
+              const rData = roomRow.room_data ? JSON.parse(roomRow.room_data) : {};
+              rData.lastMessageAt = created_at;
+              rData.lastMessageSender = senderId;
+              rData.lastMessageText = data.textToStore && data.textToStore.startsWith("?m=") ? data.textToStore : (text || (data.fileData ? '（ファイル）' : ''));
+              await env.DB.prepare("UPDATE rooms SET room_data = ? WHERE room_id = ? AND app_id = ?").bind(JSON.stringify(rData), roomId, appId).run();
+            }
+          } catch (roomUpdateErr) { console.error("Room update error:", roomUpdateErr); }
           
           // ★★★ RTDB へ通知をPUT (リアルタイムプッシュ) ★★★
           if (env.SERVICE_ACCOUNT_JSON) {
@@ -1962,6 +1988,9 @@ async function handleD1Api(request, env, url) {
           const stmts = [];
           for (const r of data) {
             const merged = { ...r };
+            if (merged.lastMessageAt && typeof merged.lastMessageAt === 'object' && merged.lastMessageAt.seconds) {
+              merged.lastMessageAt = merged.lastMessageAt.seconds * 1000;
+            }
             delete merged.id; delete merged.serverId; delete merged.messages; delete merged.roomKeys;
             stmts.push(env.DB.prepare("INSERT INTO rooms (room_id, server_id, app_id, name, type, created_by, created_at, current_key_version, room_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET name = excluded.name, type = excluded.type, current_key_version = excluded.current_key_version, room_data = excluded.room_data")
               .bind(r.id, r.serverId, appId, r.name || "General", r.type || "chat", verifiedUser.uid, Date.now(), r.currentKeyVersion || 1, JSON.stringify(merged)));

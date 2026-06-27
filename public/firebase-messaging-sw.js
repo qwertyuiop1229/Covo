@@ -26,8 +26,9 @@ self.addEventListener('message', (event) => {
 
   switch (event.data.type) {
     case 'SET_USER_ID':
-      self._cachedUserId = event.data.userId || null;
-      self._cachedAppId  = event.data.appId  || null;
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
       console.log('[SW] userId cached:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
       break;
 

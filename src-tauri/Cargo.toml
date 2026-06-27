@@ -34,3 +34,5 @@ image = "0.24"
 windows = { version = "0.61.3", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_System_Com"] }
 notify-rust = "4.17.0"
 tauri-plugin-notification = "2.0.0"
+reqwest = { version = "0.12", features = ["blocking", "stream"] }
+tokio = { version = "1", features = ["time"] }
