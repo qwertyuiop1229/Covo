@@ -3387,16 +3387,37 @@
       }
 
       /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
+      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
       #createServerModal:not(.hidden) .modal-box,
       #joinServerModal:not(.hidden) .modal-box,
       #joinRoomPasswordModal:not(.hidden) .modal-box,
-      #deleteRoomConfirmModal:not(.hidden) .modal-box,
-      #customConfirmModal:not(.hidden) .modal-box,
-      #customAlertModal:not(.hidden) .modal-box,
-      #messagePreviewModal:not(.hidden) .modal-box {
+      #deleteRoomConfirmModal:not(.hidden) .modal-box {
         padding: max(26px, env(safe-area-inset-top, 26px)) 24px 90px 24px !important;
         overflow-y: auto !important;
         justify-content: center !important;
+      }
+
+      /* 確認・アラートダイアログは小型のままセンターに表示（全画面不要） */
+      #customConfirmModal:not(.hidden) .modal-box,
+      #customAlertModal:not(.hidden) .modal-box,
+      #messagePreviewModal:not(.hidden) .modal-box {
+        max-width: 320px !important;
+        width: calc(100% - 48px) !important;
+        padding: 24px !important;
+        overflow-y: auto !important;
+        justify-content: flex-start !important;
+        animation: none !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: 80vh !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: auto !important;
       }
 
       /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
@@ -3680,31 +3701,40 @@
       border-radius: 16px; /* Discord調の美しいスクワークル変形 */
     }
 
-    /* 左側のアクティブインジケーター（ピル） */
+    /* 左側のアクティブインジケーター（ピル）- Discord準拠の「左からスライドイン」アニメーション */
     .discord-server-pill {
       position: absolute;
-      left: -12px;
+      left: -20px; /* 通常時は画面外に隠す */
       width: 4px;
       height: 0px;
       background: white;
       border-radius: 0 4px 4px 0;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                  left 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    /* ホバー時: 左からスライドインして20px高さ */
     .discord-server-item:hover .discord-server-pill {
       height: 20px;
+      left: -4px; /* 左端に出現 */
     }
 
+    /* アクティブ時: 左からスライドインして40px高さ */
     .discord-server-item.active .discord-server-pill {
       height: 40px !important;
+      left: -4px !important;
     }
 
+    /* 未読時: 左からスライドインして8px高さ（小さいドット表示） */
     .discord-server-item.has-unread .discord-server-pill {
       height: 8px;
+      left: -4px; /* 未読は常に左端に表示 */
       display: block;
     }
+    /* 未読かつホバー時: 20px */
     .discord-server-item.has-unread:hover .discord-server-pill {
       height: 20px;
+      left: -4px;
     }
 
     /* ホーム画面・サーバービュー切替ロジック (DiscordUIモード時) */
@@ -3789,22 +3819,36 @@
         flex: 1 1 0 !important;
       }
       body.discord-ui-mode #discordServerNav {
-        width: 68px !important;
-        padding-top: 4px;
-        padding-bottom: 4px;
+        width: 56px !important; /* Discordと同程度の幅 */
+        min-width: 56px !important;
+        padding-top: max(8px, env(safe-area-inset-top, 8px));
+        padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
         z-index: 40;
+        overflow: hidden;
+      }
+      /* サーバーアイコンも小さめに */
+      body.discord-ui-mode .discord-server-item {
+        width: 40px !important;
+        height: 40px !important;
+      }
+      body.discord-ui-mode .discord-server-icon {
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 1rem !important;
       }
       body.discord-ui-mode #sidebar {
         flex: 1 !important;
-        width: calc(100% - 68px) !important;
+        width: calc(100% - 56px) !important;
+        max-width: calc(100% - 56px) !important;
         display: flex !important;
+        min-width: 0 !important;
       }
       /* スマホ表示のホーム状態ではサイドバーを隠し、ディスカバリー画面をフル活用 */
       body.discord-ui-mode.discord-home-view #sidebar {
         display: none !important;
       }
       body.discord-ui-mode.discord-home-view #discordHomeView {
-        width: calc(100% - 68px) !important;
+        width: calc(100% - 56px) !important;
         display: flex !important;
         padding: 1.25rem !important;
       }
@@ -3817,6 +3861,49 @@
         height: 100% !important;
       }
     }
+
+    /* サーバー追加モーダルの「参加」ボタン - ダークモード対応 */
+    .add-server-join-btn {
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+    .add-server-join-btn:hover {
+      background-color: #e2e8f0;
+    }
+    .add-server-join-icon {
+      background-color: #e2e8f0;
+      color: #475569;
+    }
+    .add-server-join-sub {
+      color: #64748b;
+    }
+    .add-server-join-arrow {
+      color: #94a3b8;
+    }
+    .add-server-join-btn:hover .add-server-join-arrow {
+      color: #475569;
+    }
+    body.dark-server-theme .add-server-join-btn {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .add-server-join-btn:hover {
+      background-color: #243040 !important;
+    }
+    body.dark-server-theme .add-server-join-icon {
+      background-color: #243040 !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .add-server-join-sub {
+      color: #64748b !important;
+    }
+    body.dark-server-theme .add-server-join-arrow {
+      color: #475569 !important;
+    }
+    body.dark-server-theme .add-server-join-btn:hover .add-server-join-arrow {
+      color: #94a3b8 !important;
+    }
+
 </style>
 </head>
 <!-- Google tag (gtag.js) -->
@@ -4711,15 +4798,16 @@
               </div>
               <i class="fas fa-arrow-right text-white/70 group-hover:text-white transition-colors"></i>
             </div>
-            <div onclick="document.getElementById('addServerSelectModal').classList.add('hidden'); document.getElementById('joinServerBtn').click()" class="p-5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-2xl flex items-center gap-4 cursor-pointer transition-all transform hover:scale-[1.02] group">
-              <div class="w-12 h-12 bg-gray-300 rounded-xl flex items-center justify-center text-gray-700 font-bold text-2xl flex-shrink-0">
+            <!-- ダークモード対応: 参加ボタンはカスタムクラスで管理 -->
+            <div onclick="document.getElementById('addServerSelectModal').classList.add('hidden'); document.getElementById('joinServerBtn').click()" class="add-server-join-btn p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all transform hover:scale-[1.02] group">
+              <div class="add-server-join-icon w-12 h-12 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0">
                 <i class="fas fa-sign-in-alt"></i>
               </div>
               <div class="flex-1 min-w-0">
                 <div class="font-bold text-lg">既存のサーバーに参加</div>
-                <div class="text-xs text-gray-500 mt-0.5">招待コードやIDを入力して参加します</div>
+                <div class="text-xs add-server-join-sub mt-0.5">招待コードやIDを入力して参加します</div>
               </div>
-              <i class="fas fa-arrow-right text-gray-400 group-hover:text-gray-600 transition-colors"></i>
+              <i class="fas fa-arrow-right add-server-join-arrow transition-colors"></i>
             </div>
           </div>
           <div class="mt-6 pt-4 border-t border-gray-100 flex justify-center">
@@ -4959,8 +5047,9 @@
       <!-- チャットアプリ本体 -->
       <!-- チャットアプリ本体 -->
       <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
-        <!-- Discord風 左側サーバーナビゲーションバー -->
-        <div id="discordServerNav" class="w-[72px] hidden flex-col items-center py-3 flex-shrink-0 z-20 select-none border-r">
+      <!-- Discord風 左側サーバーナビゲーションバー -->
+        <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
+          style="padding-top: max(12px, env(safe-area-inset-top, 12px)); padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));">
           <!-- ダイレクトメッセージ等/ホームアイコン (Discord風) -->
           <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="サーバー一覧 / ホーム">
             <div class="discord-server-pill" id="discordHomePill"></div>
@@ -5056,7 +5145,8 @@
         <!-- チャットエリア -->
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
           <div id="currentRoomHeader"
-            class="bg-gray-200 p-3 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center">
+            class="bg-gray-200 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center"
+            style="padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 0.75rem 0.75rem 0.75rem;">
             <button id="mobileBackButton"
               class="text-gray-600 hover:text-gray-800 hidden items-center p-3 -ml-3 mr-1 rounded-full"
               style="display:none;"><i class="fas fa-arrow-left"></i></button>
@@ -17190,6 +17280,28 @@
       if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
     });
 
+    // タッチドラッグ対応（スマホ・タブレット）
+    serverIconCropCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // スクロール防止
+      if (e.touches.length !== 1) return;
+      sIconIsDragging = true;
+      sIconDragStartX = e.touches[0].clientX;
+      sIconDragStartY = e.touches[0].clientY;
+      sIconDragStartOffsetX = sIconOffsetX;
+      sIconDragStartOffsetY = sIconOffsetY;
+    }, { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      if (e.touches.length !== 1) return;
+      e.preventDefault(); // スクロール防止
+      sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    }, { passive: false });
+    document.addEventListener('touchend', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; }
+    }, { passive: true });
+
     serverIconZoomSlider.addEventListener('input', () => {
       if (!sIconImage) return;
       const newScale = parseFloat(serverIconZoomSlider.value);
@@ -17210,13 +17322,25 @@
       if (!sIconImage) return;
       if (!isNewServerIconCrop && !currentServerId) return;
 
-      const OUTPUT = 640;
+      // 元画像サイズを考慮した最適な出力解像度（最大1024px）
+      const maxOutputSize = 1024;
+      const OUTPUT = Math.min(maxOutputSize, Math.max(
+        sIconImage.naturalWidth * sIconScale,
+        sIconImage.naturalHeight * sIconScale,
+        640 // 最低限640px
+      ));
       const offscreen = document.createElement('canvas');
       offscreen.width = OUTPUT; offscreen.height = OUTPUT;
       const offCtx = offscreen.getContext('2d');
       offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
       const sf = OUTPUT / SICON_SIZE;
       offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
+
+      // WebP対応確認（非対応の場合はJPEGにフォールバック）
+      const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
+      const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+      const quality = 0.95;
+      const ext = supportsWebp ? 'webp' : 'jpg';
 
       offscreen.toBlob(async (blob) => {
         if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
@@ -17245,7 +17369,7 @@
         confirmBtn.disabled = true; cancelBtn.disabled = true;
         try {
           const fileUrl = await uploadToExternalService(
-            new File([blob], 'server_icon.jpg', { type: 'image/jpeg' }),
+            new File([blob], `server_icon.${ext}`, { type: mimeType }),
             (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
             'simplechat/servericons'
           );
@@ -17267,7 +17391,7 @@
         } catch (err) {
           console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
         } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
-      }, 'image/jpeg', 0.95);
+      }, mimeType, quality);
     });
   </script>
   <!-- ===== Mobile Profile Screen ===== -->
