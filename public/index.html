@@ -2035,6 +2035,10 @@
     #globalAppHeader.server-mode {
       display: flex;
     }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
 
     #headerTitle {
       white-space: nowrap;
@@ -3279,13 +3283,16 @@
       #serverListNotifBtn {
         display: none !important;
       }
-      /* iOS PWA: body/htmlを常にナビバー色(#1f2937)にする。
-         コンテナ外・safe-area領域・zoom時にボディが見えても
-         ナビと同色なので白い余白として見えなくなる。 */
+      /* iOS PWA: body/htmlの背景をボトムナビと完全一致させ、Safe Area(端末下部のバー周辺)に不格好な黒帯が出るのを100%根絶 */
       html, body {
         background-color: #1f2937 !important;
       }
-      /* ダークモード（ホーム）: 同じナビ色なので変更なし */
+      /* DiscordUIモード(ライト)時は白背景に統一し、Safe Areaの最底面までシームレスな美しさを実現 */
+      body:not(.dark-server-theme).discord-ui-mode,
+      html:has(body:not(.dark-server-theme).discord-ui-mode) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード（ホーム）: 同じナビ色 */
       body.dark-server-theme,
       html:has(body.dark-server-theme) {
         background-color: #1f2937 !important;
@@ -3299,6 +3306,12 @@
       body.in-chat-view.dark-server-theme,
       html:has(body.in-chat-view.dark-server-theme) {
         background-color: #1a202c !important;
+      }
+
+      /* ボトムナビゲーションのSafe Area動的パディング最適化 */
+      #mobileBottomNav {
+        height: calc(38px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
       }
 
       /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
@@ -3855,8 +3868,12 @@
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 32px !important; /* モバイルアイコン40pxに完璧な美しさのバランス */
       }
+      /* モバイル時：#sidebarのposition:absoluteを解除し、#discordServerNavとの激しい重なりを完全根絶！ */
       body.discord-ui-mode #sidebar {
-        flex: 1 !important;
+        position: relative !important;
+        left: auto !important;
+        top: auto !important;
+        flex: 1 1 auto !important;
         width: calc(100% - 56px) !important;
         max-width: calc(100% - 56px) !important;
         display: flex !important;
@@ -3871,6 +3888,7 @@
         display: flex !important;
         padding: 1.25rem !important;
       }
+      /* チャット画面表示中：全画面表示 */
       body.discord-ui-mode.in-chat-view #chatArea {
         position: fixed !important;
         inset: 0 !important;
@@ -3878,6 +3896,10 @@
         display: flex !important;
         width: 100% !important;
         height: 100% !important;
+      }
+      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示にし、右下に送信ボタンが浮き出る裏写りを100%根絶！ */
+      body.discord-ui-mode:not(.in-chat-view) #chatArea {
+        display: none !important;
       }
     }
 
