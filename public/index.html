@@ -5660,7 +5660,7 @@
        - Firestore に秘密鍵(本人のみ)・公開鍵・ルーム鍵をバックアップし、
          キャッシュ消去後も自動復元する。
        ===================================================================== */
-    const E2EE_PREFIX = "enc::v1::";       // 暗号文の目印（過去の平文と区別する）
+    const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平文と区別する）
     const E2EE_LS_PRIV = "covo_e2ee_priv"; // localStorageキー（秘密鍵JWK）
     const E2EE_LS_PUB  = "covo_e2ee_pub";  // localStorageキー（公開鍵JWK）
 
@@ -5690,10 +5690,17 @@
       return btoa(bin);
     }
     function _b64ToAb(b64) {
-      const bin = atob(b64);
-      const out = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-      return out.buffer;
+      try {
+        if (typeof b64 !== "string") return new ArrayBuffer(0);
+        let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+        while (norm.length % 4 > 0) norm += "=";
+        const bin = atob(norm);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out.buffer;
+      } catch (e) {
+        return new ArrayBuffer(0);
+      }
     }
 
     // localStorage 安全アクセス（プライベートブラウズ等で例外でも落ちない）
@@ -6312,19 +6319,20 @@
 
     async function decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
-      const buffer = encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : new Uint8Array(encryptedBuffer).buffer;
-      const firstByte = new Uint8Array(buffer.slice(0, 1))[0];
+      const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
+      if (data.length === 0) throw new Error("Empty buffer");
+      const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
         version = firstByte.toString();
-        iv = buffer.slice(1, 13);
-        ciphertext = buffer.slice(13);
+        iv = data.subarray(1, 13);
+        ciphertext = data.subarray(13);
       } else {
-        const headerBuf = buffer.slice(1, 9);
-        const dv = new DataView(headerBuf);
+        const headerBuf = data.subarray(1, 9);
+        const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();
-        iv = buffer.slice(9, 21);
-        ciphertext = buffer.slice(21);
+        iv = data.subarray(9, 21);
+        ciphertext = data.subarray(21);
       }
       let keyToUse = roomKeyObj[version];
       
