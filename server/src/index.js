@@ -1498,13 +1498,13 @@ async function handleD1Api(request, env, url) {
           }
           
           await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
-          await env.DB.prepare("UPDATE servers SET member_count = member_count + 1 WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+          await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
 
         if (type === "leave") {
           await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, userId, appId).run();
-          await env.DB.prepare("UPDATE servers SET member_count = MAX(1, member_count - 1) WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
+          await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
 
@@ -2042,6 +2042,46 @@ async function handleD1Api(request, env, url) {
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
         return new Response(JSON.stringify({ error: "Invalid migrate payload" }), { status: 400, headers: d1Cors });
+      }
+    }
+
+    // 9. エスクローキーレスキュー・自動復旧 (escrow/rescue)
+    if (subpath.startsWith("escrow/rescue")) {
+      if (request.method === "POST") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+        const body = await request.json();
+        const { appId, serverId, roomId, userId } = body;
+        if (!appId || !roomId || !userId) return new Response(JSON.stringify({ error: "Missing required param" }), { status: 400, headers: d1Cors });
+
+        if (verifiedUser.uid !== userId) {
+          const isAdmin = await isD1Admin(appId, verifiedUser, env);
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: "Forbidden: Not authorized for rescue" }), { status: 403, headers: d1Cors });
+          }
+        }
+
+        // 1. __escrow__ 用の合鍵を取得
+        let targetKeyData = null;
+        const escrowRow = await env.DB.prepare("SELECT key_data FROM room_keys WHERE room_id = ? AND app_id = ? AND user_id = ?").bind(roomId, appId, "__escrow__").first();
+        if (escrowRow && escrowRow.key_data) {
+          targetKeyData = JSON.parse(escrowRow.key_data);
+        } else {
+          // 2. __escrow__ が未登録の場合、同じルーム内で最新更新された有効なユーザー鍵を特定して救済プールとする（フォールバック）
+          const fallbackRow = await env.DB.prepare("SELECT key_data FROM room_keys WHERE room_id = ? AND app_id = ? ORDER BY updated_at DESC LIMIT 1").bind(roomId, appId).first();
+          if (fallbackRow && fallbackRow.key_data) {
+            targetKeyData = JSON.parse(fallbackRow.key_data);
+          }
+        }
+
+        if (!targetKeyData) {
+          return new Response(JSON.stringify({ success: false, error: "No escrow or fallback key found for this room" }), { status: 404, headers: d1Cors });
+        }
+
+        // 3. 対象ユーザー(userId)向けにレスキューされた鍵を格納（復旧）
+        await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+          .bind(roomId, userId, serverId || "unknown", appId, JSON.stringify(targetKeyData), Date.now()).run();
+
+        return new Response(JSON.stringify({ success: true, keyData: targetKeyData, rescued: true }), { status: 200, headers: d1Cors });
       }
     }
 

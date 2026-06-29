@@ -5675,6 +5675,9 @@
     };
 
     const _subtleOK = !!(window.crypto && window.crypto.subtle);
+    if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      location.href = location.href.replace('http:', 'https:');
+    }
     const _td = new TextDecoder(), _te = new TextEncoder();
 
     function _abToB64(buf) {
@@ -5742,6 +5745,10 @@
             const res = await fetch(`${WORKER_BASE_URL}/api/d1/users?appId=${appId}&userId=${userId}&type=keys&keyType=keys`, {
               headers: { "Authorization": `Bearer ${idToken}` }
             });
+            if (!res.ok) {
+              console.warn("[E2EE] D1から鍵の取得中にHTTP通信エラーが発生しました。個人鍵の上書き自爆を防止するため処理を中断します。");
+              return false;
+            }
             const d1Key = await res.json();
             if (!d1Key.empty && d1Key.data && d1Key.data.privateKeyJwk) {
               const privJwk = d1Key.data.privateKeyJwk;
@@ -5769,7 +5776,10 @@
               return true;
             }
           }
-        } catch (e) { /* Firestore/D1読取失敗→新規生成へ */ }
+        } catch (e) {
+          console.warn("[E2EE] 鍵の復元チェック中に通信エラーが発生しました。個人鍵の上書き自爆を防止するため処理を中断します:", e);
+          return false;
+        }
 
         // 3) 新規生成して保存（ローカル＋Firestoreバックアップ）
         const pair = await _genUserKeyPair();
@@ -5835,6 +5845,27 @@
         if (!jwk) return null;
         return await _importPub(jwk);
       } catch (e) { return null; }
+    }
+
+    async function requestEscrowRescue(serverId, roomId) {
+      if (!userId) return;
+      try {
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          await fetch(`${WORKER_BASE_URL}/api/d1/escrow/rescue`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, serverId, roomId, userId })
+          });
+          console.log(`[E2EE] D1エスクロー自動救済APIへリクエストを発行しました (room=${roomId})`);
+          delete _e2ee.roomKeyCache[roomId];
+        } else {
+          await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/rescueRequests/${userId}`), {
+            userId: userId, requestedAt: serverTimestamp()
+          }, { merge: true });
+          console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
+          delete _e2ee.roomKeyCache[roomId];
+        }
+      } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
     }
 
     // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
@@ -5992,6 +6023,39 @@
         console.error(`[E2EE] 自分宛ルーム鍵の復号に失敗（平文で継続。鍵が再生成された可能性） (room=${roomId}):`, e);
       }
 
+      // 【最重要ブロック処理】ルームに既にメッセージが存在する（＝過去に鍵が作られているはず）のに自分の手元に鍵が無い場合、
+      // 勝手に新しいルーム鍵を生成して他のユーザーの鍵を上書き破壊（スプリットブレイン）するのを絶対に防ぐ。
+      try {
+        let hasExistingData = false;
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const res = await fetch(`${WORKER_BASE_URL}/api/d1/messages?appId=${appId}&roomId=${roomId}&serverId=${serverId}&limit=1`, { headers: { "Authorization": `Bearer ${idToken}` } });
+          if (res.ok) {
+            const msgData = await res.json();
+            if (!msgData.empty && msgData.docs && msgData.docs.length > 0) hasExistingData = true;
+          }
+          const rRes = await fetch(`${WORKER_BASE_URL}/api/d1/rooms?appId=${appId}&serverId=${serverId}&roomId=${roomId}`, { headers: { "Authorization": `Bearer ${idToken}` } });
+          if (rRes.ok) {
+            const rData = await rRes.json();
+            if (!rData.empty && rData.data && rData.data.currentKeyVersion > 1) hasExistingData = true;
+          }
+        } else {
+          const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
+          if (!msgsSnap.empty) hasExistingData = true;
+          const rSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
+          if (rSnap.exists() && rSnap.data().currentKeyVersion > 1) hasExistingData = true;
+        }
+
+        if (hasExistingData) {
+          console.warn(`[E2EE] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。管理者による合鍵(エスクロー)からの自動救済を待機します。`);
+          await requestEscrowRescue(serverId, roomId);
+          return null;
+        }
+      } catch (e) {
+        console.warn("[E2EE] 過去メッセージ確認中にエラーが発生しました。上書きを防止するため新規鍵生成を中断します:", e);
+        return null;
+      }
+
       // 2) 無ければ新規生成して配布
       try {
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
@@ -6033,7 +6097,7 @@
              for (const rDoc of data.docs) {
                const roomId = rDoc.id;
                promises.push((async () => {
-                 let nextVer = (rDoc.data.currentKeyVersion || 1) + 1;
+                 let nextVer = Date.now(); // 同時ローテーション時の競合上書きを防ぐためタイムスタンプ一意バージョン
                  const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
                  const raw = await window.crypto.subtle.exportKey("raw", key);
                  await _distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
@@ -6056,7 +6120,7 @@
             const roomId = roomSnap.id;
             promises.push((async () => {
                const roomRef = roomSnap.ref;
-               let nextVer = (roomSnap.data().currentKeyVersion || 1) + 1;
+               let nextVer = Date.now(); // 同時ローテーション時の競合上書きを防ぐためタイムスタンプ一意バージョン
                const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
                const raw = await window.crypto.subtle.exportKey("raw", key);
                await _distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
@@ -6183,12 +6247,29 @@
         const parts = text.split("::"); 
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
         const version = parts[1].replace('v', '');
-        const keyToUse = roomKeyObj[version];
-        if (!keyToUse) return `（復号化エラー：バージョン${version}の鍵がありません）`;
-        
+        let keyToUse = roomKeyObj[version];
         const iv = new Uint8Array(_b64ToAb(parts[2]));
-        const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, keyToUse, _b64ToAb(parts[3]));
-        return _td.decode(pt);
+        const ctBuf = _b64ToAb(parts[3]);
+
+        if (keyToUse) {
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, keyToUse, ctBuf);
+            return _td.decode(pt);
+          } catch(e) { /* 指定バージョンで失敗した場合は下部の総当たりフォールバックへ */ }
+        }
+
+        // 【キー総当たりフォールバック復号】ローテーション競合等でバージョン番号がずれているメッセージを救済
+        for (const ver in roomKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKeyObj[ver], ctBuf);
+            return _td.decode(pt);
+          } catch(e) {}
+        }
+
+        // それでも復号できない場合は、鍵が根本から違っているか欠落しているため自動救済トリガーを発行
+        await requestEscrowRescue(serverId, roomId);
+        return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
       } catch (e) {
         return "（復号化エラー：メッセージを解読できません）";
       }
@@ -6216,21 +6297,54 @@
       const buffer = await file.arrayBuffer();
       const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, roomKeyObj.latest, buffer);
       
-      const verByte = new Uint8Array([parseInt(roomKeyObj.latestVersion)]);
-      return new Blob([verByte, iv, ciphertext]);
+      const verNum = parseInt(roomKeyObj.latestVersion);
+      let header;
+      if (verNum < 255) {
+        header = new Uint8Array([verNum]);
+      } else {
+        header = new Uint8Array(9);
+        header[0] = 255;
+        const dv = new DataView(header.buffer);
+        dv.setFloat64(1, Number(verNum), false);
+      }
+      return new Blob([header, iv, ciphertext]);
     }
 
-    async function decryptFileE2EE(encryptedBuffer, roomKeyObj) {
+    async function decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
-      const verBuf = new Uint8Array(encryptedBuffer.slice(0, 1));
-      const version = verBuf[0].toString();
-      const keyToUse = roomKeyObj[version];
-      if (!keyToUse) throw new Error(`Missing key for version ${version}`);
+      const buffer = encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : new Uint8Array(encryptedBuffer).buffer;
+      const firstByte = new Uint8Array(buffer.slice(0, 1))[0];
+      let version, iv, ciphertext;
+      if (firstByte < 255) {
+        version = firstByte.toString();
+        iv = buffer.slice(1, 13);
+        ciphertext = buffer.slice(13);
+      } else {
+        const headerBuf = buffer.slice(1, 9);
+        const dv = new DataView(headerBuf);
+        version = dv.getFloat64(0, false).toString();
+        iv = buffer.slice(9, 21);
+        ciphertext = buffer.slice(21);
+      }
+      let keyToUse = roomKeyObj[version];
       
-      const iv = encryptedBuffer.slice(1, 13);
-      const ciphertext = encryptedBuffer.slice(13);
-      const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, keyToUse, ciphertext);
-      return new Blob([plaintext]);
+      if (keyToUse) {
+        try {
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, keyToUse, ciphertext);
+          return new Blob([plaintext]);
+        } catch(e){}
+      }
+      for (const ver in roomKeyObj) {
+        if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+        try {
+          const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, roomKeyObj[ver], ciphertext);
+          return new Blob([pt]);
+        } catch(e){}
+      }
+      if (serverId && roomId) {
+        await requestEscrowRescue(serverId, roomId);
+      }
+      throw new Error(`Missing or mismatched key for version ${version}`);
     }
 
     // 設定>アプリ情報 の「メッセージの暗号化」状態表示を更新する。
@@ -8848,6 +8962,44 @@
           }
         }
         
+        // 【最重要】D1リアルタイム受信時の通知・メンション・未読状態の完全発火
+        if (isUpdate && msgs.length > 0) {
+          let newestMsg = msgs[0];
+          for (const m of msgs) {
+            if ((m.createdAt || 0) > (newestMsg.createdAt || 0)) newestMsg = m;
+          }
+
+          const existingIds = new Set(allLoadedMessages.map(m => m.id));
+          if (!existingIds.has(newestMsg.id) && newestMsg.senderId !== userId) {
+            const bodyText = newestMsg.text || '新着メッセージ';
+            const serverName = currentServerData?.name || 'Covo';
+            const roomName = roomNames[roomId] || roomId;
+            const isMentioned = bodyText.includes(`@${userNickname}`);
+
+            if (isMentioned) {
+               if (typeof alertMessage === 'function') alertMessage(`🔔 ${newestMsg.senderName || 'メンバー'}さんからメンションされました`, 'info');
+            }
+            const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
+
+            if (typeof showInAppNotification === 'function') {
+               showInAppNotification(serverName, roomName, newestMsg.senderName || "メンバー", bodyText, serverId, currentServerData, roomId, roomName);
+            }
+            if (!document.hasFocus()) {
+               if (typeof showNotification === 'function') showNotification(title, `${newestMsg.senderName || "メンバー"}: ${bodyText}`, roomId);
+            }
+
+            // 未読管理
+            const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+            const lastRead = rm[roomId] || 0;
+            const msgTs = newestMsg.createdAt || Date.now();
+            if ((roomId !== currentRoomId || !document.hasFocus()) && msgTs > lastRead) {
+               unreadCounts[roomId] = 1;
+               if (typeof updateUnreadBadge === 'function') updateUnreadBadge(roomId);
+               if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
+            }
+          }
+        }
+
         allLoadedMessages = msgs;
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
@@ -10281,6 +10433,8 @@
       if (unsubscribePinnedMessages) unsubscribePinnedMessages();
       currentPinnedMessages = [];
       if (localStorage.getItem('covo_use_d1') === '1') {
+        currentPinnedMessages = lastMessagesData.filter(m => m.isPinned);
+        renderPinnedMessages();
         return;
       }
       const q = query(
@@ -11627,35 +11781,47 @@
 
       if (!attachedFile && !attachedKvFile) loadingOverlay.classList.remove("hidden");
       try {
-        // --- E2EE: 本文を暗号化（最善努力。鍵が無い/失敗時は平文のまま送る） ---
-        // 画面には「暗号化できなかった」とは出さない（ユーザーは意識しない設計）。
-        // ただし平文送信になった場合は必ず理由をコンソールに残す（運用・デバッグ用）。
+        // --- E2EE: 本文を暗号化（鍵が無い/失敗時はユーザーに警告確認を行う） ---
         let textToStore = text;
         if (text) {
           if (!_subtleOK) {
             console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
+            if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+               loadingOverlay.classList.add("hidden");
+               return;
+            }
           } else {
             try {
               const members = (currentServerData && currentServerData.joinedUsers) || [];
-              // 鍵がまだ無ければ最大1.5秒待って取得（入室直後の最初の1通も暗号化しやすくする）。
-              // この待ち時間は「読み込み中…」オーバーレイの表示中に行う（ユーザーには通常の送信待ちに見える）。
               const overlayWasHidden = loadingOverlay.classList.contains("hidden");
               if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
                 loadingOverlay.classList.remove("hidden");
               }
-              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
               if (!roomKey) {
                 console.warn(`[E2EE] ルーム鍵を取得できなかったため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
+                if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が正常に取得できませんでした。平文でメッセージを送信してもよろしいですか？\n（キャンセルを選択し、管理者に『レスキュー復旧』をリクエストすることをお勧めします）")) {
+                   loadingOverlay.classList.add("hidden");
+                   return;
+                }
               } else {
                 const enc = await encryptText(text, roomKey);
                 if (enc) {
                   textToStore = enc; // 暗号化できた時だけ置換
                 } else {
                   console.warn(`[E2EE] 本文の暗号化に失敗したため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
+                  if (!confirm("⚠️ セキュリティ保護警告: メッセージの暗号化処理に失敗しました。平文で送信してもよろしいですか？")) {
+                     loadingOverlay.classList.add("hidden");
+                     return;
+                  }
                 }
               }
             } catch (e) {
               console.error("[E2EE] 暗号化処理で例外が発生したため平文で送信します:", e);
+              if (!confirm("⚠️ セキュリティ保護警告: 暗号化処理中にエラーが発生しました。平文で送信してもよろしいですか？")) {
+                 loadingOverlay.classList.add("hidden");
+                 return;
+              }
             }
           }
         }
@@ -11676,13 +11842,16 @@
             // E2EE File Encryption
             if (_subtleOK) {
               const members = (currentServerData && currentServerData.joinedUsers) || [];
-              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 1500);
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
               if (roomKey) {
                 const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
                 fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
                 isFileEncrypted = true;
               } else {
                 console.warn("[E2EE] ルーム鍵が取得できないためファイルを平文でアップロードします");
+                if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が取得できないため、ファイルを平文でアップロードします。よろしいですか？")) {
+                   return;
+                }
               }
             }
 
@@ -12515,7 +12684,7 @@
                   if (!roomKey) throw new Error("No key");
                   const res = await fetch(message.fileData);
                   const buf = await res.arrayBuffer();
-                  const dec = await decryptFileE2EE(buf, roomKey);
+                  const dec = await decryptFileE2EE(buf, roomKey, currentServerId, currentRoomId);
                   const blob = new Blob([dec], { type: message.fileType });
                   message._decryptedFileUrl = URL.createObjectURL(blob);
                   if (propName) element[propName] = message._decryptedFileUrl;
