@@ -8953,14 +8953,14 @@
           const room = docSnap.data;
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // もともと大きかった頃の美しい色とデザイン（インディゴ系ボックス＋濃色文字）を、現在の小さなDiscordサイズに完全融合
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1.5 rounded-lg text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-900 dark:bg-slate-800/80 dark:hover:bg-slate-700 dark:border-slate-700/80 dark:text-slate-200 shadow-sm";
+          // 背景色はサイドバーと完全一致(透明)、文字色はアプリに美しく調和する落ち着いたスレートグレー。ホバー時にほんのりグレーになり、枠線がしっかり浮かび上がる極上仕様
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/60 hover:border-slate-300/80 text-slate-700 hover:text-slate-900 dark:hover:bg-slate-700/50 dark:hover:border-slate-600/80 dark:text-slate-300 dark:hover:text-white rounded-lg";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-indigo-400 font-extrabold group-hover:text-indigo-600 dark:text-slate-400 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -10229,14 +10229,14 @@
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // もともと大きかった頃の美しい色とデザイン（インディゴ系ボックス＋濃色文字）を、現在の小さなDiscordサイズに完全融合
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1.5 rounded-lg text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-900 dark:bg-slate-800/80 dark:hover:bg-slate-700 dark:border-slate-700/80 dark:text-slate-200 shadow-sm";
+          // 背景色はサイドバーと完全一致(透明)、文字色はアプリに美しく調和する落ち着いたスレートグレー。ホバー時にほんのりグレーになり、枠線がしっかり浮かび上がる極上仕様
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/60 hover:border-slate-300/80 text-slate-700 hover:text-slate-900 dark:hover:bg-slate-700/50 dark:hover:border-slate-600/80 dark:text-slate-300 dark:hover:text-white rounded-lg";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-indigo-400 font-extrabold group-hover:text-indigo-600 dark:text-slate-400 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -12006,9 +12006,16 @@
       finally { loadingOverlay.classList.add("hidden"); }
     });
 
+    let isSendingMessage = false;
     async function sendMessage() {
+      if (isSendingMessage) return;
       const text = messageInput.value.trim();
       if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
+      
+      isSendingMessage = true;
+      messageInput.disabled = true;
+      sendMessageButton.disabled = true;
+      
       clearTimeout(typingTimeout);
       isCurrentlyTyping = false;
       setTypingStatus(false);
@@ -12071,8 +12078,6 @@
           progressBar.classList.remove("hidden");
           progressFill.style.width = "0%";
           progressText.textContent = "アップロード中... 0%";
-          sendMessageButton.disabled = true;
-          fileAttachButton.disabled = true;
           try {
             let fileToUpload = attachedFile.file;
             let isFileEncrypted = false;
@@ -12109,8 +12114,6 @@
               isFileEncrypted: isFileEncrypted 
             });
           } finally {
-            sendMessageButton.disabled = false;
-            fileAttachButton.disabled = false;
             // 進捗バーを確実に隠す（100%表示のまま固まって見えるのを防ぐ）
             progressBar.classList.add("hidden");
             progressFill.style.width = "0%";
@@ -12196,6 +12199,10 @@
         loadingOverlay.classList.add("hidden");
         progressBar.classList.add("hidden");
         progressFill.style.width = "0%";
+        messageInput.disabled = false;
+        sendMessageButton.disabled = false;
+        isSendingMessage = false;
+        setTimeout(() => messageInput.focus(), 10);
       }
     }
     /* =====================================================================
