@@ -665,6 +665,7 @@
       bottom: -1px;
       right: -1px;
       border: 2px solid #f9fafb;
+      transition: all 0.2s ease-in-out;
     }
 
     .status-online {
@@ -677,6 +678,22 @@
 
     .status-offline {
       background-color: #9ca3af;
+    }
+
+    /* ダークモード時の目に優しい上品な発光インジケーター */
+    body.dark-server-theme .status-indicator {
+      border-color: #1f2937;
+    }
+    body.dark-server-theme .status-online {
+      background-color: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+    }
+    body.dark-server-theme .status-away {
+      background-color: #fbbf24;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
+    }
+    body.dark-server-theme .status-offline {
+      background-color: #475569;
     }
 
     .member-info {
@@ -2845,39 +2862,52 @@
     body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
 
     /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
-       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）を
-       .modal-box と中の代表的な Tailwind ユーティリティごとまとめて暗くする。 */
-    body.dark-server-theme .modal-box {
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
       background-color: #1e293b !important;
       color: #e2e8f0 !important;
     }
     body.dark-server-theme .modal-box .bg-white,
     body.dark-server-theme .modal-box .bg-gray-50,
-    body.dark-server-theme .modal-box .bg-gray-100 {
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
       background-color: #0f172a !important;
     }
     body.dark-server-theme .modal-box .text-gray-900,
     body.dark-server-theme .modal-box .text-gray-800,
-    body.dark-server-theme .modal-box .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
     body.dark-server-theme .modal-box .text-gray-600,
-    body.dark-server-theme .modal-box .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
     body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
     body.dark-server-theme .modal-box .border-gray-200,
     body.dark-server-theme .modal-box .border-gray-300,
     body.dark-server-theme .modal-box .border-t,
-    body.dark-server-theme .modal-box .border-b { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
     body.dark-server-theme .modal-box input[type="text"],
     body.dark-server-theme .modal-box input[type="email"],
     body.dark-server-theme .modal-box input[type="password"],
     body.dark-server-theme .modal-box input[type="number"],
     body.dark-server-theme .modal-box textarea,
-    body.dark-server-theme .modal-box select {
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
       background-color: #0f172a !important;
       color: #e2e8f0 !important;
       border-color: rgba(255,255,255,0.15) !important;
     }
     body.dark-server-theme .modal-box .bg-gray-100:hover,
-    body.dark-server-theme .modal-box .bg-gray-200:hover { background-color: #1e2f42 !important; }
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
     /* グレー系ボタン（キャンセル等）。濃色系ボタンはそのまま */
     body.dark-server-theme .modal-box button.bg-gray-100,
     body.dark-server-theme .modal-box button.bg-gray-200 {
@@ -8923,14 +8953,14 @@
           const room = docSnap.data;
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // ライトモードでも文字がくっきり見えやすく、ダークモードでも調和する美しいコントラスト設定
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-900 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white font-medium";
+          // もともと大きかった頃の美しい色とデザイン（インディゴ系ボックス＋濃色文字）を、現在の小さなDiscordサイズに完全融合
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1.5 rounded-lg text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-900 dark:bg-slate-800/80 dark:hover:bg-slate-700 dark:border-slate-700/80 dark:text-slate-200 shadow-sm";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-slate-400 font-semibold group-hover:text-slate-500 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-indigo-400 font-extrabold group-hover:text-indigo-600 dark:text-slate-400 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -10199,14 +10229,14 @@
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // ライトモードでも文字がくっきり見えやすく、ダークモードでも調和する美しいコントラスト設定
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-900 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white font-medium";
+          // もともと大きかった頃の美しい色とデザイン（インディゴ系ボックス＋濃色文字）を、現在の小さなDiscordサイズに完全融合
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1.5 rounded-lg text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-900 dark:bg-slate-800/80 dark:hover:bg-slate-700 dark:border-slate-700/80 dark:text-slate-200 shadow-sm";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-slate-400 font-semibold group-hover:text-slate-500 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-indigo-400 font-extrabold group-hover:text-indigo-600 dark:text-slate-400 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -11332,89 +11362,115 @@
         if (localStorage.getItem('covo_use_d1') === '1') {
           const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${currentServerId}`);
           const data = await res.json();
-          if (data.docs) roomsData = data.docs.map((d, i) => ({ id: d.id, ...d.data, order: typeof d.data.order === 'number' ? d.data.order : i }));
+          if (data.docs) roomsData = data.docs.map((d, i) => ({ id: d.id, ...d.data, order: typeof d.data.order === 'number' ? d.data.order : i * 10 }));
         } else {
           const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
           let idx = 0;
-          snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : idx++ }); });
+          snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : (idx++) * 10 }); });
         }
       } catch (e) { console.error(e); }
 
       roomsData.sort((a, b) => a.order - b.order);
-      listEl.innerHTML = "";
       
-      roomsData.forEach((room, index) => {
-        const item = document.createElement("div");
-        item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg group transition-all";
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "text-sm font-medium text-gray-900";
-        nameSpan.textContent = `# ${room.name}`;
+      // DB上のorder値が重複または未設定の状態を防ぐため、整流されたorder値を確保
+      roomsData.forEach((r, i) => { r.order = i * 10; });
 
-        const btnsContainer = document.createElement("div");
-        btnsContainer.className = "flex items-center gap-1.5";
+      // メモリ上の最新リストを使ってDOMを構築・即時更新する関数
+      function renderRoomsListUI() {
+        listEl.innerHTML = "";
+        roomsData.sort((a, b) => a.order - b.order);
+        
+        roomsData.forEach((room, index) => {
+          const item = document.createElement("div");
+          item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg group transition-all";
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "text-sm font-medium text-gray-900";
+          nameSpan.textContent = `# ${room.name}`;
 
-        // 並び替え上へボタン
-        const upBtn = document.createElement("button");
-        upBtn.className = `p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
-        upBtn.disabled = index === 0;
-        upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
-        upBtn.addEventListener("click", async () => {
-          if (index === 0) return;
-          const prev = roomsData[index - 1];
-          await updateRoomOrderBoth(room.id, prev.order);
-          await updateRoomOrderBoth(prev.id, room.order);
-          await loadServerSettingsRooms();
-          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
-        });
+          const btnsContainer = document.createElement("div");
+          btnsContainer.className = "flex items-center gap-1.5";
 
-        // 並び替え下へボタン
-        const downBtn = document.createElement("button");
-        downBtn.className = `p-1.5 rounded-lg text-xs font-bold transition-all ${index === roomsData.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
-        downBtn.disabled = index === roomsData.length - 1;
-        downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
-        downBtn.addEventListener("click", async () => {
-          if (index === roomsData.length - 1) return;
-          const next = roomsData[index + 1];
-          await updateRoomOrderBoth(room.id, next.order);
-          await updateRoomOrderBoth(next.id, room.order);
-          await loadServerSettingsRooms();
-          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
-        });
+          // 並び替え上へボタン
+          const upBtn = document.createElement("button");
+          upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
+          upBtn.disabled = index === 0;
+          upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
+          upBtn.addEventListener("click", async () => {
+            if (index === 0) return;
+            // 連打や競合を防ぐため全ボタンを即座にロックし、ローディング状態を表示
+            listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
+            upBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+            
+            const prev = roomsData[index - 1];
+            const tempOrder = room.order;
+            room.order = prev.order;
+            prev.order = tempOrder;
 
-        // 削除ボタン
-        const delBtn = document.createElement("button");
-        delBtn.className = "del-room-btn text-red-500 hover:text-red-700 hover:bg-red-100 p-1.5 rounded-lg text-xs transition-all ml-2";
-        delBtn.dataset.roomId = room.id;
-        delBtn.dataset.roomName = room.name;
-        delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
-
-        btnsContainer.appendChild(upBtn);
-        btnsContainer.appendChild(downBtn);
-        btnsContainer.appendChild(delBtn);
-        item.appendChild(nameSpan);
-        item.appendChild(btnsContainer);
-        listEl.appendChild(item);
-      });
-
-      listEl.querySelectorAll(".del-room-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          if (!await showCustomConfirm(`「${btn.dataset.roomName}」を削除しますか？`, "削除")) return;
-          loadingOverlay.classList.remove("hidden");
-          try {
-            await deleteRoomCascade(currentServerId, btn.dataset.roomId);
-            if (currentRoomId === btn.dataset.roomId) {
-              currentRoomId = null;
-              currentRoomHeader.classList.add("hidden");
-              clearMessagesDOM();
-              messageInput.disabled = true;
-              sendMessageButton.disabled = true;
-            }
-            await loadServerSettingsRooms();
+            await updateRoomOrderBoth(room.id, room.order);
+            await updateRoomOrderBoth(prev.id, prev.order);
+            
+            // メモリ上のソート状態を直接反映して高速かつ確実なレンダリング
+            renderRoomsListUI();
             if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
-          } catch (e) { alertMessage("削除に失敗しました", "error"); }
-          finally { loadingOverlay.classList.add("hidden"); }
+          });
+
+          // 並び替え下へボタン
+          const downBtn = document.createElement("button");
+          downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === roomsData.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
+          downBtn.disabled = index === roomsData.length - 1;
+          downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
+          downBtn.addEventListener("click", async () => {
+            if (index === roomsData.length - 1) return;
+            listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
+            downBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+
+            const next = roomsData[index + 1];
+            const tempOrder = room.order;
+            room.order = next.order;
+            next.order = tempOrder;
+
+            await updateRoomOrderBoth(room.id, room.order);
+            await updateRoomOrderBoth(next.id, next.order);
+
+            renderRoomsListUI();
+            if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+          });
+
+          // 削除ボタン
+          const delBtn = document.createElement("button");
+          delBtn.className = "del-room-btn text-red-500 hover:text-red-700 hover:bg-red-100 p-1.5 rounded-lg text-xs transition-all ml-2";
+          delBtn.dataset.roomId = room.id;
+          delBtn.dataset.roomName = room.name;
+          delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
+          delBtn.addEventListener("click", async () => {
+            if (!await showCustomConfirm(`「${delBtn.dataset.roomName}」を削除しますか？`, "削除")) return;
+            loadingOverlay.classList.remove("hidden");
+            try {
+              await deleteRoomCascade(currentServerId, delBtn.dataset.roomId);
+              if (currentRoomId === delBtn.dataset.roomId) {
+                currentRoomId = null;
+                currentRoomHeader.classList.add("hidden");
+                clearMessagesDOM();
+                messageInput.disabled = true;
+                sendMessageButton.disabled = true;
+              }
+              roomsData = roomsData.filter(r => r.id !== delBtn.dataset.roomId);
+              renderRoomsListUI();
+              if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+            } catch (e) { alertMessage("削除に失敗しました", "error"); }
+            finally { loadingOverlay.classList.add("hidden"); }
+          });
+
+          btnsContainer.appendChild(upBtn);
+          btnsContainer.appendChild(downBtn);
+          btnsContainer.appendChild(delBtn);
+          item.appendChild(nameSpan);
+          item.appendChild(btnsContainer);
+          listEl.appendChild(item);
         });
-      });
+      }
+
+      renderRoomsListUI();
     }
 
     async function updateRoomOrderBoth(roomId, newOrder) {
@@ -11981,29 +12037,29 @@
               }
               const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
               if (!roomKey) {
-                console.warn(`[E2EE] ルーム鍵を取得できなかったため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
-                if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が正常に取得できませんでした。平文でメッセージを送信してもよろしいですか？\n（キャンセルを選択し、管理者に『レスキュー復旧』をリクエストすることをお勧めします）")) {
-                   loadingOverlay.classList.add("hidden");
-                   return;
-                }
+                console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+                loadingOverlay.classList.add("hidden");
+                alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復(レスキュー)を実行します。数秒後にもう一度お試しください。", "error");
+                await requestEscrowRescue(currentServerId, currentRoomId);
+                return;
               } else {
                 const enc = await encryptText(text, roomKey);
                 if (enc) {
-                  textToStore = enc; // 暗号化できた時だけ置換
+                  textToStore = enc; // 暗号化成功時のみ保存用テキストに代入
                 } else {
-                  console.warn(`[E2EE] 本文の暗号化に失敗したため平文で送信します (server=${currentServerId}, room=${currentRoomId})`);
-                  if (!confirm("⚠️ セキュリティ保護警告: メッセージの暗号化処理に失敗しました。平文で送信してもよろしいですか？")) {
-                     loadingOverlay.classList.add("hidden");
-                     return;
-                  }
+                  console.warn(`[E2EE] 本文の暗号化処理に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+                  loadingOverlay.classList.add("hidden");
+                  alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
+                  await requestEscrowRescue(currentServerId, currentRoomId);
+                  return;
                 }
               }
             } catch (e) {
-              console.error("[E2EE] 暗号化処理で例外が発生したため平文で送信します:", e);
-              if (!confirm("⚠️ セキュリティ保護警告: 暗号化処理中にエラーが発生しました。平文で送信してもよろしいですか？")) {
-                 loadingOverlay.classList.add("hidden");
-                 return;
-              }
+              console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
+              loadingOverlay.classList.add("hidden");
+              alertMessage("🔒 暗号化保護エラー: 予期せぬ例外が発生したため平文での送信を強制遮断しました。自動で修復を実行します。", "error");
+              await requestEscrowRescue(currentServerId, currentRoomId);
+              return;
             }
           }
         }
@@ -14164,9 +14220,29 @@
 
     // ===== アプリ内通知スタック =====
         
-    function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
-      // 最終防壁: 万一ここに暗号文が来ても、ユーザーには絶対に暗号文を見せない
-      if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
+    async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+      // 1. 本文が暗号化されている場合は、非同期で確実に復号を実行
+      if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+        try {
+          const memberIds = serverData?.joinedUsers || [];
+          text = await decryptText(text, serverId, roomId, memberIds);
+        } catch (e) { text = '（暗号化されたメッセージ）'; }
+      }
+
+      // 2. スタンプおよび添付ファイル(画像・動画・外部ストレージ等)のスマートな表現へ変換
+      let displayBody = text;
+      if (text.includes("firebase-storage") || text.includes("cloudinary") || text.includes("r2.cloudflarestorage") || text.match(/\.(jpg|jpeg|png|gif|webp|mp4|mov)/i)) {
+        displayBody = `📎 添付ファイルが送信されました`;
+      } else if (text.startsWith("[STAMP]") || text.includes("/stamps/")) {
+        displayBody = `🌟 スタンプが送信されました`;
+      }
+
+      // 3. 通知スタックの重複あふれガード（DOMメモリリークおよび画面圧迫の防止）
+      const stack = document.getElementById("notifStack");
+      if (stack && stack.children.length >= 4) {
+        try { stack.removeChild(stack.firstChild); } catch(e){}
+      }
+
       const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
       if (soundEnabled) {
         playNotificationSound();
@@ -14174,22 +14250,23 @@
           window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
         }
       }
-      const stack = document.getElementById("notifStack");
+
       const notif = document.createElement("div");
-      notif.className = "bg-white rounded-xl shadow-lg overflow-hidden w-72";
-      notif.style.cssText = "border-left:3px solid #1f2937;pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+      // ライトモード＆ダークモード両対応の最高峰リッチデザイン（エレガントなシャドウ＆ぼかし背景）
+      notif.className = "bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-700/80 overflow-hidden w-80 backdrop-blur-md transition-all";
+      notif.style.cssText = "border-left:4px solid #6366f1; pointer-events:auto; animation:slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;";
       const meta = escapeHtml(`${serverName} · #${roomName}`);
-      const body = escapeHtml(`${senderName}: ${text}`);
+      const body = escapeHtml(`${senderName}: ${displayBody}`);
       notif.innerHTML = `
-          <div class="notif-row flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
-            <div class="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
-              <i class="fas fa-comment-dots text-white text-xs"></i>
+          <div class="notif-row flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+            <div class="w-10 h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 shadow-inner">
+              <i class="fas fa-bell text-indigo-500 dark:text-indigo-400 text-base animate-pulse"></i>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-xs text-gray-400 truncate">${meta}</div>
-              <div class="text-sm text-gray-800 font-medium truncate leading-snug">${body}</div>
+              <div class="text-[11px] font-bold text-gray-400 dark:text-gray-400 truncate tracking-wide">${meta}</div>
+              <div class="text-sm text-slate-900 dark:text-slate-100 font-bold truncate leading-snug mt-0.5">${body}</div>
             </div>
-            <button class="notif-x w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 flex-shrink-0">
+            <button class="notif-x w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 flex-shrink-0 transition-colors">
               <i class="fas fa-times text-xs"></i>
             </button>
           </div>`;
@@ -14213,7 +14290,7 @@
         dismissNotif();
       });
       stack.appendChild(notif);
-      setTimeout(dismissNotif, 5000);
+      setTimeout(dismissNotif, 6000);
     }
 
     // ===== グローバル右クリック無効 =====
