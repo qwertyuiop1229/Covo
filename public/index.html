@@ -7869,7 +7869,7 @@
         let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
         items = items.filter(it => it.serverId !== currentServerId);
         Object.keys(unreadCounts).forEach(rid => {
-          if (rid === currentRoomId && document.hasFocus()) {
+          if (rid === currentRoomId) {
             unreadCounts[rid] = 0;
             const badge = document.getElementById(`unread-badge-${rid}`);
             if (badge) badge.style.display = 'none';
@@ -7891,6 +7891,7 @@
         }
       } catch(e) {}
       if (typeof updateServerCardDots === 'function') updateServerCardDots();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
     }
     window.goToRoom = function(rid) {
       const pModal = document.getElementById('pcNotifModal');
@@ -8882,18 +8883,21 @@
         const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${serverId}`);
         const data = await res.json();
         roomList.innerHTML = "";
-        const docs = data.docs || [];
-        docs.forEach(docSnap => {
+        const roomDocs = data.docs || [];
+        roomDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+
+        roomDocs.forEach((docSnap, idx) => {
           const room = docSnap.data;
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          div.className = "flex items-center justify-between p-3 mb-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg cursor-pointer room-list-anim room-item-animate border border-indigo-200";
+          // 通常版と全く同じDiscord風のコンパクトで洗練されたスタイル（青枠や特殊配色は完全排除）
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-white";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
-          nameDiv.className = "flex-1 truncate font-bold text-indigo-900";
-          nameDiv.textContent = `# ${room.name} (D1)`;
+          nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
+          nameDiv.innerHTML = `<span class="text-slate-400 font-semibold group-hover:text-slate-500 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -8911,13 +8915,27 @@
           
           const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
           unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+          
+          const rightContainer = document.createElement("div");
+          rightContainer.className = "flex items-center gap-1";
+
           const badgeSpan = document.createElement("span");
-          badgeSpan.className = "unread-badge";
+          badgeSpan.className = "unread-badge mr-1";
           badgeSpan.id = `unread-badge-${docSnap.id}`;
           badgeSpan.style.display = isUnread ? "block" : "none";
+          rightContainer.appendChild(badgeSpan);
+
+          // 並び替え用上下ボタン
+          const orderControls = document.createElement("div");
+          orderControls.className = "opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity duration-150";
+          orderControls.innerHTML = `
+            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="上へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', -1, ${room.order || idx})">▲</button>
+            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="下へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', 1, ${room.order || idx})">▼</button>
+          `;
+          rightContainer.appendChild(orderControls);
 
           div.appendChild(nameDiv);
-          div.appendChild(badgeSpan);
+          div.appendChild(rightContainer);
           roomList.appendChild(div);
         });
       } catch (e) {
@@ -10148,18 +10166,23 @@
         hasLoaded = true;
         roomList.innerHTML = "";
         const currentRoomIds = new Set();
-        snapshot.forEach((docSnap) => {
+        const roomDocs = [];
+        snapshot.forEach(docSnap => roomDocs.push(docSnap));
+        roomDocs.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+
+        roomDocs.forEach((docSnap, idx) => {
           currentRoomIds.add(docSnap.id);
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          div.className = "flex items-center justify-between p-3 mb-2 bg-gray-50 hover:bg-gray-200 rounded-lg cursor-pointer room-list-anim room-item-animate";
+          // Discord風のコンパクトで洗練されたスタイル
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-white";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
-          nameDiv.className = "flex-1 truncate";
-          nameDiv.textContent = `# ${room.name}`;
+          nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
+          nameDiv.innerHTML = `<span class="text-slate-400 font-semibold group-hover:text-slate-500 dark:group-hover:text-slate-300">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -10178,19 +10201,49 @@
           
           const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
           unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+          
+          const rightContainer = document.createElement("div");
+          rightContainer.className = "flex items-center gap-1";
+
           const badgeSpan = document.createElement("span");
-          badgeSpan.className = "unread-badge";
+          badgeSpan.className = "unread-badge mr-1";
           badgeSpan.id = `unread-badge-${docSnap.id}`;
           badgeSpan.style.display = isUnread ? "block" : "none";
+          rightContainer.appendChild(badgeSpan);
+
+          // 並び替え用上下ボタン（誰でも手軽に押せて順番がわかる親切設計）
+          const orderControls = document.createElement("div");
+          orderControls.className = "opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity duration-150";
+          orderControls.innerHTML = `
+            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="上へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', -1, ${room.order || idx})">▲</button>
+            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="下へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', 1, ${room.order || idx})">▼</button>
+          `;
+          rightContainer.appendChild(orderControls);
 
           div.appendChild(nameDiv);
-          div.appendChild(badgeSpan);
+          div.appendChild(rightContainer);
           roomList.appendChild(div);
         });
 
         // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
         // ここでの boolean 保存(covo_server_unread)は廃止しました。
       }
+
+      window.changeRoomOrder = async function(roomId, direction, currentOrder) {
+        if (!currentServerId || !roomId) return;
+        const newOrder = currentOrder + direction;
+        try {
+          if (localStorage.getItem('covo_use_d1') === '1') {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            await fetch(`${WORKER_BASE_URL}/api/d1/rooms`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, serverId: currentServerId, roomId, type: "update", order: newOrder })
+            });
+          } else {
+            await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
+          }
+        } catch(e) { console.error(e); }
+      };
 
       let isRoomsFirst = true;
       function onRoomsChanged(snapshot) {
@@ -10664,12 +10717,52 @@
       subscribeToMessages();
       subscribeToPinnedMessages();
 
-      // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完（メンバー追加対応）
+      // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
       (async () => {
         try {
+          if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
           const members = (currentServerData && currentServerData.joinedUsers) || [];
           const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
-          if (key) await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+          if (key) {
+            await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+            // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
+            if (localStorage.getItem('covo_use_d1') === '1') {
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+              const res = await fetch(`${WORKER_BASE_URL}/api/d1/escrow/rescue?appId=${appId}&serverId=${currentServerId}&roomId=${currentRoomId}`, { headers: { "Authorization": `Bearer ${idToken}` } });
+              if (res.ok) {
+                const reqData = await res.json();
+                if (!reqData.empty && reqData.docs && reqData.docs.length > 0) {
+                  const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
+                  for (const req of reqData.docs) {
+                    await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [req.userId], key.latestVersion);
+                    await fetch(`${WORKER_BASE_URL}/api/d1/escrow/rescue`, { method: "DELETE", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` }, body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, userId: req.userId }) });
+                  }
+                }
+              }
+            } else {
+              const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/rescueRequests`));
+              if (!resSnap.empty) {
+                const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
+                for (const resDoc of resSnap.docs) {
+                  const reqUserId = resDoc.id;
+                  await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [reqUserId], key.latestVersion);
+                  await deleteDoc(resDoc.ref);
+                }
+              }
+            }
+          } else {
+            // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
+            let retryCount = 0;
+            const checkTimer = setInterval(async () => {
+              retryCount++;
+              if (retryCount > 15 || _e2ee.roomKeyCache[currentRoomId]) { clearInterval(checkTimer); return; }
+              const arrived = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+              if (arrived) {
+                clearInterval(checkTimer);
+                if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+              }
+            }, 2000);
+          }
         } catch (e) {}
       })();
 
@@ -12669,7 +12762,7 @@
       }
       if (message.text) {
         const messageTextSpan = document.createElement("span");
-        messageTextSpan.className = `message-content text-gray-900 ${isMyMessage ? "text-right" : "text-left"}`;
+        messageTextSpan.className = `message-content text-gray-900 text-left`;
         messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(message.text);
         // 自分がメンションされていたらハイライト
         if (message.text.includes(`@${userNickname}`)) {
@@ -17627,7 +17720,15 @@
             (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
             'simplechat/servericons'
           );
-          await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+          if (localStorage.getItem('covo_use_d1') === '1') {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            await fetch(`${WORKER_BASE_URL}/api/d1/servers`, {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, serverId: currentServerId, type: "update", iconUrl: fileUrl })
+            });
+          } else {
+            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+          }
           if (currentServerData) currentServerData.iconUrl = fileUrl;
           if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
             window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
