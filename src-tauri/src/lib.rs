@@ -874,7 +874,8 @@ pub fn run() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
                 let loaded = {
                     let state = monitor_handle.state::<NotificationState>();
-                    *state.app_loaded.lock().unwrap()
+                    let val = *state.app_loaded.lock().unwrap();
+                    val
                 };
                 if !loaded {
                     log::warn!("App loaded signal not received within 6 seconds. Assuming ERR_CONNECTION_REFUSED / Vite failure. Spawning recovery engine.");
