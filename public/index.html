@@ -9931,6 +9931,10 @@
 
     // サーバーに入る
     async function enterServer(serverId, serverData) {
+      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+      if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
       currentServerId = serverId;
       currentServerData = serverData;
       try {
@@ -9999,6 +10003,7 @@
       try { localStorage.removeItem('covo_last_opened_server'); } catch(e) {}
 
       if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
       if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
       if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
       if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
@@ -10568,7 +10573,8 @@
       }
       const q = query(
         collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-        where("isPinned", "==", true)
+        where("isPinned", "==", true),
+        limit(50)
       );
       unsubscribePinnedMessages = onSnapshot(q, async (snapshot) => {
         const msgs = [];
@@ -11111,8 +11117,10 @@
         clearMessagesDOM();
         messageInput.disabled = true;
         sendMessageButton.disabled = true;
-        if (unsubscribeMessages) unsubscribeMessages();
-        if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
+        if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+        if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+        if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+        if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
       }
 
       try {
@@ -14605,7 +14613,9 @@
       // ルーム退出処理（開いている判定を解除する）
       currentRoomId = null;
       if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
       if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
       clearMessagesDOM();
       lastMessagesData = [];
       messageInput.disabled = true;
