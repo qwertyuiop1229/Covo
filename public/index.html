@@ -4239,7 +4239,7 @@
       </div>
 
       <div class="flex items-center justify-between border-t border-gray-800 pt-4 gap-4">
-        <button onclick="localStorage.clear();if(window.caches){caches.keys().then(k=>k.forEach(c=>caches.delete(c)))};window.location.reload()" class="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition flex items-center gap-2">
+        <button onclick="if(window.caches){caches.keys().then(k=>k.forEach(c=>caches.delete(c)))};if(navigator.serviceWorker){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()))};window.location.reload(true)" class="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition flex items-center gap-2">
           <i class="fas fa-trash-alt"></i>キャッシュ＆ストレージをリセットして再起動
         </button>
         <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
@@ -7434,30 +7434,48 @@
       return (email || "?").charAt(0).toUpperCase();
     }
 
-    // リストアイテムのDOMを生成（共通）
+    // リストアイテムのDOMを生成（ユーザーネーム＆アイコン対応版）
     function makeEmailListItem(email, isSelf, onRemove) {
       const div = document.createElement("div");
-      div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl";
+      div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
+
+      const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
+      const username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
+      const iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
 
       const avatar = document.createElement("div");
-      avatar.className = "w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 flex-shrink-0";
-      avatar.textContent = emailInitial(email);
+      avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
+      if (iconUrl) {
+        avatar.innerHTML = `<img src="${iconUrl}" class="w-full h-full object-cover" />`;
+      } else {
+        avatar.textContent = emailInitial(email);
+      }
+
+      const textContainer = document.createElement("div");
+      textContainer.className = "flex-1 flex flex-col min-w-0";
 
       const emailSpan = document.createElement("span");
-      emailSpan.className = "flex-1 text-sm text-gray-700 font-medium truncate";
+      emailSpan.className = "text-sm text-gray-900 font-bold truncate";
       emailSpan.textContent = email;
 
+      const userSpan = document.createElement("span");
+      userSpan.className = "text-[11px] text-gray-500 font-medium truncate mt-0.5";
+      userSpan.textContent = `ユーザーネーム: ${username}`;
+
+      textContainer.appendChild(emailSpan);
+      textContainer.appendChild(userSpan);
+
       div.appendChild(avatar);
-      div.appendChild(emailSpan);
+      div.appendChild(textContainer);
 
       if (isSelf) {
         const badge = document.createElement("span");
-        badge.className = "text-xs text-gray-400 flex-shrink-0";
+        badge.className = "text-xs text-gray-400 flex-shrink-0 font-semibold";
         badge.textContent = "あなた";
         div.appendChild(badge);
       } else {
         const btn = document.createElement("button");
-        btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors flex-shrink-0";
+        btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-100 transition-colors flex-shrink-0";
         btn.innerHTML = `<i class="fas fa-times text-xs"></i>`;
         btn.addEventListener("click", onRemove);
         div.appendChild(btn);
@@ -7496,6 +7514,21 @@
     async function loadAdminPanelData() {
       adminMessage.textContent = "読み込み中...";
       try {
+        // 全ユーザーデータを取得してメールアドレスキーでキャッシュ
+        window.__adminUsersByEmail = {};
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          try {
+            const res = await d1Fetch(`/api/d1/users?appId=${appId}`);
+            const uData = await res.json();
+            if (uData.docs) uData.docs.forEach(u => { if (u.data.email) window.__adminUsersByEmail[u.data.email] = u.data; });
+          } catch(e){}
+        } else {
+          try {
+            const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+            uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = u; });
+          } catch(e){}
+        }
+
         if (isAdmin) {
           const [allowedSnap, adminSnap, listAdminSnap] = await Promise.all([
             getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
@@ -8890,8 +8923,8 @@
           const room = docSnap.data;
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // 通常版と全く同じDiscord風のコンパクトで洗練されたスタイル（青枠や特殊配色は完全排除）
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-white";
+          // ライトモードでも文字がくっきり見えやすく、ダークモードでも調和する美しいコントラスト設定
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-900 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white font-medium";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
@@ -8924,15 +8957,6 @@
           badgeSpan.id = `unread-badge-${docSnap.id}`;
           badgeSpan.style.display = isUnread ? "block" : "none";
           rightContainer.appendChild(badgeSpan);
-
-          // 並び替え用上下ボタン
-          const orderControls = document.createElement("div");
-          orderControls.className = "opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity duration-150";
-          orderControls.innerHTML = `
-            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="上へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', -1, ${room.order || idx})">▲</button>
-            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="下へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', 1, ${room.order || idx})">▼</button>
-          `;
-          rightContainer.appendChild(orderControls);
 
           div.appendChild(nameDiv);
           div.appendChild(rightContainer);
@@ -10175,8 +10199,8 @@
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // Discord風のコンパクトで洗練されたスタイル
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-white";
+          // ライトモードでも文字がくっきり見えやすく、ダークモードでも調和する美しいコントラスト設定
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-0.5 rounded-md text-sm cursor-pointer transition-colors duration-150 group room-item-animate text-slate-900 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white font-medium";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
@@ -10210,15 +10234,6 @@
           badgeSpan.id = `unread-badge-${docSnap.id}`;
           badgeSpan.style.display = isUnread ? "block" : "none";
           rightContainer.appendChild(badgeSpan);
-
-          // 並び替え用上下ボタン（誰でも手軽に押せて順番がわかる親切設計）
-          const orderControls = document.createElement("div");
-          orderControls.className = "opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity duration-150";
-          orderControls.innerHTML = `
-            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="上へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', -1, ${room.order || idx})">▲</button>
-            <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all" title="下へ移動" onclick="event.stopPropagation(); changeRoomOrder('${docSnap.id}', 1, ${room.order || idx})">▼</button>
-          `;
-          rightContainer.appendChild(orderControls);
 
           div.appendChild(nameDiv);
           div.appendChild(rightContainer);
@@ -11312,24 +11327,75 @@
     async function loadServerSettingsRooms() {
       const listEl = document.getElementById("serverRoomsList");
       listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
-      const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+      let roomsData = [];
+      try {
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          const res = await d1Fetch(`/api/d1/rooms?appId=${appId}&serverId=${currentServerId}`);
+          const data = await res.json();
+          if (data.docs) roomsData = data.docs.map((d, i) => ({ id: d.id, ...d.data, order: typeof d.data.order === 'number' ? d.data.order : i }));
+        } else {
+          const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+          let idx = 0;
+          snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : idx++ }); });
+        }
+      } catch (e) { console.error(e); }
+
+      roomsData.sort((a, b) => a.order - b.order);
       listEl.innerHTML = "";
-      snap.forEach(d => {
-        const room = d.data();
+      
+      roomsData.forEach((room, index) => {
         const item = document.createElement("div");
-        item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg";
+        item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg group transition-all";
         const nameSpan = document.createElement("span");
-        nameSpan.className = "text-sm font-medium text-gray-800";
+        nameSpan.className = "text-sm font-medium text-gray-900";
         nameSpan.textContent = `# ${room.name}`;
+
+        const btnsContainer = document.createElement("div");
+        btnsContainer.className = "flex items-center gap-1.5";
+
+        // 並び替え上へボタン
+        const upBtn = document.createElement("button");
+        upBtn.className = `p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
+        upBtn.disabled = index === 0;
+        upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
+        upBtn.addEventListener("click", async () => {
+          if (index === 0) return;
+          const prev = roomsData[index - 1];
+          await updateRoomOrderBoth(room.id, prev.order);
+          await updateRoomOrderBoth(prev.id, room.order);
+          await loadServerSettingsRooms();
+          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+        });
+
+        // 並び替え下へボタン
+        const downBtn = document.createElement("button");
+        downBtn.className = `p-1.5 rounded-lg text-xs font-bold transition-all ${index === roomsData.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
+        downBtn.disabled = index === roomsData.length - 1;
+        downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
+        downBtn.addEventListener("click", async () => {
+          if (index === roomsData.length - 1) return;
+          const next = roomsData[index + 1];
+          await updateRoomOrderBoth(room.id, next.order);
+          await updateRoomOrderBoth(next.id, room.order);
+          await loadServerSettingsRooms();
+          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+        });
+
+        // 削除ボタン
         const delBtn = document.createElement("button");
-        delBtn.className = "del-room-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all";
-        delBtn.dataset.roomId = d.id;
+        delBtn.className = "del-room-btn text-red-500 hover:text-red-700 hover:bg-red-100 p-1.5 rounded-lg text-xs transition-all ml-2";
+        delBtn.dataset.roomId = room.id;
         delBtn.dataset.roomName = room.name;
         delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
+
+        btnsContainer.appendChild(upBtn);
+        btnsContainer.appendChild(downBtn);
+        btnsContainer.appendChild(delBtn);
         item.appendChild(nameSpan);
-        item.appendChild(delBtn);
+        item.appendChild(btnsContainer);
         listEl.appendChild(item);
       });
+
       listEl.querySelectorAll(".del-room-btn").forEach(btn => {
         btn.addEventListener("click", async () => {
           if (!await showCustomConfirm(`「${btn.dataset.roomName}」を削除しますか？`, "削除")) return;
@@ -11344,10 +11410,25 @@
               sendMessageButton.disabled = true;
             }
             await loadServerSettingsRooms();
+            if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
           } catch (e) { alertMessage("削除に失敗しました", "error"); }
           finally { loadingOverlay.classList.add("hidden"); }
         });
       });
+    }
+
+    async function updateRoomOrderBoth(roomId, newOrder) {
+      try {
+        if (localStorage.getItem('covo_use_d1') === '1') {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          await fetch(`${WORKER_BASE_URL}/api/d1/rooms`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+            body: JSON.stringify({ appId, serverId: currentServerId, roomId, type: "update", order: newOrder })
+          });
+        } else {
+          await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
+        }
+      } catch (e) { console.error(e); }
     }
 
     document.getElementById("createRoomInServerBtn").addEventListener("click", async () => {
