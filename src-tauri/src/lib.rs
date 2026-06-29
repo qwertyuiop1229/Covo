@@ -40,6 +40,7 @@ struct NotificationState {
     container_ready: Mutex<bool>,
     pending: Mutex<Vec<PendingNotif>>,
     close_behavior: Mutex<String>,
+    app_loaded: Mutex<bool>,
 }
 
 #[derive(serde::Serialize)]
@@ -787,6 +788,14 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
     Ok(())
 }
 
+#[tauri::command]
+fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
+    if let Ok(mut loaded) = state.app_loaded.lock() {
+        *loaded = true;
+        log::info!("Received notify_app_loaded signal from frontend. Cancelling recovery popup.");
+    }
+}
+
 
 // ===========================================================================
 // run()
@@ -819,6 +828,7 @@ pub fn run() {
             set_badge,
             send_desktop_notification,
             silent_install_past_version,
+            notify_app_loaded,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -858,9 +868,38 @@ pub fn run() {
 
             let _ = app.global_shortcut().register(ctrl_shift_s);
 
+            // 正常起動の非同期監視タスク (6秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
+            let monitor_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+                let loaded = {
+                    let state = monitor_handle.state::<NotificationState>();
+                    *state.app_loaded.lock().unwrap()
+                };
+                if !loaded {
+                    log::warn!("App loaded signal not received within 6 seconds. Assuming ERR_CONNECTION_REFUSED / Vite failure. Spawning recovery engine.");
+                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
+                        let _ = main_win.hide();
+                    }
+                    if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                        &monitor_handle,
+                        "recovery-engine",
+                        tauri::WebviewUrl::App("recovery.html".into())
+                    )
+                    .title("Covo - 🚨 緊急トラブル復旧 ＆ バージョン管理エンジン")
+                    .inner_size(840.0, 680.0)
+                    .resizable(true)
+                    .center()
+                    .build() {
+                        let _ = recovery_win.show();
+                    }
+                }
+            });
+
             let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            let recovery_i = MenuItem::with_id(app, "recovery", "🚨 緊急トラブル対応・復旧ツールを開く", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -871,6 +910,26 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        }
+                    }
+                    "recovery" => {
+                        // トレイメニューからいつでもリカバリー画面を呼び出せる
+                        if let Some(existing) = app.get_webview_window("recovery-engine") {
+                            let _ = existing.show();
+                            let _ = existing.set_focus();
+                        } else {
+                            if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                                app,
+                                "recovery-engine",
+                                tauri::WebviewUrl::App("recovery.html".into())
+                            )
+                            .title("Covo - 🚨 緊急トラブル復旧 ＆ バージョン管理エンジン")
+                            .inner_size(840.0, 680.0)
+                            .resizable(true)
+                            .center()
+                            .build() {
+                                let _ = recovery_win.show();
+                            }
                         }
                     }
                     _ => {}

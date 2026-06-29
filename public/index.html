@@ -1053,13 +1053,18 @@
 
     /* 未読バッジ（ルーム用・小さいドット） */
     .unread-badge {
-      background-color: #1f2937;
+      background-color: #4f46e5;
       width: 8px;
       height: 8px;
       min-width: 8px;
       border-radius: 50%;
       flex-shrink: 0;
       margin-left: auto;
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    body.dark-server-theme .unread-badge {
+      background-color: #818cf8;
+      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
     }
 
     /* サーバーカード未読ドット */
@@ -1070,8 +1075,14 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: #1f2937;
+      background: #4f46e5;
       border: 2px solid white;
+      transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    body.dark-server-theme .server-card-unread-dot {
+      background: #818cf8;
+      border-color: #1e293b;
+      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
     }
 
     /* 検索バー */
@@ -2718,10 +2729,18 @@
       background-color: #243040 !important;
       color: #e2e8f0;
     }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
     body.dark-server-theme .message-content { color: #e2e8f0; }
     body.dark-server-theme .read-receipt { color: #4b5563; }
+    /* リプライの半透明背景を廃止し、完全に透明(transparent)にして美しく溶け込ませる */
     body.dark-server-theme .reply-quote {
-      background: rgba(255,255,255,0.07) !important;
+      background: transparent !important;
       border-left-color: #4b6280 !important;
     }
     body.dark-server-theme .reply-quote-nickname { color: #94a3b8; }
@@ -5705,7 +5724,8 @@
     };
 
     const _subtleOK = !!(window.crypto && window.crypto.subtle);
-    if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    // Tauriデスクトップ(http://tauri.localhost等)で意図せずhttpsへ強制転送されERR_CONNECTION_REFUSEDで全ユーザーが詰む致命的バグを完全解消
+    if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && !location.hostname.endsWith('.localhost') && !window.__TAURI__) {
       location.href = location.href.replace('http:', 'https:');
     }
     const _td = new TextDecoder(), _te = new TextEncoder();
@@ -8879,8 +8899,11 @@
       setTimeout(() => location.reload(), 600);
     };
 
-    // 画面読み込み時にトグルの状態を反映
+    // 画面読み込み時にトグルの状態を反映およびTauri正常起動シグナル送信
     document.addEventListener("DOMContentLoaded", () => {
+      if (window.__TAURI__?.core?.invoke) {
+        window.__TAURI__.core.invoke('notify_app_loaded').catch(() => {});
+      }
       const useD1 = localStorage.getItem('covo_use_d1') === '1';
       setTimeout(() => {
         const pcToggle = document.getElementById('pcToggleD1Mode');
@@ -8953,14 +8976,14 @@
           const room = docSnap.data;
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // 背景色はサイドバーと完全一致(透明)、文字色はアプリに美しく調和する落ち着いたスレートグレー。ホバー時にほんのりグレーになり、枠線がしっかり浮かび上がる極上仕様
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/60 hover:border-slate-300/80 text-slate-700 hover:text-slate-900 dark:hover:bg-slate-700/50 dark:hover:border-slate-600/80 dark:text-slate-300 dark:hover:text-white rounded-lg";
+          // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/50 hover:border-slate-300/60 text-slate-800 hover:text-slate-900 dark:hover:bg-slate-600/30 dark:hover:border-slate-500/60 dark:text-slate-300 dark:hover:text-white rounded-lg";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -10229,14 +10252,14 @@
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
-          // 背景色はサイドバーと完全一致(透明)、文字色はアプリに美しく調和する落ち着いたスレートグレー。ホバー時にほんのりグレーになり、枠線がしっかり浮かび上がる極上仕様
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/60 hover:border-slate-300/80 text-slate-700 hover:text-slate-900 dark:hover:bg-slate-700/50 dark:hover:border-slate-600/80 dark:text-slate-300 dark:hover:text-white rounded-lg";
+          // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/50 hover:border-slate-300/60 text-slate-800 hover:text-slate-900 dark:hover:bg-slate-600/30 dark:hover:border-slate-500/60 dark:text-slate-300 dark:hover:text-white rounded-lg";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
