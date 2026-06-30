@@ -1,4 +1,6 @@
-const admin = require('firebase-admin');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getDatabase } = require('firebase-admin/database');
 const fs = require('fs');
 const path = require('path');
 
@@ -15,48 +17,69 @@ const serviceAccount = require(SERVICE_ACCOUNT_PATH);
 
 // RTDBのURL (index.html から抽出したURL)
 const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
-const APP_ID = "simplechat";
+const APP_ID = "simplechat-65a0d";
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+initializeApp({
+  credential: cert(serviceAccount),
   databaseURL: DATABASE_URL
 });
 
-const firestore = admin.firestore();
-const rtdb = admin.database();
+const firestore = getFirestore();
+const rtdb = getDatabase();
 
 /**
  * オブジェクト内のFirestore Timestampを再帰的に探し、
  * RTDB用のミリ秒整数 (Unix Timestamp) に変換する
  */
 function convertDataForRTDB(data) {
-  if (data === null || data === undefined) return data;
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
   
-  // FirestoreのTimestampオブジェクトの判定
-  if (data && typeof data.toDate === 'function' && typeof data.toMillis === 'function') {
-    return data.toMillis();
-  }
-  // 念のため、Admin SDK特有の Timestamp 構造 (_seconds, _nanoseconds) のチェック
-  if (data && typeof data === 'object' && '_seconds' in data && '_nanoseconds' in data) {
-    return (data._seconds * 1000) + Math.floor(data._nanoseconds / 1000000);
-  }
-  // 配列の場合
   if (Array.isArray(data)) {
     return data.map(item => convertDataForRTDB(item));
   }
-  // オブジェクトの場合
-  if (typeof data === 'object') {
-    const converted = {};
-    for (const [key, value] of Object.entries(data)) {
-      // Undefined は RTDB に保存できないためスキップ (エラーになる)
-      if (value !== undefined) {
-        converted[key] = convertDataForRTDB(value);
+
+  const newData = {};
+  for (const [key, value] of Object.entries(data)) {
+    // Undefined は RTDB に保存できないためスキップ
+    if (value === undefined) continue;
+
+    let finalValue = value;
+
+    // FirestoreのTimestamp型判定
+    if (value && typeof value === 'object' && typeof value.toDate === 'function') {
+      finalValue = value.toDate().getTime();
+    } else if (value && typeof value === 'object' && typeof value.toMillis === 'function') {
+      finalValue = value.toMillis();
+    } else if (value && typeof value === 'object' && value._seconds !== undefined && value._nanoseconds !== undefined) {
+      finalValue = value._seconds * 1000 + Math.floor(value._nanoseconds / 1000000);
+    } else {
+      finalValue = convertDataForRTDB(value);
+    }
+    
+    // 🔴 RTDBはキーに "." を含められないため、"versions.1" 等を { versions: { "1": ... } } のように階層化して退避する
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      let current = newData;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]] || typeof current[parts[i]] !== 'object') {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = finalValue;
+    } else {
+      // 既に階層化でオブジェクトが作られている場合のマージ
+      if (typeof newData[key] === 'object' && typeof finalValue === 'object' && !Array.isArray(finalValue)) {
+         Object.assign(newData[key], finalValue);
+      } else {
+         newData[key] = finalValue;
       }
     }
-    return converted;
   }
-  
-  return data;
+
+  return newData;
 }
 
 /**
@@ -81,19 +104,23 @@ async function migrateCollection(collectionRef, rtdbPath) {
     const convertedData = convertDataForRTDB(docData);
     
     // RTDBに書き込み (暗号化文字列等もそのまま保持される)
-    // set ではなく update を使うことで、意図しないデータの完全な上書きを回避しつつ安全に結合する
-    // ただし、今回は新規移行であるため set でも可。
     await rtdb.ref(newRtdbPath).set(convertedData);
     count++;
-    process.stdout.write(`\r⏳ 進行状況: ${count} / ${snapshot.size}`);
+    
+    // ログ表示: 現在のドキュメントの処理中であることを明記
+    process.stdout.write(`\r⏳ 進行状況: ${count} / ${snapshot.size} (Doc: ${docId})`);
 
     // サブコレクションの再帰的取得
     const subCollections = await doc.ref.listCollections();
-    for (const subCol of subCollections) {
-      await migrateCollection(subCol, `${newRtdbPath}/${subCol.id}`);
+    if (subCollections.length > 0) {
+      process.stdout.write(`\n`); // サブコレクションがある場合は改行してログを崩さないようにする
+      for (const subCol of subCollections) {
+        await migrateCollection(subCol, `${newRtdbPath}/${subCol.id}`);
+      }
     }
   }
-  console.log(`\n✅ [${collectionRef.path}] の移行完了`);
+  process.stdout.write(`\n`);
+  console.log(`✅ [${collectionRef.path}] の移行完了`);
 }
 
 async function runMigration() {
@@ -113,6 +140,11 @@ async function runMigration() {
     }
 
     for (const collection of rootCollections) {
+      if (collection.id === 'calls') {
+        console.log(`\n⏭️  コレクション [${collection.id}] は一時的な通話データのためスキップします。`);
+        continue;
+      }
+      
       const rtdbBasePath = `artifacts/${APP_ID}/${collection.id}`;
       await migrateCollection(collection, rtdbBasePath);
     }
