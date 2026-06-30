@@ -6513,6 +6513,7 @@
 
     let currentRoomId = null;
     let unsubscribeMessages = null;
+    let rtdbMessagesUnsub = null;
     let unsubscribeUserStatus = null;
 
     let isAuthReady = false;
@@ -9964,8 +9965,8 @@
     }
 
     function subscribeToMessages() {
-      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-      if (rtdbMessagesUnsub) { rtdbMessagesUnsub(); rtdbMessagesUnsub = null; }
+      if (typeof unsubscribeMessages !== 'undefined' && unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (typeof rtdbMessagesUnsub !== 'undefined' && rtdbMessagesUnsub) { rtdbMessagesUnsub(); rtdbMessagesUnsub = null; }
 
       allLoadedMessages = [];
       hasMoreOlderMessages = true;

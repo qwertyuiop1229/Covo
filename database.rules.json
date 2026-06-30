@@ -5,6 +5,10 @@
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+    "artifacts": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }
