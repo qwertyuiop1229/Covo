@@ -7089,6 +7089,24 @@
             userAuthEmail = user.email;
             isAuthReady = true;
 
+            try {
+              await setupGlobalRtdbListener();
+              const pcToggle = document.getElementById('pcToggleRtdbMode');
+              if (pcToggle) pcToggle.checked = window.globalUseRtdb;
+            } catch(e) { console.error("setupGlobalRtdbListener error:", e); }
+
+            // 管理画面用にユーザーの email を保存しておく
+            if (userAuthEmail) {
+              setDoc(doc(db, `artifacts/${appId}/users/${userId}`), { email: userAuthEmail }, { merge: true }).catch(()=>{});
+              if (window.globalUseRtdb) {
+                import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
+                  _getOrInitRTDB().then(rtdb => {
+                    update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { email: userAuthEmail });
+                  });
+                }).catch(()=>{});
+              }
+            }
+
             // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
             await user.getIdToken();
 
@@ -7402,8 +7420,8 @@
       div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
 
       const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
-      const username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
-      const iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
+      const username = userData?.nickname ? userData.nickname : (userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定"));
+      const iconUrl = userData?.avatarUrl ? userData.avatarUrl : (userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null));
 
       const avatar = document.createElement("div");
       avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
@@ -7476,28 +7494,68 @@
     async function loadAdminPanelData() {
       adminMessage.textContent = "読み込み中...";
       try {
-        // 全ユーザーデータを取得してメールアドレスキーでキャッシュ
         window.__adminUsersByEmail = {};
         
+        if (window.globalUseRtdb) {
+          const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          try {
+            const uSnap = await get(ref(rtdb, `artifacts/${appId}/users`));
+            if (uSnap.exists()) {
+              const usersObj = uSnap.val();
+              for (const key in usersObj) {
+                const u = usersObj[key];
+                if (u.email) window.__adminUsersByEmail[u.email] = u;
+              }
+            }
+          } catch(e){ console.error(e); }
+        } else {
           try {
             const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
             uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = u; });
-          } catch(e){}
-        
+          } catch(e){ console.error(e); }
+        }
 
         if (isAdmin) {
-          const [allowedSnap, adminSnap, listAdminSnap] = await Promise.all([
-            getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
-            getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
-            getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
-          ]);
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
-          renderAdminEmails(adminSnap.exists() ? adminSnap.data().emails || [] : []);
-          renderListAdminEmails(listAdminSnap.exists() ? listAdminSnap.data().emails || [] : []);
+          let allowedEmails = [], adminList = [], listAdminList = [];
+          if (window.globalUseRtdb) {
+            const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const [aSnap, adSnap, laSnap] = await Promise.all([
+              get(ref(rtdb, `artifacts/${appId}/settings/allowedEmails`)),
+              get(ref(rtdb, `artifacts/${appId}/settings/adminList`)),
+              get(ref(rtdb, `artifacts/${appId}/settings/listAdminList`))
+            ]);
+            if (aSnap.exists()) allowedEmails = aSnap.val().emails || [];
+            if (adSnap.exists()) adminList = adSnap.val().emails || [];
+            if (laSnap.exists()) listAdminList = laSnap.val().emails || [];
+          } else {
+            const [aSnap, adSnap, laSnap] = await Promise.all([
+              getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
+              getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
+              getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
+            ]);
+            if (aSnap.exists()) allowedEmails = aSnap.data().emails || [];
+            if (adSnap.exists()) adminList = adSnap.data().emails || [];
+            if (laSnap.exists()) listAdminList = laSnap.data().emails || [];
+          }
+          renderAllowedEmails(allowedEmails);
+          renderAdminEmails(adminList);
+          renderListAdminEmails(listAdminList);
         } else if (isListAdmin) {
-          const allowedSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
+          let allowedEmails = [];
+          if (window.globalUseRtdb) {
+            const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const aSnap = await get(ref(rtdb, `artifacts/${appId}/settings/allowedEmails`));
+            if (aSnap.exists()) allowedEmails = aSnap.val().emails || [];
+          } else {
+            const aSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
+            if (aSnap.exists()) allowedEmails = aSnap.data().emails || [];
+          }
+          renderAllowedEmails(allowedEmails);
         }
+        
         adminMessage.textContent = "";
       } catch (e) {
         console.error(e);
@@ -7618,17 +7676,36 @@
       }
     });
 
+    async function updateAdminSettingEmails(settingName, email, action) {
+      let emails = [];
+      if (window.globalUseRtdb) {
+        const { ref, get, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const rtdbRef = ref(rtdb, `artifacts/${appId}/settings/${settingName}`);
+        const snap = await get(rtdbRef);
+        emails = snap.exists() ? snap.val().emails || [] : [];
+        const originalLen = emails.length;
+        if (action === "add" && !emails.includes(email)) emails.push(email);
+        if (action === "remove") emails = emails.filter(e => e !== email);
+        if (emails.length !== originalLen || action === "add") await set(rtdbRef, { emails });
+      } else {
+        const fsRef = doc(db, `artifacts/${appId}/settings`, settingName);
+        const snap = await getDoc(fsRef);
+        emails = snap.exists() ? snap.data().emails || [] : [];
+        const originalLen = emails.length;
+        if (action === "add" && !emails.includes(email)) emails.push(email);
+        if (action === "remove") emails = emails.filter(e => e !== email);
+        if (emails.length !== originalLen || action === "add") await setDoc(fsRef, { emails }, { merge: true });
+      }
+      return emails;
+    }
+
     addAllowedEmailButton.addEventListener("click", async () => {
       const email = newAllowedEmailInput.value.trim();
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでに追加されています。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("allowedEmails", email, "add");
         newAllowedEmailInput.value = "";
         renderAllowedEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7642,10 +7719,8 @@
       if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderAllowedEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("allowedEmails", email, "remove");
+        renderAllowedEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -7659,12 +7734,7 @@
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでに管理者です。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("adminList", email, "add");
         newAdminEmailInput.value = "";
         renderAdminEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7679,10 +7749,8 @@
       if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("adminList", email, "remove");
+        renderAdminEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -7710,12 +7778,7 @@
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでにリスト管理者です。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("listAdminList", email, "add");
         newListAdminEmailInput.value = "";
         renderListAdminEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7729,10 +7792,8 @@
       if (!await showCustomConfirm(`「${email}」をリスト管理者から削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("listAdminList", email, "remove");
+        renderListAdminEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -8475,6 +8536,15 @@
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await updateDoc(userProfileRef, { avatarUrl: null });
+        
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { avatarUrl: null });
+          } catch(e) {}
+        }
+        
         userAvatarUrl = null;
         pendingAvatarUrl = null;
         settingsAvatarPreview.classList.add("hidden");
@@ -8518,6 +8588,18 @@
         const updateData = { nickname: newName, createdAt: serverTimestamp() };
         if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
         await setDoc(userProfileRef, updateData, { merge: true });
+        
+        // RTDBにも保存 (Adminパネル用)
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const rtdbData = { nickname: newName, createdAt: Date.now() };
+            if (pendingAvatarUrl) { rtdbData.avatarUrl = pendingAvatarUrl; }
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), rtdbData);
+          } catch(e) { console.error("RTDB profile update failed:", e); }
+        }
+
         userNickname = newName;
         if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
 
@@ -8565,6 +8647,16 @@
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
+        
+        // RTDBにも保存
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { nickname: nickname, createdAt: Date.now() });
+          } catch(e) { console.error("RTDB profile update failed:", e); }
+        }
+
         userNickname = nickname;
 
         // ★ヘッダータイトルの更新
@@ -8798,10 +8890,15 @@
     let rtdbGlobalSettingUnsub = null;
 
     async function setupGlobalRtdbListener() {
-      const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const { ref, onValue, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const settingRef = ref(rtdb, `artifacts/${appId}/settings/useRtdb`);
       
+      try {
+        const snap = await get(settingRef);
+        window.globalUseRtdb = (snap.val() === true);
+      } catch(e) { console.error("Initial RTDB setting fetch failed:", e); }
+
       rtdbGlobalSettingUnsub = onValue(settingRef, (snapshot) => {
         const val = snapshot.val();
         const newValue = (val === true);
