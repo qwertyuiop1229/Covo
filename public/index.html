@@ -5721,6 +5721,8 @@
       mem: {},            // localStorage不可時のメモリ退避
       roomKeyCache: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
       pubKeyCache: {},    // userId -> CryptoKey(public) インポート済みキャッシュ
+      _initPromise: null,
+      _roomKeyPromises: {},
     };
 
     const _subtleOK = !!(window.crypto && window.crypto.subtle);
@@ -5780,6 +5782,15 @@
     async function ensureE2EEKeys() {
       if (!_subtleOK || !userId) return false;
       if (_e2ee.ready) return true;
+      if (_e2ee._initPromise) return _e2ee._initPromise;
+      _e2ee._initPromise = (async () => {
+        const res = await _ensureE2EEKeysImpl();
+        if (!res) _e2ee._initPromise = null;
+        return res;
+      })();
+      return _e2ee._initPromise;
+    }
+    async function _ensureE2EEKeysImpl() {
       try {
         // 1) ローカル(JWK)から復元
         const privStr = _lsGet(E2EE_LS_PRIV);
@@ -5972,6 +5983,15 @@
     async function getOrCreateRoomKey(serverId, roomId, memberIds) {
       if (!_subtleOK) return null;
       if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      if (_e2ee._roomKeyPromises[roomId]) return _e2ee._roomKeyPromises[roomId];
+      _e2ee._roomKeyPromises[roomId] = (async () => {
+        const res = await _getOrCreateRoomKeyImpl(serverId, roomId, memberIds);
+        if (!res) delete _e2ee._roomKeyPromises[roomId];
+        return res;
+      })();
+      return _e2ee._roomKeyPromises[roomId];
+    }
+    async function _getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
       const ok = await ensureE2EEKeys();
       if (!ok) {
         console.warn(`[E2EE] ユーザー鍵が未初期化のためルーム鍵を取得できません (room=${roomId})`);
@@ -6337,13 +6357,25 @@
       for (const m of messages) {
         if (!m || typeof m.text !== "string") continue;
         if (m._decrypted) continue;            
-        if (!isEncrypted(m.text)) { m._decrypted = true; continue; } 
+
+        if (!m._originalText && isEncrypted(m.text)) {
+          m._originalText = m.text;
+        }
+        const textToDecrypt = m._originalText || m.text;
+
+        if (!isEncrypted(textToDecrypt)) { m._decrypted = true; continue; } 
         try {
-          m.text = await decryptText(m.text, serverId, roomId, memberIds);
+          const decrypted = await decryptText(textToDecrypt, serverId, roomId, memberIds);
+          m.text = decrypted;
+          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+            m._decrypted = false;
+          } else {
+            m._decrypted = true;
+          }
         } catch (e) {
           m.text = "（復号化エラー：メッセージを解読できません）";
+          m._decrypted = false;
         }
-        m._decrypted = true;
       }
     }
 
