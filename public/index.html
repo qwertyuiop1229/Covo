@@ -4598,6 +4598,9 @@
                       <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">デスクトップにショートカットを作成</button>
                       <span id="pcCreateShortcutStatus" style="font-size:0.8rem;color:#6b7280"></span>
                     </div>
+                    <div class="flex justify-between items-center mt-2">
+                      <button class="hover:bg-red-600 transition-colors" onclick="window.openFeedbackModal && window.openFeedbackModal()" style="padding:7px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">バグを報告する</button>
+                    </div>
                   </div>
                 </div>
 
@@ -17209,6 +17212,206 @@ null
       if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
       if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
     };
+
+    // サーバーアイコン変更用JS (Moved from global scope)
+    // サーバーアイコン変更用JSロジック
+    const serverIconUploadInput = document.getElementById("serverIconUploadInput");
+    const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
+    const serverIconCropModal = document.getElementById("serverIconCropModal");
+    const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
+    const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
+    let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
+    let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
+    let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
+    let isNewServerIconCrop = false;
+    window.pendingNewServerIconBlob = null;
+    const SICON_SIZE = 240;
+
+    if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
+      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => { isNewServerIconCrop = false; serverIconUploadInput.click(); });
+    }
+    window.openNewServerIconPicker = function() {
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
+    };
+
+    function handleSIconFileChange(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const objectUrl = URL.createObjectURL(file);
+      sIconImage = new Image();
+      sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
+      sIconImage.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scaleX = SICON_SIZE / sIconImage.naturalWidth;
+        const scaleY = SICON_SIZE / sIconImage.naturalHeight;
+        sIconMinScale = Math.max(scaleX, scaleY);
+        sIconScale = sIconMinScale;
+        serverIconZoomSlider.min = sIconMinScale;
+        serverIconZoomSlider.max = sIconMinScale * 4;
+        serverIconZoomSlider.value = sIconScale;
+        sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
+        sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
+        document.getElementById('serverIconUploadProgress').classList.add('hidden');
+        serverIconCropModal.classList.remove('hidden');
+        drawSIconPreview();
+      };
+      e.target.value = '';
+      if (sIconImage) sIconImage.src = objectUrl;
+    }
+
+    if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
+    if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
+
+    function clampSIconOffset() {
+      if (!sIconImage) return;
+      const maxW = sIconImage.naturalWidth * sIconScale;
+      const maxH = sIconImage.naturalHeight * sIconScale;
+      if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
+      else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
+      if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
+      else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
+    }
+
+    function drawSIconPreview() {
+      if (!sIconImage) return;
+      const ctx = serverIconCropCanvas.getContext('2d');
+      ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
+      ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
+    }
+
+    serverIconCropCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault(); sIconIsDragging = true;
+      sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
+      sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
+      serverIconCropCanvas.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    });
+    document.addEventListener('mouseup', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+    });
+
+    // タッチドラッグ対応（スマホ・タブレット）
+    serverIconCropCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // スクロール防止
+      if (e.touches.length !== 1) return;
+      sIconIsDragging = true;
+      sIconDragStartX = e.touches[0].clientX;
+      sIconDragStartY = e.touches[0].clientY;
+      sIconDragStartOffsetX = sIconOffsetX;
+      sIconDragStartOffsetY = sIconOffsetY;
+    }, { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      if (e.touches.length !== 1) return;
+      e.preventDefault(); // スクロール防止
+      sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    }, { passive: false });
+    document.addEventListener('touchend', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; }
+    }, { passive: true });
+
+    serverIconZoomSlider.addEventListener('input', () => {
+      if (!sIconImage) return;
+      const newScale = parseFloat(serverIconZoomSlider.value);
+      const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
+      sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
+      sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
+      sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
+    });
+
+    document.getElementById('serverIconCropCancel').addEventListener('click', () => {
+      serverIconCropModal.classList.add('hidden'); sIconImage = null;
+      if (serverIconUploadInput) serverIconUploadInput.value = '';
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) newFileInput.value = '';
+    });
+
+    document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
+      if (!sIconImage) return;
+      if (!isNewServerIconCrop && !currentServerId) return;
+
+      // 元画像サイズを考慮した最適な出力解像度（最大1024px）
+      const maxOutputSize = 1024;
+      const OUTPUT = Math.min(maxOutputSize, Math.max(
+        sIconImage.naturalWidth * sIconScale,
+        sIconImage.naturalHeight * sIconScale,
+        640 // 最低限640px
+      ));
+      const offscreen = document.createElement('canvas');
+      offscreen.width = OUTPUT; offscreen.height = OUTPUT;
+      const offCtx = offscreen.getContext('2d');
+      offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
+      const sf = OUTPUT / SICON_SIZE;
+      offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
+
+      // WebP対応確認（非対応の場合はJPEGにフォールバック）
+      const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
+      const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+      const quality = 0.95;
+      const ext = supportsWebp ? 'webp' : 'jpg';
+
+      offscreen.toBlob(async (blob) => {
+        if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+        
+        if (isNewServerIconCrop) {
+          window.pendingNewServerIconBlob = blob;
+          const previewContent = document.getElementById("newServerIconPreviewContent");
+          const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
+          if (previewContent && previewWrapper) {
+            const tempUrl = URL.createObjectURL(blob);
+            previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
+            previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
+          }
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンのプレビューを設定しました", "success");
+          return;
+        }
+
+        const progressDiv = document.getElementById('serverIconUploadProgress');
+        const progressFill = document.getElementById('serverIconUploadProgressFill');
+        const progressText = document.getElementById('serverIconUploadProgressText');
+        const confirmBtn = document.getElementById('serverIconCropConfirm');
+        const cancelBtn = document.getElementById('serverIconCropCancel');
+        progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
+        confirmBtn.disabled = true; cancelBtn.disabled = true;
+        try {
+          const fileUrl = await uploadToExternalService(
+            new File([blob], `server_icon.${ext}`, { type: mimeType }),
+            (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
+            'simplechat/servericons'
+          );
+          
+            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+          
+          if (currentServerData) currentServerData.iconUrl = fileUrl;
+          if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
+            window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
+          }
+          const iconPreview = document.getElementById("serverIconSettingsPreview");
+          if (iconPreview) {
+            iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
+            iconPreview.style.backgroundColor = "transparent";
+          }
+          if (typeof renderServerList === 'function') renderServerList();
+          if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンを更新しました", "success");
+        } catch (err) {
+          console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
+        } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
+      }, mimeType, quality);
+    });
+
   </script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="relative flex flex-col items-center p-4" onclick="event.stopPropagation()">
@@ -17461,205 +17664,7 @@ null
       </div>
     </div>
   </div>
-  <script>
-    // サーバーアイコン変更用JSロジック
-    const serverIconUploadInput = document.getElementById("serverIconUploadInput");
-    const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
-    const serverIconCropModal = document.getElementById("serverIconCropModal");
-    const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
-    const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
-    let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
-    let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
-    let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
-    let isNewServerIconCrop = false;
-    window.pendingNewServerIconBlob = null;
-    const SICON_SIZE = 240;
-
-    if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
-      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => { isNewServerIconCrop = false; serverIconUploadInput.click(); });
-    }
-    window.openNewServerIconPicker = function() {
-      const newFileInput = document.getElementById("newServerIconUploadInput");
-      if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
-    };
-
-    function handleSIconFileChange(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const objectUrl = URL.createObjectURL(file);
-      sIconImage = new Image();
-      sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
-      sIconImage.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const scaleX = SICON_SIZE / sIconImage.naturalWidth;
-        const scaleY = SICON_SIZE / sIconImage.naturalHeight;
-        sIconMinScale = Math.max(scaleX, scaleY);
-        sIconScale = sIconMinScale;
-        serverIconZoomSlider.min = sIconMinScale;
-        serverIconZoomSlider.max = sIconMinScale * 4;
-        serverIconZoomSlider.value = sIconScale;
-        sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
-        sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
-        document.getElementById('serverIconUploadProgress').classList.add('hidden');
-        serverIconCropModal.classList.remove('hidden');
-        drawSIconPreview();
-      };
-      e.target.value = '';
-      if (sIconImage) sIconImage.src = objectUrl;
-    }
-
-    if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
-    if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
-
-    function clampSIconOffset() {
-      if (!sIconImage) return;
-      const maxW = sIconImage.naturalWidth * sIconScale;
-      const maxH = sIconImage.naturalHeight * sIconScale;
-      if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
-      else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
-      if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
-      else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
-    }
-
-    function drawSIconPreview() {
-      if (!sIconImage) return;
-      const ctx = serverIconCropCanvas.getContext('2d');
-      ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
-      ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
-    }
-
-    serverIconCropCanvas.addEventListener('mousedown', (e) => {
-      e.preventDefault(); sIconIsDragging = true;
-      sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
-      sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
-      serverIconCropCanvas.style.cursor = 'grabbing';
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (!sIconIsDragging || !sIconImage) return;
-      sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
-      sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
-      clampSIconOffset(); drawSIconPreview();
-    });
-    document.addEventListener('mouseup', () => {
-      if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
-    });
-
-    // タッチドラッグ対応（スマホ・タブレット）
-    serverIconCropCanvas.addEventListener('touchstart', (e) => {
-      e.preventDefault(); // スクロール防止
-      if (e.touches.length !== 1) return;
-      sIconIsDragging = true;
-      sIconDragStartX = e.touches[0].clientX;
-      sIconDragStartY = e.touches[0].clientY;
-      sIconDragStartOffsetX = sIconOffsetX;
-      sIconDragStartOffsetY = sIconOffsetY;
-    }, { passive: false });
-    document.addEventListener('touchmove', (e) => {
-      if (!sIconIsDragging || !sIconImage) return;
-      if (e.touches.length !== 1) return;
-      e.preventDefault(); // スクロール防止
-      sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
-      sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
-      clampSIconOffset(); drawSIconPreview();
-    }, { passive: false });
-    document.addEventListener('touchend', () => {
-      if (sIconIsDragging) { sIconIsDragging = false; }
-    }, { passive: true });
-
-    serverIconZoomSlider.addEventListener('input', () => {
-      if (!sIconImage) return;
-      const newScale = parseFloat(serverIconZoomSlider.value);
-      const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
-      sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
-      sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
-      sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
-    });
-
-    document.getElementById('serverIconCropCancel').addEventListener('click', () => {
-      serverIconCropModal.classList.add('hidden'); sIconImage = null;
-      if (serverIconUploadInput) serverIconUploadInput.value = '';
-      const newFileInput = document.getElementById("newServerIconUploadInput");
-      if (newFileInput) newFileInput.value = '';
-    });
-
-    document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
-      if (!sIconImage) return;
-      if (!isNewServerIconCrop && !currentServerId) return;
-
-      // 元画像サイズを考慮した最適な出力解像度（最大1024px）
-      const maxOutputSize = 1024;
-      const OUTPUT = Math.min(maxOutputSize, Math.max(
-        sIconImage.naturalWidth * sIconScale,
-        sIconImage.naturalHeight * sIconScale,
-        640 // 最低限640px
-      ));
-      const offscreen = document.createElement('canvas');
-      offscreen.width = OUTPUT; offscreen.height = OUTPUT;
-      const offCtx = offscreen.getContext('2d');
-      offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
-      const sf = OUTPUT / SICON_SIZE;
-      offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
-
-      // WebP対応確認（非対応の場合はJPEGにフォールバック）
-      const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
-      const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
-      const quality = 0.95;
-      const ext = supportsWebp ? 'webp' : 'jpg';
-
-      offscreen.toBlob(async (blob) => {
-        if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
-        
-        if (isNewServerIconCrop) {
-          window.pendingNewServerIconBlob = blob;
-          const previewContent = document.getElementById("newServerIconPreviewContent");
-          const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
-          if (previewContent && previewWrapper) {
-            const tempUrl = URL.createObjectURL(blob);
-            previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
-            previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
-          }
-          serverIconCropModal.classList.add('hidden');
-          sIconImage = null;
-          alertMessage("サーバーアイコンのプレビューを設定しました", "success");
-          return;
-        }
-
-        const progressDiv = document.getElementById('serverIconUploadProgress');
-        const progressFill = document.getElementById('serverIconUploadProgressFill');
-        const progressText = document.getElementById('serverIconUploadProgressText');
-        const confirmBtn = document.getElementById('serverIconCropConfirm');
-        const cancelBtn = document.getElementById('serverIconCropCancel');
-        progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
-        confirmBtn.disabled = true; cancelBtn.disabled = true;
-        try {
-          const fileUrl = await uploadToExternalService(
-            new File([blob], `server_icon.${ext}`, { type: mimeType }),
-            (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
-            'simplechat/servericons'
-          );
-          
-            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
-          
-          if (currentServerData) currentServerData.iconUrl = fileUrl;
-          if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
-            window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
-          }
-          const iconPreview = document.getElementById("serverIconSettingsPreview");
-          if (iconPreview) {
-            iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
-            iconPreview.style.backgroundColor = "transparent";
-          }
-          if (typeof renderServerList === 'function') renderServerList();
-          if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
-          serverIconCropModal.classList.add('hidden');
-          sIconImage = null;
-          alertMessage("サーバーアイコンを更新しました", "success");
-        } catch (err) {
-          console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
-        } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
-      }, mimeType, quality);
-    });
-  </script>
+  
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
     <div class="mobile-profile-header">
@@ -17817,6 +17822,10 @@ null
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-desktop"></i></div>
           <span class="mobile-settings-row-text">デスクトップにショートカットを作成</span>
           <span id="mobileCreateShortcutStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
+        </div>
+        <div class="mobile-settings-row" onclick="window.openFeedbackModal && window.openFeedbackModal()">
+          <div class="mobile-settings-row-icon" style="background:#ef4444;color:#ffffff"><i class="fas fa-bug"></i></div>
+          <span class="mobile-settings-row-text text-red-500">バグを報告する</span>
         </div>
       </div>
     </div>
