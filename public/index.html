@@ -5309,7 +5309,7 @@
 
             <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
               <!-- 過去メッセージ読み込みスピナー -->
-              <div id="topLoadingSpinner" class="flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
+              <div id="topLoadingSpinner" class="flex flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
                 <div class="top-spinner"></div>
                 <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
               </div>
@@ -9949,7 +9949,7 @@
                        seen.add(m.id);
                        return true;
                    });
-                   allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+                   allLoadedMessages.sort((a, b) => a.timestamp - b.timestamp);
                    lastMessagesData = [...allLoadedMessages];
                    renderMessagesWithReadReceipts();
                    rtdbMessagesLimit += docs.length; // keep limit expanded
@@ -9997,7 +9997,7 @@
                   seen.add(m.id);
                   return true;
               });
-              allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+              allLoadedMessages.sort((a, b) => a.timestamp - b.timestamp);
               lastMessagesData = [...allLoadedMessages];
               renderMessagesWithReadReceipts();
               
@@ -10064,7 +10064,7 @@
          });
          
          // Sort descending (newest first) to match Firestore reversed array
-         allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+         allLoadedMessages.sort((a, b) => a.timestamp - b.timestamp);
          lastMessagesData = [...allLoadedMessages];
          messagesIndexMap = {};
          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -10194,7 +10194,7 @@
                 seen.add(m.id);
                 return true;
             });
-            allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+            allLoadedMessages.sort((a, b) => a.timestamp - b.timestamp);
           } else {
             const latestMap = new Map(latestMessages.map(m => [m.id, m]));
             jumpViewMessages = jumpViewMessages.map(m => latestMap.has(m.id) ? latestMap.get(m.id) : m);
@@ -10906,6 +10906,13 @@
       // DB上のorder値が重複または未設定の状態を防ぐため、整流されたorder値を確保
       roomsData.forEach((r, i) => { r.order = i * 10; });
 
+      let categories = [];
+      if (typeof currentServerData !== 'undefined' && currentServerData && currentServerData.categories) {
+          categories = currentServerData.categories;
+          if(!Array.isArray(categories)) categories = Object.values(categories);
+          categories.sort((a,b) => a.order - b.order);
+      }
+
       // メモリ上の最新リストを使ってDOMを構築・即時更新する関数
       window.openFeedbackModal = function() {
       document.getElementById('feedbackContent').value = '';
@@ -10976,9 +10983,9 @@ null
         
         const renderRoomItem = (room, index, arr) => {
           const item = document.createElement("div");
-          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2";
+          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2 min-w-0 overflow-hidden";
           const nameSpan = document.createElement("span");
-          nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2";
+          nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2 truncate";
           nameSpan.innerHTML = `<i class="fas fa-hashtag text-gray-500 text-xs"></i> ${escapeHtml(room.name)}`;
 
           const btnsContainer = document.createElement("div");
