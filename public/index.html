@@ -10016,7 +10016,7 @@
 
     function subscribeToMessages() {
       if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-      if (rtdbMessagesUnsub) { rtdbMessagesUnsub(); rtdbMessagesUnsub = null; }
+      if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
 
       allLoadedMessages = [];
       hasMoreOlderMessages = true;
@@ -10122,7 +10122,7 @@
       onChildChanged(q, handleChanged);
       onChildRemoved(q, handleRemoved);
       
-      rtdbMessagesUnsub = () => { off(q); };
+      window.rtdbMessagesUnsub = () => { off(q); };
     }
 
     function subscribeToMessagesFirestore() {
