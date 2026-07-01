@@ -1,0 +1,172 @@
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
+          <div class="settings-discord-layout flex h-full">
+            <!-- 蟾ｦ繧ｵ繧､繝峨ヰ繝ｼ -->
+            <div class="settings-sidebar w-[240px] flex-shrink-0 flex flex-col overflow-y-auto" style="background-color: #2b2d31; padding: 60px 10px 20px 20px;">
+              <div class="settings-sidebar-user" style="border-bottom: none; padding: 0 10px 10px;">
+                <span class="settings-sidebar-name font-black text-white" id="serverSettingsTitle" style="font-size: 1.05rem; white-space: pre-wrap; word-break: break-word;">繧ｵ繝ｼ繝舌・蜷・/span>
+              </div>
+              <div class="settings-nav-divider mx-2 my-2 bg-white/10 h-px"></div>
+              
+              <button class="settings-nav-item active flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabOverview" onclick="switchServerSettingsTab('overview')">
+                讎りｦ・
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabRooms" onclick="switchServerSettingsTab('rooms')">
+                繝√Ε繝ｳ繝阪Ν繝ｻ繧ｫ繝・ざ繝ｪ繝ｼ
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabMembers" onclick="switchServerSettingsTab('members')">
+                繝｡繝ｳ繝舌・
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabInvites" onclick="switchServerSettingsTab('invites')">
+                諡帛ｾ・
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabStamps" onclick="switchServerSettingsTab('stamps')">
+                繧ｹ繧ｿ繝ｳ繝・
+              </button>
+              
+              <div class="settings-nav-divider mx-2 my-3 bg-white/10 h-px"></div>
+              
+              <button class="settings-nav-item danger flex items-center gap-2 px-3 py-1.5 rounded text-red-400 hover:bg-red-500 hover:text-white transition-colors" onclick="switchServerSettingsTab('danger')">
+                繧ｵ繝ｼ繝舌・繧貞炎髯､
+              </button>
+            </div>
+            
+            <!-- 蜿ｳ繧ｳ繝ｳ繝・Φ繝・-->
+            <div class="settings-content relative flex-1 overflow-y-auto" style="background-color: #313338; color: white; padding: 60px 40px 40px;">
+              <button id="closeServerSettingsBtn" class="absolute top-10 right-10 text-gray-400 hover:text-gray-200 transition-colors flex flex-col items-center justify-center border-2 border-transparent hover:border-gray-600 rounded-full w-9 h-9" title="髢峨§繧・(ESC)"><i class="fas fa-times text-lg"></i><span style="font-size:9px;font-weight:bold;margin-top:2px;">ESC</span></button>
+              
+              <!-- 讎りｦ√ち繝・-->
+              <div id="ssOverviewSection" class="settings-content-section active space-y-8 max-w-xl">
+                <h2 class="text-xl font-bold text-white mb-6">繧ｵ繝ｼ繝舌・縺ｮ讎りｦ・/h2>
+                
+                <div class="flex flex-col md:flex-row gap-8">
+                  <div class="flex-shrink-0 flex flex-col items-center gap-3">
+                    <div id="serverIconSettingsWrapper" class="relative group cursor-pointer">
+                      <div id="serverIconSettingsPreview" class="w-[100px] h-[100px] rounded-full bg-gray-700 flex items-center justify-center text-white font-bold text-3xl shadow-lg border-2 border-transparent transition-all duration-300 group-hover:rounded-[30%] overflow-hidden"></div>
+                      <div class="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 group-hover:rounded-[30%] transition-all duration-300">
+                        <i class="fas fa-camera text-white text-xl mb-1"></i>
+                        <span class="text-[10px] text-white font-bold tracking-wider">繧｢繧､繧ｳ繝ｳ螟画峩</span>
+                      </div>
+                      <input type="file" id="serverIconUploadInput" accept="image/*" class="hidden" />
+                    </div>
+                    <div class="text-[10px] text-gray-400 text-center leading-tight">譛蟆上し繧､繧ｺ: 128x128</div>
+                  </div>
+                  
+                  <div class="flex-1 space-y-4">
+                    <div>
+                      <label class="block text-gray-300 text-xs font-bold uppercase tracking-wider mb-2">繧ｵ繝ｼ繝舌・蜷・/label>
+                      <input type="text" id="renameServerInput" placeholder="譁ｰ縺励＞繧ｵ繝ｼ繝舌・蜷・ class="w-full p-2.5 bg-[#1e1f22] border border-transparent rounded text-white focus:outline-none focus:border-indigo-500 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="border-t border-gray-700/50 pt-6 mt-6 flex justify-end gap-3">
+                    <p id="serverSettingsMessage" class="text-sm font-medium flex-1 self-center"></p>
+                    <button id="renameServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded text-sm font-bold transition-colors shadow-md">螟画峩繧剃ｿ晏ｭ・/button>
+                </div>
+              </div>
+              
+              <!-- 繝ｫ繝ｼ繝繝ｻ繧ｫ繝・ざ繝ｪ繝ｼ邂｡逅・ち繝・-->
+              <div id="ssRoomsSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">繝√Ε繝ｳ繝阪Ν縺ｨ繧ｫ繝・ざ繝ｪ繝ｼ</h2>
+                <div class="flex flex-col md:flex-row gap-3 mb-4">
+                  <div class="flex-1 flex gap-2">
+                    <input type="text" id="newRoomNameInput" placeholder="譁ｰ縺励＞繝ｫ繝ｼ繝蜷・ class="flex-1 p-2.5 bg-[#1e1f22] rounded focus:outline-none text-sm text-white" />
+                    <select id="newRoomCategorySelect" class="p-2.5 bg-[#1e1f22] rounded focus:outline-none text-sm text-white border-l border-gray-800">
+                      <option value="">繧ｫ繝・ざ繝ｪ繝ｼ縺ｪ縺・/option>
+                    </select>
+                    <button id="createRoomInServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded text-sm font-bold transition-colors">霑ｽ蜉</button>
+                  </div>
+                  <button id="createCategoryBtn" class="bg-[#4e5058] hover:bg-[#6d6f78] text-white px-4 py-2.5 rounded text-sm font-bold whitespace-nowrap transition-colors"><i class="fas fa-folder-plus mr-1"></i>繧ｫ繝・ざ繝ｪ繝ｼ菴懈・</button>
+                </div>
+                <div class="h-px bg-gray-700 w-full my-4"></div>
+                <div id="serverRoomsList" class="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar"></div>
+              </div>
+
+              <!-- 繝｡繝ｳ繝舌・繧ｿ繝・-->
+              <div id="ssMembersSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">繝｡繝ｳ繝舌・邂｡逅・/h2>
+                <div class="bg-[#2b2d31] rounded-lg p-4">
+                   <div id="serverMembersManageList" class="space-y-2"></div>
+                </div>
+              </div>
+              
+              <!-- 諡帛ｾ・ち繝・-->
+              <div id="ssInvitesSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">諡帛ｾ・Μ繝ｳ繧ｯ</h2>
+                <div class="bg-[#2b2d31] p-5 rounded-lg space-y-4">
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <label class="text-xs font-bold text-gray-400 block mb-2 uppercase tracking-wider">譛牙柑譛滄剞</label>
+                      <select id="inviteExpiry" class="w-full p-2.5 bg-[#1e1f22] text-white rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        <option value="0">縺ｪ縺・/option>
+                        <option value="1">1譌･</option>
+                        <option value="7">7譌･</option>
+                        <option value="30">30譌･</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="text-xs font-bold text-gray-400 block mb-2 uppercase tracking-wider">菴ｿ逕ｨ蝗樊焚</label>
+                      <select id="inviteMaxUses" class="w-full p-2.5 bg-[#1e1f22] text-white rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        <option value="0">辟｡蛻ｶ髯・/option>
+                        <option value="1">1蝗・/option>
+                        <option value="5">5蝗・/option>
+                        <option value="10">10蝗・/option>
+                      </select>
+                    </div>
+                  </div>
+                  <button id="createInviteCodeBtn" class="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded text-sm transition-colors shadow-md">譁ｰ縺励＞繝ｪ繝ｳ繧ｯ繧堤函謌・/button>
+                </div>
+                <div class="h-px bg-gray-700 w-full my-6"></div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">譛牙柑縺ｪ諡帛ｾ・Μ繝ｳ繧ｯ</h3>
+                <div id="inviteCodesList" class="space-y-2"></div>
+              </div>
+              
+              <!-- 繧ｹ繧ｿ繝ｳ繝励ち繝・-->
+              <div id="ssStampsSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">繧ｹ繧ｿ繝ｳ繝・/h2>
+                <div class="bg-[#2b2d31] p-8 rounded-lg flex flex-col items-center justify-center text-center">
+                  <div class="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center shadow-md mb-5">
+                    <i class="fas fa-laugh-squint text-4xl text-gray-400"></i>
+                  </div>
+                  <h3 class="text-lg font-bold text-white mb-2">繧ｵ繝ｼ繝舌・逕ｨ繧ｹ繧ｿ繝ｳ繝・/h3>
+                  <p class="text-gray-400 text-sm mb-6 max-w-sm">縺薙・繧ｵ繝ｼ繝舌・蟆ら畑縺ｮ繧ｫ繧ｹ繧ｿ繝繧ｹ繧ｿ繝ｳ繝励ｒ霑ｽ蜉繝ｻ邂｡逅・〒縺阪∪縺吶・/p>
+                  <button onclick="openStampAdminModal()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 px-8 rounded transition-colors shadow-md">
+                    繧ｹ繧ｿ繝ｳ繝礼ｮ｡逅・ｒ髢九￥
+                  </button>
+                </div>
+              </div>
+              
+              <!-- 蜑企勁繧ｿ繝・-->
+              <div id="ssDangerSection" class="settings-content-section hidden space-y-6 max-w-xl">
+                <h2 class="text-xl font-bold text-red-500 mb-6">繧ｵ繝ｼ繝舌・縺ｮ蜑企勁</h2>
+                <div class="bg-[#2b2d31] p-5 rounded-lg border border-red-500/20">
+                  <p class="text-gray-300 text-sm mb-5 leading-relaxed">譛ｬ蠖薙↓縺薙・繧ｵ繝ｼ繝舌・繧貞炎髯､縺励∪縺吶°・・br>縺薙・謫堺ｽ懊ｒ陦後≧縺ｨ縲√☆縺ｹ縺ｦ縺ｮ繝｡繝・そ繝ｼ繧ｸ縲√メ繝｣繝ｳ繝阪Ν縲√ョ繝ｼ繧ｿ縺悟ｮ悟・縺ｫ螟ｱ繧上ｌ縲∝叙繧頑ｶ医☆縺薙→縺ｯ縺ｧ縺阪∪縺帙ｓ縲・/p>
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">邂｡逅・畑繝代せ繝ｯ繝ｼ繝峨ｒ蜈･蜉・/label>
+                      <input type="password" id="changeServerPasswordInput" placeholder="繝代せ繝ｯ繝ｼ繝峨ｒ蜈･蜉・.." class="w-full p-2.5 bg-[#1e1f22] border border-transparent rounded text-white focus:outline-none focus:border-red-500 transition-colors" />
+                    </div>
+                    <button id="deleteServerBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded text-sm transition-colors shadow-md mt-2">繧ｵ繝ｼ繝舌・繧貞炎髯､縺吶ｋ</button>
+                  </div>
+                </div>
+              </div>
+              
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 繝√Ε繝・ヨ繧｢繝励Μ譛ｬ菴・-->
+      <!-- 繝√Ε繝・ヨ繧｢繝励Μ譛ｬ菴・-->
+      <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
+      <!-- Discord鬚ｨ 蟾ｦ蛛ｴ繧ｵ繝ｼ繝舌・繝翫ン繧ｲ繝ｼ繧ｷ繝ｧ繝ｳ繝舌・ -->
+        <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
+          style="padding-top: max(12px, env(safe-area-inset-top, 12px)); padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));">
+          <!-- 繝繧､繝ｬ繧ｯ繝医Γ繝・そ繝ｼ繧ｸ遲・繝帙・繝繧｢繧､繧ｳ繝ｳ (Discord鬚ｨ) -->
+          <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="繧ｵ繝ｼ繝舌・荳隕ｧ / 繝帙・繝">
+            <div class="discord-server-pill" id="discordHomePill"></div>
+            <div class="discord-server-icon">
+              <i class="fas fa-compass text-xl"></i>
+            </div>
+          </div>

@@ -4473,6 +4473,9 @@
               <button class="settings-nav-item" id="snav-appinfo" onclick="switchDiscordSettingsTab('appinfo')">
                 <i class="fas fa-info-circle fa-fw"></i>アプリ情報
               </button>
+              <button class="settings-nav-item" id="snav-feedback" onclick="openFeedbackModal()">
+                <i class="fas fa-lightbulb fa-fw"></i>ご意見・バグ報告
+              </button>
               <div class="settings-nav-divider"></div>
               <div id="adminPanelContainer" class="hidden">
                 <div class="settings-nav-label">管理</div>
@@ -4711,6 +4714,7 @@
       <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
       <button id="adminTabStorageBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-database mr-1.5 text-xs"></i>ストレージ</button>
+      <button id="adminTabFeedbackBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-lightbulb mr-1.5 text-xs"></i>フィードバック</button>
     </div>
     
     <div class="pr-2">
@@ -4772,11 +4776,62 @@
           <p class="text-xs text-gray-400 mt-2 text-center">KV（Cloudflare）の全ファイルが削除されます</p>
         </div>
       </div>
+
+      <!-- フィードバックタブ (管理者専用) -->
+      <div id="adminTabFeedbackContent" class="space-y-4 hidden">
+        <div class="flex items-center justify-between">
+          <p class="text-xs text-gray-400 leading-relaxed">ユーザーからのご意見・バグ報告</p>
+          <button id="refreshFeedbackBtn" onclick="loadAdminFeedbacks()" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold rounded-lg transition-colors">
+            <i class="fas fa-sync-alt text-xs"></i>更新
+          </button>
+        </div>
+        <div id="adminFeedbackList" class="space-y-3 mt-2">
+          <!-- フィードバックアイテムがここに動的に追加される -->
+        </div>
+      </div>
     </div>
     
     <div class="mt-2 pt-2 border-t border-gray-100 flex-shrink-0">
       <div id="adminMessage" class="text-center text-sm text-gray-500 mb-1 min-h-[1.2rem]"></div>
       <div class="admin-only-section hidden">
+      </div>
+    </div>
+  </div>
+
+  <!-- フィードバック送信モーダル -->
+  <div id="feedbackModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm modal-box confirm-box animate-pop-in overflow-hidden flex flex-col" style="max-height: 90vh;">
+      <div class="p-5 border-b border-gray-100 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center flex-shrink-0 shadow-sm border border-gray-200">
+          <i class="fas fa-lightbulb text-lg"></i>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-gray-800 leading-snug">ご意見・バグ報告</h2>
+          <p class="text-xs text-gray-500 mt-0.5">アプリの改善にご協力ください</p>
+        </div>
+      </div>
+      <div class="p-5 overflow-y-auto flex-1">
+        <div class="mb-4">
+          <label class="block text-xs font-bold text-gray-500 mb-2">カテゴリ</label>
+          <select id="feedbackCategory" class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm text-gray-800">
+            <option value="bug">バグ報告</option>
+            <option value="feature">機能の要望</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="block text-xs font-bold text-gray-500 mb-2">内容 <span class="text-red-500 font-normal ml-1">必須</span></label>
+          <textarea id="feedbackContent" rows="5" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm resize-none text-gray-800" placeholder="ここに内容を入力してください..."></textarea>
+        </div>
+        <p class="text-[11px] text-gray-400 leading-relaxed">※調査のため、端末情報やアプリバージョンが一緒に送信されます。</p>
+      </div>
+      <div class="p-4 border-t border-gray-100 flex gap-3">
+        <button onclick="closeFeedbackModal()" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm">
+          キャンセル
+        </button>
+        <button id="submitFeedbackBtn" onclick="submitFeedback()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
+          <span>送信する</span>
+        </button>
       </div>
     </div>
   </div>
@@ -5045,58 +5100,108 @@
       </div>
 
       <!-- サーバー設定モーダル -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay overflow-y-auto z-50 hidden">
-        <div class="flex min-h-full items-center justify-center p-6">
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden modal-box animate-pop-in">
-            <button id="closeServerSettingsBtn"
-              class="absolute top-3.5 right-4 text-gray-400 hover:text-gray-700 z-10"><i
-                class="fas fa-times text-lg"></i></button>
-            <div class="bg-gray-800 text-white px-6 py-5 flex-shrink-0 modal-dark-header flex items-center justify-between">
-              <div>
-                <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
-                <p id="serverSettingsTitle" class="font-bold text-xl mt-0.5"></p>
+      <!-- サーバー設定モーダル (PC: Discord風2カラム) -->
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
+          <div class="settings-discord-layout flex h-full">
+            <!-- 左サイドバー -->
+            <div class="settings-sidebar w-[240px] flex-shrink-0 flex flex-col overflow-y-auto" style="background-color: #2b2d31; padding: 60px 10px 20px 20px;">
+              <div class="settings-sidebar-user" style="border-bottom: none; padding: 0 10px 10px;">
+                <span class="settings-sidebar-name font-black text-white" id="serverSettingsTitle" style="font-size: 1.05rem; white-space: pre-wrap; word-break: break-word;">サーバー名</span>
               </div>
-              <!-- サーバーアイコン設定UI -->
-              <div id="serverIconSettingsWrapper" class="relative group cursor-pointer hidden">
-                <div id="serverIconSettingsPreview" class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-white font-bold text-3xl shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:rounded-3xl overflow-hidden"></div>
-                <div class="absolute inset-0 bg-slate-900/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 group-hover:rounded-3xl transition-all duration-300">
-                  <i class="fas fa-camera text-white text-xl mb-0.5"></i>
-                  <span class="text-[9px] text-white font-bold tracking-wider">変更する</span>
-                </div>
-                <input type="file" id="serverIconUploadInput" accept="image/*" class="hidden" />
-              </div>
+              <div class="settings-nav-divider mx-2 my-2 bg-white/10 h-px"></div>
+              
+              <button class="settings-nav-item active flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabOverview" onclick="switchServerSettingsTab('overview')">
+                概要
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabRooms" onclick="switchServerSettingsTab('rooms')">
+                チャンネル・カテゴリー
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabMembers" onclick="switchServerSettingsTab('members')">
+                メンバー
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabInvites" onclick="switchServerSettingsTab('invites')">
+                招待
+              </button>
+              <button class="settings-nav-item flex items-center gap-2 px-3 py-1.5 rounded text-gray-300 hover:bg-white/5 hover:text-white transition-colors" id="ssTabStamps" onclick="switchServerSettingsTab('stamps')">
+                スタンプ
+              </button>
+              
+              <div class="settings-nav-divider mx-2 my-3 bg-white/10 h-px"></div>
+              
+              <button class="settings-nav-item danger flex items-center gap-2 px-3 py-1.5 rounded text-red-400 hover:bg-red-500 hover:text-white transition-colors" onclick="switchServerSettingsTab('danger')">
+                サーバーを削除
+              </button>
             </div>
-            <!-- タブ -->
-            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100 overflow-x-auto whitespace-nowrap hide-scrollbar">
-              <button id="ssTabRooms" class="ss-tab active">ルーム</button>
-              <button id="ssTabMembers" class="ss-tab">メンバー</button>
-              <button id="ssTabInvites" class="ss-tab">招待</button>
-              <button id="ssTabStamps" class="ss-tab">スタンプ</button>
-              <button id="ssTabDanger" class="ss-tab">その他</button>
-            </div>
-            <div class="p-6 max-h-[60vh] overflow-y-auto">
-              <!-- ルームタブ -->
-              <div id="ssRoomsSection">
-                <div class="flex gap-2 mb-4">
-                  <input type="text" id="newRoomNameInput" placeholder="新しいルーム名"
-                    class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none text-sm" />
-                  <button id="createRoomInServerBtn"
-                    class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all">追加</button>
-                </div>
-                <div id="serverRoomsList" class="space-y-2"></div>
-              </div>
-              <!-- メンバータブ -->
-              <div id="ssMembersSection" class="hidden space-y-2">
-                <div id="serverMembersManageList"></div>
-              </div>
-              <!-- 招待タブ -->
-              <div id="ssInvitesSection" class="hidden">
-                <div class="mb-4 space-y-2">
-                  <div class="grid grid-cols-2 gap-2">
+            
+            <!-- 右コンテンツ -->
+            <div class="settings-content relative flex-1 overflow-y-auto" style="background-color: #313338; color: white; padding: 60px 40px 40px;">
+              <button id="closeServerSettingsBtn" class="absolute top-10 right-10 text-gray-400 hover:text-gray-200 transition-colors flex flex-col items-center justify-center border-2 border-transparent hover:border-gray-600 rounded-full w-9 h-9" title="閉じる (ESC)"><i class="fas fa-times text-lg"></i><span style="font-size:9px;font-weight:bold;margin-top:2px;">ESC</span></button>
+              
+              <!-- 概要タブ -->
+              <div id="ssOverviewSection" class="settings-content-section active space-y-8 max-w-xl">
+                <h2 class="text-xl font-bold text-white mb-6">サーバーの概要</h2>
+                
+                <div class="flex flex-col md:flex-row gap-8">
+                  <div class="flex-shrink-0 flex flex-col items-center gap-3">
+                    <div id="serverIconSettingsWrapper" class="relative group cursor-pointer">
+                      <div id="serverIconSettingsPreview" class="w-[100px] h-[100px] rounded-full bg-gray-700 flex items-center justify-center text-white font-bold text-3xl shadow-lg border-2 border-transparent transition-all duration-300 group-hover:rounded-[30%] overflow-hidden"></div>
+                      <div class="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 group-hover:rounded-[30%] transition-all duration-300">
+                        <i class="fas fa-camera text-white text-xl mb-1"></i>
+                        <span class="text-[10px] text-white font-bold tracking-wider">アイコン変更</span>
+                      </div>
+                      <input type="file" id="serverIconUploadInput" accept="image/*" class="hidden" />
+                    </div>
+                    <div class="text-[10px] text-gray-400 text-center leading-tight">最小サイズ: 128x128</div>
+                  </div>
+                  
+                  <div class="flex-1 space-y-4">
                     <div>
-                      <label class="text-xs text-gray-500 block mb-1">有効期限</label>
-                      <select id="inviteExpiry"
-                        class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                      <label class="block text-gray-300 text-xs font-bold uppercase tracking-wider mb-2">サーバー名</label>
+                      <input type="text" id="renameServerInput" placeholder="新しいサーバー名" class="w-full p-2.5 bg-[#1e1f22] border border-transparent rounded text-white focus:outline-none focus:border-indigo-500 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="border-t border-gray-700/50 pt-6 mt-6 flex justify-end gap-3">
+                    <p id="serverSettingsMessage" class="text-sm font-medium flex-1 self-center"></p>
+                    <button id="renameServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded text-sm font-bold transition-colors shadow-md">変更を保存</button>
+                </div>
+              </div>
+              
+              <!-- ルーム・カテゴリー管理タブ -->
+              <div id="ssRoomsSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">チャンネルとカテゴリー</h2>
+                <div class="flex flex-col md:flex-row gap-3 mb-4">
+                  <div class="flex-1 flex gap-2">
+                    <input type="text" id="newRoomNameInput" placeholder="新しいルーム名" class="flex-1 p-2.5 bg-[#1e1f22] rounded focus:outline-none text-sm text-white" />
+                    <select id="newRoomCategorySelect" class="p-2.5 bg-[#1e1f22] rounded focus:outline-none text-sm text-white border-l border-gray-800">
+                      <option value="">カテゴリーなし</option>
+                    </select>
+                    <button id="createRoomInServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded text-sm font-bold transition-colors">追加</button>
+                  </div>
+                  <button id="createCategoryBtn" class="bg-[#4e5058] hover:bg-[#6d6f78] text-white px-4 py-2.5 rounded text-sm font-bold whitespace-nowrap transition-colors"><i class="fas fa-folder-plus mr-1"></i>カテゴリー作成</button>
+                </div>
+                <div class="h-px bg-gray-700 w-full my-4"></div>
+                <div id="serverRoomsList" class="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar"></div>
+              </div>
+
+              <!-- メンバータブ -->
+              <div id="ssMembersSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">メンバー管理</h2>
+                <div class="bg-[#2b2d31] rounded-lg p-4">
+                   <div id="serverMembersManageList" class="space-y-2"></div>
+                </div>
+              </div>
+              
+              <!-- 招待タブ -->
+              <div id="ssInvitesSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">招待リンク</h2>
+                <div class="bg-[#2b2d31] p-5 rounded-lg space-y-4">
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <label class="text-xs font-bold text-gray-400 block mb-2 uppercase tracking-wider">有効期限</label>
+                      <select id="inviteExpiry" class="w-full p-2.5 bg-[#1e1f22] text-white rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
                         <option value="0">なし</option>
                         <option value="1">1日</option>
                         <option value="7">7日</option>
@@ -5104,9 +5209,8 @@
                       </select>
                     </div>
                     <div>
-                      <label class="text-xs text-gray-500 block mb-1">使用回数</label>
-                      <select id="inviteMaxUses"
-                        class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                      <label class="text-xs font-bold text-gray-400 block mb-2 uppercase tracking-wider">使用回数</label>
+                      <select id="inviteMaxUses" class="w-full p-2.5 bg-[#1e1f22] text-white rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
                         <option value="0">無制限</option>
                         <option value="1">1回</option>
                         <option value="5">5回</option>
@@ -5114,51 +5218,44 @@
                       </select>
                     </div>
                   </div>
-                  <button id="createInviteCodeBtn"
-                    class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
+                  <button id="createInviteCodeBtn" class="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded text-sm transition-colors shadow-md">新しいリンクを生成</button>
                 </div>
+                <div class="h-px bg-gray-700 w-full my-6"></div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">有効な招待リンク</h3>
                 <div id="inviteCodesList" class="space-y-2"></div>
               </div>
+              
               <!-- スタンプタブ -->
-              <div id="ssStampsSection" class="hidden space-y-4">
-                <div class="bg-gray-50 border border-gray-200 p-6 rounded-2xl flex flex-col items-center justify-center text-center">
-                  <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                    <i class="fas fa-icons text-3xl text-gray-500"></i>
+              <div id="ssStampsSection" class="settings-content-section hidden space-y-6 max-w-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">スタンプ</h2>
+                <div class="bg-[#2b2d31] p-8 rounded-lg flex flex-col items-center justify-center text-center">
+                  <div class="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center shadow-md mb-5">
+                    <i class="fas fa-laugh-squint text-4xl text-gray-400"></i>
                   </div>
-                  <h3 class="text-lg font-bold text-gray-800 mb-6">スタンプ管理</h3>
-                  <button onclick="openStampAdminModal()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all">
+                  <h3 class="text-lg font-bold text-white mb-2">サーバー用スタンプ</h3>
+                  <p class="text-gray-400 text-sm mb-6 max-w-sm">このサーバー専用のカスタムスタンプを追加・管理できます。</p>
+                  <button onclick="openStampAdminModal()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 px-8 rounded transition-colors shadow-md">
                     スタンプ管理を開く
                   </button>
                 </div>
               </div>
-              <!-- その他タブ -->
-              <div id="ssDangerSection" class="hidden space-y-4">
-                <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名を変更</label>
-                  <div class="flex gap-2">
-                    <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
-                      class="flex-1 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
-                    <button id="renameServerBtn"
-                      class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-bold">変更</button>
+              
+              <!-- 削除タブ -->
+              <div id="ssDangerSection" class="settings-content-section hidden space-y-6 max-w-xl">
+                <h2 class="text-xl font-bold text-red-500 mb-6">サーバーの削除</h2>
+                <div class="bg-[#2b2d31] p-5 rounded-lg border border-red-500/20">
+                  <p class="text-gray-300 text-sm mb-5 leading-relaxed">本当にこのサーバーを削除しますか？<br>この操作を行うと、すべてのメッセージ、チャンネル、データが完全に失われ、取り消すことはできません。</p>
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">管理用パスワードを入力</label>
+                      <input type="password" id="changeServerPasswordInput" placeholder="パスワードを入力..." class="w-full p-2.5 bg-[#1e1f22] border border-transparent rounded text-white focus:outline-none focus:border-red-500 transition-colors" />
+                    </div>
+                    <button id="deleteServerBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded text-sm transition-colors shadow-md mt-2">サーバーを削除する</button>
                   </div>
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワードを変更</label>
-                  <div class="space-y-2">
-                    <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード"
-                      class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
-                    <button id="changeServerPasswordBtn"
-                      class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 rounded-lg text-sm">パスワード変更</button>
-                  </div>
-                </div>
-                <div class="pt-2 border-t border-red-100">
-                  <button id="deleteServerBtn"
-                    class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all"><i
-                      class="fas fa-trash mr-1"></i>このサーバーを削除</button>
                 </div>
               </div>
+              
             </div>
-            <p id="serverSettingsMessage" class="text-center text-sm px-6 pb-2 font-medium"></p>
           </div>
         </div>
       </div>
@@ -5918,134 +6015,110 @@
       return _e2ee._roomKeyPromises[roomId];
     }
     async function _getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
-      const ok = await ensureE2EEKeys();
-      if (!ok) {
-        console.warn(`[E2EE] ユーザー鍵が未初期化のためルーム鍵を取得できません (room=${roomId})`);
-        return null;
-      }
+      if (!_subtleOK) return null;
 
-      // 1) 自分宛のwrapped room keyがFirestore/D1にあるかをまずチェック
       try {
-        let data = null;
-        
-          const myWrapRef = doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`);
-          const myWrapSnap = await getDoc(myWrapRef);
-          if (myWrapSnap.exists()) data = myWrapSnap.data();
-        
-
-        let keysObj = {};
-        if (data) {
-          const versions = data.versions || {};
-          for (const k in data) {
-            if (k.startsWith("versions.")) {
-              const ver = k.replace("versions.", "");
-              versions[ver] = data[k];
-            }
-          }
-          if (data.wrappedKey && !versions["1"]) versions["1"] = data.wrappedKey; // migration
-          data.versions = versions;
-          
-          let maxVer = 1;
-          for (const ver in versions) {
+        // 1) 共有ルームキー (Shared Room Key) がすでにルームドキュメントに存在するかチェック
+        const rSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
+        let roomData = null;
+        if (rSnap.exists()) {
+          roomData = rSnap.data();
+          if (roomData.sharedKey) {
              try {
-               const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(versions[ver]));
-               const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-               keysObj[ver] = key;
-               if (parseInt(ver) > maxVer) maxVer = parseInt(ver);
-             } catch(e) {}
-          }
-          if (Object.keys(keysObj).length > 0) {
-             const latestVerStr = data.latestVersion ? data.latestVersion.toString() : maxVer.toString();
-             keysObj.latest = keysObj[latestVerStr] || keysObj[Object.keys(keysObj).pop()];
-             keysObj.latestVersion = latestVerStr;
-             _e2ee.roomKeyCache[roomId] = keysObj;
-             return keysObj;
+                // 共有キーが存在する場合はインポートして利用
+                const raw = _b64ToAb(roomData.sharedKey);
+                const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                const keysObj = { "1": key, latest: key, latestVersion: "1" };
+                _e2ee.roomKeyCache[roomId] = keysObj;
+                return keysObj;
+             } catch(e) {
+                console.warn("[SharedKey] 共有キーのインポートに失敗:", e);
+             }
           }
         }
 
-        // 管理者エスクロー鍵フォールバック（本人のルーム鍵が存在しない、または復号できない場合）
-        if (isAdmin && Object.keys(keysObj).length === 0) {
-          let escrowKeyData = null;
-          
-            const escWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
-            if (escWrapSnap.exists()) escrowKeyData = escWrapSnap.data();
-          
-          if (escrowKeyData) {
-            let escrowPrivJwk = null;
-            
-              try {
-                const escPrivSnap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`));
-                if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) escrowPrivJwk = escPrivSnap.data().privateKeyJwk;
-              } catch(e){}
-            
-            if (escrowPrivJwk) {
-              try {
-                const escrowPrivKey = await _importPriv(escrowPrivJwk);
-                const versions = escrowKeyData.versions || {};
-                for (const k in escrowKeyData) {
-                  if (k.startsWith("versions.")) {
-                    const ver = k.replace("versions.", "");
-                    versions[ver] = escrowKeyData[k];
-                  }
-                }
-                if (escrowKeyData.wrappedKey && !versions["1"]) versions["1"] = escrowKeyData.wrappedKey;
-                
-                let maxVer = 1;
-                const escKeysObj = {};
-                for (const ver in versions) {
-                   try {
-                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(versions[ver]));
-                     const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                     escKeysObj[ver] = key;
-                     if (parseInt(ver) > maxVer) maxVer = parseInt(ver);
-                   } catch(e) {}
-                }
-                if (Object.keys(escKeysObj).length > 0) {
-                   const latestVerStr = escrowKeyData.latestVersion ? escrowKeyData.latestVersion.toString() : maxVer.toString();
-                   escKeysObj.latest = escKeysObj[latestVerStr] || escKeysObj[Object.keys(escKeysObj).pop()];
-                   escKeysObj.latestVersion = latestVerStr;
-                   _e2ee.roomKeyCache[roomId] = escKeysObj;
-                   return escKeysObj;
-                }
-              } catch(e) { console.warn("[E2EE] エスクロー鍵での復号に失敗:", e); }
+        // 2) 共有ルームキーが存在しない場合、過去のE2EE（レガシー）鍵を探す
+        const ok = await ensureE2EEKeys();
+        if (ok) {
+          let legacyKey = null;
+          const myWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`));
+          if (myWrapSnap.exists()) {
+            const data = myWrapSnap.data();
+            let wrappedStr = data.wrappedKey;
+            if (data.versions && data.latestVersion && data.versions[data.latestVersion]) {
+              wrappedStr = data.versions[data.latestVersion];
+            } else if (data[`versions.${data.latestVersion}`]) {
+              wrappedStr = data[`versions.${data.latestVersion}`];
+            }
+            if (wrappedStr) {
+               try {
+                 const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(wrappedStr));
+                 legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+               } catch(e) {}
             }
           }
+          
+          // 管理者エスクローからの復旧
+          if (!legacyKey && isAdmin) {
+             const escWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
+             if (escWrapSnap.exists()) {
+               try {
+                 const escPrivSnap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`));
+                 if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) {
+                   const escrowPrivKey = await _importPriv(escPrivSnap.data().privateKeyJwk);
+                   const data = escWrapSnap.data();
+                   let wrappedStr = data.wrappedKey;
+                   if (data.versions && data.latestVersion && data.versions[data.latestVersion]) wrappedStr = data.versions[data.latestVersion];
+                   else if (data[`versions.${data.latestVersion}`]) wrappedStr = data[`versions.${data.latestVersion}`];
+                   if (wrappedStr) {
+                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(wrappedStr));
+                     legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                   }
+                 }
+               } catch(e) {}
+             }
+          }
+
+          // レガシーキーが復元できた場合、それを共有キーとして保存してアップグレード
+          if (legacyKey) {
+             console.log(`[SharedKey] レガシーE2EEキーを復元しました。共有キーとしてアップグレードします (room=${roomId})`);
+             try {
+                const raw = await window.crypto.subtle.exportKey("raw", legacyKey);
+                const b64 = _abToB64(raw);
+                await updateDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
+                const keysObj = { "1": legacyKey, latest: legacyKey, latestVersion: "1" };
+                _e2ee.roomKeyCache[roomId] = keysObj;
+                return keysObj;
+             } catch(e) {
+                console.warn("[SharedKey] 共有キーへのアップグレードに失敗:", e);
+             }
+          }
         }
-      } catch (e) {
-        console.error(`[E2EE] 自分宛ルーム鍵の復号に失敗（平文で継続。鍵が再生成された可能性） (room=${roomId}):`, e);
-      }
 
-      // 【最重要ブロック処理】ルームに既にメッセージが存在する（＝過去に鍵が作られているはず）のに自分の手元に鍵が無い場合、
-      // 勝手に新しいルーム鍵を生成して他のユーザーの鍵を上書き破壊（スプリットブレイン）するのを絶対に防ぐ。
-      try {
+        // 3) それでもキーがない場合、もし過去メッセージが存在するなら上書きを避けるためブロック
         let hasExistingData = false;
+        if (roomData && roomData.currentKeyVersion > 1) hasExistingData = true;
+        const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
+        if (!msgsSnap.empty) hasExistingData = true;
         
-          const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
-          if (!msgsSnap.empty) hasExistingData = true;
-          const rSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
-          if (rSnap.exists() && rSnap.data().currentKeyVersion > 1) hasExistingData = true;
-        
-
         if (hasExistingData) {
-          console.warn(`[E2EE] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。管理者による合鍵(エスクロー)からの自動救済を待機します。`);
+          console.warn(`[SharedKey] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。`);
           await requestEscrowRescue(serverId, roomId);
           return null;
         }
-      } catch (e) {
-        console.warn("[E2EE] 過去メッセージ確認中にエラーが発生しました。上書きを防止するため新規鍵生成を中断します:", e);
-        return null;
-      }
 
-      // 2) 無ければ新規生成して配布
-      try {
+        // 4) 完全に新規の場合、新しい共有ルームキーを生成してドキュメントに保存
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
-        await _distributeRoomKeyVersion(serverId, roomId, raw, memberIds, 1);
+        const b64 = _abToB64(raw);
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
+        
         const keysObj = { "1": key, latest: key, latestVersion: "1" };
         _e2ee.roomKeyCache[roomId] = keysObj;
         return keysObj;
+
       } catch (e) {
-        console.warn("[E2EE] ルーム鍵の生成/配布に失敗（平文で継続）:", e);
+        console.error(`[SharedKey] ルーム鍵の取得・生成処理に失敗 (room=${roomId}):`, e);
         return null;
       }
     }
@@ -6513,6 +6586,7 @@
 
     let currentRoomId = null;
     let unsubscribeMessages = null;
+    let rtdbMessagesUnsub = null;
     let unsubscribeUserStatus = null;
 
     let isAuthReady = false;
@@ -6599,6 +6673,7 @@
       bundlePolicy: 'max-bundle',
     };
     let messageLimit = 20;
+    let rtdbMessagesLimit = 20;
     let allowPagination = false;
     // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
     let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
@@ -7088,6 +7163,24 @@
             userAuthEmail = user.email;
             isAuthReady = true;
 
+            try {
+              await setupGlobalRtdbListener();
+              const pcToggle = document.getElementById('pcToggleRtdbMode');
+              if (pcToggle) pcToggle.checked = window.globalUseRtdb;
+            } catch(e) { console.error("setupGlobalRtdbListener error:", e); }
+
+            // 管理画面用にユーザーの email を保存しておく
+            if (userAuthEmail) {
+              setDoc(doc(db, `artifacts/${appId}/users/${userId}`), { email: userAuthEmail }, { merge: true }).catch(()=>{});
+              if (window.globalUseRtdb) {
+                import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
+                  _getOrInitRTDB().then(rtdb => {
+                    update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { email: userAuthEmail });
+                  });
+                }).catch(()=>{});
+              }
+            }
+
             // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
             await user.getIdToken();
 
@@ -7368,6 +7461,7 @@
         { id: "adminTabAdminsBtn", content: "adminTabAdminsContent", key: "admins" },
         { id: "adminTabListAdminsBtn", content: "adminTabListAdminsContent", key: "listAdmins" },
         { id: "adminTabStorageBtn", content: "adminTabStorageContent", key: "storage" },
+        { id: "adminTabFeedbackBtn", content: "adminTabFeedbackContent", key: "feedback" },
       ];
       tabs.forEach(t => {
         const btn = document.getElementById(t.id);
@@ -7384,11 +7478,13 @@
         }
       });
       if (tab === "storage") loadStorageStats();
+      if (tab === "feedback") loadAdminFeedbacks();
     }
     document.getElementById("adminTabAllowedBtn").addEventListener("click", () => switchAdminTab("allowed"));
     document.getElementById("adminTabAdminsBtn").addEventListener("click", () => switchAdminTab("admins"));
     document.getElementById("adminTabListAdminsBtn").addEventListener("click", () => switchAdminTab("listAdmins"));
     document.getElementById("adminTabStorageBtn").addEventListener("click", () => switchAdminTab("storage"));
+    document.getElementById("adminTabFeedbackBtn").addEventListener("click", () => switchAdminTab("feedback"));
 
     // メールアドレスのアバター頭文字取得
     function emailInitial(email) {
@@ -7401,8 +7497,8 @@
       div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
 
       const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
-      const username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
-      const iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
+      const username = userData?.nickname ? userData.nickname : (userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定"));
+      const iconUrl = userData?.avatarUrl ? userData.avatarUrl : (userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null));
 
       const avatar = document.createElement("div");
       avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
@@ -7475,28 +7571,68 @@
     async function loadAdminPanelData() {
       adminMessage.textContent = "読み込み中...";
       try {
-        // 全ユーザーデータを取得してメールアドレスキーでキャッシュ
         window.__adminUsersByEmail = {};
         
+        if (window.globalUseRtdb) {
+          const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          try {
+            const uSnap = await get(ref(rtdb, `artifacts/${appId}/users`));
+            if (uSnap.exists()) {
+              const usersObj = uSnap.val();
+              for (const key in usersObj) {
+                const u = usersObj[key];
+                if (u.email) window.__adminUsersByEmail[u.email] = u;
+              }
+            }
+          } catch(e){ console.error(e); }
+        } else {
           try {
             const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
             uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = u; });
-          } catch(e){}
-        
+          } catch(e){ console.error(e); }
+        }
 
         if (isAdmin) {
-          const [allowedSnap, adminSnap, listAdminSnap] = await Promise.all([
-            getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
-            getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
-            getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
-          ]);
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
-          renderAdminEmails(adminSnap.exists() ? adminSnap.data().emails || [] : []);
-          renderListAdminEmails(listAdminSnap.exists() ? listAdminSnap.data().emails || [] : []);
+          let allowedEmails = [], adminList = [], listAdminList = [];
+          if (window.globalUseRtdb) {
+            const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const [aSnap, adSnap, laSnap] = await Promise.all([
+              get(ref(rtdb, `artifacts/${appId}/settings/allowedEmails`)),
+              get(ref(rtdb, `artifacts/${appId}/settings/adminList`)),
+              get(ref(rtdb, `artifacts/${appId}/settings/listAdminList`))
+            ]);
+            if (aSnap.exists()) allowedEmails = aSnap.val().emails || [];
+            if (adSnap.exists()) adminList = adSnap.val().emails || [];
+            if (laSnap.exists()) listAdminList = laSnap.val().emails || [];
+          } else {
+            const [aSnap, adSnap, laSnap] = await Promise.all([
+              getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
+              getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
+              getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
+            ]);
+            if (aSnap.exists()) allowedEmails = aSnap.data().emails || [];
+            if (adSnap.exists()) adminList = adSnap.data().emails || [];
+            if (laSnap.exists()) listAdminList = laSnap.data().emails || [];
+          }
+          renderAllowedEmails(allowedEmails);
+          renderAdminEmails(adminList);
+          renderListAdminEmails(listAdminList);
         } else if (isListAdmin) {
-          const allowedSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
+          let allowedEmails = [];
+          if (window.globalUseRtdb) {
+            const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const aSnap = await get(ref(rtdb, `artifacts/${appId}/settings/allowedEmails`));
+            if (aSnap.exists()) allowedEmails = aSnap.val().emails || [];
+          } else {
+            const aSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
+            if (aSnap.exists()) allowedEmails = aSnap.data().emails || [];
+          }
+          renderAllowedEmails(allowedEmails);
         }
+        
         adminMessage.textContent = "";
       } catch (e) {
         console.error(e);
@@ -7617,17 +7753,36 @@
       }
     });
 
+    async function updateAdminSettingEmails(settingName, email, action) {
+      let emails = [];
+      if (window.globalUseRtdb) {
+        const { ref, get, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const rtdbRef = ref(rtdb, `artifacts/${appId}/settings/${settingName}`);
+        const snap = await get(rtdbRef);
+        emails = snap.exists() ? snap.val().emails || [] : [];
+        const originalLen = emails.length;
+        if (action === "add" && !emails.includes(email)) emails.push(email);
+        if (action === "remove") emails = emails.filter(e => e !== email);
+        if (emails.length !== originalLen || action === "add") await set(rtdbRef, { emails });
+      } else {
+        const fsRef = doc(db, `artifacts/${appId}/settings`, settingName);
+        const snap = await getDoc(fsRef);
+        emails = snap.exists() ? snap.data().emails || [] : [];
+        const originalLen = emails.length;
+        if (action === "add" && !emails.includes(email)) emails.push(email);
+        if (action === "remove") emails = emails.filter(e => e !== email);
+        if (emails.length !== originalLen || action === "add") await setDoc(fsRef, { emails }, { merge: true });
+      }
+      return emails;
+    }
+
     addAllowedEmailButton.addEventListener("click", async () => {
       const email = newAllowedEmailInput.value.trim();
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでに追加されています。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("allowedEmails", email, "add");
         newAllowedEmailInput.value = "";
         renderAllowedEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7641,10 +7796,8 @@
       if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderAllowedEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("allowedEmails", email, "remove");
+        renderAllowedEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -7658,12 +7811,7 @@
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでに管理者です。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("adminList", email, "add");
         newAdminEmailInput.value = "";
         renderAdminEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7678,10 +7826,8 @@
       if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("adminList", email, "remove");
+        renderAdminEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -7709,12 +7855,7 @@
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-        const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでにリスト管理者です。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        const emails = await updateAdminSettingEmails("listAdminList", email, "add");
         newListAdminEmailInput.value = "";
         renderListAdminEmails(emails);
         adminMessage.textContent = "追加しました。";
@@ -7728,10 +7869,8 @@
       if (!await showCustomConfirm(`「${email}」をリスト管理者から削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        const emails = await updateAdminSettingEmails("listAdminList", email, "remove");
+        renderListAdminEmails(emails);
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -8392,6 +8531,8 @@
       avatarUploadInput.value = '';
     });
 
+
+
     // Settings Modal Logic
     const resetAvatarButton = document.getElementById("resetAvatarButton");
 
@@ -8474,6 +8615,15 @@
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await updateDoc(userProfileRef, { avatarUrl: null });
+        
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { avatarUrl: null });
+          } catch(e) {}
+        }
+        
         userAvatarUrl = null;
         pendingAvatarUrl = null;
         settingsAvatarPreview.classList.add("hidden");
@@ -8517,6 +8667,18 @@
         const updateData = { nickname: newName, createdAt: serverTimestamp() };
         if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
         await setDoc(userProfileRef, updateData, { merge: true });
+        
+        // RTDBにも保存 (Adminパネル用)
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const rtdbData = { nickname: newName, createdAt: Date.now() };
+            if (pendingAvatarUrl) { rtdbData.avatarUrl = pendingAvatarUrl; }
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), rtdbData);
+          } catch(e) { console.error("RTDB profile update failed:", e); }
+        }
+
         userNickname = newName;
         if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
 
@@ -8564,6 +8726,16 @@
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
+        
+        // RTDBにも保存
+        if (window.globalUseRtdb) {
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await update(ref(rtdb, `artifacts/${appId}/users/${userId}`), { nickname: nickname, createdAt: Date.now() });
+          } catch(e) { console.error("RTDB profile update failed:", e); }
+        }
+
         userNickname = nickname;
 
         // ★ヘッダータイトルの更新
@@ -8797,10 +8969,15 @@
     let rtdbGlobalSettingUnsub = null;
 
     async function setupGlobalRtdbListener() {
-      const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const { ref, onValue, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const settingRef = ref(rtdb, `artifacts/${appId}/settings/useRtdb`);
       
+      try {
+        const snap = await get(settingRef);
+        window.globalUseRtdb = (snap.val() === true);
+      } catch(e) { console.error("Initial RTDB setting fetch failed:", e); }
+
       rtdbGlobalSettingUnsub = onValue(settingRef, (snapshot) => {
         const val = snapshot.val();
         const newValue = (val === true);
@@ -9708,7 +9885,11 @@
         snapshot.forEach(docSnap => roomDocs.push(docSnap));
         roomDocs.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
 
-        roomDocs.forEach((docSnap, idx) => {
+        let categories = currentServerData?.categories || [];
+        if(!Array.isArray(categories)) categories = Object.values(categories);
+        categories.sort((a,b) => a.order - b.order);
+
+        const renderSingleRoom = (docSnap) => {
           currentRoomIds.add(docSnap.id);
           const room = docSnap.data();
           roomNames[docSnap.id] = room.name;
@@ -9751,8 +9932,44 @@
 
           div.appendChild(nameDiv);
           div.appendChild(rightContainer);
-          roomList.appendChild(div);
+          return div;
+        };
+
+        // 1. Categories and their rooms
+        categories.forEach(cat => {
+           const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
+           
+           const catDiv = document.createElement("div");
+           catDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group";
+           catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
+           roomList.appendChild(catDiv);
+           
+           if(catRooms.length > 0) {
+              const roomContainer = document.createElement("div");
+              catRooms.forEach(d => {
+                  roomContainer.appendChild(renderSingleRoom(d));
+              });
+              roomList.appendChild(roomContainer);
+           } else {
+              // Empty category placeholder? (Optional: could hide or show something else)
+           }
         });
+
+        // 2. Uncategorized rooms
+        const uncatRooms = roomDocs.filter(d => !d.data().categoryId);
+        if(uncatRooms.length > 0) {
+           if(categories.length > 0) {
+               const uncatDiv = document.createElement("div");
+               uncatDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
+               uncatDiv.innerHTML = `<i class="fas fa-minus mr-1.5 text-[9px]"></i>その他`;
+               roomList.appendChild(uncatDiv);
+           }
+           const roomContainer = document.createElement("div");
+           uncatRooms.forEach(d => {
+               roomContainer.appendChild(renderSingleRoom(d));
+           });
+           roomList.appendChild(roomContainer);
+        }
 
         // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
         // ここでの boolean 保存(covo_server_unread)は廃止しました。
@@ -9897,7 +10114,21 @@
                 await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
                 
                 if (docs.length > 0) {
+                   // RTDB's older docs are prepended if we maintain chronological order.
+                   // Actually, allLoadedMessages is currently descending (newest first).
+                   // docs is also descending. older docs have smaller timestamps, so they should go to the end of the array.
                    allLoadedMessages = [...allLoadedMessages, ...docs];
+                   
+                   // De-duplicate just in case
+                   const seen = new Set();
+                   allLoadedMessages = allLoadedMessages.filter(m => {
+                       if(seen.has(m.id)) return false;
+                       seen.add(m.id);
+                       return true;
+                   });
+                   // Sort descending just to be safe
+                   allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+                   
                    lastMessagesData = [...allLoadedMessages];
                    renderMessagesWithReadReceipts();
                    rtdbMessagesLimit += docs.length; // keep limit expanded
@@ -9939,19 +10170,25 @@
               await decryptMessagesInPlace(olderDocs, currentServerId, currentRoomId, _members).catch(() => {});
               
               allLoadedMessages = [...allLoadedMessages, ...olderDocs];
+              
+              // De-duplicate just in case
+              const seen = new Set();
+              allLoadedMessages = allLoadedMessages.filter(m => {
+                  if(seen.has(m.id)) return false;
+                  seen.add(m.id);
+                  return true;
+              });
+              // Sort descending just to be safe
+              allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
+
               lastMessagesData = [...allLoadedMessages];
               renderMessagesWithReadReceipts();
               
+              // Rather than a stub, we should completely restart the onSnapshot with the new limit
+              // so that new messages still arrive perfectly while old messages are retained.
               if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-      if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
-              const newQ = query(
-                collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-                orderBy("timestamp", "desc"),
-                limit(messageLimit)
-              );
-              unsubscribeMessages = onSnapshot(newQ, async (snap) => {
-                  // Reduced for brevity in script, rely on main subscriber update
-              });
+              if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+              subscribeToMessagesFirestore(false); // Restart with new limit, false = not initial
             }
         }
       } catch (e) {
@@ -9964,8 +10201,8 @@
     }
 
     function subscribeToMessages() {
-      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-      if (rtdbMessagesUnsub) { rtdbMessagesUnsub(); rtdbMessagesUnsub = null; }
+      if (typeof unsubscribeMessages !== 'undefined' && unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (typeof rtdbMessagesUnsub !== 'undefined' && rtdbMessagesUnsub) { rtdbMessagesUnsub(); rtdbMessagesUnsub = null; }
 
       allLoadedMessages = [];
       hasMoreOlderMessages = true;
@@ -10074,7 +10311,10 @@
       rtdbMessagesUnsub = () => { off(q); };
     }
 
-    function subscribeToMessagesFirestore() {
+    function subscribeToMessagesFirestore(isInitial = true) {
+      if(isInitial) {
+         isInitialMessageLoad = true;
+      }
       const q = query(
         collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
         orderBy("timestamp", "desc"),
@@ -10122,13 +10362,17 @@
             allLoadedMessages = [...realTimeMessagesCache];
           }
         } else {
-          const latestIds = new Set(latestMessages.map(m => m.id));
-          const olderKeptCache = realTimeMessagesCache.filter(m => !latestIds.has(m.id));
-          realTimeMessagesCache = [...olderKeptCache, ...latestMessages];
+          // latestMessages contains the full sliding window of messages according to `messageLimit`
+          // We should just use it as our cache.
+          realTimeMessagesCache = [...latestMessages];
 
           if (!isJumpView) {
+            // Merge gracefully. Keep older loaded messages that exceed the limit.
+            const latestIds = new Set(latestMessages.map(m => m.id));
             const olderKeptMessages = allLoadedMessages.filter(m => !latestIds.has(m.id));
-            allLoadedMessages = [...olderKeptMessages, ...latestMessages];
+            allLoadedMessages = [...latestMessages, ...olderKeptMessages];
+            // Sort descending just to be safe
+            allLoadedMessages.sort((a, b) => b.timestamp - a.timestamp);
           } else {
             const latestMap = new Map(latestMessages.map(m => [m.id, m]));
             jumpViewMessages = jumpViewMessages.map(m => latestMap.has(m.id) ? latestMap.get(m.id) : m);
@@ -10240,7 +10484,6 @@
       isLoadingOlderMessages = false;
 
       subscribeToMessages();
-      subscribeToPinnedMessages();
 
       // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
       (async () => {
@@ -10440,17 +10683,35 @@
       try {
         const oldestMsg = jumpViewMessages[0];
         if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "desc"),
-          startAfter(oldestMsg.timestamp),
-          limit(20)
-        );
-        const snap = await getDocs(q);
-        if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
-        if (!snap.empty) {
-          const fetched = [];
-          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+        let fetched = [];
+        let fetchedCount = 0;
+        if (window.globalUseRtdb) {
+          const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endBefore } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const q = rtdbQuery(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderByChild('timestamp'), endBefore(oldestMsg.timestamp), limitToLast(20));
+          const snap = await get(q);
+          if (snap.exists()) {
+             const d = snap.val();
+             fetched = Object.keys(d).map(k => ({...d[k], id: k}));
+             fetched.sort((a,b) => b.timestamp - a.timestamp); // desc
+             fetchedCount = fetched.length;
+          }
+        } else {
+          const q = query(
+            collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+            orderBy("timestamp", "desc"),
+            startAfter(oldestMsg.timestamp),
+            limit(20)
+          );
+          const snap = await getDocs(q);
+          fetchedCount = snap.docs.length;
+          if (!snap.empty) {
+            snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          }
+        }
+        
+        if (fetchedCount < 20) hasMoreJumpOlder = false;
+        if (fetched.length > 0) {
           fetched.reverse();
           const _members = (currentServerData && currentServerData.joinedUsers) || [];
           await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
@@ -10472,17 +10733,35 @@
       try {
         const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
         if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
-        const q = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "asc"),
-          startAfter(newestMsg.timestamp),
-          limit(20)
-        );
-        const snap = await getDocs(q);
-        if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
-        if (!snap.empty) {
-          const fetched = [];
-          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+        let fetched = [];
+        let fetchedCount = 0;
+        if (window.globalUseRtdb) {
+          const { ref, get, query: rtdbQuery, limitToFirst, orderByChild, startAfter: rtdbStartAfter } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const q = rtdbQuery(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderByChild('timestamp'), rtdbStartAfter(newestMsg.timestamp), limitToFirst(20));
+          const snap = await get(q);
+          if (snap.exists()) {
+             const d = snap.val();
+             fetched = Object.keys(d).map(k => ({...d[k], id: k}));
+             fetched.sort((a,b) => a.timestamp - b.timestamp); // asc
+             fetchedCount = fetched.length;
+          }
+        } else {
+          const q = query(
+            collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+            orderBy("timestamp", "asc"),
+            startAfter(newestMsg.timestamp),
+            limit(20)
+          );
+          const snap = await getDocs(q);
+          fetchedCount = snap.docs.length;
+          if (!snap.empty) {
+            snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          }
+        }
+        
+        if (fetchedCount < 20) hasMoreJumpNewer = false;
+        if (fetched.length > 0) {
           const _members = (currentServerData && currentServerData.joinedUsers) || [];
           await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
           
@@ -10762,17 +11041,25 @@
     document.getElementById("closeServerSettingsBtn").addEventListener("click", () => serverSettingsModal.classList.add("hidden"));
 
     // サーバー設定のタブ
-    let currentSsTab = "rooms";
-    function switchSsTab(tab) {
+    let currentSsTab = "overview";
+    window.switchServerSettingsTab = function(tab) {
       currentSsTab = tab;
-      ["rooms", "members", "invites", "stamps", "danger"].forEach(t => {
-        document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`).classList.toggle("active", t === tab);
-        document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`).classList.toggle("hidden", t !== tab);
+      ["overview", "rooms", "members", "invites", "stamps", "danger"].forEach(t => {
+        const tabEl = document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        const secEl = document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`);
+        if(tabEl) tabEl.classList.toggle("active", t === tab);
+        if(secEl) {
+            secEl.classList.toggle("hidden", t !== tab);
+            secEl.classList.toggle("active", t === tab);
+        }
       });
-    }
-    ["Rooms", "Members", "Invites", "Stamps", "Danger"].forEach(t => {
-      document.getElementById(`ssTab${t}`).addEventListener("click", () => switchSsTab(t.toLowerCase()));
-    });
+      
+      // タブごとの読み込み
+      if (tab === "rooms") loadServerSettingsRooms();
+      if (tab === "members") loadServerSettingsMembers();
+      if (tab === "invites") loadInviteCodes();
+      if (tab === "stamps") loadServerStampsForAdmin();
+    };
 
     async function openServerSettings() {
       if (!currentServerId) return;
@@ -10781,14 +11068,14 @@
 
       const isOwner = currentServerData?.createdBy === userId ||
         (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-      const hasAdminRights = isOwner || isAdmin;
+      const hasAdminRights = isOwner || isAdmin || isListAdmin;
 
       // サーバーアイコン設定の表示・更新
       const iconWrapper = document.getElementById("serverIconSettingsWrapper");
       const iconPreview = document.getElementById("serverIconSettingsPreview");
       if (iconWrapper && iconPreview) {
-        iconWrapper.style.display = (hasAdminRights || isListAdmin) ? "" : "none";
-        iconWrapper.classList.toggle("hidden", !(hasAdminRights || isListAdmin));
+        iconWrapper.style.display = hasAdminRights ? "" : "none";
+        iconWrapper.classList.toggle("hidden", !hasAdminRights);
         if (currentServerData?.iconUrl) {
           iconPreview.innerHTML = `<img src="${currentServerData.iconUrl}" class="w-full h-full object-cover" />`;
           iconPreview.style.backgroundColor = "transparent";
@@ -10799,111 +11086,114 @@
         }
       }
 
-      // 削除ボタンは管理者向け
-      const deleteBtn = document.getElementById("deleteServerBtn");
-      if (deleteBtn) {
-        deleteBtn.style.display = hasAdminRights ? "" : "none";
-      }
-
-      // タブの表示制御
-      const tabs = ["ssTabRooms", "ssTabMembers", "ssTabInvites", "ssTabDanger"];
-      tabs.forEach(tabId => {
+      // タブの表示制御 (権限による出し分け)
+      const adminTabs = ["ssTabOverview", "ssTabRooms", "ssTabMembers", "ssTabInvites", "ssDangerSection"];
+      adminTabs.forEach(tabId => {
         const el = document.getElementById(tabId);
         if (el) el.style.display = hasAdminRights ? "" : "none";
       });
+      
+      const dangerTab = document.querySelector('.settings-nav-item.danger');
+      if (dangerTab) dangerTab.style.display = hasAdminRights ? "" : "none";
 
       openModal(serverSettingsModal);
       
       if (hasAdminRights) {
-        switchSsTab("rooms");
-        await loadServerSettingsRooms();
+        switchServerSettingsTab("overview");
       } else {
-        switchSsTab("stamps");
-        await loadServerStampsForAdmin();
+        switchServerSettingsTab("stamps");
       }
     }
 
     async function loadServerSettingsRooms() {
       const listEl = document.getElementById("serverRoomsList");
+      const categorySelect = document.getElementById("newRoomCategorySelect");
       listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
       let roomsData = [];
       try {
-        
-          const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
-          let idx = 0;
-          snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : (idx++) * 10 }); });
-        
+        const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+        let idx = 0;
+        snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : (idx++) * 10 }); });
       } catch (e) { console.error(e); }
 
-      roomsData.sort((a, b) => a.order - b.order);
+      // Get categories
+      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}`));
+      const serverData = serverSnap.data();
+      let categories = serverData.categories || [];
+      if(!Array.isArray(categories)) categories = Object.values(categories);
       
-      // DB上のorder値が重複または未設定の状態を防ぐため、整流されたorder値を確保
+      categories.sort((a,b) => a.order - b.order);
+      
+      // Update select
+      categorySelect.innerHTML = `<option value="">カテゴリーなし</option>`;
+      categories.forEach(cat => {
+        const opt = document.createElement("option");
+        opt.value = cat.id;
+        opt.textContent = cat.name;
+        categorySelect.appendChild(opt);
+      });
+
+      roomsData.sort((a, b) => a.order - b.order);
       roomsData.forEach((r, i) => { r.order = i * 10; });
 
-      // メモリ上の最新リストを使ってDOMを構築・即時更新する関数
       function renderRoomsListUI() {
         listEl.innerHTML = "";
-        roomsData.sort((a, b) => a.order - b.order);
         
-        roomsData.forEach((room, index) => {
+        const renderRoomItem = (room, index, arr) => {
           const item = document.createElement("div");
-          item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg group transition-all";
+          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2";
           const nameSpan = document.createElement("span");
-          nameSpan.className = "text-sm font-medium text-gray-900";
-          nameSpan.textContent = `# ${room.name}`;
+          nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2";
+          nameSpan.innerHTML = `<i class="fas fa-hashtag text-gray-500 text-xs"></i> ${escapeHtml(room.name)}`;
 
           const btnsContainer = document.createElement("div");
           btnsContainer.className = "flex items-center gap-1.5";
 
-          // 並び替え上へボタン
+          // Order Up
           const upBtn = document.createElement("button");
-          upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
+          upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
           upBtn.disabled = index === 0;
           upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
           upBtn.addEventListener("click", async () => {
             if (index === 0) return;
-            // 連打や競合を防ぐため全ボタンを即座にロックし、ローディング状態を表示
             listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
             upBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
             
-            const prev = roomsData[index - 1];
+            const prev = arr[index - 1];
             const tempOrder = room.order;
             room.order = prev.order;
             prev.order = tempOrder;
 
             await updateRoomOrderBoth(room.id, room.order);
             await updateRoomOrderBoth(prev.id, prev.order);
-            
-            // メモリ上のソート状態を直接反映して高速かつ確実なレンダリング
             renderRoomsListUI();
             if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
           });
 
-          // 並び替え下へボタン
+          // Order Down
           const downBtn = document.createElement("button");
-          downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === roomsData.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`;
-          downBtn.disabled = index === roomsData.length - 1;
+          downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === arr.length - 1 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
+          downBtn.disabled = index === arr.length - 1;
           downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
           downBtn.addEventListener("click", async () => {
-            if (index === roomsData.length - 1) return;
+            if (index === arr.length - 1) return;
             listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
             downBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
 
-            const next = roomsData[index + 1];
+            const next = arr[index + 1];
             const tempOrder = room.order;
             room.order = next.order;
             next.order = tempOrder;
 
             await updateRoomOrderBoth(room.id, room.order);
             await updateRoomOrderBoth(next.id, next.order);
-
             renderRoomsListUI();
             if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
           });
 
-          // 削除ボタン
+          // Delete
           const delBtn = document.createElement("button");
-          delBtn.className = "del-room-btn text-red-500 hover:text-red-700 hover:bg-red-100 p-1.5 rounded-lg text-xs transition-all ml-2";
+          delBtn.className = "del-room-btn text-red-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg text-xs transition-all ml-2";
           delBtn.dataset.roomId = room.id;
           delBtn.dataset.roomName = room.name;
           delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
@@ -10931,8 +11221,68 @@
           btnsContainer.appendChild(delBtn);
           item.appendChild(nameSpan);
           item.appendChild(btnsContainer);
-          listEl.appendChild(item);
+          return item;
+        };
+
+        // Render categories and rooms inside them
+        categories.forEach((cat) => {
+          const catDiv = document.createElement("div");
+          catDiv.className = "mb-4";
+          
+          const catHeader = document.createElement("div");
+          catHeader.className = "flex items-center justify-between mb-2 p-2 bg-[#1e1f22] rounded-lg";
+          catHeader.innerHTML = `
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fas fa-folder-open text-[10px]"></i> ${escapeHtml(cat.name)}
+            </span>
+            <div class="flex gap-1">
+              <button class="cat-del-btn text-gray-500 hover:text-red-400 p-1" data-cat-id="${cat.id}"><i class="fas fa-trash text-sm"></i></button>
+            </div>
+          `;
+          catDiv.appendChild(catHeader);
+          
+          // delete cat
+          catHeader.querySelector('.cat-del-btn').addEventListener("click", async (e) => {
+             const cid = e.currentTarget.dataset.catId;
+             if(await showCustomConfirm(`カテゴリー「${cat.name}」を削除しますか？（中のルームは「カテゴリーなし」に移動します）`, "削除")) {
+                const newCats = categories.filter(c => c.id !== cid);
+                await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}`), { categories: newCats });
+                for(let r of roomsData.filter(r => r.categoryId === cid)) {
+                   await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${r.id}`), { categoryId: null });
+                   r.categoryId = null;
+                }
+                loadServerSettingsRooms();
+                if(typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+             }
+          });
+
+          const catRooms = roomsData.filter(r => r.categoryId === cat.id);
+          catRooms.sort((a,b) => a.order - b.order);
+          catRooms.forEach((r, i) => {
+            catDiv.appendChild(renderRoomItem(r, i, catRooms));
+          });
+          if (catRooms.length === 0) {
+            const emptySpan = document.createElement("div");
+            emptySpan.className = "text-xs text-gray-600 italic ml-4 mb-2";
+            emptySpan.textContent = "ルームがありません";
+            catDiv.appendChild(emptySpan);
+          }
+          listEl.appendChild(catDiv);
         });
+
+        // Uncategorized rooms
+        const uncategorized = roomsData.filter(r => !r.categoryId);
+        uncategorized.sort((a,b) => a.order - b.order);
+        
+        if (uncategorized.length > 0) {
+           const uncatDiv = document.createElement("div");
+           uncatDiv.className = "mb-4";
+           uncatDiv.innerHTML = `<span class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-2 block">カテゴリーなし</span>`;
+           uncategorized.forEach((r, i) => {
+              uncatDiv.appendChild(renderRoomItem(r, i, uncategorized));
+           });
+           listEl.appendChild(uncatDiv);
+        }
       }
 
       renderRoomsListUI();
@@ -10940,26 +11290,51 @@
 
     async function updateRoomOrderBoth(roomId, newOrder) {
       try {
-        
           await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
-        
       } catch (e) { console.error(e); }
+    }
+    
+    const createCategoryBtn = document.getElementById("createCategoryBtn");
+    if(createCategoryBtn) {
+      createCategoryBtn.addEventListener("click", async () => {
+        const name = prompt("カテゴリー名を入力してください");
+        if(!name) return;
+        loadingOverlay.classList.remove("hidden");
+        try {
+          const serverRef = doc(db, `artifacts/${appId}/servers/${currentServerId}`);
+          const snap = await getDoc(serverRef);
+          let cats = snap.data().categories || [];
+          if(!Array.isArray(cats)) cats = Object.values(cats);
+          cats.push({ id: "cat_" + Date.now(), name, order: cats.length * 10 });
+          await updateDoc(serverRef, { categories: cats });
+          loadServerSettingsRooms();
+          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+          alertMessage("カテゴリーを作成しました", "success");
+        } catch(e) {
+          alertMessage("作成に失敗しました", "error");
+        } finally {
+          loadingOverlay.classList.add("hidden");
+        }
+      });
     }
 
     document.getElementById("createRoomInServerBtn").addEventListener("click", async () => {
       const name = document.getElementById("newRoomNameInput").value.trim();
+      const categoryId = document.getElementById("newRoomCategorySelect").value || null;
       if (!name) return;
       loadingOverlay.classList.remove("hidden");
       try {
         await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
-          name, createdAt: serverTimestamp(), createdBy: userId
+          name, categoryId, createdAt: serverTimestamp(), createdBy: userId
         });
         document.getElementById("newRoomNameInput").value = "";
         await loadServerSettingsRooms();
+        if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
         alertMessage("ルームを作成しました", "success");
       } catch (e) { alertMessage("作成に失敗しました", "error"); }
       finally { loadingOverlay.classList.add("hidden"); }
     });
+
 
     // メンバー管理タブ
     document.getElementById("ssMembersSection").parentElement; // (reference check)
@@ -13682,6 +14057,11 @@
       const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
       await batchDeleteCollection(collection(db, `${base}/messages`));
       await batchDeleteCollection(collection(db, `${base}/readReceipts`));
+      try {
+        const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`));
+      } catch(e) {}
       await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
     }
 
@@ -14144,7 +14524,7 @@
         try {
           const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
-          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: isPinned });
+          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
         } catch(e) { console.error("RTDB Pin Failed", e); }
         alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
       }
@@ -14834,23 +15214,57 @@
     function initReadStatesSync() {
       if (!userId || !appId) return;
       if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
-      readStatesUnsub = onSnapshot(collection(db, `artifacts/${appId}/users/${userId}/readStates`), (snap) => {
-        let changed = false;
-        let rm = {};
-        try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
-        snap.forEach(docSnap => {
-          const remoteTime = docSnap.data().lastReadAt?.toMillis?.() || 0;
-          const localTime = rm[docSnap.id] || 0;
-          if (remoteTime && remoteTime > localTime) {
-            rm[docSnap.id] = remoteTime;
-            changed = true;
+      if (window.rtdbReadStatesUnsub) { window.rtdbReadStatesUnsub(); window.rtdbReadStatesUnsub = null; }
+
+      if (window.globalUseRtdb) {
+        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, onValue, off }) => {
+          const rtdb = await _getOrInitRTDB();
+          const readRef = ref(rtdb, `artifacts/${appId}/users/${userId}/readStates`);
+          const cb = onValue(readRef, (snapshot) => {
+            let changed = false;
+            let rm = {};
+            try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
+            const data = snapshot.val() || {};
+            Object.keys(data).forEach(rId => {
+              const remoteTime = data[rId].lastReadAt || 0;
+              const localTime = rm[rId] || 0;
+              if (remoteTime && remoteTime > localTime) {
+                rm[rId] = remoteTime;
+                changed = true;
+              }
+            });
+            if (changed) {
+              localStorage.setItem('covo_last_read', JSON.stringify(rm));
+              if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
+            }
+          });
+          window.rtdbReadStatesUnsub = () => off(readRef, 'value', cb);
+        });
+      } else {
+        readStatesUnsub = onSnapshot(collection(db, `artifacts/${appId}/users/${userId}/readStates`), (snap) => {
+          let changed = false;
+          let rm = {};
+          try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
+          snap.forEach(docSnap => {
+            const data = docSnap.data();
+            let remoteTime = 0;
+            if (data.lastReadAt && data.lastReadAt.toMillis) {
+               remoteTime = data.lastReadAt.toMillis();
+            } else if (data.lastReadAt && typeof data.lastReadAt === 'number') {
+               remoteTime = data.lastReadAt;
+            }
+            const localTime = rm[docSnap.id] || 0;
+            if (remoteTime && remoteTime > localTime) {
+              rm[docSnap.id] = remoteTime;
+              changed = true;
+            }
+          });
+          if (changed) {
+            localStorage.setItem('covo_last_read', JSON.stringify(rm));
+            if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
           }
         });
-        if (changed) {
-          localStorage.setItem('covo_last_read', JSON.stringify(rm));
-          if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
-        }
-      });
+      }
     }
 
     const _readStateThrottle = {};
@@ -14868,6 +15282,12 @@
               if (!_readStateThrottle[roomId] || now - _readStateThrottle[roomId] > 5000) {
                  _readStateThrottle[roomId] = now;
                  setDoc(doc(db, `artifacts/${appId}/users/${userId}/readStates`, roomId), { lastReadAt: time }, { merge: true }).catch(()=>{});
+                 try {
+                   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
+                     const rtdb = await _getOrInitRTDB();
+                     await set(ref(rtdb, `artifacts/${appId}/users/${userId}/readStates/${roomId}`), { lastReadAt: time });
+                   });
+                 } catch(e) {}
               }
            }
         }
@@ -16936,6 +17356,160 @@
     window.renderServerList = function() {
       if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
       if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    };
+
+    // --- フィードバック機能 ---
+    window.openFeedbackModal = function() {
+      document.getElementById('feedbackContent').value = '';
+      document.getElementById('feedbackCategory').value = 'bug';
+      document.getElementById('feedbackModal').classList.remove('hidden');
+    };
+
+    window.closeFeedbackModal = function() {
+      document.getElementById('feedbackModal').classList.add('hidden');
+    };
+
+    window.submitFeedback = async function() {
+      const content = document.getElementById('feedbackContent').value.trim();
+      const category = document.getElementById('feedbackCategory').value;
+      if (!content) {
+        if(window.showNotification) window.showNotification('内容を入力してください', 'error');
+        return;
+      }
+      
+      const btn = document.getElementById('submitFeedbackBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+      
+      try {
+        const feedbackData = {
+          userId: (typeof userId !== 'undefined' ? userId : 'anonymous'),
+          userNickname: (typeof userNickname !== 'undefined' ? userNickname : 'Anonymous'),
+          appVersion: (typeof _appVersion !== 'undefined' ? _appVersion : 'unknown'),
+          userAgent: navigator.userAgent,
+          category: category,
+          content: content,
+          status: 'open',
+          createdAt: window.globalUseRtdb ? Date.now() : serverTimestamp()
+        };
+        
+        if (window.globalUseRtdb) {
+          const { ref, push, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const dbRef = push(ref(rtdb, `artifacts/${appId}/feedbacks`));
+          await set(dbRef, feedbackData);
+        } else {
+          await addDoc(collection(db, `artifacts/${appId}/feedbacks`), feedbackData);
+        }
+        
+        if(window.showNotification) window.showNotification('フィードバックを送信しました。ご協力ありがとうございます！', 'success');
+        closeFeedbackModal();
+      } catch (error) {
+        console.error('Feedback submit error:', error);
+        if(window.showNotification) window.showNotification('送信に失敗しました', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>送信する</span>';
+      }
+    };
+
+    window.loadAdminFeedbacks = async function() {
+      const container = document.getElementById('adminFeedbackList');
+      if(!container) return;
+      container.innerHTML = '<div class="text-center text-gray-500 py-4"><i class="fas fa-spinner fa-spin mr-2"></i>読み込み中...</div>';
+      
+      const escape = (s) => (s||'').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+      
+      try {
+        let feedbacks = [];
+        if (window.globalUseRtdb) {
+          const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const snapshot = await get(ref(rtdb, `artifacts/${appId}/feedbacks`));
+          const data = snapshot.val() || {};
+          feedbacks = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+          feedbacks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        } else {
+          const snapshot = await getDocs(query(collection(db, `artifacts/${appId}/feedbacks`), orderBy('createdAt', 'desc')));
+          feedbacks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+        
+        if (feedbacks.length === 0) {
+          container.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-inbox text-3xl mb-3 opacity-20"></i><br>フィードバックはありません</div>';
+          return;
+        }
+        
+        container.innerHTML = '';
+        feedbacks.forEach(fb => {
+          const dateStr = fb.createdAt ? new Date(fb.createdAt.toMillis ? fb.createdAt.toMillis() : fb.createdAt).toLocaleString() : '不明';
+          const catColor = fb.category === 'bug' ? 'bg-red-100 text-red-600' : (fb.category === 'feature' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600');
+          const catLabel = fb.category === 'bug' ? 'バグ報告' : (fb.category === 'feature' ? '機能要望' : 'その他');
+          
+          const div = document.createElement('div');
+          div.className = 'feedback-item p-4 border border-gray-100 rounded-xl bg-gray-50 shadow-sm';
+          div.innerHTML = `
+            <div class="flex items-start justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold px-2 py-0.5 rounded-md ${catColor}">${catLabel}</span>
+                <span class="text-xs font-bold text-gray-800">${escape(fb.userNickname)}</span>
+                <span class="text-[11px] text-gray-400">${dateStr}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <select onchange="updateFeedbackStatus('${fb.id}', this.value)" class="text-[11px] font-bold p-1 border border-gray-200 rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none">
+                  <option value="open" ${fb.status === 'open' ? 'selected' : ''}>未対応</option>
+                  <option value="in_progress" ${fb.status === 'in_progress' ? 'selected' : ''}>対応中</option>
+                  <option value="closed" ${fb.status === 'closed' ? 'selected' : ''}>完了</option>
+                </select>
+                <button onclick="deleteFeedback('${fb.id}')" class="text-gray-400 hover:text-red-500 transition-colors p-1" title="削除">
+                  <i class="fas fa-trash-alt text-xs"></i>
+                </button>
+              </div>
+            </div>
+            <div class="text-sm text-gray-800 mb-3 whitespace-pre-wrap">${escape(fb.content)}</div>
+            <div class="bg-white border border-gray-100 p-2.5 rounded-lg text-[11px] text-gray-500 font-mono flex flex-col gap-1 overflow-hidden">
+              <div class="truncate"><span class="opacity-50">App:</span> ${escape(fb.appVersion || 'N/A')}</div>
+              <div class="truncate" title="${escape(fb.userAgent)}"><span class="opacity-50">Env:</span> ${escape(fb.userAgent || 'N/A')}</div>
+              <div class="truncate"><span class="opacity-50">ID:</span> ${escape(fb.userId)}</div>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (error) {
+        console.error('Failed to load feedbacks:', error);
+        container.innerHTML = '<div class="text-center text-red-500 py-4">読み込みに失敗しました</div>';
+      }
+    };
+
+    window.updateFeedbackStatus = async function(id, status) {
+      try {
+        if (window.globalUseRtdb) {
+          const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await update(ref(rtdb, `artifacts/${appId}/feedbacks/${id}`), { status });
+        } else {
+          await updateDoc(doc(db, `artifacts/${appId}/feedbacks/${id}`), { status });
+        }
+      } catch (error) {
+        console.error('Failed to update status:', error);
+        if(window.showNotification) window.showNotification('ステータス更新に失敗しました', 'error');
+      }
+    };
+
+    window.deleteFeedback = async function(id) {
+      if (!confirm('このフィードバックを削除してもよろしいですか？')) return;
+      try {
+        if (window.globalUseRtdb) {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await remove(ref(rtdb, `artifacts/${appId}/feedbacks/${id}`));
+        } else {
+          await deleteDoc(doc(db, `artifacts/${appId}/feedbacks/${id}`));
+        }
+        loadAdminFeedbacks();
+      } catch (error) {
+        console.error('Failed to delete feedback:', error);
+        if(window.showNotification) window.showNotification('削除に失敗しました', 'error');
+      }
     };
   </script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
