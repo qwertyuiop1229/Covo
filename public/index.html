@@ -9961,13 +9961,13 @@
 
       try {
         if (window.globalUseRtdb) {
-            const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endBefore } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
             const rtdb = await _getOrInitRTDB();
             // Oldest message is at the end of the array (since we sort descending)
             const oldestMessage = allLoadedMessages[0];
             
             const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-            const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endBefore(oldestMessage.timestamp), limitToLast(20));
+            const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestMessage.timestamp - 1), limitToLast(20));
             const snapshot = await get(q);
             
             if (snapshot.exists()) {

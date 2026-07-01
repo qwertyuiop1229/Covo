@@ -15,7 +15,14 @@
         "servers": {
           "$serverId": {
             ".read": "data.child('members').child(auth.uid).exists()",
-            ".write": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()"
+            ".write": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()",
+            "rooms": {
+              "$roomId": {
+                "messages": {
+                  ".indexOn": ["timestamp"]
+                }
+              }
+            }
           }
         }
       }
