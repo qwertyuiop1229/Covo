@@ -1,14 +1,24 @@
 {
   "rules": {
     "status": {
-      "$uid": {
+      "": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
+        ".write": "auth != null && auth.uid === "
       }
     },
     "artifacts": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      "": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "servers": {
+          "": {
+            ".read": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()",
+            ".write": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()"
+          }
+        }
+      }
     }
   }
 }

@@ -7217,6 +7217,7 @@
               initCallListener();
               initFileShareListener();
               initReadStatesSync();
+              setupGlobalRtdbListener();
             } else {
               authContainer.classList.add("hidden");
               appContainer.classList.add("hidden");
@@ -8814,8 +8815,8 @@
     // =========================================================================
     window.globalUseRtdb = false;
     let rtdbGlobalSettingUnsub = null;
-
     async function setupGlobalRtdbListener() {
+      console.log('[RTDB Toggle] Initializing global RTDB listener...');
       const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const settingRef = ref(rtdb, `artifacts/${appId}/settings/useRtdb`);
@@ -8823,16 +8824,21 @@
       rtdbGlobalSettingUnsub = onValue(settingRef, (snapshot) => {
         const val = snapshot.val();
         const newValue = (val === true);
+        console.log(`[RTDB Toggle] State changed from DB: ${newValue ? 'ON' : 'OFF'}`);
+        
+        // Always update the toggle UI in case it is out of sync after a reload
+        const pcToggle = document.getElementById('pcToggleRtdbMode');
+        const mobToggle = document.getElementById('mobileToggleRtdbMode');
+        if (pcToggle) pcToggle.checked = newValue;
+        if (mobToggle) mobToggle.checked = newValue;
+
         if (window.globalUseRtdb !== newValue) {
           window.globalUseRtdb = newValue;
           // Re-subscribe if we are in a room
           if (currentRoomId) {
+            console.log('[RTDB Toggle] Re-subscribing to messages due to mode change.');
             subscribeToMessages();
           }
-          const pcToggle = document.getElementById('pcToggleRtdbMode');
-          const mobToggle = document.getElementById('mobileToggleRtdbMode'); // if exists
-          if (pcToggle) pcToggle.checked = newValue;
-          if (mobToggle) mobToggle.checked = newValue;
         }
       });
     }
@@ -9415,6 +9421,17 @@
       if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
       currentServerId = serverId;
       currentServerData = serverData;
+      
+      // Self-heal RTDB membership for existing users who joined before the security update
+      if (serverData && (serverData.joinedUsers || []).includes(userId)) {
+        try {
+          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, set }) => {
+            _getOrInitRTDB().then(rtdb => {
+               set(ref(rtdb, rtifacts//servers//members/), true).catch(()=>{});
+            });
+          });
+        } catch(e) {}
+      }
       try {
         const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
         rm[serverId] = Date.now();
