@@ -5717,6 +5717,7 @@
       pubKeyCache: {},    // userId -> CryptoKey(public) インポート済みキャッシュ
       _initPromise: null,
       _roomKeyPromises: {},
+      _rescueRequestFlags: {}, // roomId -> timestamp 救済リクエストのデバウンス用
     };
 
     const _subtleOK = !!(window.crypto && window.crypto.subtle);
@@ -5881,6 +5882,13 @@
 
     async function requestEscrowRescue(serverId, roomId) {
       if (!userId) return;
+      const now = Date.now();
+      if (_e2ee._rescueRequestFlags && _e2ee._rescueRequestFlags[roomId] && (now - _e2ee._rescueRequestFlags[roomId] < 60000)) {
+        return; // 1分以内の連続リクエストはスキップ
+      }
+      if (_e2ee._rescueRequestFlags) {
+        _e2ee._rescueRequestFlags[roomId] = now;
+      }
       try {
         
           await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/rescueRequests/${userId}`), {
