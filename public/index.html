@@ -10992,9 +10992,54 @@ window.closeFeedbackModal = function() {
       document.getElementById('feedbackModal').classList.add('hidden');
     }
 
-null
-
+    window.submitFeedback = async function() {
+      const content = document.getElementById('feedbackContent').value.trim();
+      const category = document.getElementById('feedbackCategory').value;
+      if (!content) {
+        if(window.showNotification) window.showNotification('内容を入力してください', 'error');
+        return;
+      }
       
+      const btn = document.getElementById('feedbackSubmitBtn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+      }
+      
+      try {
+        const feedbackData = {
+          userId: (typeof userId !== 'undefined' ? userId : 'anonymous'),
+          userNickname: (typeof userNickname !== 'undefined' ? userNickname : 'Anonymous'),
+          appVersion: (typeof _appVersion !== 'undefined' ? _appVersion : 'unknown'),
+          userAgent: navigator.userAgent,
+          category: category,
+          content: content,
+          status: 'open',
+          createdAt: Date.now()
+        };
+        
+        if (window.globalUseRtdb) {
+          const { ref, push, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await (typeof _getOrInitRTDB === 'function' ? _getOrInitRTDB() : window.rtdb);
+          const dbRef = push(ref(rtdb, `artifacts/${appId}/feedbacks`));
+          await set(dbRef, feedbackData);
+        } else {
+          const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+          await addDoc(collection(db, `artifacts/${appId}/feedbacks`), feedbackData);
+        }
+        
+        if(window.showNotification) window.showNotification('フィードバックを送信しました。ご協力ありがとうございます！', 'success');
+        window.closeFeedbackModal();
+      } catch (error) {
+        console.error('Feedback submit error:', error);
+        if(window.showNotification) window.showNotification('送信に失敗しました', 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '送信';
+        }
+      }
+    };      
     window.toggleCategory = function(catId) {
       if(!currentServerData) return;
       let cats = currentServerData.categories || {};
@@ -11005,7 +11050,7 @@ null
       }
       if(cats[catId]) {
          cats[catId].isExpanded = !(cats[catId].isExpanded !== false);
-         import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(module => {
+         import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(module => {
             const { doc, updateDoc } = module;
             updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}`), { categories: cats });
          });
@@ -11027,7 +11072,7 @@ null
           if(!name) return;
           loadingOverlay.classList.remove("hidden");
           try {
-            const { doc, updateDoc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+            const { doc, updateDoc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
             const serverRef = doc(db, `artifacts/${appId}/servers/${currentServerId}`);
             const snap = await getDoc(serverRef);
             if(snap.exists()) {
