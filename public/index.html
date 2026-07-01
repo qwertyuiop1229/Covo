@@ -9967,7 +9967,7 @@
             const oldestMessage = allLoadedMessages[0];
             
             const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-            const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestMessage.timestamp - 1), limitToLast(20));
+            const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestMessage.timestamp, oldestMessage.id), limitToLast(21));
             const snapshot = await get(q);
             
             if (snapshot.exists()) {
@@ -9977,6 +9977,9 @@
                 
                 const _members = (currentServerData && currentServerData.joinedUsers) || [];
                 await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+                
+                // endAt(..., id) に合致する基準メッセージ自体を除外
+                docs = docs.filter(d => d.id !== oldestMessage.id);
                 
                 if (docs.length > 0) {
                    allLoadedMessages = [...allLoadedMessages, ...docs];
@@ -9988,7 +9991,14 @@
                    });
                    allLoadedMessages.sort((a, b) => a.timestamp - b.timestamp);
                    lastMessagesData = [...allLoadedMessages];
+                   
+                   const oldScrollHeight = messagesDisplay.scrollHeight;
                    renderMessagesWithReadReceipts();
+                   requestAnimationFrame(() => {
+                     const newScrollHeight = messagesDisplay.scrollHeight;
+                     messagesDisplay.scrollTop += (newScrollHeight - oldScrollHeight);
+                   });
+                   
                    rtdbMessagesLimit += docs.length; // keep limit expanded
                 }
                 if (docs.length < 20) {
