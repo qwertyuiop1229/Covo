@@ -77,13 +77,13 @@ async function handleSignup(request, env) {
     // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得
     const workerToken = await getWorkerAuthToken(env);
     if (!workerToken) {
-      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 200, headers: corsHeaders });
     }
 
     // 2. Firestoreから許可リストを取得
     const result = await getAllowedEmails(workerToken, env);
     if (result.error) {
-       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 500, headers: corsHeaders });
+       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 200, headers: corsHeaders });
     }
     const allowedEmails = result.emails.map(e => e.trim().toLowerCase());
     
@@ -105,7 +105,7 @@ async function handleSignup(request, env) {
 
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 200, headers: corsHeaders });
   }
 }
 
@@ -239,7 +239,7 @@ async function handleJoinServer(request, env) {
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 200, headers: corsHeaders });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -378,13 +378,13 @@ async function handleJoinServer(request, env) {
     const updateData = await updateRes.json();
     if (updateData.error) {
        console.error("Firestore Update Error:", updateData.error);
-       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 500, headers: corsHeaders });
+       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 200, headers: corsHeaders });
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
   }
 }
 
@@ -404,10 +404,10 @@ async function handleSendCallNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: corsHeaders });
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 200, headers: corsHeaders });
     }
     const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
@@ -521,7 +521,7 @@ async function handleSendCallNotification(request, env) {
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
   }
 }
 
@@ -552,13 +552,13 @@ async function handleSendNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: dynamicCors });
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
     // Service Account から FCM OAuth2 トークンを取得
     if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 200, headers: corsHeaders });
     }
     const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
@@ -745,7 +745,7 @@ async function handleSendNotification(request, env) {
     return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: dynamicCors });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: dynamicCors });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: dynamicCors });
   }
 }
 
@@ -818,7 +818,7 @@ async function handleUploadFile(request, env) {
   try {
     if (!env.FILES) {
       return new Response(JSON.stringify({ error: 'KVストレージが設定されていません' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
     const formData = await request.formData();
@@ -872,7 +872,7 @@ async function handleUploadFile(request, env) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: 'アップロードエラー', details: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -922,7 +922,7 @@ async function handleDeleteFile(request, env, url) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -953,7 +953,7 @@ async function handleServeFile(request, env, url) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1014,7 +1014,7 @@ async function handleStorageStats(request, env) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1073,7 +1073,7 @@ async function handleBulkDeleteFiles(request, env) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1147,7 +1147,7 @@ async function handleShareFile(request, env) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: 'Proxy error', details: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1247,7 +1247,7 @@ async function handleSetOffline(request, env) {
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsSetOffline });
   } catch (error) {
     console.error("setOffline Error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsSetOffline });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsSetOffline });
   }
 }
 
@@ -1267,7 +1267,7 @@ async function handleD1Api(request, env, url) {
   }
 
   if (!env.DB) {
-    return new Response(JSON.stringify({ error: "D1 database not bound to env.DB" }), { status: 500, headers: d1Cors });
+    return new Response(JSON.stringify({ error: "D1 database not bound to env.DB" }), { status: 200, headers: d1Cors });
   }
 
   // リクエスト認証 (Authorization: Bearer <ID_TOKEN>)
@@ -2088,6 +2088,6 @@ async function handleD1Api(request, env, url) {
     return new Response(JSON.stringify({ error: "Unknown D1 API subpath" }), { status: 404, headers: d1Cors });
   } catch (err) {
     console.error("D1 API Error:", err);
-    return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 500, headers: d1Cors });
+    return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 200, headers: d1Cors });
   }
 }
