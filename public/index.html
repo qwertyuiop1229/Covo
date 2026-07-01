@@ -10685,6 +10685,11 @@
         batch.delete(roomRef);
 
         await batch.commit();
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
+        } catch(err) { console.error("RTDB Room Delete Failed", err); }
         console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
       } catch (error) {
         console.error("Error during room deletion process:", error);
@@ -11308,6 +11313,11 @@ null
               serverAdmins: arrayRemove(targetUid),
               memberCount: Math.max(0, ((await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId))).data().memberCount || 1) - 1)
             });
+            try {
+              const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+              const rtdb = await _getOrInitRTDB();
+              await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/members/${targetUid}`));
+            } catch (rtdbErr) { console.warn("RTDB kick sync failed:", rtdbErr); }
             await loadServerSettingsMembers();
             // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
             if (typeof rotateAllRoomKeys === 'function') {
@@ -13991,6 +14001,11 @@ null
       await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
       await batchDeleteCollection(collection(db, `${base}/secrets`));
       await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+      try {
+        const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}`));
+      } catch(err) { console.error("RTDB Server Delete Failed", err); }
     }
 
     // ===== アプリ内通知スタック =====
@@ -14124,6 +14139,11 @@ null
           serverAdmins: arrayRemove(userId),
           memberCount: increment(-1)
         });
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
+        } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
         alertMessage("サーバーを退出しました", "success");
       } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
       finally { loadingOverlay.classList.add("hidden"); }
