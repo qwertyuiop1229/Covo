@@ -1,20 +1,20 @@
 {
   "rules": {
     "status": {
-      "": {
+      "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid === "
+        ".write": "auth != null && auth.uid === $uid"
       }
     },
     "artifacts": {
-      "": {
+      "$appId": {
         "settings": {
           ".read": "auth != null",
           ".write": "auth != null"
         },
         "servers": {
-          "": {
-            ".read": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()",
+          "$serverId": {
+            ".read": "data.child('members').child(auth.uid).exists()",
             ".write": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()"
           }
         }

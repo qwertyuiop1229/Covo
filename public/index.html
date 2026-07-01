@@ -5319,9 +5319,9 @@
                     <div class="relative flex-1 flex flex-col min-h-0">
             <!-- 過去メッセージ読み込み用スピナー (中央上固定) -->
             <div id="topLoadingSpinner" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none" style="top: 1rem; display: none;">
-              <div class="bg-white px-4 py-2 rounded-full shadow-md flex items-center justify-center border border-gray-100">
-                <div class="top-spinner" style="box-sizing: border-box;"></div>
-                <span class="text-xs text-gray-500 ml-2 font-medium">読み込み中...</span>
+              <div class="bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-md flex items-center justify-center border border-gray-100 dark:border-gray-700">
+                <i class="fas fa-circle-notch fa-spin text-indigo-500 dark:text-indigo-400 text-xs"></i>
+                <span id="topLoadingSpinnerText" class="text-xs text-gray-500 dark:text-gray-400 ml-2 font-medium">読み込み中...</span>
               </div>
             </div>
             <!-- フローティング日付ヘッダー -->
@@ -5330,11 +5330,6 @@
             </div>
 
             <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
-              <!-- 過去メッセージ読み込みスピナー -->
-              <div id="topLoadingSpinner" class="flex flex-shrink-0 items-center justify-center py-3 w-full flipped" style="display: none;">
-                <div class="top-spinner"></div>
-                <span class="text-xs text-gray-400 ml-2">読み込み中...</span>
-              </div>
               <!-- メッセージはここに動的に追加されます -->
             </div>
             <button id="jumpModeExitBtn" class="absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-300 opacity-0 pointer-events-none translate-y-2" onclick="window.exitJumpMode()">
@@ -9427,7 +9422,7 @@
         try {
           import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, set }) => {
             _getOrInitRTDB().then(rtdb => {
-               set(ref(rtdb, rtifacts//servers//members/), true).catch(()=>{});
+               set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(()=>{});
             });
           });
         } catch(e) {}
@@ -9959,7 +9954,9 @@
       if (allLoadedMessages.length === 0) return;
       isLoadingOlderMessages = true;
       const spinner = document.getElementById('topLoadingSpinner');
-      if (spinner) spinner.style.display = 'block';
+      const spinnerText = document.getElementById('topLoadingSpinnerText');
+      if (spinnerText) spinnerText.textContent = "読み込み中...";
+      if (spinner) spinner.style.display = 'flex';
 
       try {
         if (window.globalUseRtdb) {
@@ -12888,10 +12885,9 @@ null
       }
 
       const spinner = document.getElementById('topLoadingSpinner');
-      if (spinner) {
-        spinner.innerHTML = '<div class="top-spinner"></div><span class="text-xs text-gray-400 ml-2">過去ログをロード中...</span>';
-        spinner.style.display = 'flex';
-      }
+      const spinnerText = document.getElementById('topLoadingSpinnerText');
+      if (spinnerText) spinnerText.textContent = "過去ログをロード中...";
+      if (spinner) spinner.style.display = 'flex';
 
       const _exitBtn = document.getElementById('jumpModeExitBtn');
       _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
