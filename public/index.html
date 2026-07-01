@@ -9703,7 +9703,7 @@
       });
 
       // 最初のルームを作成
-      const newRoomRef = const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
+      const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
         name: "一般",
         createdAt: serverTimestamp(),
         createdBy: userId
