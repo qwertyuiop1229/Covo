@@ -977,6 +977,7 @@
     }
 
     @media (min-width: 768px) {
+      #mobileBottomNav { display: none !important; }
       #mobileBackButton {
         display: none !important;
       }
@@ -4034,52 +4035,57 @@
     }
 
 
-    /* --- Discord-like Channel List UI --- */
+    /* --- Google Material Design Channel List UI --- */
     body.discord-ui-mode .room-item-animate {
       background: transparent !important;
-      color: #5c5e66 !important;
-      transition: background 0.15s ease, color 0.15s ease !important;
-      font-weight: 500 !important;
-      border-radius: 4px !important; /* Discord is subtly rounded */
+      color: #4b5563 !important;
+      transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease !important;
+      font-weight: 600 !important;
+      border-radius: 9999px !important; /* Material Pill Shape */
+      padding: 0.4rem 1rem !important; /* Slightly more padding for pill */
+      margin-left: 0.25rem !important;
+      margin-right: 0.25rem !important;
+      margin-bottom: 0.25rem !important;
     }
     body.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #80848e !important;
+      color: #9ca3af !important;
+      margin-right: 0.5rem !important;
     }
     body.discord-ui-mode .room-item-animate:hover {
-      background: rgba(0, 0, 0, 0.06) !important;
-      color: #060607 !important;
+      background: #f3f4f6 !important;
+      color: #111827 !important;
     }
     body.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #060607 !important;
+      color: #6b7280 !important;
     }
     body.discord-ui-mode .room-item-animate.active {
-      background: rgba(0, 0, 0, 0.08) !important;
-      color: #060607 !important;
+      background: #e5e7eb !important;
+      color: #111827 !important;
     }
     body.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: #060607 !important;
+      color: #374151 !important;
     }
 
     /* Dark Server Theme Overrides */
     body.dark-server-theme.discord-ui-mode .room-item-animate {
-      color: #949ba4 !important;
+      color: #9ca3af !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #80848e !important;
+      color: #6b7280 !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate:hover {
-      background: rgba(255, 255, 255, 0.06) !important;
-      color: #dbdee1 !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f3f4f6 !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #dbdee1 !important;
+      color: #9ca3af !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate.active {
-      background: rgba(255, 255, 255, 0.1) !important;
+      background: rgba(255, 255, 255, 0.12) !important;
       color: #ffffff !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: #ffffff !important;
+      color: #e5e7eb !important;
     }
     /* ----------------------------------- */
 </style>
@@ -4626,30 +4632,30 @@
               <!-- アプリ情報セクション -->
               <div id="appinfoSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">アプリ情報</div>
-                <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
+                <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-5 space-y-4 shadow-sm border border-gray-100 dark:border-gray-700">
                   <div class="flex items-center gap-4">
                     <img src="icon-192x192.png" alt="Covo" class="w-14 h-14 rounded-2xl shadow" onerror="this.style.display='none'">
                     <div>
-                      <div class="text-lg font-bold text-gray-800">Covo</div>
-                      <div class="text-xs text-gray-400">チャットアプリ</div>
+                      <div class="text-lg font-bold text-gray-800 dark:text-gray-100">Covo</div>
+                      <div class="text-xs text-gray-400 dark:text-gray-400">チャットアプリ</div>
                     </div>
                   </div>
-                  <div class="border-t border-gray-200 pt-4 space-y-3">
+                  <div class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
                     <div class="flex justify-between items-center">
-                      <span class="text-sm text-gray-500">バージョン</span>
-                      <span class="text-sm font-mono font-bold text-gray-800" id="appInfoVersion">—</span>
+                      <span class="text-sm text-gray-500 dark:text-gray-400">バージョン</span>
+                      <span class="text-sm font-mono font-bold text-gray-800 dark:text-gray-200" id="appInfoVersion">—</span>
                     </div>
                     <div class="flex justify-between items-center">
-                      <span class="text-sm text-gray-500"><i class="fas fa-lock mr-1"></i>メッセージの暗号化</span>
-                      <span class="text-sm font-bold" id="appInfoE2EE" style="color:#6b7280">確認中…</span>
+                      <span class="text-sm text-gray-500 dark:text-gray-400"><i class="fas fa-lock mr-1"></i>メッセージの暗号化</span>
+                      <span class="text-sm font-bold text-gray-500 dark:text-gray-400" id="appInfoE2EE">確認中…</span>
                     </div>
                     <div class="flex justify-between items-center">
-                      <button class="" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">アップデートを確認</button>
-                      <span id="pcCheckUpdateStatus" style="font-size:0.8rem;color:#6b7280"></span>
+                      <button class="" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#0f172a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">アップデートを確認</button>
+                      <span id="pcCheckUpdateStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
                     <div class="flex justify-between items-center" id="pcCreateShortcutRow" style="display:none!important">
-                      <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#1f2937;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#1f2937'">デスクトップにショートカットを作成</button>
-                      <span id="pcCreateShortcutStatus" style="font-size:0.8rem;color:#6b7280"></span>
+                      <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#0f172a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">デスクトップにショートカットを作成</button>
+                      <span id="pcCreateShortcutStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
                     <div class="flex justify-between items-center mt-2">
                       <button class="hover:bg-red-600 transition-colors" onclick="window.openFeedbackModal && window.openFeedbackModal()" style="padding:7px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">バグを報告する</button>
@@ -10817,14 +10823,25 @@
       
       if (isJumpView) {
         isJumpView = false;
-        // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
-        allLoadedMessages = [...realTimeMessagesCache];
-        lastMessagesData = [...allLoadedMessages];
-        messagesIndexMap = {};
-        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-        
-        renderMessagesWithReadReceipts();
-        messagesDisplay.scrollTop = 0;
+        if (window.globalUseRtdb) {
+            allLoadedMessages = [];
+            lastMessagesData = [];
+            messagesIndexMap = {};
+            messagesDisplay.innerHTML = '';
+            if (typeof subscribeToMessagesRTDB === 'function') {
+                if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
+                subscribeToMessagesRTDB();
+            }
+        } else {
+            // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
+            allLoadedMessages = [...realTimeMessagesCache];
+            lastMessagesData = [...allLoadedMessages];
+            messagesIndexMap = {};
+            lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+            
+            renderMessagesWithReadReceipts();
+            messagesDisplay.scrollTop = 0;
+        }
       } else {
         messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -11186,65 +11203,7 @@
       }
 
       // メモリ上の最新リストを使ってDOMを構築・即時更新する関数
-      window.openFeedbackModal = function() {
-      document.getElementById('feedbackContent').value = '';
-      document.getElementById('feedbackCategory').value = 'bug';
-      document.getElementById('feedbackModal').classList.remove('hidden');
-    }
-
-window.closeFeedbackModal = function() {
-      document.getElementById('feedbackModal').classList.add('hidden');
-    }
-
-    window.submitFeedback = async function() {
-      const content = document.getElementById('feedbackContent').value.trim();
-      const category = document.getElementById('feedbackCategory').value;
-      if (!content) {
-        if(window.showNotification) window.showNotification('内容を入力してください', 'error');
-        return;
-      }
-      
-      const btn = document.getElementById('feedbackSubmitBtn');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
-      }
-      
-      try {
-        const feedbackData = {
-          userId: (typeof userId !== 'undefined' ? userId : 'anonymous'),
-          userNickname: (typeof userNickname !== 'undefined' ? userNickname : 'Anonymous'),
-          appVersion: (typeof _appVersion !== 'undefined' ? _appVersion : 'unknown'),
-          userAgent: navigator.userAgent,
-          category: category,
-          content: content,
-          status: 'open',
-          createdAt: Date.now()
-        };
-        
-        if (window.globalUseRtdb) {
-          const { ref, push, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-          const rtdb = await (typeof _getOrInitRTDB === 'function' ? _getOrInitRTDB() : window.rtdb);
-          const dbRef = push(ref(rtdb, `artifacts/${appId}/feedbacks`));
-          await set(dbRef, feedbackData);
-        } else {
-          const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-          await addDoc(collection(db, `artifacts/${appId}/feedbacks`), feedbackData);
-        }
-        
-        if(window.showNotification) window.showNotification('フィードバックを送信しました。ご協力ありがとうございます！', 'success');
-        window.closeFeedbackModal();
-      } catch (error) {
-        console.error('Feedback submit error:', error);
-        if(window.showNotification) window.showNotification('送信に失敗しました', 'error');
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = '送信';
-        }
-      }
-    };      
-    window.toggleCategory = function(catId) {
+      window.toggleCategory = function(catId) {
       if(!currentServerData) return;
       let cats = currentServerData.categories || {};
       if(Array.isArray(cats)) {
@@ -12101,23 +12060,31 @@ window.closeFeedbackModal = function() {
 
     let isSendingMessage = false;
     async function sendMessage() {
-      if (isSendingMessage) return;
+      // Allow concurrent text sends (LINE style), but block if actively uploading a file to prevent overlapping logic.
+      if (isSendingMessage && (attachedFile || attachedKvFile)) return;
       const text = messageInput.value.trim();
       if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
       
-      isSendingMessage = true;
-      messageInput.disabled = true;
-      sendMessageButton.disabled = true;
+      // Optimistic input clearing (LINE style)
+      messageInput.value = "";
+      messageInput.style.height = "auto";
+      if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+      
+      // Only lock UI fully if a file is attached
+      if (attachedFile || attachedKvFile) {
+          isSendingMessage = true;
+          messageInput.disabled = true;
+          sendMessageButton.disabled = true;
+          const progressBar = document.getElementById("uploadProgressBar");
+          const progressFill = document.getElementById("uploadProgressFill");
+          const progressText = document.getElementById("uploadProgressText");
+          progressBar.classList.remove("hidden");
+      }
       
       clearTimeout(typingTimeout);
       isCurrentlyTyping = false;
       setTypingStatus(false);
 
-      const progressBar = document.getElementById("uploadProgressBar");
-      const progressFill = document.getElementById("uploadProgressFill");
-      const progressText = document.getElementById("uploadProgressText");
-
-      if (!attachedFile && !attachedKvFile) loadingOverlay.classList.remove("hidden");
       try {
         // --- E2EE: 本文を暗号化（鍵が無い/失敗時はユーザーに警告確認を行う） ---
         let textToStore = text;
@@ -12125,7 +12092,6 @@ window.closeFeedbackModal = function() {
           if (!_subtleOK) {
             console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
             if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
-               loadingOverlay.classList.add("hidden");
                return;
             }
           } else {
@@ -12148,7 +12114,6 @@ window.closeFeedbackModal = function() {
                   textToStore = enc; // 暗号化成功時のみ保存用テキストに代入
                 } else {
                   console.warn(`[E2EE] 本文の暗号化処理に失敗 (server=${currentServerId}, room=${currentRoomId})`);
-                  loadingOverlay.classList.add("hidden");
                   alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
                   await requestEscrowRescue(currentServerId, currentRoomId);
                   return;
@@ -14797,42 +14762,154 @@ window.closeFeedbackModal = function() {
         try {
           const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
-          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: isPinned });
+          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
         } catch(e) { console.error("RTDB Pin Failed", e); }
         alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
       }
       messageContextMenu.classList.add("hidden");
     });
 
+    let isPinnedMessagesExpanded = false;
+    let isPinnedMessagesMinimized = false;
+
     function renderPinnedMessages() {
       const pinnedMessages = currentPinnedMessages;
-      if (pinnedMessages.length > 0) {
-        pinnedMessagesArea.innerHTML = '<div class="text-xs font-bold text-gray-500 mb-1"><i class="fas fa-thumbtack mr-1"></i>ピン留めされたメッセージ</div>';
-        pinnedMessages.forEach(msg => {
-          const div = document.createElement("div");
-          div.className = "pinned-message-item truncate";
-          const pNameSpan = document.createElement("span");
-          pNameSpan.className = "font-bold mr-2 text-gray-800 dark:text-gray-200";
-          pNameSpan.textContent = msg.senderNickname + ":";
-          const pTextSpan = document.createElement("span");
-          pTextSpan.className = "text-gray-600 dark:text-gray-400";
-          pTextSpan.textContent = msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル");
-          div.appendChild(pNameSpan);
-          div.appendChild(pTextSpan);
-          div.addEventListener("click", () => {
-             const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${msg.id}"]`);
-             if (el) {
-               doJumpHighlight(el);
-             } else {
-               jumpToUnloadedMessage(msg.id);
-             }
-          });
-          pinnedMessagesArea.appendChild(div);
-        });
-        pinnedMessagesArea.classList.remove("hidden");
-      } else {
+      pinnedMessagesArea.innerHTML = "";
+      
+      // If no pins or it's manually minimized by user, we show the floating minimized icon (or hide if no pins)
+      if (pinnedMessages.length === 0) {
         pinnedMessagesArea.classList.add("hidden");
+        document.getElementById("minimizedPinIcon")?.remove();
+        return;
       }
+
+      pinnedMessagesArea.classList.remove("hidden");
+      
+      // Restore minimized state from session
+      if (sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true") {
+         isPinnedMessagesMinimized = true;
+      } else {
+         isPinnedMessagesMinimized = false;
+      }
+
+      if (isPinnedMessagesMinimized) {
+         pinnedMessagesArea.classList.add("hidden");
+         // Show floating icon
+         let floatIcon = document.getElementById("minimizedPinIcon");
+         if (!floatIcon) {
+            floatIcon = document.createElement("div");
+            floatIcon.id = "minimizedPinIcon";
+            floatIcon.className = "absolute top-4 right-4 z-[60] bg-white dark:bg-gray-800 shadow-lg rounded-full w-10 h-10 flex items-center justify-center cursor-pointer border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all";
+            floatIcon.innerHTML = `<i class="fas fa-bullhorn"></i><div class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">${pinnedMessages.length}</div>`;
+            floatIcon.onclick = () => {
+                sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+                isPinnedMessagesMinimized = false;
+                renderPinnedMessages();
+            };
+            document.querySelector(".relative.flex-1").appendChild(floatIcon);
+         } else {
+            floatIcon.querySelector("div").textContent = pinnedMessages.length;
+         }
+         return;
+      } else {
+         document.getElementById("minimizedPinIcon")?.remove();
+      }
+
+      // LINE-style Announcement Banner
+      const container = document.createElement("div");
+      container.className = "w-full bg-white dark:bg-[#202225] border-b border-gray-200 dark:border-[#1e1f22] shadow-sm flex flex-col transition-all duration-300";
+      
+      // Main visible header (shows the latest pin)
+      const latestMsg = pinnedMessages[pinnedMessages.length - 1];
+      const headerRow = document.createElement("div");
+      headerRow.className = "flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#2b2d31] transition-colors relative";
+      
+      const iconWrap = document.createElement("div");
+      iconWrap.className = "text-gray-400 dark:text-gray-500 mr-3";
+      iconWrap.innerHTML = '<i class="fas fa-bullhorn"></i>';
+      
+      const contentWrap = document.createElement("div");
+      contentWrap.className = "flex-1 flex flex-col min-w-0 mr-2";
+      
+      const msgLine = document.createElement("div");
+      msgLine.className = "truncate text-sm text-gray-800 dark:text-gray-200";
+      msgLine.innerHTML = `<span class="font-bold mr-1">${escapeHtml(latestMsg.senderNickname)}:</span>${escapeHtml(latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+      
+      contentWrap.appendChild(msgLine);
+      
+      // Action buttons
+      const actionsWrap = document.createElement("div");
+      actionsWrap.className = "flex items-center gap-1 text-gray-400";
+      
+      const expandBtn = document.createElement("div");
+      expandBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors";
+      expandBtn.innerHTML = `<i class="fas fa-chevron-${isPinnedMessagesExpanded ? 'up' : 'down'} transition-transform duration-300"></i>`;
+      
+      const closeBtn = document.createElement("div");
+      closeBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ml-1";
+      closeBtn.innerHTML = `<i class="fas fa-times"></i>`;
+      
+      // Events
+      msgLine.onclick = (e) => {
+         e.stopPropagation();
+         jumpToMsg(latestMsg.id);
+      };
+      
+      expandBtn.onclick = (e) => {
+         e.stopPropagation();
+         isPinnedMessagesExpanded = !isPinnedMessagesExpanded;
+         renderPinnedMessages();
+      };
+      
+      closeBtn.onclick = (e) => {
+         e.stopPropagation();
+         sessionStorage.setItem(`minimized_pins_${currentRoomId}`, "true");
+         isPinnedMessagesMinimized = true;
+         renderPinnedMessages();
+      };
+      
+      // If only 1 message, no expand button needed
+      if (pinnedMessages.length > 1) {
+          actionsWrap.appendChild(expandBtn);
+      }
+      actionsWrap.appendChild(closeBtn);
+      
+      headerRow.appendChild(iconWrap);
+      headerRow.appendChild(contentWrap);
+      headerRow.appendChild(actionsWrap);
+      container.appendChild(headerRow);
+      
+      // Expanded List
+      if (isPinnedMessagesExpanded && pinnedMessages.length > 1) {
+         const listWrap = document.createElement("div");
+         listWrap.className = "border-t border-gray-100 dark:border-[#2b2d31] bg-gray-50 dark:bg-[#1e1f22] overflow-y-auto max-h-64";
+         
+         pinnedMessages.forEach((msg, idx) => {
+             // Skip the latest one if we want, but LINE shows all in the list
+             const itemRow = document.createElement("div");
+             itemRow.className = "flex items-center px-4 py-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-[#2b2d31] transition-colors border-b border-gray-100 dark:border-gray-800 last:border-0";
+             
+             const itemText = document.createElement("div");
+             itemText.className = "flex-1 truncate text-sm text-gray-700 dark:text-gray-300";
+             itemText.innerHTML = `<span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${escapeHtml(msg.senderNickname)}:</span>${escapeHtml(msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+             
+             itemRow.appendChild(itemText);
+             itemRow.onclick = () => jumpToMsg(msg.id);
+             listWrap.appendChild(itemRow);
+         });
+         container.appendChild(listWrap);
+      }
+      
+      pinnedMessagesArea.appendChild(container);
+    }
+    
+    function jumpToMsg(id) {
+         const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${id}"]`);
+         if (el) {
+           doJumpHighlight(el);
+         } else {
+           jumpToUnloadedMessage(id);
+         }
     }
 
     // =========================================================================
