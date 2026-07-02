@@ -3969,9 +3969,12 @@
         display: none !important;
       }
       body.discord-ui-mode.discord-home-view #discordHomeView {
-        width: calc(100% - 56px) !important;
+        flex: 1 1 auto !important;
+        width: auto !important;
         display: flex !important;
-        padding: 1.25rem !important;
+        padding: 1rem !important;
+        min-width: 0 !important;
+        overflow-x: hidden !important;
       }
       /* チャット画面表示中：全画面表示 */
       body.discord-ui-mode.in-chat-view #chatArea {
@@ -4030,7 +4033,57 @@
       color: #94a3b8 !important;
     }
 
+
+    /* --- Discord-like Channel List UI --- */
+    body.discord-ui-mode .room-item-animate {
+      background: transparent !important;
+      color: #5c5e66 !important;
+      transition: background 0.15s ease, color 0.15s ease !important;
+      font-weight: 500 !important;
+      border-radius: 4px !important; /* Discord is subtly rounded */
+    }
+    body.discord-ui-mode .room-item-animate .room-hashtag {
+      color: #80848e !important;
+    }
+    body.discord-ui-mode .room-item-animate:hover {
+      background: rgba(0, 0, 0, 0.06) !important;
+      color: #060607 !important;
+    }
+    body.discord-ui-mode .room-item-animate:hover .room-hashtag {
+      color: #060607 !important;
+    }
+    body.discord-ui-mode .room-item-animate.active {
+      background: rgba(0, 0, 0, 0.08) !important;
+      color: #060607 !important;
+    }
+    body.discord-ui-mode .room-item-animate.active .room-hashtag {
+      color: #060607 !important;
+    }
+
+    /* Dark Server Theme Overrides */
+    body.dark-server-theme.discord-ui-mode .room-item-animate {
+      color: #949ba4 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate .room-hashtag {
+      color: #80848e !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate:hover {
+      background: rgba(255, 255, 255, 0.06) !important;
+      color: #dbdee1 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate:hover .room-hashtag {
+      color: #dbdee1 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate.active {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: #ffffff !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
+      color: #ffffff !important;
+    }
+    /* ----------------------------------- */
 </style>
+
 </head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG"></script>
@@ -9890,13 +9943,14 @@
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
           // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent hover:bg-gray-200/70 text-gray-700 hover:text-gray-900 dark:hover:bg-white/10 dark:text-slate-300 dark:hover:text-white rounded-lg";
+          div.className = "flex items-center justify-between py-1 px-2 mb-0.5 text-sm cursor-pointer group room-item-animate";
           div.id = `room-item-${docSnap.id}`;
+          if (docSnap.id === currentRoomId) div.classList.add("active");
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 font-extrabold transition-colors">#</span><span class="truncate ml-1">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -10443,6 +10497,9 @@
         if (badge) badge.style.display = 'none';
       } catch(e) {}
       updateUserStatus('online'); // Sync room selection for notifications
+      document.querySelectorAll('.room-item-animate').forEach(el => el.classList.remove('active'));
+      const activeItem = document.getElementById('room-item-' + roomId);
+      if (activeItem) activeItem.classList.add('active');
       currentRoomTitleText.textContent = roomName;
       currentRoomHeader.classList.remove("hidden");
       clearMessagesDOM();
