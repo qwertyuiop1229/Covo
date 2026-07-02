@@ -10079,14 +10079,13 @@
             // Oldest message is at the end of the array (since we sort descending)
             const oldestMessage = allLoadedMessages[0];
             const rtdbTime = getMsgTimestamp(oldestMessage);
-            console.log("RTDB Pagination DEBUG: Oldest Message ID=", oldestMessage.id, "Time=", rtdbTime);
             
             const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
             const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(rtdbTime, oldestMessage.id), limitToLast(21));
             const snapshot = await get(q);
             
             if (snapshot.exists()) {
-                console.log("RTDB Pagination DEBUG: snapshot exists! numChildren=", snapshot.size || Object.keys(snapshot.val()).length);
+                
                 const data = snapshot.val();
                 let docs = Object.keys(data).map(k => ({...data[k], id: k}));
                 docs.sort((a, b) => getMsgTimestamp(b) - getMsgTimestamp(a)); // descending
@@ -10096,7 +10095,6 @@
                 
                 // endAt(..., id) に合致する基準メッセージ自体を除外
                 docs = docs.filter(d => d.id !== oldestMessage.id);
-                console.log("RTDB Pagination DEBUG: docs length after filter=", docs.length);
                 
                 if (docs.length > 0) {
                    allLoadedMessages = [...allLoadedMessages, ...docs];
@@ -10265,6 +10263,12 @@
                    messagesDisplay.scrollTop = 0;
                    requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
                    isInitialMessageLoad = false;
+                   setTimeout(() => {
+                       allowPagination = true;
+                       if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+                           loadOlderMessages();
+                       }
+                   }, 500);
                });
            } else {
                const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
