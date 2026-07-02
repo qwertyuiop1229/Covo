@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -5621,6 +5621,7 @@
       .catch(() => { _appVersion = null; });
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
     import {
       getAuth,
       signInWithEmailAndPassword,
@@ -7094,6 +7095,13 @@
         if (!app) {
           app = initializeApp(firebaseConfig);
           try {
+            initializeAppCheck(app, {
+              provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
+              isTokenAutoRefreshEnabled: true
+            });
+            console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+          } catch(e) { console.error("AppCheck init error", e); }
+          try {
             db = initializeFirestore(app, {
               localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
             });
@@ -8269,7 +8277,7 @@
               nickname: userNickname,
               avatarUrl: userAvatarUrl || null
             });
-            console.log('[RTDB] onDisconnect registered (connected)');
+            console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
             
             // 接続直後は強制的にオンラインを再送信する
             _lastReportedStatusStr = null;
@@ -8864,7 +8872,7 @@
 
     // sendBeacon（ページアンロード・タスクキル時に最も信頼性が高い）+ fallback fetch
     function sendOfflineBeacon() {
-      if (!userId || _beaconSent) return;
+      if (!userId || _beaconSent || !_cachedIdToken) return;
       _beaconSent = true;
       const url = 'https://simplechat-api.astro-fray-server.workers.dev/api/setOffline';
       const data = JSON.stringify({ userId, appId, idToken: _cachedIdToken || '' });
@@ -8907,7 +8915,7 @@
     window.globalUseRtdb = false;
     let rtdbGlobalSettingUnsub = null;
     async function setupGlobalRtdbListener() {
-      console.log('[RTDB Toggle] Initializing global RTDB listener...');
+      console.log('🔄 [システム] データベース(RTDB)の同期リスナーを初期化中...');
       const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const settingRef = ref(rtdb, `artifacts/${appId}/settings/useRtdb`);
@@ -8915,7 +8923,7 @@
       rtdbGlobalSettingUnsub = onValue(settingRef, (snapshot) => {
         const val = snapshot.val();
         const newValue = (val === true);
-        console.log(`[RTDB Toggle] State changed from DB: ${newValue ? 'ON' : 'OFF'}`);
+        console.log(`🔄 [システム] データベースの状態を受信しました: ${newValue ? 'ON (稼働中)' : 'OFF (停止中)'}`);
         
         // Always update the toggle UI in case it is out of sync after a reload
         const pcToggle = document.getElementById('pcToggleRtdbMode');
@@ -8927,7 +8935,7 @@
           window.globalUseRtdb = newValue;
           // Re-subscribe if we are in a room
           if (currentRoomId) {
-            console.log('[RTDB Toggle] Re-subscribing to messages due to mode change.');
+            console.log('🔄 [システム] モード変更に伴い、メッセージの再読み込みを行います');
             subscribeToMessages();
           }
         }
@@ -14423,7 +14431,7 @@ window.closeFeedbackModal = function() {
       Object.values(globalNotifListeners).forEach(unsub => unsub());
       globalNotifListeners = {};
       if (!isTauri && currentFcmToken) {
-        console.log('[GlobalNotif] FCM active — skipping Firestore global listeners');
+        console.log('🔔 [通知] FCM(プッシュ通知)が有効なため、バックグラウンド監視を最適化しました');
         return;
       }
       
@@ -14813,7 +14821,7 @@ window.closeFeedbackModal = function() {
             }
           }).catch(e => { /* ignore error as notification plugin might be missing some commands */ });
         }
-        console.log('[Tauri] FCM skipped — using Firestore-based notifications');
+        console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
         return;
       }
       fcmInitialized = true;
@@ -14821,7 +14829,7 @@ window.closeFeedbackModal = function() {
         // Service Worker を明示的に登録
         if ('serviceWorker' in navigator) {
           const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
-          console.log('Service Worker registered:', swRegistration);
+          console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
 
           // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
           const sendUserIdToSW = () => {
@@ -14869,13 +14877,13 @@ window.closeFeedbackModal = function() {
                 serviceWorkerRegistration: swReg
               });
               if (token && userId) {
-                console.log('FCM Token obtained:', token.substring(0, 20) + '...');
+                console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
                 currentFcmToken = token;
                 const userRef = doc(db, `artifacts/${appId}/users`, userId);
                 // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
                 const prevToken = localStorage.getItem('covo_fcm_token');
                 if (prevToken && prevToken !== token) {
-                  console.log('FCM Token rotated, removing old token');
+                  console.log('📱 [通知] プッシュ通知用トークンが更新されたため、古いものを削除しました');
                   try { await updateDoc(userRef, { fcmTokens: arrayRemove(prevToken) }); } catch (_) { }
                 }
                 await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
@@ -14887,7 +14895,7 @@ window.closeFeedbackModal = function() {
                 localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
                 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
                 if (lastRefreshed > 0 && Date.now() - lastRefreshed > SEVEN_DAYS) {
-                  console.log('[FCM] Weekly token refresh triggered');
+                  console.log('📱 [通知] 定期的なプッシュ通知用トークンの更新を実行しました');
                   try {
                     const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');
                     await deleteToken(messaging);
@@ -14958,7 +14966,7 @@ window.closeFeedbackModal = function() {
             try { await deleteToken(messaging); } catch (e) { console.warn('deleteToken failed', e); }
           }
           currentFcmToken = null;
-          console.log('[Push] disabled — FCM token removed');
+          console.log('📱 [通知] プッシュ通知が無効化されました (トークン削除済)');
         } catch (e) {
           console.error('Failed to disable push:', e);
         }
@@ -16448,10 +16456,10 @@ window.closeFeedbackModal = function() {
       }
 
       try {
-        console.log('Checking for updates...');
+        console.log('📦 [アップデート] 新しいバージョンがないか確認しています...');
         const metadata = await invoke('plugin:updater|check');
         if (metadata) {
-          console.log('Update available:', metadata.version);
+          console.log('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
 
           let isForced = false;
           try {
@@ -16556,7 +16564,7 @@ window.closeFeedbackModal = function() {
 
           return true; // アプリ起動をブロック
         }
-        console.log('No updates available.');
+        console.log('📦 [アップデート] 現在のバージョンは最新です');
       } catch (error) {
         console.warn('Update check failed:', error);
       }

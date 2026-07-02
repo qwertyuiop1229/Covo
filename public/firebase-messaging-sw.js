@@ -29,7 +29,7 @@ self.addEventListener('message', (event) => {
       self._cachedUserId  = event.data.userId  || null;
       self._cachedAppId   = event.data.appId   || null;
       self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      console.log('[SW] userId cached:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
       break;
 
     case 'CLEAR_USER_ID':
@@ -37,7 +37,7 @@ self.addEventListener('message', (event) => {
       self._cachedAppId   = null;
       self._cachedIdToken = null;
       self._badgeCount    = 0;
-      console.log('[SW] userId cleared');
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
       break;
 
     case 'CACHE_AUTH_TOKEN':
@@ -93,7 +93,7 @@ async function _sendOfflineIfNoClients() {
         body: data,
         keepalive: true
       }).catch(() => {});
-      console.log('[SW] Sent offline fetch (no active clients)');
+      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
     }
   } catch (e) {
     console.warn('[SW] _sendOfflineIfNoClients error:', e);
@@ -102,7 +102,7 @@ async function _sendOfflineIfNoClients() {
 
 // ─── バックグラウンドメッセージ処理 ────────────────────────────
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message', payload);
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
 
   let title = 'Covo';
   let body  = '新しいメッセージがあります';
@@ -124,7 +124,7 @@ messaging.onBackgroundMessage((payload) => {
 
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('[SW] Skipping own message notification');
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
     return;
   }
 
