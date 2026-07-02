@@ -2835,32 +2835,32 @@
     }
 
     /* 設定モーダル（コンテンツエリア）*/
-    body.dark-server-theme #settingsModal .settings-content {
+    body.dark-server-theme .settings-content {
       background: #1a202c;
       color: #e2e8f0;
     }
-    body.dark-server-theme #settingsModal .settings-section-title { color: #e2e8f0 !important; }
-    body.dark-server-theme #settingsModal .settings-content .bg-gray-50,
-    body.dark-server-theme #settingsModal .settings-content .bg-gray-100 {
+    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100 {
       background: #243040 !important;
     }
-    body.dark-server-theme #settingsModal .settings-content .text-gray-800,
-    body.dark-server-theme #settingsModal .settings-content .text-gray-700 { color: #e2e8f0 !important; }
-    body.dark-server-theme #settingsModal .settings-content .text-gray-600,
-    body.dark-server-theme #settingsModal .settings-content .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme #settingsModal .settings-content .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme #settingsModal .settings-content .border-gray-200,
-    body.dark-server-theme #settingsModal .settings-content .border-t {
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-t {
       border-color: rgba(255,255,255,0.08) !important;
     }
-    body.dark-server-theme #settingsModal .settings-content .setting-row {
+    body.dark-server-theme .settings-content .setting-row {
       border-bottom-color: rgba(255,255,255,0.06) !important;
     }
-    body.dark-server-theme #settingsModal .settings-content .setting-label { color: #e2e8f0; }
-    body.dark-server-theme #settingsModal .settings-content .setting-label i { color: #94a3b8; }
-    body.dark-server-theme #settingsModal .settings-content input[type="text"],
-    body.dark-server-theme #settingsModal .settings-content input[type="email"],
-    body.dark-server-theme #settingsModal .settings-content input[type="password"] {
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
       background: #1e293b !important;
       border-color: rgba(255,255,255,0.12) !important;
       color: #e2e8f0 !important;
@@ -3183,11 +3183,11 @@
     /* =============================================
        PC Discord-style Settings Modal (2-column)
     ============================================= */
-    #settingsModal .settings-discord-layout {
+    .settings-discord-layout {
       display: flex;
       height: 100%;
     }
-    #settingsModal .settings-sidebar {
+    .settings-sidebar {
       width: 210px;
       flex-shrink: 0;
       background: #111827;
@@ -3197,7 +3197,7 @@
       gap: 2px;
       overflow-y: auto;
     }
-    #settingsModal .settings-sidebar-user {
+    .settings-sidebar-user {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -3205,7 +3205,7 @@
       margin-bottom: 4px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
     }
-    #settingsModal .settings-sidebar-avatar {
+    .settings-sidebar-avatar {
       width: 36px;
       height: 36px;
       border-radius: 50%;
@@ -3219,10 +3219,10 @@
       flex-shrink: 0;
       overflow: hidden;
     }
-    #settingsModal .settings-sidebar-avatar img {
+    .settings-sidebar-avatar img {
       width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
     }
-    #settingsModal .settings-sidebar-name {
+    .settings-sidebar-name {
       font-size: 0.85rem;
       font-weight: 700;
       color: white;
@@ -3230,7 +3230,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    #settingsModal .settings-nav-label {
+    .settings-nav-label {
       font-size: 0.65rem;
       font-weight: 700;
       text-transform: uppercase;
@@ -3238,7 +3238,7 @@
       color: rgba(255,255,255,0.35);
       padding: 8px 8px 4px;
     }
-    #settingsModal .settings-nav-item {
+    .settings-nav-item {
       display: flex !important;
       align-items: center !important;
       gap: 8px !important;
@@ -3257,11 +3257,11 @@
       height: auto !important;
       line-height: 1.4 !important;
     }
-    #settingsModal .settings-nav-item:hover {
+    .settings-nav-item:hover {
       background: rgba(255,255,255,0.08) !important;
       color: rgba(255,255,255,0.85) !important;
     }
-    #settingsModal .settings-nav-item.active {
+    .settings-nav-item.active {
       background: rgba(255,255,255,0.14) !important;
       color: white !important;
     }
@@ -3274,21 +3274,21 @@
     #settingsModal #adminPanelContainer.hidden {
       display: none;
     }
-    #settingsModal .settings-nav-item.danger {
+    .settings-nav-item.danger {
       color: #f87171 !important;
       margin-top: 0.5rem !important;
       flex: 0 0 auto !important;
     }
-    #settingsModal .settings-nav-item.danger:hover {
+    .settings-nav-item.danger:hover {
       background: rgba(239,68,68,0.15) !important;
       color: #f87171 !important;
     }
-    #settingsModal .settings-nav-divider {
+    .settings-nav-divider {
       height: 1px;
       background: rgba(255,255,255,0.07);
       margin: 6px 0;
     }
-    #settingsModal .settings-content {
+    .settings-content {
       flex: 1;
       background: white;
       overflow-y: auto;
@@ -3296,13 +3296,13 @@
       padding: 1.75rem 2rem;
       position: relative;
     }
-    #settingsModal .settings-content-section {
+    .settings-content-section {
       display: none;
     }
-    #settingsModal .settings-content-section.active {
+    .settings-content-section.active {
       display: block;
     }
-    #settingsModal .settings-section-title {
+    .settings-section-title {
       font-size: 1.15rem;
       font-weight: 700;
       color: #111827;
@@ -3310,7 +3310,7 @@
       padding-bottom: 0.75rem;
       border-bottom: 1px solid #f3f4f6;
     }
-    #settingsModal .settings-close-btn {
+    .settings-close-btn {
       position: absolute;
       top: 1rem;
       right: 1rem;
@@ -3327,7 +3327,7 @@
       font-size: 0.9rem;
       transition: background 0.12s;
     }
-    #settingsModal .settings-close-btn:hover { background: #e5e7eb; }
+    .settings-close-btn:hover { background: #e5e7eb; }
 
     /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
     @media (max-width: 768px) {
@@ -5129,45 +5129,50 @@
       </div>
 
       <!-- サーバー設定モーダル -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay overflow-y-auto z-50 hidden">
-        <div class="flex min-h-full items-center justify-center p-6">
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden modal-box animate-pop-in">
-            <button id="closeServerSettingsBtn"
-              class="absolute top-3.5 right-4 text-gray-400 hover:text-gray-700 z-10"><i
-                class="fas fa-times text-lg"></i></button>
-            <div class="bg-gray-800 text-white px-6 py-5 flex-shrink-0 modal-dark-header flex items-center justify-between">
-              <div>
-                <p class="text-white/70 text-xs font-bold uppercase tracking-wider">サーバー設定</p>
-                <p id="serverSettingsTitle" class="font-bold text-xl mt-0.5"></p>
-              </div>
-              <!-- サーバーアイコン設定UI -->
-              <div id="serverIconSettingsWrapper" class="relative group cursor-pointer hidden">
-                <div id="serverIconSettingsPreview" class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-white font-bold text-3xl shadow-lg border-2 border-white/20 transition-all duration-300 group-hover:rounded-3xl overflow-hidden"></div>
-                <div class="absolute inset-0 bg-slate-900/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 group-hover:rounded-3xl transition-all duration-300">
-                  <i class="fas fa-camera text-white text-xl mb-0.5"></i>
-                  <span class="text-[9px] text-white font-bold tracking-wider">変更する</span>
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
+          <div class="settings-discord-layout">
+            <!-- 左サイドバー -->
+            <div class="settings-sidebar">
+              <!-- サーバー情報 -->
+              <div class="settings-sidebar-user relative group cursor-pointer" id="serverIconSettingsWrapper" title="アイコンを変更">
+                <div class="settings-sidebar-avatar" id="serverIconSettingsPreview"></div>
+                <div class="absolute left-2 top-2.5 w-9 h-9 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <i class="fas fa-camera text-white text-xs"></i>
                 </div>
                 <input type="file" id="serverIconUploadInput" accept="image/*" class="hidden" />
+                <span class="settings-sidebar-name flex-1" id="serverSettingsTitle"></span>
               </div>
+              <!-- ナビ -->
+              <div class="settings-nav-label">サーバー設定</div>
+              <button class="settings-nav-item active" id="ssTabRooms" onclick="switchSsTab('rooms')">
+                <i class="fas fa-hashtag fa-fw"></i>ルーム
+              </button>
+              <button class="settings-nav-item" id="ssTabMembers" onclick="switchSsTab('members')">
+                <i class="fas fa-users fa-fw"></i>メンバー
+              </button>
+              <button class="settings-nav-item" id="ssTabInvites" onclick="switchSsTab('invites')">
+                <i class="fas fa-envelope-open-text fa-fw"></i>招待
+              </button>
+              <button class="settings-nav-item" id="ssTabStamps" onclick="switchSsTab('stamps')">
+                <i class="fas fa-icons fa-fw"></i>スタンプ
+              </button>
+              <div class="settings-nav-divider"></div>
+              <button class="settings-nav-item danger" id="ssTabDanger" onclick="switchSsTab('danger')">
+                <i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除
+              </button>
             </div>
-            <!-- タブ -->
-            <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100 overflow-x-auto whitespace-nowrap hide-scrollbar">
-              <button id="ssTabRooms" class="ss-tab active">ルーム</button>
-              <button id="ssTabMembers" class="ss-tab">メンバー</button>
-              <button id="ssTabInvites" class="ss-tab">招待</button>
-              <button id="ssTabStamps" class="ss-tab">スタンプ</button>
-              <button id="ssTabDanger" class="ss-tab">その他</button>
-            </div>
-            <div class="p-6 max-h-[60vh] overflow-y-auto">
-              <!-- ルームタブ -->
-              <div id="ssRoomsSection">
+            <!-- 右コンテンツエリア -->
+            <div class="settings-content relative">
+              <button class="settings-close-btn" id="closeServerSettingsBtn"><i class="fas fa-times"></i></button>
+
+              <div id="ssRoomsSection" class="settings-content-section active">
+                <div class="settings-section-title">ルーム管理</div>
                 <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
                   <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
-                  
                   <div class="flex flex-col gap-3">
                     <input type="text" id="newRoomNameInput" placeholder="新しいルーム名"
                       class="w-full p-3 bg-white border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-sm text-gray-700" />
-                    
                     <div class="relative w-full" id="newRoomCategorySelectContainer">
                       <button type="button" id="newRoomCategoryCustomBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-sm text-gray-700 font-medium">
                         <span id="newRoomCategoryLabel" class="truncate mr-2">カテゴリーなし</span>
@@ -5180,7 +5185,6 @@
                       </div>
                       <input type="hidden" id="newRoomCategorySelect" value="" />
                     </div>
-                    
                     <div class="flex flex-col sm:flex-row gap-2 justify-end mt-2">
                       <button id="createCategoryBtn" class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center justify-center w-full sm:w-auto">
                         <i class="fas fa-folder-plus mr-1.5 text-gray-400"></i>カテゴリー作成
@@ -5191,21 +5195,22 @@
                     </div>
                   </div>
                 </div>
-                  <div class="h-px bg-gray-700 w-full my-4"></div>
-  <div id="serverRoomsList" class="space-y-2"></div>
+                <div class="h-px bg-gray-200 w-full my-4"></div>
+                <div id="serverRoomsList" class="space-y-2 pb-10"></div>
               </div>
-              <!-- メンバータブ -->
-              <div id="ssMembersSection" class="hidden space-y-2">
-                <div id="serverMembersManageList"></div>
+
+              <div id="ssMembersSection" class="settings-content-section hidden space-y-4">
+                <div class="settings-section-title">メンバー管理</div>
+                <div id="serverMembersManageList" class="pb-10"></div>
               </div>
-              <!-- 招待タブ -->
-              <div id="ssInvitesSection" class="hidden">
-                <div class="mb-4 space-y-2">
-                  <div class="grid grid-cols-2 gap-2">
+
+              <div id="ssInvitesSection" class="settings-content-section hidden space-y-6">
+                <div class="settings-section-title">招待コード管理</div>
+                <div class="mb-4 space-y-4">
+                  <div class="grid grid-cols-2 gap-4">
                     <div>
-                      <label class="text-xs text-gray-500 block mb-1">有効期限</label>
-                      <select id="inviteExpiry"
-                        class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                      <label class="text-xs text-gray-500 font-bold block mb-1">有効期限</label>
+                      <select id="inviteExpiry" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
                         <option value="0">なし</option>
                         <option value="1">1日</option>
                         <option value="7">7日</option>
@@ -5213,9 +5218,8 @@
                       </select>
                     </div>
                     <div>
-                      <label class="text-xs text-gray-500 block mb-1">使用回数</label>
-                      <select id="inviteMaxUses"
-                        class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none">
+                      <label class="text-xs text-gray-500 font-bold block mb-1">使用回数</label>
+                      <select id="inviteMaxUses" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
                         <option value="0">無制限</option>
                         <option value="1">1回</option>
                         <option value="5">5回</option>
@@ -5223,55 +5227,60 @@
                       </select>
                     </div>
                   </div>
-                  <button id="createInviteCodeBtn"
-                    class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
+                  <button id="createInviteCodeBtn" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
                 </div>
-                <div id="inviteCodesList" class="space-y-2"></div>
+                <div class="h-px bg-gray-200 w-full my-4"></div>
+                <div id="inviteCodesList" class="space-y-2 pb-10"></div>
               </div>
-              <!-- スタンプタブ -->
-              <div id="ssStampsSection" class="hidden space-y-4">
+
+              <div id="ssStampsSection" class="settings-content-section hidden space-y-4">
+                <div class="settings-section-title">スタンプ管理</div>
                 <div class="bg-gray-50 border border-gray-200 p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                   <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
                     <i class="fas fa-icons text-3xl text-gray-500"></i>
                   </div>
-                  <h3 class="text-lg font-bold text-gray-800 mb-6">スタンプ管理</h3>
+                  <h3 class="text-lg font-bold text-gray-800 mb-2">カスタムスタンプ</h3>
+                  <p class="text-xs text-gray-500 mb-6">サーバー専用のスタンプを追加・管理できます。</p>
                   <button onclick="openStampAdminModal()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all">
                     スタンプ管理を開く
                   </button>
                 </div>
               </div>
-              <!-- その他タブ -->
-              <div id="ssDangerSection" class="hidden space-y-4">
+
+              <div id="ssDangerSection" class="settings-content-section hidden space-y-6">
+                <div class="settings-section-title text-red-500">その他 / 削除</div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名を変更</label>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">サーバー名を変更</label>
                   <div class="flex gap-2">
                     <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
-                      class="flex-1 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                      class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
                     <button id="renameServerBtn"
-                      class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-bold">変更</button>
+                      class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">変更</button>
                   </div>
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワードを変更</label>
+                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">パスワードを変更</label>
                   <div class="space-y-2">
                     <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード"
-                      class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                      class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
                     <button id="changeServerPasswordBtn"
-                      class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 rounded-lg text-sm">パスワード変更</button>
+                      class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all">パスワード変更</button>
                   </div>
                 </div>
-                <div class="pt-2 border-t border-red-100">
+                <div class="pt-6 border-t border-red-100 mt-6">
                   <button id="deleteServerBtn"
-                    class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all"><i
-                      class="fas fa-trash mr-1"></i>このサーバーを削除</button>
+                    class="w-full bg-red-50 hover:bg-red-500 text-red-600 hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 hover:border-transparent">
+                    <i class="fas fa-trash mr-1.5"></i>このサーバーを削除
+                  </button>
                 </div>
               </div>
+
+              <p id="serverSettingsMessage" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm font-medium text-red-500"></p>
             </div>
-            <p id="serverSettingsMessage" class="text-center text-sm px-6 pb-2 font-medium"></p>
           </div>
         </div>
       </div>
-
+      
       <!-- チャットアプリ本体 -->
       <!-- チャットアプリ本体 -->
       <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
@@ -5672,6 +5681,49 @@
 
   <!-- Firebase SDKのインポート -->
   <script type="module">
+    // === フィードバック機能 ===
+    window.openFeedbackModal = function() {
+      document.getElementById('feedbackContent').value = '';
+      document.getElementById('feedbackCategory').value = 'bug';
+      document.getElementById('feedbackModal').classList.remove('hidden');
+    };
+    
+    window.closeFeedbackModal = function() {
+      document.getElementById('feedbackModal').classList.add('hidden');
+    };
+    
+    window.submitFeedback = async function() {
+      const btn = document.getElementById('feedbackSubmitBtn');
+      const contentVal = document.getElementById('feedbackContent').value.trim();
+      const categoryVal = document.getElementById('feedbackCategory').value;
+      if (!contentVal) {
+        alertMessage("内容を入力してください", "error");
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+      try {
+        const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await addDoc(collection(db, `artifacts/${appId}/feedbacks`), {
+          content: contentVal,
+          category: categoryVal,
+          createdBy: userId,
+          email: auth.currentUser?.email || '不明',
+          createdAt: serverTimestamp(),
+          status: 'open',
+          userAgent: navigator.userAgent
+        });
+        window.closeFeedbackModal();
+        alertMessage("ご報告ありがとうございました。運営チームに送信されました。", "success");
+      } catch (e) {
+        console.error("Feedback submit error:", e);
+        alertMessage("送信に失敗しました", "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "送信";
+      }
+    };
+
     // ========= Cloudflare Worker ベースURL =========
     const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 
@@ -6341,10 +6393,12 @@
         if (!isEncrypted(textToDecrypt)) { m._decrypted = true; continue; } 
         try {
           const decrypted = await decryptText(textToDecrypt, serverId, roomId, memberIds);
-          m.text = decrypted;
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+            m._decryptedErrorText = decrypted;
             m._decrypted = false;
           } else {
+            m.text = decrypted;
+            m._decryptedErrorText = null;
             m._decrypted = true;
           }
         } catch (e) {
@@ -7945,8 +7999,8 @@
 
     // ============ Discord-style settings tab ============
     window.switchDiscordSettingsTab = function(tab) {
-      document.querySelectorAll('#settingsModal .settings-nav-item').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('#settingsModal .settings-content-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.settings-content-section').forEach(s => s.classList.remove('active'));
       
       const navBtnId = tab === 'admin' ? 'openAdminModalButton' : 'snav-' + tab;
       const nb = document.getElementById(navBtnId);
@@ -11093,16 +11147,24 @@
 
     // サーバー設定のタブ
     let currentSsTab = "rooms";
-    function switchSsTab(tab) {
+    window.switchSsTab = function(tab) {
       currentSsTab = tab;
       ["rooms", "members", "invites", "stamps", "danger"].forEach(t => {
-        document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`).classList.toggle("active", t === tab);
-        document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`).classList.toggle("hidden", t !== tab);
+        const tabBtn = document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        if (tabBtn) tabBtn.classList.toggle("active", t === tab);
+        const sec = document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`);
+        if (sec) {
+          if (t === tab) {
+            sec.classList.remove("hidden");
+            sec.classList.add("active");
+          } else {
+            sec.classList.add("hidden");
+            sec.classList.remove("active");
+          }
+        }
       });
     }
-    ["Rooms", "Members", "Invites", "Stamps", "Danger"].forEach(t => {
-      document.getElementById(`ssTab${t}`).addEventListener("click", () => switchSsTab(t.toLowerCase()));
-    });
+
 
     async function openServerSettings() {
       if (!currentServerId) return;
@@ -11757,16 +11819,21 @@
         const renderGroup = (id, name, thumbUrl, stampsList, isLegacy) => {
           const div = document.createElement('div');
           div.className = "flex flex-col gap-3 p-4 bg-white rounded-xl border border-gray-200 transition-shadow hover:shadow-md";
-          const stampsHtml = stampsList.map(s => `<img src="${escapeHtml(s.url)}" class="w-10 h-10 object-contain bg-gray-50 rounded border border-gray-100" title="${escapeHtml(s.name)}" />`).join("");
+          const stampsHtml = stampsList.map((s, index) => `
+            <div class="relative group inline-block">
+              <img src="${escapeHtml(s.url)}" class="w-10 h-10 object-contain bg-gray-50 rounded border border-gray-100" title="${escapeHtml(s.name)}" />
+              ${hasAdminRights ? `<button class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow hover:bg-red-600 z-10 text-[10px]" title="このスタンプを削除" onclick="saDeleteIndividualStamp('${targetServerId}', '${id}', ${isLegacy}, ${index}, '${escapeHtml(s.url)}')"><i class="fas fa-times"></i></button>` : ''}
+            </div>
+          `).join("");
           div.innerHTML = `
             <div class="flex items-center justify-between border-b pb-3 border-gray-100">
               <div class="flex items-center gap-3">
                 <img src="${escapeHtml(thumbUrl)}" class="w-8 h-8 object-contain rounded bg-gray-50 border border-gray-200" />
                 <span class="font-bold text-gray-800 text-sm">${escapeHtml(name)} ${isLegacy ? '<span class="text-xs text-gray-400 font-normal">(レガシー)</span>' : ''}</span>
               </div>
-              ${hasAdminRights ? `<button class="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" onclick="saDeleteGroup('${targetServerId}', '${id}', ${isLegacy})">削除</button>` : ''}
+              ${hasAdminRights ? `<button class="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" onclick="saDeleteGroup('${targetServerId}', '${id}', ${isLegacy})">グループごと削除</button>` : ''}
             </div>
-            <div class="flex flex-wrap gap-2 pt-1 max-h-32 overflow-y-auto">${stampsHtml}</div>
+            <div class="flex flex-wrap gap-3 pt-1 max-h-32 overflow-y-auto">${stampsHtml}</div>
           `;
           listEl.appendChild(div);
         };
@@ -11789,6 +11856,46 @@
       } catch(e) { listEl.innerHTML = '<p class="text-sm text-red-500 col-span-2 text-center py-4">読み込みエラーが発生しました。</p>'; }
     };
 
+    window.saDeleteIndividualStamp = async function(targetServerId, groupId, isLegacy, stampIndex, stampUrl) {
+      if (!await showCustomConfirm("このスタンプを一つ削除しますか？", "削除確認")) return;
+      try {
+        if (stampUrl) {
+          const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+          if (m) {
+            const fileKey = m[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1`;
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+          }
+        }
+        const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
+        const docRef = doc(db, path);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (isLegacy) {
+            await deleteDoc(docRef);
+          } else {
+            const stamps = data.stamps || [];
+            if (stamps.length > 0 && stampIndex >= 0 && stampIndex < stamps.length) {
+              stamps.splice(stampIndex, 1);
+              if (stamps.length === 0) {
+                await deleteDoc(docRef);
+              } else {
+                await updateDoc(docRef, { stamps: stamps });
+              }
+            }
+          }
+        }
+        alertMessage("スタンプを一つ削除しました", "success");
+        await saLoadStamps(targetServerId);
+        if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+      } catch (e) {
+        console.error(e);
+        alertMessage("削除に失敗しました", "error");
+      }
+    };
+    
     window.saDeleteGroup = async function(targetServerId, groupId, isLegacy) {
       if (!await showCustomConfirm("このスタンプを削除しますか？", "削除確認")) return;
       try {
@@ -12245,7 +12352,7 @@
           console.error("Failed to trigger notification:", notifyErr);
         }
 
-        messageInput.value = ""; messageInput.style.height = "auto";
+        // messageInput.value cleared optimistically at the start
         clearAttachedFile(); cancelReply();
 
         // ★ メッセージ送信後にタイマーをリセット
@@ -12542,7 +12649,10 @@
 
 
     messageInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault(); sendMessage();
+      }
     });
     messageInput.addEventListener("input", () => {
       messageInput.style.height = "auto";
@@ -12951,7 +13061,7 @@
         
         replyQuoteDiv.innerHTML = `
           <span class="font-bold whitespace-nowrap">${escapeHtml(message.replyTo.senderNickname || "不明")}</span>
-          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo.text || "（ファイル）")}</span>
+          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo._decryptedErrorText || message.replyTo.text || "（ファイル）")}</span>
         `;
         bubbleContainer.appendChild(replyQuoteDiv);
       }
@@ -12980,7 +13090,8 @@
       if (message.text) {
         const messageTextSpan = document.createElement("span");
         messageTextSpan.className = `message-content text-gray-900 text-left`;
-        messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(message.text);
+        const textToDisplay = message._decryptedErrorText || message.text;
+        messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
         // 自分がメンションされていたらハイライト
         if (message.text.includes(`@${userNickname}`)) {
           messageElement.classList.add("mention-highlight");
@@ -14833,7 +14944,7 @@
       
       const msgLine = document.createElement("div");
       msgLine.className = "truncate text-sm text-gray-800 dark:text-gray-200";
-      msgLine.innerHTML = `<span class="font-bold mr-1">${escapeHtml(latestMsg.senderNickname)}:</span>${escapeHtml(latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+      msgLine.innerHTML = `<span class="font-bold mr-1">${escapeHtml(latestMsg.senderNickname)}:</span>${escapeHtml(latestMsg._decryptedErrorText || latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
       
       contentWrap.appendChild(msgLine);
       
@@ -14891,7 +15002,7 @@
              
              const itemText = document.createElement("div");
              itemText.className = "flex-1 truncate text-sm text-gray-700 dark:text-gray-300";
-             itemText.innerHTML = `<span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${escapeHtml(msg.senderNickname)}:</span>${escapeHtml(msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+             itemText.innerHTML = `<span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${escapeHtml(msg.senderNickname)}:</span>${escapeHtml(msg._decryptedErrorText || msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
              
              itemRow.appendChild(itemText);
              itemRow.onclick = () => jumpToMsg(msg.id);
@@ -14917,6 +15028,7 @@
     // =========================================================================
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
         if (
           !authContainer.classList.contains("hidden") &&
           (document.activeElement === emailInput || document.activeElement === passwordInput)
