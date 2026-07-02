@@ -4605,7 +4605,7 @@
                 </div>
 
                 <!-- バージョンロックバナー -->
-                <div class="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-sm">
+                <div id="versionLockContainer" class="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-sm">
                   <div>
                     <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>バージョンロック</div>
                     <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">現在の安定バージョンを保護し、アプリ起動時の自動アップデートを一時的にストップします。</div>
@@ -4614,6 +4614,18 @@
                     <input type="checkbox" id="toggleForceOverrideCheckbox" onchange="handleForceOverrideToggle(event)">
                     <span class="toggle-slider"></span>
                   </label>
+                </div>
+
+                
+                <!-- Windows版を取得する -->
+                <div id="windowsDownloadContainer" class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/60 rounded-2xl flex items-center justify-between shadow-sm" style="display:none;">
+                  <div>
+                    <div class="text-sm font-bold text-blue-700 dark:text-blue-400"><i class="fab fa-windows mr-2"></i>Windows版アプリを取得</div>
+                    <div class="text-xs text-blue-600 dark:text-blue-300 mt-1">デスクトップアプリをダウンロードして、より快適に利用しましょう。</div>
+                  </div>
+                  <button onclick="downloadLatestWindowsApp(this)" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
+                    最新版をダウンロード
+                  </button>
                 </div>
 
                 <!-- バージョン管理と履歴 -->
@@ -8944,6 +8956,13 @@
 
     // Initialize toggle when DOM is loaded
     document.addEventListener("DOMContentLoaded", () => {
+
+    // Force migration to Modern UI
+    if (!localStorage.getItem('covo_modern_ui_migrated_v2')) {
+        localStorage.setItem('covo_discord_ui', 'true');
+        localStorage.setItem('covo_modern_ui_migrated_v2', '1');
+    }
+
       // Just in case, the Auth observer handles actual db fetching
     });
 
@@ -9599,7 +9618,7 @@
     }
 
     // サーバーを出てリストに戻る
-    function leaveServerView() {
+    window.leaveServerView = function() {
       currentServerId = null;
       currentServerData = null;
       currentRoomId = null;
@@ -9871,13 +9890,13 @@
           roomNames[docSnap.id] = room.name;
           const div = document.createElement("div");
           // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
-          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent border border-transparent hover:bg-slate-200/50 hover:border-slate-300/60 text-slate-800 hover:text-slate-900 dark:hover:bg-slate-600/30 dark:hover:border-slate-500/60 dark:text-slate-300 dark:hover:text-white rounded-lg";
+          div.className = "flex items-center justify-between py-1.5 px-2.5 mb-1 text-sm font-bold cursor-pointer transition-all duration-150 group room-item-animate bg-transparent hover:bg-gray-200/70 text-gray-700 hover:text-gray-900 dark:hover:bg-white/10 dark:text-slate-300 dark:hover:text-white rounded-lg";
           div.id = `room-item-${docSnap.id}`;
           div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
           const nameDiv = document.createElement("div");
           nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-          nameDiv.innerHTML = `<span class="text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-indigo-400 font-extrabold transition-colors">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+          nameDiv.innerHTML = `<span class="text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 font-extrabold transition-colors">#</span><span class="truncate ml-1">${escapeHtml(room.name)}</span>`;
 
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[docSnap.id] || 0;
@@ -16639,6 +16658,39 @@ window.closeFeedbackModal = function() {
     };
 
     // 無限スクロール対応 過去バージョンモーダル
+    
+    window.downloadLatestWindowsApp = async function(btn) {
+      const origText = btn.textContent;
+      btn.textContent = "準備中...";
+      btn.disabled = true;
+      try {
+        const res = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases/latest', { cache: 'no-store' });
+        if (!res.ok) throw new Error('API limit or network error');
+        const release = await res.json();
+        const exeAsset = release.assets?.find(a => a.name?.endsWith('.exe'));
+        const url = exeAsset ? exeAsset.browser_download_url : release.html_url;
+        window.open(url, '_blank');
+      } catch(e) {
+        alert("最新バージョンの取得に失敗しました。GitHubページを開きます。");
+        window.open('https://github.com/qwertyuiop1229/Covo/releases/latest', '_blank');
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
+    };
+
+    // DOMロード後にTauri環境以外でのUI制御
+    document.addEventListener("DOMContentLoaded", () => {
+      const isTauriEnv = window.__TAURI__ !== undefined;
+      if (!isTauriEnv) {
+        const vlc = document.getElementById("versionLockContainer");
+        if (vlc) vlc.style.display = "none";
+        
+        const wdc = document.getElementById("windowsDownloadContainer");
+        if (wdc) wdc.style.display = "flex";
+      }
+    });
+
     window.openPastVersionsModal = function() {
       const modal = document.getElementById('pastVersionsModal');
       if (modal) {
@@ -16721,7 +16773,7 @@ window.closeFeedbackModal = function() {
               <p class="text-xs text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
             </div>
             <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}', this)">
-              <i class="fas fa-download"></i>このバージョンをインストール
+              <i class="fas fa-download"></i>${typeof window.__TAURI__ !== "undefined" ? "このバージョンをインストール" : "インストーラーをダウンロード"}
             </button>
           `;
           listEl.appendChild(card);
@@ -17427,10 +17479,13 @@ window.closeFeedbackModal = function() {
         let globalItems = [];
         try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
 
-        let validCount = 0;
-        servers.forEach(server => {
-          if (!isAdmin && !(server.joinedUsers || []).includes(userId)) return;
-          validCount++;
+        const joinedServers = servers.filter(server => {
+            if (!isAdmin) return (server.joinedUsers || []).includes(userId);
+            return (server.joinedUsers || []).includes(userId);
+        });
+        const unjoinedServers = isAdmin ? servers.filter(server => !(server.joinedUsers || []).includes(userId)) : [];
+        
+        const renderServer = (server) => {
           const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
           const hasUnread = globalItems.some(it => it.serverId === server.id);
           const isActive = currentServerId === server.id;
@@ -17500,7 +17555,25 @@ window.closeFeedbackModal = function() {
             });
             homeGrid.appendChild(card);
           }
-        });
+        };
+
+        joinedServers.forEach(server => renderServer(server));
+        
+        if (isAdmin && unjoinedServers.length > 0) {
+            // nav separator
+            const navSep = document.createElement("div");
+            navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
+            navList.appendChild(navSep);
+            
+            // home grid separator
+            if (homeGrid) {
+                const homeSep = document.createElement("div");
+                homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
+                homeSep.innerHTML = `<span class="bg-gray-50 dark:bg-gray-900 px-4 text-xs font-bold text-gray-400 -mt-2">未参加のサーバー</span>`;
+                homeGrid.appendChild(homeSep);
+            }
+            unjoinedServers.forEach(server => renderServer(server));
+        }
 
         if (validCount === 0 && homeGrid) {
           homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
