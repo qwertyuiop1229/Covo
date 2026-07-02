@@ -17575,7 +17575,7 @@ window.closeFeedbackModal = function() {
             unjoinedServers.forEach(server => renderServer(server));
         }
 
-        if (validCount === 0 && homeGrid) {
+        if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
           homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
         }
       }
