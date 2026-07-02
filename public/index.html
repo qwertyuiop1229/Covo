@@ -3239,7 +3239,7 @@
       padding: 8px 8px 4px;
     }
     .settings-nav-item {
-      display: flex !important;
+      display: flex;
       align-items: center !important;
       gap: 8px !important;
       padding: 7px 10px !important;
@@ -3328,6 +3328,44 @@
       transition: background 0.12s;
     }
     .settings-close-btn:hover { background: #e5e7eb; }
+    @media (max-width: 640px) {
+      .settings-discord-layout {
+        flex-direction: column;
+      }
+      .settings-sidebar {
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        padding: 0.5rem !important;
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+        background: #111827;
+      }
+      /* Hide user profile block on mobile server settings to save vertical space */
+      .settings-sidebar .settings-sidebar-user {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-label {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-divider {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-item {
+        width: auto !important;
+        white-space: nowrap !important;
+        padding: 8px 12px !important;
+      }
+      .settings-content {
+        padding: 1rem !important;
+      }
+      .settings-close-btn {
+        top: 0.5rem !important;
+        right: 0.5rem !important;
+        background: #f3f4f6 !important;
+      }
+    }
+
 
     /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
     @media (max-width: 768px) {
@@ -11179,8 +11217,14 @@
       const iconWrapper = document.getElementById("serverIconSettingsWrapper");
       const iconPreview = document.getElementById("serverIconSettingsPreview");
       if (iconWrapper && iconPreview) {
-        iconWrapper.style.display = (hasAdminRights || isListAdmin) ? "" : "none";
-        iconWrapper.classList.toggle("hidden", !(hasAdminRights || isListAdmin));
+        // 全体コンテナは常に表示するが、管理者以外はホバーエフェクトとクリックを無効化
+        if (hasAdminRights || isListAdmin) {
+          iconWrapper.classList.add("cursor-pointer", "group");
+          iconWrapper.dataset.canEdit = "true";
+        } else {
+          iconWrapper.classList.remove("cursor-pointer", "group");
+          iconWrapper.dataset.canEdit = "false";
+        }
         if (currentServerData?.iconUrl) {
           iconPreview.innerHTML = `<img src="${currentServerData.iconUrl}" class="w-full h-full object-cover" />`;
           iconPreview.style.backgroundColor = "transparent";
@@ -17849,7 +17893,11 @@
     const SICON_SIZE = 240;
 
     if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
-      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => { isNewServerIconCrop = false; serverIconUploadInput.click(); });
+      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => {
+        if (document.getElementById("serverIconSettingsWrapper").dataset.canEdit === "false") return;
+        isNewServerIconCrop = false;
+        serverIconUploadInput.click();
+      });
     }
     window.openNewServerIconPicker = function() {
       const newFileInput = document.getElementById("newServerIconUploadInput");
