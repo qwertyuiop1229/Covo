@@ -4090,14 +4090,14 @@
       margin-right: 0.5rem !important;
     }
     body.discord-ui-mode .room-item-animate:hover {
-      background: #f3f4f6 !important;
+      background: rgba(0, 0, 0, 0.08) !important;
       color: #111827 !important;
     }
     body.discord-ui-mode .room-item-animate:hover .room-hashtag {
       color: #6b7280 !important;
     }
     body.discord-ui-mode .room-item-animate.active {
-      background: #e5e7eb !important;
+      background: rgba(0, 0, 0, 0.12) !important;
       color: #111827 !important;
     }
     body.discord-ui-mode .room-item-animate.active .room-hashtag {
@@ -12221,14 +12221,16 @@
       messageInput.style.height = "auto";
       if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
       
+      // 共通のUI要素を取得 (finallyブロックでの参照エラー防止)
+      const progressBar = document.getElementById("uploadProgressBar");
+      const progressFill = document.getElementById("uploadProgressFill");
+      const progressText = document.getElementById("uploadProgressText");
+
       // Only lock UI fully if a file is attached
       if (attachedFile || attachedKvFile) {
           isSendingMessage = true;
           messageInput.disabled = true;
           sendMessageButton.disabled = true;
-          const progressBar = document.getElementById("uploadProgressBar");
-          const progressFill = document.getElementById("uploadProgressFill");
-          const progressText = document.getElementById("uploadProgressText");
           progressBar.classList.remove("hidden");
       }
       
