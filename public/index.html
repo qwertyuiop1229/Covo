@@ -10104,6 +10104,8 @@
                    });
                    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
                    lastMessagesData = [...allLoadedMessages];
+                   messagesIndexMap = {};
+                   lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
                    
                    renderMessagesWithReadReceipts();
                    
