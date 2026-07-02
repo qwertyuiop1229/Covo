@@ -10097,12 +10097,7 @@
                    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
                    lastMessagesData = [...allLoadedMessages];
                    
-                   const oldScrollHeight = messagesDisplay.scrollHeight;
                    renderMessagesWithReadReceipts();
-                   requestAnimationFrame(() => {
-                     const newScrollHeight = messagesDisplay.scrollHeight;
-                     messagesDisplay.scrollTop += (newScrollHeight - oldScrollHeight);
-                   });
                    
                    rtdbMessagesLimit += docs.length; // keep limit expanded
                 }
@@ -11211,7 +11206,7 @@ window.closeFeedbackModal = function() {
         
         const renderRoomItem = (room, index, arr) => {
           const item = document.createElement("div");
-          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2 min-w-0 overflow-hidden";
+          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2 min-w-0";
           const nameSpan = document.createElement("span");
           nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2 truncate";
           nameSpan.innerHTML = `<i class="fas fa-hashtag text-gray-500 text-xs"></i> ${escapeHtml(room.name)}`;
@@ -11261,33 +11256,93 @@ window.closeFeedbackModal = function() {
             if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
           });
 
-          // Category Select
-          const catSelect = document.createElement("select");
-          catSelect.className = "room-cat-select bg-[#1e1f22] border border-[#2b2d31] text-xs text-gray-300 rounded p-1 ml-2 focus:outline-none w-24 truncate";
-          const nullOpt = document.createElement("option");
-          nullOpt.value = "none";
-          nullOpt.text = "カテゴリなし";
-          catSelect.appendChild(nullOpt);
+          // Custom Category Dropdown (Style matched to stampAdminServerSelectContainer)
+          const catContainer = document.createElement("div");
+          catContainer.className = "relative ml-2";
+          
+          const catBtn = document.createElement("button");
+          catBtn.type = "button";
+          catBtn.className = "w-28 bg-[#1e1f22] border border-[#2b2d31] hover:bg-[#2b2d31] rounded-lg p-1.5 flex items-center justify-between shadow-sm focus:outline-none transition-all text-gray-300 text-xs";
+          
+          const currentCat = (typeof categories !== 'undefined') ? categories.find(c => c.id === room.categoryId) : null;
+          const catLabel = document.createElement("span");
+          catLabel.className = "truncate mr-1 text-[11px] font-bold";
+          catLabel.textContent = currentCat ? currentCat.name : "カテゴリなし";
+          
+          const catIcon = document.createElement("i");
+          catIcon.className = "fas fa-chevron-down text-gray-500 transition-transform duration-200 text-[10px] room-cat-icon";
+          
+          catBtn.appendChild(catLabel);
+          catBtn.appendChild(catIcon);
+          
+          const catDropdown = document.createElement("div");
+          catDropdown.className = "room-cat-dropdown absolute z-50 w-36 right-0 mt-1 bg-[#1e1f22] border border-[#2b2d31] rounded-lg shadow-2xl max-h-40 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top";
+          
+          const catList = document.createElement("ul");
+          catList.className = "py-1";
+          
+          const createOption = (val, text) => {
+             const li = document.createElement("li");
+             li.className = "px-3 py-2 hover:bg-[#2b2d31] hover:text-white cursor-pointer text-[11px] font-bold text-gray-300 transition-colors truncate";
+             li.textContent = text;
+             li.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                catDropdown.classList.add("hidden");
+                catDropdown.classList.remove("opacity-100");
+                catDropdown.classList.add("opacity-0");
+                catIcon.classList.remove("rotate-180");
+                if (room.categoryId === val || (room.categoryId === null && val === "none")) return;
+                
+                catLabel.textContent = text;
+                const newCat = val === "none" ? null : val;
+                try {
+                  const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                  await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${room.id}`), { categoryId: newCat });
+                  room.categoryId = newCat;
+                  loadServerSettingsRooms();
+                  if(typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+                } catch(err) {
+                  console.error(err);
+                  alertMessage("カテゴリの変更に失敗しました", "error");
+                }
+             });
+             return li;
+          };
+          
+          catList.appendChild(createOption("none", "カテゴリなし"));
           if (typeof categories !== 'undefined') {
-            categories.forEach(c => {
-               const opt = document.createElement("option");
-               opt.value = c.id;
-               opt.text = c.name;
-               catSelect.appendChild(opt);
-            });
+             categories.forEach(c => catList.appendChild(createOption(c.id, c.name)));
           }
-          catSelect.value = room.categoryId || "none";
-          catSelect.addEventListener("change", async (e) => {
-             const newCat = e.target.value === "none" ? null : e.target.value;
-             try {
-               const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-               await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${room.id}`), { categoryId: newCat });
-               room.categoryId = newCat;
-               loadServerSettingsRooms();
-               if(typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
-             } catch(err) {
-               console.error(err);
-               alertMessage("カテゴリの変更に失敗しました", "error");
+          
+          catDropdown.appendChild(catList);
+          catContainer.appendChild(catBtn);
+          catContainer.appendChild(catDropdown);
+          
+          catBtn.addEventListener("click", (e) => {
+             e.stopPropagation();
+             const isHidden = catDropdown.classList.contains("hidden");
+             document.querySelectorAll('.room-cat-dropdown').forEach(d => {
+                d.classList.add("hidden");
+                d.classList.remove("opacity-100");
+                d.classList.add("opacity-0");
+             });
+             document.querySelectorAll('.room-cat-icon').forEach(i => i.classList.remove("rotate-180"));
+             
+             if (isHidden) {
+                catDropdown.classList.remove("hidden");
+                void catDropdown.offsetWidth;
+                catDropdown.classList.remove("opacity-0");
+                catDropdown.classList.add("opacity-100");
+                catIcon.classList.add("rotate-180");
+             }
+          });
+          
+          document.addEventListener("click", (e) => {
+             if (document.body.contains(catContainer) && !catContainer.contains(e.target)) {
+                catDropdown.classList.add("hidden");
+                catDropdown.classList.remove("opacity-100");
+                catDropdown.classList.add("opacity-0");
+                catIcon.classList.remove("rotate-180");
              }
           });
 
@@ -11318,7 +11373,7 @@ window.closeFeedbackModal = function() {
 
           btnsContainer.appendChild(upBtn);
           btnsContainer.appendChild(downBtn);
-          btnsContainer.appendChild(catSelect);
+          btnsContainer.appendChild(catContainer);
           btnsContainer.appendChild(delBtn);
           item.appendChild(nameSpan);
           item.appendChild(btnsContainer);
