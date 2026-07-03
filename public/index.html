@@ -1342,6 +1342,31 @@
     .dark-server-theme .mention-option-sub, .dark .mention-option-sub {
       color: #94a3b8;
     }
+    /* Fix for Tailwind dark: classes out of sync with Covo theme toggle */
+    .dark-server-theme #mentionPopup, .dark #mentionPopup {
+      background-color: #1e293b !important;
+      border-color: #374151 !important;
+    }
+    .dark-server-theme #plusMenuPopup, .dark #plusMenuPopup {
+      background-color: #1e293b !important;
+      border-color: #374151 !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn, .dark #plusMenuPopup .plus-menu-btn {
+      color: #e2e8f0 !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover, .dark #plusMenuPopup .plus-menu-btn:hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover i, .dark #plusMenuPopup .plus-menu-btn:hover i {
+      color: #ffffff !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-divider, .dark #plusMenuPopup .plus-menu-divider {
+      background-color: #374151 !important;
+    }
+      color: #94a3b8;
+    }
     .dark-server-theme .mention-option:hover .mention-option-sub, .dark-server-theme .mention-option.active .mention-option-sub, .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
       color: #cbd5e1;
     }
@@ -5529,25 +5554,25 @@
               </div>
             </div>
             <!-- プラスメニューとメンションポップアップ -->
-            <div id="plusMenuPopup" class="hidden absolute bottom-16 left-2 bg-white dark:bg-[#1e293b] shadow-[0_4px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl border border-gray-100 dark:border-gray-700 p-2 w-[90vw] sm:w-64 z-50">
-              <button id="menuAttachBtn" class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-file-upload text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ファイルをアップロード</span>
+            <div id="plusMenuPopup" class="hidden absolute bottom-16 left-2 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.1)] rounded-2xl border border-gray-100 p-2 w-[90vw] sm:w-64 z-50">
+              <button id="menuAttachBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 hover:text-slate-900 rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 transition-colors mb-0.5 group">
+                <i class="fas fa-file-upload text-slate-400 group-hover:text-slate-700 w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ファイルをアップロード</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-hashtag text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">スレッドを作成</span>
+              <button class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 hover:text-slate-900 rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 transition-colors mb-0.5 group">
+                <i class="fas fa-hashtag text-slate-400 group-hover:text-slate-700 w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">スレッドを作成</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-poll text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">投票の作成</span>
+              <button class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 hover:text-slate-900 rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 transition-colors mb-0.5 group">
+                <i class="fas fa-poll text-slate-400 group-hover:text-slate-700 w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">投票の作成</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
-                <i class="fas fa-shapes text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">アプリを使う</span>
+              <button class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 hover:text-slate-900 rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 transition-colors group">
+                <i class="fas fa-shapes text-slate-400 group-hover:text-slate-700 w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">アプリを使う</span>
               </button>
-              <div class="h-px bg-gray-100 dark:bg-gray-700 my-1.5 mx-2"></div>
-              <button id="menuMentionBtn" class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
-                <i class="fas fa-at text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
+              <div class="plus-menu-divider h-px bg-gray-100 my-1.5 mx-2"></div>
+              <button id="menuMentionBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 hover:text-slate-900 rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 transition-colors group">
+                <i class="fas fa-at text-slate-400 group-hover:text-slate-700 w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
               </button>
             </div>
-            <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#1e293b] rounded-none border border-b-0 border-gray-200 dark:border-gray-700 w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
+            <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white rounded-none border border-b-0 border-gray-200 w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
             
             <div class="flex items-end gap-1.5 relative">
               <button id="plusMenuButton" class="input-side-btn" title="拡張メニュー" disabled><i class="fas fa-plus"></i></button>
