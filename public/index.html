@@ -1019,13 +1019,29 @@
     /* --- 追加機能用スタイル --- */
     /* メンションのハイライト */
     .mention-highlight {
-      background-color: #fef08a !important;
-      border: 1px solid #eab308;
+      background-color: rgba(29, 78, 216, 0.1) !important; /* light indigo */
+      border-left: 4px solid #1d4ed8;
+      border-radius: 4px;
+    }
+    .dark .mention-highlight {
+      background-color: rgba(96, 165, 250, 0.1) !important; /* darker indigo */
+      border-left: 4px solid #60a5fa;
     }
 
     .mention-text {
-      color: #1d4ed8;
-      font-weight: bold;
+      color: #1e293b; /* dark navy for light mode */
+      background-color: rgba(29, 78, 216, 0.15);
+      padding: 0 4px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mention-text:hover {
+      text-decoration: underline;
+    }
+    .dark .mention-text {
+      color: #bfdbfe; /* soft light blue for dark mode */
+      background-color: rgba(96, 165, 250, 0.2);
     }
 
     /* ピン留めエリア */
@@ -1296,35 +1312,27 @@
     /* 設定モーダルのスクロールバーを非表示 */
 
     /* メンションポップアップ */
-    #mentionPopup {
-      position: absolute;
-      bottom: 100%;
-      left: 0;
-      background: white;
-      border: 1px solid #d1d5db;
-      border-radius: 0.5rem;
-      max-height: 180px;
-      overflow-y: auto;
-      z-index: 30;
-      width: 220px;
-      margin-bottom: 8px;
-    }
-
-    #mentionPopup .mention-option {
-      padding: 10px 14px;
+    .mention-option {
+      padding: 8px 16px;
       cursor: pointer;
       font-size: 0.875rem;
       color: #374151;
-      border-bottom: 1px solid #f3f4f6;
-      transition: background-color 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-
-    #mentionPopup .mention-option:last-child {
-      border-bottom: none;
+    .dark .mention-option {
+      color: #d1d5db;
     }
-
-    #mentionPopup .mention-option:hover {
+    .mention-option:hover, .mention-option.active {
       background-color: #f3f4f6;
+    }
+    .dark .mention-option:hover, .dark .mention-option.active {
+      background-color: #374151;
+    }
+    .mention-option-sub {
+      font-size: 0.75rem;
+      color: #9ca3af;
     }
 
     /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
@@ -5509,9 +5517,17 @@
                 <span id="uploadProgressText" class="text-xs text-gray-500 mt-0.5 block">アップロード中... 0%</span>
               </div>
             </div>
-            <!-- メンションポップアップ -->
-            <div id="mentionPopup" class="hidden"></div>
-            <div class="flex items-end gap-1.5">
+            </div>
+            <!-- プラスメニューとメンションポップアップ -->
+            <div id="plusMenuPopup" class="hidden absolute bottom-16 left-2 bg-white dark:bg-gray-800 shadow-lg rounded-xl border border-gray-200 dark:border-gray-700 py-2 w-48 z-50">
+              <button id="menuMentionBtn" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <i class="fas fa-at text-gray-400 w-5 text-center"></i> メンション
+              </button>
+            </div>
+            <div id="mentionPopup" class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 shadow-xl rounded-xl border border-gray-200 dark:border-gray-700 py-1 w-64 max-h-56 overflow-y-auto z-50"></div>
+            
+            <div class="flex items-end gap-1.5 relative">
+              <button id="plusMenuButton" class="input-side-btn" title="拡張メニュー" disabled><i class="fas fa-plus"></i></button>
               <button id="fileAttachButton" class="input-side-btn" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
                   class="fas fa-paperclip"></i></button>
               <button id="stickerButton" class="input-side-btn" title="スタンプ" disabled><i class="far fa-smile"></i></button>
@@ -10158,7 +10174,7 @@
                        } catch (e) { text = '（暗号化されたメッセージ）'; }
                        if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
 
-                       const isMentioned = text && typeof text === "string" && text.includes(`@${userNickname}`);
+                       const isMentioned = text && typeof text === "string" && (text.includes(`@${userNickname}`) || text.includes('@all'));
                        if (isMentioned && !document.hasFocus()) {
                          // Fallback mention toast when not focused is handled by showNotification title
                        }
@@ -10418,7 +10434,7 @@
                 bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
               }
             } catch (e) {}
-            const isMentioned = bodyText && typeof bodyText === "string" && bodyText.includes(`@${userNickname}`);
+            const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
             if (isMentioned && document.hasFocus()) {
               showMentionToast(data.senderNickname || "ユーザー");
             }
@@ -10490,7 +10506,7 @@
                     bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
                   }
                 } catch (e) {}
-                const isMentioned = bodyText && typeof bodyText === "string" && bodyText.includes(`@${userNickname}`);
+                const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
                 if (isMentioned && document.hasFocus()) {
                   showMentionToast(msgData.senderNickname || "ユーザー");
                 }
@@ -10605,7 +10621,7 @@
       messageInput.disabled = false;
       fileAttachButton.disabled = false;
       { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
-      if (mentionButton) mentionButton.disabled = false;
+      { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = false; }
       document.getElementById('callButton').disabled = false;
       { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
       prewarmPeerConnection();
@@ -12695,12 +12711,55 @@
 
 
     messageInput.addEventListener("keydown", (e) => {
+      if (isMentionPopupOpen) {
+        if (e.key === "ArrowDown" || e.key === "Tab") {
+          e.preventDefault();
+          mentionSelectedIndex++;
+          renderMentionPopup();
+          return;
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          mentionSelectedIndex--;
+          renderMentionPopup();
+          return;
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (mentionUsers.length > 0) {
+            selectMention(mentionUsers[mentionSelectedIndex].nickname);
+          }
+          return;
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closeMentionPopup();
+          return;
+        }
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault(); sendMessage();
       }
     });
-    messageInput.addEventListener("input", () => {
+
+    messageInput.addEventListener("input", (e) => {
+      // メンション機能の判定
+      const val = messageInput.value;
+      const pos = messageInput.selectionStart;
+      const beforeCursor = val.substring(0, pos);
+      const match = beforeCursor.match(/[@＠]([^\s]*)$/);
+      
+      if (match) {
+        const isStartOfWord = match.index === 0 || /\s/.test(beforeCursor.charAt(match.index - 1)) || /^[^\w\s]/.test(beforeCursor.charAt(match.index - 1));
+        if (isStartOfWord) {
+          openMentionPopup(match[1]);
+        } else {
+          closeMentionPopup();
+        }
+      } else {
+        closeMentionPopup();
+      }
+
+      // 入力欄の自動拡張とタイピング状態の管理
       messageInput.style.height = "auto";
       messageInput.style.height = messageInput.scrollHeight + "px";
       if (!isCurrentlyTyping) {
@@ -12826,69 +12885,160 @@
       updateFilePreview();
     });
 
-    // --- メンションボタン（機能削除済み。要素が無くてもエラーにならないよう存在チェック） ---
-    const mentionButton = document.getElementById("mentionButton");
+    // --- 拡張メニューとメンション機能 ---
+    const plusMenuButton = document.getElementById("plusMenuButton");
+    const plusMenuPopup = document.getElementById("plusMenuPopup");
+    const menuMentionBtn = document.getElementById("menuMentionBtn");
     const mentionPopup = document.getElementById("mentionPopup");
-    if (mentionButton && mentionPopup) {
-      mentionButton.disabled = true;
-      mentionButton.addEventListener("click", () => {
-        if (!currentRoomId) return;
-        if (!mentionPopup.classList.contains("hidden")) {
-          mentionPopup.classList.add("hidden"); return;
-        }
-        mentionPopup.innerHTML = "";
-        
-          bubble.style.transition = "transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
-          bubble.style.transform = "translateX(0)";
-          setTimeout(() => { bubble.style.transition = ""; }, 500);
-          
-          if (Math.abs(swipeCurrentX) > 50) {
-            const msgId = bubble.dataset.messageId;
-            const msgData = lastMessagesData.find(m => m.id === msgId);
-            if (msgData) {
-              replyingToMessage = msgData;
-              replyingToNickname.textContent = msgData.senderNickname;
-              replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
-              replyingToContainer.classList.remove("hidden");
-            }
-          }
-          const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
-          if (replyBg) {
-             replyBg.style.transition = "opacity 0.4s ease-out, transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
-             replyBg.style.opacity = "0";
-             replyBg.style.transform = "translateY(-50%) scale(0.5)";
-             setTimeout(() => { replyBg.style.transition = ""; }, 500);
-          }
-        
-        const serverMemberIds = currentServerData?.joinedUsers || [];
-        const users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
-        if (users.length === 0) {
-          mentionPopup.innerHTML = '<div class="p-2 text-sm text-gray-500">ユーザーがいません</div>';
-        } else {
-          users.forEach(u => {
-            const opt = document.createElement("div");
-            opt.className = "mention-option";
-            opt.textContent = u.nickname || "不明";
-            opt.addEventListener("click", () => {
-              const pos = messageInput.selectionStart || messageInput.value.length;
-              const before = messageInput.value.substring(0, pos);
-              const after = messageInput.value.substring(pos);
-              const prefix = (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n")) ? " " : "";
-              messageInput.value = before + prefix + "@" + u.nickname + " " + after;
-              mentionPopup.classList.add("hidden");
-              messageInput.focus();
-            });
-            mentionPopup.appendChild(opt);
-          });
-        }
-        mentionPopup.classList.remove("hidden");
+    let mentionSearchString = "";
+    let isMentionPopupOpen = false;
+    let mentionSelectedIndex = 0;
+    let mentionUsers = [];
+
+    function getRecentlyMentioned() {
+      try {
+        const data = localStorage.getItem("recentlyMentioned");
+        return data ? JSON.parse(data) : [];
+      } catch(e) { return []; }
+    }
+    function addRecentlyMentioned(nickname) {
+      if (nickname === "all") return;
+      let recent = getRecentlyMentioned();
+      recent = recent.filter(n => n !== nickname);
+      recent.unshift(nickname);
+      if (recent.length > 20) recent = recent.slice(0, 20);
+      localStorage.setItem("recentlyMentioned", JSON.stringify(recent));
+    }
+
+    function renderMentionPopup() {
+      if (!isMentionPopupOpen) {
+        mentionPopup.classList.add("hidden");
+        return;
+      }
+      mentionPopup.innerHTML = "";
+      mentionPopup.classList.remove("hidden");
+      
+      const serverMemberIds = currentServerData?.joinedUsers || [];
+      let users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
+      
+      // 最近メンションした順に並び替え
+      const recent = getRecentlyMentioned();
+      users.sort((a, b) => {
+        const idxA = recent.indexOf(a.nickname);
+        const idxB = recent.indexOf(b.nickname);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.nickname.localeCompare(b.nickname);
       });
-      document.addEventListener("click", (e) => {
-        if (!mentionPopup.contains(e.target) && e.target !== mentionButton && !mentionButton.contains(e.target)) {
-          mentionPopup.classList.add("hidden");
+      
+      // 先頭に @all を追加
+      mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+      
+      // 絞り込み
+      if (mentionSearchString) {
+        mentionUsers = mentionUsers.filter(u => u.nickname.toLowerCase().startsWith(mentionSearchString.toLowerCase()));
+      }
+      
+      if (mentionUsers.length === 0) {
+        mentionPopup.innerHTML = '<div class="p-3 text-sm text-gray-500 text-center">ユーザーがいません</div>';
+        return;
+      }
+      
+      if (mentionSelectedIndex >= mentionUsers.length) mentionSelectedIndex = 0;
+      if (mentionSelectedIndex < 0) mentionSelectedIndex = mentionUsers.length - 1;
+      
+      mentionUsers.forEach((u, index) => {
+        const opt = document.createElement("div");
+        opt.className = "mention-option" + (index === mentionSelectedIndex ? " active" : "");
+        
+        const iconHTML = u.id === 'all' 
+          ? `<div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0"><i class="fas fa-users"></i></div>`
+          : (u.avatarUrl 
+              ? `<img src="${u.avatarUrl}" class="w-6 h-6 rounded-full object-cover flex-shrink-0">` 
+              : `<div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 text-xs flex-shrink-0"><i class="fas fa-user"></i></div>`);
+        
+        const nameHTML = `<span class="font-medium">${escapeHtml(u.nickname)}</span>` + 
+                         (u.desc ? `<span class="mention-option-sub ml-2">${u.desc}</span>` : ``);
+                         
+        opt.innerHTML = `${iconHTML} <div class="flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">${nameHTML}</div>`;
+        
+        opt.addEventListener("click", () => {
+          selectMention(u.nickname);
+        });
+        opt.addEventListener("mouseenter", () => {
+          const oldActive = mentionPopup.querySelector(".active");
+          if (oldActive) oldActive.classList.remove("active");
+          opt.classList.add("active");
+          mentionSelectedIndex = index;
+        });
+        mentionPopup.appendChild(opt);
+        
+        if (index === mentionSelectedIndex) {
+          opt.scrollIntoView({ block: "nearest" });
         }
       });
     }
+
+    function selectMention(nickname) {
+      const pos = messageInput.selectionStart;
+      const val = messageInput.value;
+      const beforeCursor = val.substring(0, pos);
+      const afterCursor = val.substring(pos);
+      
+      const lastAtMatch = beforeCursor.match(/[@＠]([^\s]*)$/);
+      let newBefore = beforeCursor;
+      if (lastAtMatch) {
+        newBefore = beforeCursor.substring(0, lastAtMatch.index) + "@" + nickname + " ";
+      } else {
+        newBefore = beforeCursor + (beforeCursor.length > 0 && !beforeCursor.endsWith(" ") ? " " : "") + "@" + nickname + " ";
+      }
+      
+      messageInput.value = newBefore + afterCursor;
+      messageInput.selectionStart = messageInput.selectionEnd = newBefore.length;
+      
+      addRecentlyMentioned(nickname);
+      closeMentionPopup();
+      messageInput.focus();
+    }
+
+    function openMentionPopup(searchStr = "") {
+      if (!currentRoomId) return;
+      isMentionPopupOpen = true;
+      mentionSearchString = searchStr;
+      renderMentionPopup();
+    }
+    
+    function closeMentionPopup() {
+      isMentionPopupOpen = false;
+      mentionPopup.classList.add("hidden");
+    }
+
+    if (plusMenuButton) {
+      plusMenuButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentRoomId) return;
+        plusMenuPopup.classList.toggle("hidden");
+      });
+    }
+
+    if (menuMentionBtn) {
+      menuMentionBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        plusMenuPopup.classList.add("hidden");
+        openMentionPopup("");
+        messageInput.focus();
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      if (plusMenuPopup && !plusMenuPopup.contains(e.target) && e.target !== plusMenuButton && !plusMenuButton.contains(e.target)) {
+        plusMenuPopup.classList.add("hidden");
+      }
+      if (mentionPopup && !mentionPopup.contains(e.target)) {
+        closeMentionPopup();
+      }
+    });
 
     function escapeHtmlAndLinkUrls(text) {
       if (!text) return "";
@@ -13139,7 +13289,7 @@
         const textToDisplay = message._decryptedErrorText || message.text;
         messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
         // 自分がメンションされていたらハイライト
-        if (message.text.includes(`@${userNickname}`)) {
+        if (message.text.includes(`@${userNickname}`) || message.text.includes('@all')) {
           messageElement.classList.add("mention-highlight");
         }
         messageElement.appendChild(messageTextSpan);
@@ -14842,7 +14992,7 @@
       messageInput.disabled = true;
       fileAttachButton.disabled = true;
       { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
-      if (mentionButton) mentionButton.disabled = true;
+      { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = true; }
       sendMessageButton.disabled = true;
       clearAttachedFile();
       cancelReply();
