@@ -1323,14 +1323,14 @@
       gap: 12px;
       transition: background-color 0.15s ease, color 0.15s ease;
     }
-    .dark .mention-option {
+    .dark-server-theme .mention-option, .dark .mention-option {
       color: #f1f5f9;
     }
     .mention-option:hover, .mention-option.active {
       background-color: #1e293b;
       color: #ffffff;
     }
-    .dark .mention-option:hover, .dark .mention-option.active {
+    .dark-server-theme .mention-option:hover, .dark-server-theme .mention-option.active, .dark .mention-option:hover, .dark .mention-option.active {
       background-color: #334155;
       color: #ffffff;
     }
@@ -1343,10 +1343,10 @@
     .mention-option:hover .mention-option-sub, .mention-option.active .mention-option-sub {
       color: #cbd5e1;
     }
-    .dark .mention-option-sub {
+    .dark-server-theme .mention-option-sub, .dark .mention-option-sub {
       color: #94a3b8;
     }
-    .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
+    .dark-server-theme .mention-option:hover .mention-option-sub, .dark-server-theme .mention-option.active .mention-option-sub, .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
       color: #cbd5e1;
     }
 
@@ -5551,7 +5551,7 @@
                 <i class="fas fa-at text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
               </button>
             </div>
-            <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#1e293b] shadow-[0_-4px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_15px_rgba(0,0,0,0.3)] rounded-t-2xl border border-b-0 border-gray-200 dark:border-gray-700 w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
+            <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#1e293b] shadow-[0_-4px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_15px_rgba(0,0,0,0.3)] rounded-none border border-b-0 border-gray-200 dark:border-gray-700 w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
             
             <div class="flex items-end gap-1.5 relative">
               <button id="plusMenuButton" class="input-side-btn" title="拡張メニュー" disabled><i class="fas fa-plus"></i></button>
