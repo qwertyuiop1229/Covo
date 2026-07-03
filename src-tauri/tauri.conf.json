@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.0.385",
+  "version": "1.0.386",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
