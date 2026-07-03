@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -15499,6 +15499,28 @@
       }, 1000);
     }
 
+    async function cleanupWebRtcDoc(colName, docId) {
+      if (!docId) return;
+      try {
+        const { doc, deleteDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const docRef = doc(db, 'artifacts', appId, colName, docId);
+        
+        // TuRNV候補（ICE Candidates）を削除
+        const subCols = colName === 'calls' ? ['callerCandidates', 'calleeCandidates'] : ['senderCandidates', 'receiverCandidates'];
+        for (const sub of subCols) {
+          const candsSnap = await getDocs(collection(docRef, sub));
+          const deletePromises = [];
+          candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+          await Promise.all(deletePromises);
+        }
+        
+        // 親ドキュメント自体を削除
+        await deleteDoc(docRef);
+      } catch (e) {
+        console.warn(`[WebRTC Cleanup] Failed to cleanup ${colName}/${docId}:`, e);
+      }
+    }
+
     function stopCallTimer() {
       if (_callTimerInterval) { clearInterval(_callTimerInterval); _callTimerInterval = null; }
     }
@@ -16046,7 +16068,7 @@
     async function _fsMarkComplete() {
       try {
         const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-        if (_fsId) await updateDoc(doc(db, 'artifacts', appId, 'fileshares', _fsId), { status: 'completed' });
+        if (_fsId) await cleanupWebRtcDoc('fileshares', _fsId);
       } catch (e) {}
       _fsCleanup();
     }
@@ -16081,7 +16103,7 @@
     async function _fsDecline(id) {
       try {
         const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-        await updateDoc(doc(db, 'artifacts', appId, 'fileshares', id), { status: 'declined' });
+        await cleanupWebRtcDoc('fileshares', id);
       } catch (e) {}
     }
 
@@ -16388,7 +16410,7 @@
       // タイムアウト
       _callTimeoutHandle = setTimeout(async () => {
         if (_callId) {
-          try { await updateDoc(doc(db, 'artifacts', appId, 'calls', _callId), { status: 'missed' }); } catch(_) {}
+          try { await cleanupWebRtcDoc('calls', _callId); } catch(_) {}
           endCall(true);
         }
       }, CALL_TIMEOUT_MS);
@@ -16505,7 +16527,7 @@
       stopCallRingSound();
       try {
         const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-        await updateDoc(doc(db, 'artifacts', appId, 'calls', _callId), { status: 'declined' });
+        await cleanupWebRtcDoc('calls', _callId);
       } catch(_) {}
       endCall(true);
     }
@@ -16551,7 +16573,7 @@
       if (!skipFirestore && callIdCopy) {
         try {
           const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-          await updateDoc(doc(db, 'artifacts', appId, 'calls', callIdCopy), { status: 'ended' });
+          await cleanupWebRtcDoc('calls', callIdCopy);
         } catch(_) {}
       }
 
