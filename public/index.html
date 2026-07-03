@@ -4682,13 +4682,7 @@
               <div id="admintoolsSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">管理者ツール</div>
                 <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
-                  <div class="flex justify-between items-center bg-indigo-50 p-4 rounded-xl border border-indigo-200">
-                    <div>
-                      <div class="text-sm font-bold text-indigo-900">⚡ RTDB リアルタイム同期モード</div>
-                      <div class="text-xs text-indigo-700 mt-1">Firestoreの代わりにRealtime Databaseを使用します (全体反映)</div>
-                    </div>
-                    <label class="toggle-switch"><input type="checkbox" id="pcToggleRtdbMode" onchange="toggleDatabaseMode(this.checked)"><span class="toggle-slider"></span></label>
-                  </div>
+                  <!-- RTDB Toggle removed, now permanently enabled -->
                   <div class="flex justify-between items-center">
                     <div>
                       <div class="text-sm font-bold text-gray-800">要素を検査</div>
@@ -4922,11 +4916,14 @@
         </div>
 
         <!-- 一括削除 -->
-        <div class="pt-2 border-t border-gray-100">
-          <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.7);">
-            <i class="fas fa-trash-alt"></i> 全ファイルを一括削除
+        <div class="pt-2 border-t border-gray-100 flex flex-col gap-2">
+          <button id="bulkDeleteMessagesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.9);">
+            <i class="fas fa-file-image"></i> 添付ファイルのみを一括削除
           </button>
-          <p class="text-xs text-gray-400 mt-2 text-center">KV（Cloudflare）の全ファイルが削除されます</p>
+          <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 mt-2" style="background:#4b111b;color:rgba(255,255,255,0.8);">
+            <i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)
+          </button>
+          <p class="text-xs text-gray-400 mt-2 text-center">ストレージの管理を行えます</p>
         </div>
       </div>
       <!-- フィードバックタブ -->
@@ -5853,6 +5850,7 @@
       signInWithEmailAndPassword,
       signOut,
       onAuthStateChanged,
+      onIdTokenChanged
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore,
@@ -7338,6 +7336,13 @@
           }
           auth = getAuth(app);
         }
+        onIdTokenChanged(auth, async (user) => {
+          if (user) {
+            _cachedIdToken = await user.getIdToken();
+          } else {
+            _cachedIdToken = null;
+          }
+        });
 
         onAuthStateChanged(auth, async (user) => {
           // 再入防止: 前回の処理が終わっていない場合はスキップ
@@ -7678,6 +7683,7 @@
         }
         snap.forEach(d => {
           const fb = d.data();
+          fb.id = d.id;
           const item = document.createElement("div");
           item.className = "p-3 bg-white border border-gray-200 rounded-xl shadow-sm text-sm flex flex-col gap-2 relative group";
           
@@ -7748,8 +7754,8 @@
       div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
 
       const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
-      const username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
-      const iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
+      let username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
+      let iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
 
       const avatar = document.createElement("div");
       avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
@@ -7775,6 +7781,22 @@
 
       div.appendChild(avatar);
       div.appendChild(textContainer);
+
+      if (userData && userData.id) {
+        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, getDoc }) => {
+          getDoc(doc(db, `artifacts/${appId}/users/${userData.id}/profile`, "nicknameDoc")).then(snap => {
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.nickname) {
+                userSpan.textContent = `ユーザーネーム: ${data.nickname}`;
+              }
+              if (data.avatarUrl) {
+                avatar.innerHTML = `<img src="${data.avatarUrl}" class="w-full h-full object-cover" />`;
+              }
+            }
+          }).catch(e => console.error(e));
+        });
+      }
 
       if (isSelf) {
         const badge = document.createElement("span");
@@ -7827,7 +7849,7 @@
         
           try {
             const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-            uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = u; });
+            uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = { ...u, id: d.id }; });
           } catch(e){}
         
 
@@ -7907,10 +7929,70 @@
 
     document.getElementById('refreshStorageStatsBtn').addEventListener('click', loadStorageStats);
 
-    document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
-      const first = await showCustomConfirm('KV（Cloudflare）の全ファイルを削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+    async function cleanupFirestoreMessages() {
+      let msgDeleted = 0;
+      try {
+        const kvWorkerPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/[A-Za-z0-9_]+');
+        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+        for (const serverDoc of serversSnap.docs) {
+          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms`));
+          for (const roomDoc of roomsSnap.docs) {
+            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms/${roomDoc.id}/messages`));
+            for (const msgDoc of msgsSnap.docs) {
+              const d = msgDoc.data();
+              const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
+              // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
+              const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
+              const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
+              if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
+                await deleteDoc(msgDoc.ref);
+                msgDeleted++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[bulkDelete] Message cleanup error:', e);
+      }
+      return msgDeleted;
+    }
+
+    document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async () => {
+      const first = await showCustomConfirm('チャットの「添付ファイルのみ」を削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等のシステムファイルは保持されます。');
       if (!first) return;
-      const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', '全ての添付ファイルのURLが無効になります。');
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      if (!idToken) return;
+      
+      const btn = document.getElementById('bulkDeleteMessagesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=messages_only`, { 
+          method: 'DELETE',
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
+          const msgDeleted = await cleanupFirestoreMessages();
+          alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+          loadStorageStats();
+        } else {
+          alertMessage('削除に失敗しました: ' + data.error, 'error');
+        }
+      } catch (e) {
+        console.error(e);
+        alertMessage('通信エラーが発生しました', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-image"></i> 添付ファイルのみを一括削除';
+      }
+    });
+
+    document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
+      const first = await showCustomConfirm('【警告】アイコンやスタンプも含めた全ファイルを完全に削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+      if (!first) return;
+      const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'ユーザーアイコンやサーバーアイコン等も無効になります。');
       if (!second) return;
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       if (!idToken) return;
@@ -7919,48 +8001,25 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
       try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}`, { 
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=all_danger`, { 
           method: 'DELETE',
           headers: { "Authorization": `Bearer ${idToken}` }
         });
-        if (res.ok) {
-          const data = await res.json();
-          // ファイルを参照するFirestoreメッセージも削除
+        const data = await res.json();
+        if (data.success) {
           btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
-          let msgDeleted = 0;
-          try {
-            const kvWorkerPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/[A-Za-z0-9_]+');
-            const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
-            for (const serverDoc of serversSnap.docs) {
-              const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms`));
-              for (const roomDoc of roomsSnap.docs) {
-                const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms/${roomDoc.id}/messages`));
-                for (const msgDoc of msgsSnap.docs) {
-                  const d = msgDoc.data();
-                  const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
-                  // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
-                  const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
-                  const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
-                  if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
-                    await deleteDoc(msgDoc.ref);
-                    msgDeleted++;
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            console.error('[bulkDelete] Message cleanup error:', e);
-          }
+          const msgDeleted = await cleanupFirestoreMessages();
           alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
           loadStorageStats();
         } else {
-          alertMessage('削除に失敗しました', 'error');
+          alertMessage('削除に失敗しました: ' + data.error, 'error');
         }
       } catch (e) {
-        alertMessage('削除に失敗しました: ' + e.message, 'error');
+        console.error(e);
+        alertMessage('通信エラーが発生しました', 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-trash-alt"></i> 全ファイルを一括削除';
+        btn.innerHTML = '<i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)';
       }
     });
 
@@ -9140,34 +9199,11 @@
     // =========================================================================
     // RTDB Database Toggle Logic
     // =========================================================================
-    window.globalUseRtdb = false;
+    // トグルは廃止され、RTDBによる同期が恒久的に有効化されました。
+    window.globalUseRtdb = true; 
     let rtdbGlobalSettingUnsub = null;
     async function setupGlobalRtdbListener() {
-      console.log('🔄 [システム] データベース(RTDB)の同期リスナーを初期化中...');
-      const { ref, onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      const settingRef = ref(rtdb, `artifacts/${appId}/settings/useRtdb`);
-      
-      rtdbGlobalSettingUnsub = onValue(settingRef, (snapshot) => {
-        const val = snapshot.val();
-        const newValue = (val === true);
-        console.log(`🔄 [システム] データベースの状態を受信しました: ${newValue ? 'ON (稼働中)' : 'OFF (停止中)'}`);
-        
-        // Always update the toggle UI in case it is out of sync after a reload
-        const pcToggle = document.getElementById('pcToggleRtdbMode');
-        const mobToggle = document.getElementById('mobileToggleRtdbMode');
-        if (pcToggle) pcToggle.checked = newValue;
-        if (mobToggle) mobToggle.checked = newValue;
-
-        if (window.globalUseRtdb !== newValue) {
-          window.globalUseRtdb = newValue;
-          // Re-subscribe if we are in a room
-          if (currentRoomId) {
-            console.log('🔄 [システム] モード変更に伴い、メッセージの再読み込みを行います');
-            subscribeToMessages();
-          }
-        }
-      });
+      // no-op: 常に true
     }
 
     // Initialize toggle when DOM is loaded
@@ -9181,24 +9217,6 @@
 
       // Just in case, the Auth observer handles actual db fetching
     });
-
-    window.toggleDatabaseMode = async function(checked) {
-      if (!isAdmin) return;
-      try {
-        const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-        const rtdb = await _getOrInitRTDB();
-        await set(ref(rtdb, `artifacts/${appId}/settings/useRtdb`), checked);
-        alertMessage(checked ? "⚡ RTDB 同期モードを有効にしました" : "🔥 Firestoreモードに戻しました", "success");
-      } catch (e) {
-        console.error("RTDB toggle error:", e);
-        alertMessage("設定の切り替え中にエラーが発生しました", "error");
-        // Revert toggle visually
-        setTimeout(() => {
-           const pcToggle = document.getElementById('pcToggleRtdbMode');
-           if (pcToggle) pcToggle.checked = !checked;
-        }, 300);
-      }
-    };
 
     async function updateUserStatus(state) {
       if (!userId || !userNickname) return;
@@ -10428,11 +10446,7 @@
       const spinner = document.getElementById('topLoadingSpinner');
       if (spinner) spinner.style.display = 'none';
 
-      if (window.globalUseRtdb) {
-        subscribeToMessagesRTDB();
-      } else {
-        subscribeToMessagesFirestore();
-      }
+      subscribeToMessagesRTDB();
     }
 
     async function subscribeToMessagesRTDB() {
@@ -10532,104 +10546,51 @@
       onChildChanged(q, handleChanged);
       onChildRemoved(q, handleRemoved);
       
-      window.rtdbMessagesUnsub = () => { off(q); };
-    }
-
-    function subscribeToMessagesFirestore() {
-      const q = query(
-        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-        orderBy("timestamp", "desc"),
-        limit(messageLimit || 20)
-      );
-
-      unsubscribeMessages = onSnapshot(q, async (snapshot) => {
-        snapshot.docChanges().forEach(change => {
-          if (change.type === "added" && !isInitialMessageLoad) {
-            const msgData = change.doc.data();
-            if (msgData.senderId !== userId) {
-              (async () => {
-                let bodyText = msgData.text;
-                try {
-                  if (isEncrypted(bodyText)) {
-                    const _members = (currentServerData && currentServerData.joinedUsers) || [];
-                    bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
-                  }
-                } catch (e) {}
-                const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
-                if (isMentioned && document.hasFocus()) {
-                  showMentionToast(msgData.senderNickname || "ユーザー");
-                }
-              })();
+      const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
+      if (window.typingUnsubscribe) { window.typingUnsubscribe(); }
+      const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const onTyping = onValue(typingRef, (snap) => {
+        const now = Date.now();
+        const others = [];
+        snap.forEach((child) => {
+          if (child.key !== userId) {
+            const data = child.val();
+            if (data && data.t && (now - data.t) < 10000) {
+              others.push(data.n);
             }
-          } else if (change.type === "removed") {
-            allLoadedMessages = allLoadedMessages.filter(m => m.id !== change.doc.id);
           }
         });
-
-        const latestDocs = [];
-        snapshot.forEach(doc => {
-          const d = doc.data(); d.id = doc.id;
-          latestDocs.push(d);
-        });
-
-        const latestMessages = latestDocs.reverse();
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        
-        await decryptMessagesInPlace(latestMessages, currentServerId, currentRoomId, _members).catch(() => {});
-
-        if (isInitialMessageLoad) {
-          realTimeMessagesCache = [...latestMessages];
-          if (!isJumpView) {
-            allLoadedMessages = [...realTimeMessagesCache];
-          }
+        const indicator = document.getElementById('typingIndicator');
+        if (others.length > 0) {
+          indicator.textContent = others.join(', ') + ' が入力中...';
+          indicator.classList.remove('hidden');
         } else {
-          const latestIds = new Set(latestMessages.map(m => m.id));
-          const olderKeptCache = realTimeMessagesCache.filter(m => !latestIds.has(m.id));
-          realTimeMessagesCache = [...olderKeptCache, ...latestMessages];
-
-          if (!isJumpView) {
-            const olderKeptMessages = allLoadedMessages.filter(m => !latestIds.has(m.id));
-            allLoadedMessages = [...latestMessages, ...olderKeptMessages];
-            const seen = new Set();
-            allLoadedMessages = allLoadedMessages.filter(m => {
-                if(seen.has(m.id)) return false;
-                seen.add(m.id);
-                return true;
-            });
-            allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-          } else {
-            const latestMap = new Map(latestMessages.map(m => [m.id, m]));
-            jumpViewMessages = jumpViewMessages.map(m => latestMap.has(m.id) ? latestMap.get(m.id) : m);
-            allLoadedMessages = [...jumpViewMessages];
-          }
+          indicator.classList.add('hidden');
         }
-
-        lastMessagesData = [...allLoadedMessages];
-        messagesIndexMap = {};
-        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-        const wasScrolledToBottom = isInitialMessageLoad || (messagesDisplay.scrollTop <= 50);
-
-        renderPinnedMessages();
-        renderMessagesWithReadReceipts();
-        if (isInitialMessageLoad) {
-          isInitialMessageLoad = false;
-          messagesDisplay.scrollTop = 0;
-          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
-          setTimeout(() => { 
-            messagesDisplay.scrollTop = 0; 
-            allowPagination = true;
-            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
-               loadOlderMessages();
-            }
-          }, 500);
-        } else if (wasScrolledToBottom) {
-          messagesDisplay.scrollTop = 0;
-        }
-        updateReadReceiptForCurrentUser();
       });
+      window.typingUnsubscribe = () => off(typingRef, 'value', onTyping);
+
+      const rrRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
+      if (window.readReceiptsUnsubscribe) { window.readReceiptsUnsubscribe(); }
+      const onRR = onValue(rrRef, (snap) => {
+        roomReadReceipts = {};
+        snap.forEach((child) => {
+          roomReadReceipts[child.key] = child.val();
+        });
+        renderMessagesWithReadReceipts();
+      });
+      window.readReceiptsUnsubscribe = () => off(rrRef, 'value', onRR);
+
+      window.rtdbMessagesUnsub = () => { 
+        off(q); 
+        if(window.typingUnsubscribe) window.typingUnsubscribe();
+        if(window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
+      };
+      
+      membersSidebar.classList.remove("hidden");
     }
 
+    // subscribeToMessagesFirestore removed (permanently using RTDB)
     function selectRoom(roomId, roomName) {
       // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
       if (window.innerWidth < 768 && currentRoomId === roomId) {
@@ -13878,19 +13839,23 @@
       if (lastMsgId === _lastSentReadMessageId) return;
       _lastSentReadMessageId = lastMsgId;
       try {
-        const myReceiptRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`, userId);
-        await setDoc(myReceiptRef, { lastReadAt: serverTimestamp(), lastReadMessageId: lastMsgId }, { merge: true });
+        const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const myReceiptRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts/${userId}`);
+        await set(myReceiptRef, { lastReadAt: Date.now(), lastReadMessageId: lastMsgId });
       } catch (error) { }
     }
 
     async function setTypingStatus(isTyping) {
       if (!currentRoomId || !userId || !appId) return;
-      const typingRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`, userId);
       try {
+        const { ref, set, remove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing/${userId}`);
         if (isTyping) {
-          await setDoc(typingRef, { n: userNickname, t: serverTimestamp() });
+          await set(typingRef, { n: userNickname, t: serverTimestamp() });
         } else {
-          await deleteDoc(typingRef);
+          await remove(typingRef);
         }
       } catch (e) { }
     }
@@ -15949,18 +15914,21 @@
     }
 
     let readStatesUnsub = null;
-    function initReadStatesSync() {
+    async function initReadStatesSync() {
       if (!userId || !appId) return;
       if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
-      readStatesUnsub = onSnapshot(collection(db, `artifacts/${appId}/users/${userId}/readStates`), (snap) => {
+      const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const rsRef = ref(rtdb, `artifacts/${appId}/users/${userId}/readStates`);
+      const onRs = onValue(rsRef, (snap) => {
         let changed = false;
         let rm = {};
         try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
-        snap.forEach(docSnap => {
-          const remoteTime = docSnap.data().lastReadAt?.toMillis?.() || 0;
-          const localTime = rm[docSnap.id] || 0;
+        snap.forEach((child) => {
+          const remoteTime = child.val().lastReadAt || 0;
+          const localTime = rm[child.key] || 0;
           if (remoteTime && remoteTime > localTime) {
-            rm[docSnap.id] = remoteTime;
+            rm[child.key] = remoteTime;
             changed = true;
           }
         });
@@ -15969,6 +15937,7 @@
           if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
         }
       });
+      readStatesUnsub = () => off(rsRef, 'value', onRs);
     }
 
     const _readStateThrottle = {};
@@ -15985,7 +15954,9 @@
               const now = Date.now();
               if (!_readStateThrottle[roomId] || now - _readStateThrottle[roomId] > 5000) {
                  _readStateThrottle[roomId] = now;
-                 setDoc(doc(db, `artifacts/${appId}/users/${userId}/readStates`, roomId), { lastReadAt: time }, { merge: true }).catch(()=>{});
+                 const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+                 const rtdb = await _getOrInitRTDB();
+                 set(ref(rtdb, `artifacts/${appId}/users/${userId}/readStates/${roomId}`), { lastReadAt: time }).catch(()=>{});
               }
            }
         }

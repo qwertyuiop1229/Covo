@@ -1050,6 +1050,8 @@ async function handleBulkDeleteFiles(request, env) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const deleteType = new URL(request.url).searchParams.get("deleteType") || "all_safe";
+
     let kvDeleted = 0;
     if (env.FILES) {
       let cursor;
@@ -1057,9 +1059,19 @@ async function handleBulkDeleteFiles(request, env) {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
           const folder = key.metadata?.folder || '';
-          if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars') {
-            continue; // Ignore icons/avatars
+
+          if (deleteType === "messages_only") {
+             if (folder !== 'simplechat/messages') continue;
+          } else if (deleteType === "all_safe") {
+             if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars' || 
+                 folder === 'stamps' || folder === 'simplechat/stamps' || 
+                 folder === 'server_icons' || folder === 'simplechat/server_icons') {
+               continue;
+             }
+          } else if (deleteType === "all_danger") {
+             // No protection, delete everything
           }
+
           await env.FILES.delete(key.name);
           kvDeleted++;
         }
