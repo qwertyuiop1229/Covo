@@ -1029,7 +1029,7 @@
     }
 
     .mention-text {
-      color: #2563eb; /* blue-600 for light mode */
+      color: #1e293b; /* dark navy for light mode */
       font-weight: 600;
       cursor: pointer;
     }
@@ -5530,21 +5530,21 @@
             </div>
             <!-- プラスメニューとメンションポップアップ -->
             <div id="plusMenuPopup" class="hidden absolute bottom-16 left-2 bg-white dark:bg-[#1e293b] shadow-[0_4px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] rounded-2xl border border-gray-100 dark:border-gray-700 p-2 w-[90vw] sm:w-64 z-50">
-              <button id="menuAttachBtn" class="w-full text-left px-4 py-2.5 hover:bg-[#1e293b] dark:hover:bg-[#334155] hover:text-white dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-file-upload text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ファイルをアップロード</span>
+              <button id="menuAttachBtn" class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
+                <i class="fas fa-file-upload text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ファイルをアップロード</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-[#1e293b] dark:hover:bg-[#334155] hover:text-white dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-hashtag text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">スレッドを作成</span>
+              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
+                <i class="fas fa-hashtag text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">スレッドを作成</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-[#1e293b] dark:hover:bg-[#334155] hover:text-white dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
-                <i class="fas fa-poll text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">投票の作成</span>
+              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors mb-0.5 group">
+                <i class="fas fa-poll text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">投票の作成</span>
               </button>
-              <button class="w-full text-left px-4 py-2.5 hover:bg-[#1e293b] dark:hover:bg-[#334155] hover:text-white dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
-                <i class="fas fa-shapes text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">アプリを使う</span>
+              <button class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
+                <i class="fas fa-shapes text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">アプリを使う</span>
               </button>
               <div class="h-px bg-gray-100 dark:bg-gray-700 my-1.5 mx-2"></div>
-              <button id="menuMentionBtn" class="w-full text-left px-4 py-2.5 hover:bg-[#1e293b] dark:hover:bg-[#334155] hover:text-white dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
-                <i class="fas fa-at text-slate-400 group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
+              <button id="menuMentionBtn" class="w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#334155] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors group">
+                <i class="fas fa-at text-slate-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
               </button>
             </div>
             <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#1e293b] shadow-[0_-4px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_15px_rgba(0,0,0,0.3)] rounded-none border border-b-0 border-gray-200 dark:border-gray-700 w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
@@ -13065,7 +13065,7 @@
     }
 
     document.addEventListener("click", (e) => {
-      if (plusMenuPopup && !plusMenuPopup.contains(e.target) && e.target !== plusMenuButton && !plusMenuButton.contains(e.target)) {
+      if (plusMenuPopup && e.target !== plusMenuButton && !plusMenuButton.contains(e.target)) {
         plusMenuPopup.classList.add("hidden");
       }
       if (mentionPopup && !mentionPopup.contains(e.target)) {
@@ -13321,8 +13321,8 @@
         messageTextSpan.className = `message-content text-gray-900 text-left`;
         const textToDisplay = message._decryptedErrorText || message.text;
         messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
-        // 自分がメンションされていたらハイライト
-        if (message.text.includes(`@${userNickname}`) || message.text.includes('@all')) {
+        // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
+        if (message.senderId !== userId && (message.text.includes(`@${userNickname}`) || message.text.includes('@all'))) {
           messageElement.classList.add("mention-highlight");
         }
         messageElement.appendChild(messageTextSpan);
