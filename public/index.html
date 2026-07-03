@@ -1320,15 +1320,19 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      margin: 2px 4px;
+      border-radius: 6px;
+      transition: all 0.1s;
     }
     .dark .mention-option {
-      color: #d1d5db;
+      color: #dbdee1;
     }
     .mention-option:hover, .mention-option.active {
       background-color: #f3f4f6;
     }
     .dark .mention-option:hover, .dark .mention-option.active {
-      background-color: #374151;
+      background-color: #3f4147;
+      color: #ffffff;
     }
     .mention-option-sub {
       font-size: 0.75rem;
@@ -5518,16 +5522,30 @@
               </div>
             </div>
             <!-- プラスメニューとメンションポップアップ -->
-            <div id="plusMenuPopup" class="hidden absolute bottom-16 left-2 bg-white dark:bg-gray-800 shadow-lg rounded-xl border border-gray-200 dark:border-gray-700 py-2 w-48 z-50">
-              <button id="menuMentionBtn" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                <i class="fas fa-at text-gray-400 w-5 text-center"></i> メンション
+            <div id="plusMenuPopup" class="hidden absolute bottom-14 left-0 bg-white dark:bg-[#111214] shadow-xl rounded-lg border border-gray-200 dark:border-[#1e1f22] p-2 w-56 z-50">
+              <button id="menuAttachBtn" class="w-full text-left px-2 py-1.5 hover:bg-indigo-600 dark:hover:bg-[#4752c4] hover:text-white dark:hover:text-white rounded flex items-center gap-3 text-sm text-gray-700 dark:text-[#dbdee1] transition-colors mb-0.5 group">
+                <i class="fas fa-file-upload text-gray-400 dark:text-[#b5bac1] w-4 text-center group-hover:text-white dark:group-hover:text-white"></i> ファイルをアップロード
+              </button>
+              <button class="w-full text-left px-2 py-1.5 hover:bg-indigo-600 dark:hover:bg-[#4752c4] hover:text-white dark:hover:text-white rounded flex items-center gap-3 text-sm text-gray-700 dark:text-[#dbdee1] transition-colors mb-0.5 group">
+                <i class="fas fa-hashtag text-gray-400 dark:text-[#b5bac1] w-4 text-center group-hover:text-white dark:group-hover:text-white"></i> スレッドを作成
+              </button>
+              <button class="w-full text-left px-2 py-1.5 hover:bg-indigo-600 dark:hover:bg-[#4752c4] hover:text-white dark:hover:text-white rounded flex items-center gap-3 text-sm text-gray-700 dark:text-[#dbdee1] transition-colors mb-0.5 group">
+                <i class="fas fa-poll text-gray-400 dark:text-[#b5bac1] w-4 text-center group-hover:text-white dark:group-hover:text-white"></i> 投票の作成
+              </button>
+              <button class="w-full text-left px-2 py-1.5 hover:bg-indigo-600 dark:hover:bg-[#4752c4] hover:text-white dark:hover:text-white rounded flex items-center gap-3 text-sm text-gray-700 dark:text-[#dbdee1] transition-colors group">
+                <i class="fas fa-shapes text-gray-400 dark:text-[#b5bac1] w-4 text-center group-hover:text-white dark:group-hover:text-white"></i> アプリを使う
+              </button>
+              <div class="h-px bg-gray-200 dark:bg-[#313338] my-1 mx-1"></div>
+              <button id="menuMentionBtn" class="w-full text-left px-2 py-1.5 hover:bg-indigo-600 dark:hover:bg-[#4752c4] hover:text-white dark:hover:text-white rounded flex items-center gap-3 text-sm text-gray-700 dark:text-[#dbdee1] transition-colors group">
+                <i class="fas fa-at text-gray-400 dark:text-[#b5bac1] w-4 text-center group-hover:text-white dark:group-hover:text-white"></i> メンション
               </button>
             </div>
-            <div id="mentionPopup" class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 shadow-xl rounded-xl border border-gray-200 dark:border-gray-700 py-1 w-64 max-h-56 overflow-y-auto z-50"></div>
+            <div id="mentionPopup" class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-[#2b2d31] shadow-xl rounded-xl border border-gray-200 dark:border-[#1e1f22] py-1 w-full max-h-56 overflow-y-auto z-50"></div>
             
             <div class="flex items-end gap-1.5 relative">
               <button id="plusMenuButton" class="input-side-btn" title="拡張メニュー" disabled><i class="fas fa-plus"></i></button>
-              <button id="fileAttachButton" class="input-side-btn" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
+              <button id="fileAttachButton" class="input-side-btn hidden" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
+
                   class="fas fa-paperclip"></i></button>
               <button id="stickerButton" class="input-side-btn" title="スタンプ" disabled><i class="far fa-smile"></i></button>
               <input type="file" id="fileAttachInput" class="hidden" />
@@ -13018,6 +13036,15 @@
         e.stopPropagation();
         if (!currentRoomId) return;
         plusMenuPopup.classList.toggle("hidden");
+      });
+    }
+
+    const menuAttachBtn = document.getElementById("menuAttachBtn");
+    if (menuAttachBtn) {
+      menuAttachBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        plusMenuPopup.classList.add("hidden");
+        fileAttachInput.click();
       });
     }
 
