@@ -4349,36 +4349,53 @@
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
-    <div class="update-card" id="updateCardContent">
-      <button class="update-close-btn hidden" id="updateCloseButton" onclick="closeUpdateOverlay()" title="アップデートをスキップして続行">
-        <i class="fas fa-times"></i>
-      </button>
-      <div class="update-icon"><i class="fas fa-arrow-up"></i></div>
-      <div class="update-title" id="updateMainTitle">アップデートがあります</div>
-      <div class="update-version" id="updateVersionText">新しいバージョンが利用可能です</div>
-      <div class="update-body" id="updateBodyText"></div>
-      <button class="update-btn" id="updateButton" onclick="performUpdate()">
-        <i class="fas fa-download"></i>&nbsp;&nbsp;アップデートする
-      </button>
-
-      <!-- モダンな小規模ステータス領域（ゲージや再起動カウントダウンは完全廃止） -->
-      <div id="updateProgressArea" class="hidden" style="margin-top:1.5rem;width:100%;">
-        <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;">
-          <span id="updateSpinnerIcon" style="font-size:1.1rem;animation:spin 1s linear infinite;display:inline-block;color:#4f46e5;">⠋</span>
-          <span id="updateProgressText" style="font-size:0.9rem;color:#4b5563;font-weight:700;">準備中...</span>
+    <div id="updateCardContent" class="bg-[#2b2d31] border border-[#1e1f22] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6 text-gray-200 transition-all">
+      <div class="flex items-center justify-center mb-5 mt-2">
+        <div class="w-16 h-16 bg-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 text-3xl shadow-inner border border-indigo-500/30">
+          <i class="fas fa-cloud-download-alt animate-bounce"></i>
         </div>
+      </div>
+      <div class="text-center mb-6">
+        <h2 id="updateMainTitle" class="text-xl font-bold text-gray-100 mb-1.5">アップデートがあります</h2>
+        <p id="updateVersionText" class="text-sm text-gray-400 font-medium">新しいバージョンが利用可能です</p>
+        <div id="updateBodyText" class="text-xs text-gray-400 mt-4 whitespace-pre-wrap text-left bg-[#1e1f22] p-3.5 rounded-xl border border-[#1e1f22] max-h-32 overflow-y-auto shadow-inner"></div>
+      </div>
+
+      <div class="flex gap-3 mt-auto">
+        <button id="updateCloseButton" onclick="window.closeUpdateOverlay ? window.closeUpdateOverlay() : (document.getElementById('updateOverlay').classList.remove('show'))" class="flex-1 py-2.5 bg-transparent border border-gray-600 hover:border-gray-500 text-gray-300 font-bold text-sm rounded-xl transition-all">
+          スキップ
+        </button>
+        <button id="updateButton" onclick="performUpdate()" class="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
+          <i class="fas fa-download"></i> 更新する
+        </button>
+      </div>
+
+      <!-- ダウンロード進行状況表示エリア -->
+      <div id="updateProgressArea" class="hidden flex-col items-center mt-5">
+        <div class="w-full bg-[#1e1f22] rounded-full h-3 mb-2.5 overflow-hidden border border-[#1e1f22] shadow-inner">
+          <div id="updateProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300 relative overflow-hidden" style="width: 0%">
+            <div class="absolute inset-0 bg-white/20 w-full animate-pulse"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between w-full text-xs font-bold text-gray-400">
+          <span id="updateProgressText" class="text-indigo-400">準備中...</span>
+          <span id="updatePercentText">0%</span>
+        </div>
+        <!-- 下位互換用の非表示要素 -->
         <div id="updateStepText" style="display:none;"></div>
         <div id="updateBytesText" style="display:none;"></div>
-        <div id="updatePercentText" style="display:none;"></div>
         <div id="updateSpinnerIconOld" style="display:none;"></div>
         <div id="updateProgressTextOld" style="display:none;"></div>
+        <div id="updateSpinnerIcon" style="display:none;"></div>
       </div>
-      <div id="updateRestartContainer" class="hidden" style="display:none;">
-        <div id="autoRestartCountdown"><span id="countdownSec"></span></div>
+
+      <div id="updateRestartContainer" class="hidden text-center mt-4 text-xs font-bold text-gray-400 bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl">
+        <i class="fas fa-check text-emerald-400 mr-1"></i> 再起動まで <span id="countdownSec" class="text-emerald-400 text-sm"></span> 秒
       </div>
-      <div id="updateErrorBox" class="hidden" style="margin-top:1rem;text-align:left">
-        <textarea id="updateErrorDetail" readonly></textarea>
-        <button class="" id="copyErrorBtn">エラーをコピー</button>
+      
+      <div id="updateErrorBox" class="hidden mt-4">
+        <textarea id="updateErrorDetail" class="w-full h-20 text-xs bg-[#1e1f22] text-rose-400 p-3 rounded-xl border border-rose-500/30 resize-none shadow-inner" readonly></textarea>
+        <button id="copyErrorBtn" class="mt-2 text-xs font-bold text-gray-400 hover:text-white transition-colors"><i class="fas fa-copy mr-1"></i>エラーをコピー</button>
       </div>
     </div>
   </div>
@@ -4816,11 +4833,16 @@
                     </div>
                     <div class="setting-row">
                       <div class="setting-label"><i class="fas fa-times-circle"></i> ウィンドウを閉じる動作</div>
-                      <select id="closeBehaviorSelect" class="bg-white border border-gray-200 text-gray-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none">
-                        <option value="minimize">タスクバーに最小化 (推奨)</option>
-                        <option value="hide">タスクトレイに格納</option>
-                        <option value="quit">完全に終了する</option>
-                      </select>
+                      <div class="relative min-w-[180px]">
+                        <select id="closeBehaviorSelect" class="w-full py-2 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                          <option value="minimize">タスクバーに最小化 (推奨)</option>
+                          <option value="hide">タスクトレイに格納</option>
+                          <option value="quit">完全に終了する</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                          <i class="fas fa-chevron-down text-xs"></i>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div class="mt-3 text-center text-xs text-gray-400" style="font-family:ui-monospace,Consolas,monospace;">インストール済み: <span id="installedVersion">読み込み中...</span></div>
@@ -5289,21 +5311,31 @@
                   <div class="grid grid-cols-2 gap-4">
                     <div>
                       <label class="text-xs text-gray-500 font-bold block mb-1">有効期限</label>
-                      <select id="inviteExpiry" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
-                        <option value="0">なし</option>
-                        <option value="1">1日</option>
-                        <option value="7">7日</option>
-                        <option value="30">30日</option>
-                      </select>
+                      <div class="relative">
+                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                          <option value="0">なし</option>
+                          <option value="1">1日</option>
+                          <option value="7">7日</option>
+                          <option value="30">30日</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                          <i class="fas fa-chevron-down text-xs"></i>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <label class="text-xs text-gray-500 font-bold block mb-1">使用回数</label>
-                      <select id="inviteMaxUses" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
-                        <option value="0">無制限</option>
-                        <option value="1">1回</option>
-                        <option value="5">5回</option>
-                        <option value="10">10回</option>
-                      </select>
+                      <div class="relative">
+                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                          <option value="0">無制限</option>
+                          <option value="1">1回</option>
+                          <option value="5">5回</option>
+                          <option value="10">10回</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                          <i class="fas fa-chevron-down text-xs"></i>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <button id="createInviteCodeBtn" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
@@ -18796,7 +18828,7 @@
           <div>
             <label class="block text-sm font-bold text-gray-300 mb-1.5">カテゴリ</label>
             <div class="relative">
-              <select id="feedbackCategory" class="w-full p-2.5 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+              <select id="feedbackCategory" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
                 <option value="bug">バグ報告</option>
                 <option value="feature">機能要望</option>
                 <option value="other">その他</option>

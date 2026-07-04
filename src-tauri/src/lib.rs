@@ -899,7 +899,7 @@ pub fn run() {
 
             let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
-            let recovery_i = MenuItem::with_id(app, "recovery", "🚨 緊急トラブル対応・復旧ツールを開く", true, None::<&str>)?;
+            let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")

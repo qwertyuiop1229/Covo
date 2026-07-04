@@ -3,16 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Covo - 🚨 緊急トラブル復旧 ＆ バージョン管理エンジン</title>
+  <title>Covo - リカバリーパネル</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
     /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.8); }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
   </style>
   <script>
     tailwind.config = {
@@ -20,137 +31,103 @@
       theme: {
         extend: {
           colors: {
-            brand: {
-              50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81'
-            }
+            brand: { 500: '#5865F2', 600: '#4752C4' },
+            dark: { 900: '#1e1f22', 800: '#2b2d31', 700: '#313338' }
           }
         }
       }
     }
   </script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-indigo-500 selection:text-white">
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
   
-  <div class="max-w-3xl w-full bg-slate-800/90 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-xl overflow-hidden flex flex-col my-8">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
     
     <!-- ヘッダー -->
-    <div class="bg-gradient-to-r from-indigo-600 to-indigo-800 p-6 flex items-center justify-between shadow-lg">
+    <div class="flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-white/10 border border-white/20 rounded-xl flex items-center justify-center shadow-inner">
-          <i class="fa-solid fa-wrench text-2xl text-white animate-pulse"></i>
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-extrabold text-white tracking-tight">Covo リカバリー ＆ バージョン管理エンジン</h1>
-          <p class="text-xs text-indigo-100 font-medium opacity-90 mt-0.5">通信エラーや予期せぬ不具合からアプリを強力に自己修復します</p>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
         </div>
       </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs rounded-lg border border-white/20 shadow transition-all flex items-center gap-2">
-        <i class="fa-solid fa-rotate-left"></i> 通常モードへ復帰
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
       </button>
     </div>
 
-    <!-- メインコンテンツ -->
-    <div class="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
+    <!-- クイックアクションパネル -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       
-      <!-- ステータス警告パネル -->
-      <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3.5 text-amber-200">
-        <i class="fa-solid fa-triangle-exclamation text-amber-400 text-xl flex-shrink-0 mt-0.5"></i>
-        <div class="text-sm leading-relaxed">
-          <span class="font-bold text-amber-400">🚨 tauri.localhost 接続障害・初期化タイムアウトを検知しました:</span>
-          ローカルのVite開発サーバー停止、またはネットワーク・ポート構成のエラー(ERR_CONNECTION_REFUSED等)により、メイン画面のロードに失敗しました。この管理シェルからワンクリックで以前の安定バージョンへのダウングレードや、最新アップデートへの修復を実行できます。
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
         </div>
+        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
       </div>
 
-      <!-- クイックアクションパネル -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        <!-- アクション 1: 最新版へアップデート -->
-        <div class="bg-slate-700/40 border border-slate-600/50 rounded-xl p-5 flex flex-col justify-between hover:border-indigo-500/50 transition-colors group">
-          <div>
-            <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 bg-indigo-500/20 border border-indigo-500/40 rounded-lg flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
-                <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
-              </div>
-              <h2 class="text-lg font-bold text-slate-100">最新バージョンにアップデート</h2>
-            </div>
-            <p class="text-xs text-slate-300 leading-relaxed mb-4">
-              サーバー上で公開されている最新のCovo安定版リリースを確認し、自動で修復インストールと再起動を実行します。
-            </p>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
           </div>
-          <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-            <i class="fa-solid fa-bolt"></i> 最新の更新を確認 ＆ 適用
-          </button>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
         </div>
-
-        <!-- アクション 2: キャッシュクリア ＆ 再起動 -->
-        <div class="bg-slate-700/40 border border-slate-600/50 rounded-xl p-5 flex flex-col justify-between hover:border-emerald-500/50 transition-colors group">
-          <div>
-            <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 bg-emerald-500/20 border border-emerald-500/40 rounded-lg flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                <i class="fa-solid fa-broom text-lg"></i>
-              </div>
-              <h2 class="text-lg font-bold text-slate-100">設定・キャッシュ健全化</h2>
-            </div>
-            <p class="text-xs text-slate-300 leading-relaxed mb-4">
-              内部でスタックしているキャッシュや不要な一時フラグをクリアし、アプリプロセスを綺麗に完全再起動させます。
-            </p>
-          </div>
-          <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-            <i class="fa-solid fa-power-off"></i> キャッシュ浄化 ＆ 本体再起動
-          </button>
-        </div>
-
-      </div>
-
-      <!-- メイン機能: 過去バージョンへのダウングレード一覧 -->
-      <div class="bg-slate-700/20 border border-slate-600/40 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-center text-amber-400">
-              <i class="fa-solid fa-clock-rotate-left text-lg"></i>
-            </div>
-            <div>
-              <h2 class="text-lg font-bold text-slate-100">過去の安定版バージョンに戻す（ダウングレード）</h2>
-              <p class="text-xs text-slate-400 mt-0.5">GitHub Releases から利用可能な公式リリースをリアルタイムで取得・表示します</p>
-            </div>
-          </div>
-          <button onclick="loadPastReleases()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg border border-slate-600 transition-all flex items-center gap-1.5">
-            <i class="fa-solid fa-rotate"></i> 再取得
-          </button>
-        </div>
-
-        <!-- リリース一覧リスト (動的生成) -->
-        <div id="releasesContainer" class="space-y-2 max-h-64 overflow-y-auto pr-1">
-          <div class="py-8 flex flex-col items-center justify-center text-slate-400 text-sm">
-            <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-indigo-500"></i>
-            <span>過去のリリース情報を取得中...</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- システムログ ＆ 出力コンソール -->
-      <div class="bg-slate-900/80 border border-slate-700/60 rounded-xl p-4 font-mono text-xs text-slate-300">
-        <div class="flex items-center justify-between text-slate-400 pb-2 mb-2 border-b border-slate-800">
-          <span class="font-bold flex items-center gap-2"><i class="fa-solid fa-terminal text-indigo-400"></i> システムコンソール・進行状況</span>
-          <span id="consoleStatus" class="text-emerald-400 font-bold animate-pulse">待機中</span>
-        </div>
-        <div id="logConsole" class="space-y-1 max-h-28 overflow-y-auto text-slate-300 select-all">
-          <div class="text-indigo-400">[System] Covo リカバリーエンジンをブート中... 完了。</div>
-        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
       </div>
 
     </div>
 
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col h-72">
+      <div class="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="loadPastReleases()" class="text-gray-400 hover:text-white transition-colors">
+          <i class="fa-solid fa-rotate text-sm"></i>
+        </button>
+      </div>
+      <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+        <div class="h-full flex flex-col items-center justify-center text-gray-500 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+
     <!-- フッター -->
-    <div class="bg-slate-800 p-4 border-t border-slate-700 flex items-center justify-between text-xs text-slate-400">
-      <span>Covo Recovery Engine • Version 1.0.0</span>
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
       <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-slate-200 underline transition-colors flex items-center gap-1">
-          <i class="fa-solid fa-folder-open"></i> ログフォルダを開く
-        </button>
-        <button onclick="forceQuitApp()" class="text-rose-400 hover:text-rose-300 font-bold transition-colors flex items-center gap-1">
-          <i class="fa-solid fa-xmark"></i> 強制終了
-        </button>
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
       </div>
     </div>
 
@@ -163,48 +140,44 @@
     function logMessage(text, isError = false) {
       const consoleElem = document.getElementById("logConsole");
       const div = document.createElement("div");
-      div.className = isError ? "text-rose-400 font-bold" : "text-slate-200";
-      div.innerText = `[${new Date().toLocaleTimeString()}] ${text}`;
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
       consoleElem.appendChild(div);
       consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "エラー" : "実行中";
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
     }
 
-    // 最新アップデートのチェック
     async function triggerUpdateCheck() {
       const btn = document.getElementById("btnUpdateCheck");
       btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新アップデートを照合中...`;
-      logMessage("最新アップデートのチェックを開始します...");
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      logMessage("Checking for updates...");
       try {
-        if (!invoke) throw new Error("Tauri API(invoke) が見つかりません。");
+        if (!invoke) throw new Error("Tauri API not found.");
         const metadata = await invoke('plugin:updater|check');
         if (metadata && metadata.available) {
-          logMessage(`最新版 (v${metadata.version}) が見つかりました！ダウンロードとインストールを開始します...`);
-          btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-down fa-bounce"></i> アップデートを適用中...`;
-          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`進捗: ${JSON.stringify(e)}`) });
-          logMessage("✅ アップデート完了！アプリを再起動します...", false);
-          btn.innerHTML = `<i class="fa-solid fa-check"></i> 完了！再起動中...`;
+          logMessage(`Found v${metadata.version}. Downloading...`);
+          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
+          logMessage("Update complete. Restarting...");
+          btn.innerHTML = `完了 (再起動)`;
           setTimeout(() => invoke('plugin:process|restart'), 1500);
         } else {
-          logMessage("現在利用可能な新しいアップデートはありません。最新の状態です。");
-          btn.disabled = false;
-          btn.innerHTML = `<i class="fa-solid fa-check"></i> 利用可能な更新なし`;
-          setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-bolt"></i> 最新の更新を確認 ＆ 適用`; }, 3000);
+          logMessage("No updates available.");
+          btn.innerHTML = `更新なし`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
         }
       } catch (err) {
-        logMessage(`アップデート確認エラー: ${err.message || err}`, true);
+        logMessage(`Error: ${err.message || err}`, true);
         btn.disabled = false;
-        btn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> 確認失敗 (再試行)`;
+        btn.innerHTML = `失敗 (再試行)`;
       }
     }
 
-    // キャッシュクリア ＆ 再起動
     async function triggerCacheClearAndRestart() {
-      logMessage("不要な一時設定をクリーンアップ中...");
-      // localStorageは完全に消さず、スタックの原因になる可能性のある各種不具合キーを掃除
-      localStorage.removeItem("covo_use_d1"); // 起動モードを強制リセットして安定板Firestoreへ
-      logMessage("✅ クリーンアップ完了。プロセスを再起動します...");
+      logMessage("Clearing cache...");
+      localStorage.removeItem("covo_use_d1");
+      logMessage("Cache cleared. Restarting...");
       if (invoke) {
         setTimeout(() => invoke('plugin:process|restart'), 1000);
       } else {
@@ -212,33 +185,34 @@
       }
     }
 
-    // 通常モードへの復帰試行
     function checkNormalMode() {
-      logMessage("通常モード(http://tauri.localhost) への再アクセスを試行中...");
+      logMessage("Returning to normal mode...");
+      
+      // ウィンドウタイトルを「Covo」に戻す
+      if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+        window.__TAURI__.window.getCurrentWindow().setTitle("Covo").catch(e => console.warn(e));
+      } else if (invoke) {
+        invoke('plugin:window|set_title', { title: "Covo" }).catch(e => console.warn(e));
+      }
+
       window.location.href = "http://tauri.localhost";
       setTimeout(() => {
-        // 万が一遷移に失敗した場合にフォールバック表示
-        logMessage("⚠️ tauri.localhost への遷移が完了しませんでした。Viteサーバーが起動しているか確認してください。", true);
+        logMessage("⚠️ Navigation failed.", true);
       }, 3000);
     }
 
-    // ログフォルダを開く
     function openLogFolder() {
-      logMessage("ログディレクトリをエクスプローラーで開きます...");
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`開けませんでした: ${e}`, true));
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
     }
 
-    // 強制終了
     function forceQuitApp() {
-      logMessage("アプリを強制終了します...");
       if (invoke) invoke('plugin:process|exit', { code: 0 });
     }
 
-    // 過去のリリースの動的ロード
     async function loadPastReleases() {
       const container = document.getElementById("releasesContainer");
-      container.innerHTML = `<div class="py-8 flex flex-col items-center justify-center text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-indigo-500"></i><span>過去のリリース情報を取得中...</span></div>`;
-      logMessage("GitHub Releases APIから過去のバージョン情報を取得中...");
+      container.innerHTML = `<div class="h-full flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-spinner fa-spin mr-2 text-brand-500"></i>読み込み中...</div>`;
+      logMessage("Fetching past releases...");
       try {
         const res = await fetch("https://api.github.com/repos/qwertyuiop1229/Covo/releases");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -246,85 +220,71 @@
         
         container.innerHTML = "";
         if (!releases || releases.length === 0) {
-          container.innerHTML = `<div class="py-6 text-center text-slate-400 text-sm">利用可能な過去のリリースが見つかりませんでした。</div>`;
+          container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
           return;
         }
 
-        logMessage(`✅ ${releases.length}件の公式リリース情報を取得しました。`);
         releases.forEach((rel) => {
           const exeAsset = rel.assets.find(a => a.name.endsWith(".exe"));
           const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = new Date(rel.published_at).toLocaleDateString("ja-JP", { year: 'numeric', month: 'short', day: 'numeric' });
+          const pubDate = new Date(rel.published_at).toLocaleDateString("ja-JP");
 
           const div = document.createElement("div");
-          div.className = "bg-slate-800/80 border border-slate-700 hover:border-slate-600 rounded-xl p-3.5 flex items-center justify-between transition-all group";
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
           div.innerHTML = `
-            <div class="flex items-center gap-3.5 min-w-0 flex-1 pr-4">
-              <div class="w-10 h-10 bg-slate-700/50 border border-slate-600/50 rounded-lg flex items-center justify-center text-slate-300 font-mono text-xs flex-shrink-0 group-hover:bg-slate-700 transition-colors">
-                ${rel.tag_name}
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${rel.tag_name}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
               </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <h3 class="text-sm font-bold text-slate-200 truncate">${rel.name || rel.tag_name}</h3>
-                  ${rel.prerelease ? `<span class="px-1.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-bold rounded">Pre</span>` : ''}
-                </div>
-                <p class="text-xs text-slate-400 truncate mt-0.5">${pubDate} • ${exeAsset ? `${(exeAsset.size / (1024*1024)).toFixed(1)} MB` : 'インストーラーなし'}</p>
-              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${pubDate} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
             </div>
-            <button onclick="installPastVersion('${downloadUrl}', '${rel.tag_name}')" ${!downloadUrl ? 'disabled' : ''} id="btn-install-${rel.tag_name}" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg shadow transition-all flex items-center gap-2 flex-shrink-0">
-              <i class="fa-solid fa-box-archive"></i> このバージョンへ戻す
+            <button onclick="installPastVersion('${downloadUrl}', '${rel.tag_name}')" ${!downloadUrl ? 'disabled' : ''} id="btn-install-${rel.tag_name}" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
             </button>
           `;
           container.appendChild(div);
         });
       } catch (e) {
-        logMessage(`リリース取得エラー: ${e.message || e}`, true);
-        container.innerHTML = `<div class="py-6 text-center text-rose-400 text-sm">リリース情報の取得に失敗しました。ネットワークを確認してください。</div>`;
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
       }
     }
 
-    // 過去バージョンのインストール処理
     async function installPastVersion(url, tag) {
-      if (!url || url === 'null') {
-        logMessage(`エラー: バージョン ${tag} のインストーラーが見つかりません。`, true);
-        return;
-      }
+      if (!url || url === 'null') return;
       const btn = document.getElementById(`btn-install-${tag}`);
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
       }
-      logMessage(`📦 バージョン ${tag} のダウンロードとサイレント復旧を開始します... (${url})`);
+      logMessage(`Downloading ${tag}...`);
 
       try {
-        if (!invoke) throw new Error("Tauri API(invoke) が利用できません。");
+        if (!invoke) throw new Error("Tauri API missing.");
         await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`✅ バージョン ${tag} のダウンロードとサイレントインストールが進行中です！数秒後にアプリが自動で再起動します...`);
-        if (btn) btn.innerHTML = `<i class="fa-solid fa-check"></i> 復旧中... (再起動待機)`;
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
       } catch (err) {
-        logMessage(`インストール復旧エラー: ${err.message || err}`, true);
+        logMessage(`Install error: ${err.message || err}`, true);
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> 失敗 (再試行)`;
+          btn.innerHTML = `失敗`;
         }
       }
     }
 
-    // 進捗イベントリスナー登録
     if (listen) {
       listen('download-progress', (event) => {
         const data = event.payload;
         if (data) {
           const btn = document.getElementById(`btn-install-${data.tag}`);
-          if (btn) {
-            btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-down fa-bounce"></i> ${data.progress}% ダウンロード中`;
-          }
-          logMessage(`[${data.tag}] ダウンロード進行状況: ${data.progress}% (${(data.downloaded / (1024*1024)).toFixed(1)} MB)`);
+          if (btn) btn.innerHTML = `${data.progress}%`;
+          logMessage(`[${data.tag}] ${data.progress}%`);
         }
       });
     }
 
-    // 初回ロード
     loadPastReleases();
   </script>
 </body>
