@@ -7546,6 +7546,9 @@
         } finally {
           _authHandlerBusy = false;
           window.__app_fully_loaded__ = true;
+          if (typeof invoke !== 'undefined') {
+            invoke('notify_app_loaded').catch(e => console.warn("Failed to notify Tauri:", e));
+          }
         }
         });
       } catch (error) {
