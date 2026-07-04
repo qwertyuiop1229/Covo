@@ -5889,6 +5889,7 @@
       initializeFirestore,
       persistentLocalCache,
       persistentMultipleTabManager,
+      memoryLocalCache,
       doc,
       getDoc,
       addDoc,
@@ -7376,7 +7377,12 @@
               localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
             });
           } catch (e) {
-            db = getFirestore(app);
+            console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
+            try {
+              db = initializeFirestore(app, { localCache: memoryLocalCache() });
+            } catch (e2) {
+              db = getFirestore(app);
+            }
           }
           auth = getAuth(app);
         }
