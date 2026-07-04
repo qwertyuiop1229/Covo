@@ -93,18 +93,22 @@
     </div>
 
     <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col h-72">
-      <div class="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
           <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
         </div>
-        <button onclick="loadPastReleases()" class="text-gray-400 hover:text-white transition-colors">
-          <i class="fa-solid fa-rotate text-sm"></i>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
         </button>
       </div>
-      <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-        <div class="h-full flex flex-col items-center justify-center text-gray-500 text-xs">
+      
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
           <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
           読み込み中...
         </div>
@@ -185,20 +189,32 @@
       }
     }
 
-    function checkNormalMode() {
+    async function checkNormalMode() {
       logMessage("Returning to normal mode...");
-      
-      // ウィンドウタイトルを「Covo」に戻す
-      if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-        window.__TAURI__.window.getCurrentWindow().setTitle("Covo").catch(e => console.warn(e));
-      } else if (invoke) {
-        invoke('plugin:window|set_title', { title: "Covo" }).catch(e => console.warn(e));
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "http://tauri.localhost";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "http://tauri.localhost";
+        } else {
+          window.location.href = "http://tauri.localhost";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "http://tauri.localhost";
       }
-
-      window.location.href = "http://tauri.localhost";
-      setTimeout(() => {
-        logMessage("⚠️ Navigation failed.", true);
-      }, 3000);
     }
 
     function openLogFolder() {
@@ -209,20 +225,75 @@
       if (invoke) invoke('plugin:process|exit', { code: 0 });
     }
 
-    async function loadPastReleases() {
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+
+    function setupInfiniteScroll() {
       const container = document.getElementById("releasesContainer");
-      container.innerHTML = `<div class="h-full flex items-center justify-center text-gray-500 text-xs"><i class="fa-solid fa-spinner fa-spin mr-2 text-brand-500"></i>読み込み中...</div>`;
-      logMessage("Fetching past releases...");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
       try {
-        const res = await fetch("https://api.github.com/repos/qwertyuiop1229/Covo/releases");
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const releases = await res.json();
         
-        container.innerHTML = "";
         if (!releases || releases.length === 0) {
-          container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
           return;
         }
+
+        if (releases.length < 10) releasesHasMore = false;
 
         releases.forEach((rel) => {
           const exeAsset = rel.assets.find(a => a.name.endsWith(".exe"));
@@ -247,7 +318,13 @@
         });
       } catch (e) {
         logMessage(`Fetch error: ${e.message || e}`, true);
-        container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
       }
     }
 
@@ -285,7 +362,7 @@
       });
     }
 
-    loadPastReleases();
+    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
   </script>
 </body>
 </html>
