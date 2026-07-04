@@ -5974,6 +5974,18 @@
     })();
 
     /* =====================================================================
+       Tauri ロード完了シグナル (早期送信)
+       ---------------------------------------------------------------------
+       アプリのJSが正常に実行開始されたことをTauriに知らせ、誤ったリカバリーポップアップを防ぐ
+       ===================================================================== */
+    setTimeout(() => {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('notify_app_loaded').catch(e => console.warn("Failed early notify_app_loaded:", e));
+      }
+    }, 1000);
+
+    /* =====================================================================
        E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
        ---------------------------------------------------------------------
        設計方針（最重要：壊れてもアプリを止めない）
@@ -7546,8 +7558,9 @@
         } finally {
           _authHandlerBusy = false;
           window.__app_fully_loaded__ = true;
-          if (typeof invoke !== 'undefined') {
-            invoke('notify_app_loaded').catch(e => console.warn("Failed to notify Tauri:", e));
+          const _invoke = window.__TAURI__?.core?.invoke;
+          if (_invoke) {
+            _invoke('notify_app_loaded').catch(e => console.warn("Failed to notify Tauri:", e));
           }
         }
         });
