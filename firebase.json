@@ -9,7 +9,7 @@
     "public": "public",
     "predeploy": [
       "node scripts/bump-version.js",
-      "node_modules/.bin/tailwindcss.cmd -i tailwind.input.css -o public/styles.css --minify",
+      "node_modules/.bin/tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify",
       "npm --prefix server run deploy"
     ],
     "postdeploy": [

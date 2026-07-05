@@ -1,0 +1,12527 @@
+// === フィードバック機能 ===
+    window.openFeedbackModal = function() {
+      document.getElementById('feedbackContent').value = '';
+      document.getElementById('feedbackCategory').value = 'bug';
+      document.getElementById('feedbackModal').classList.remove('hidden');
+    };
+    
+    window.closeFeedbackModal = function() {
+      document.getElementById('feedbackModal').classList.add('hidden');
+    };
+    
+    window.submitFeedback = async function() {
+      const btn = document.getElementById('feedbackSubmitBtn');
+      const contentVal = document.getElementById('feedbackContent').value.trim();
+      const categoryVal = document.getElementById('feedbackCategory').value;
+      if (!contentVal) {
+        alertMessage("内容を入力してください", "error");
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+      try {
+        const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await addDoc(collection(db, `artifacts/${appId}/feedbacks`), {
+          content: contentVal,
+          category: categoryVal,
+          createdBy: userId,
+          email: auth.currentUser?.email || '不明',
+          createdAt: serverTimestamp(),
+          status: 'open',
+          userAgent: navigator.userAgent
+        });
+        window.closeFeedbackModal();
+        alertMessage("ご報告ありがとうございました。運営チームに送信されました。", "success");
+      } catch (e) {
+        console.error("Feedback submit error:", e);
+        alertMessage("送信に失敗しました", "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "送信";
+      }
+    };
+
+    // ========= Cloudflare Worker ベースURL =========
+    const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+
+    // D1 API の認証付きfetchヘルパー（GET/POSTどちらも使用可）
+    // 認証されていない場合はトークンなしでリクエストするが、サーバー側で401を返す
+    
+
+    // ========= バージョン管理 =========
+    // 唯一のバージョン管理ファイル: public/version.json
+    // 手動変更時は version.json だけ編集すればよい（他のファイルは不要）
+    // deploy.ps1 も version.json だけ更新する
+    // バージョンはソースコード(version.json)から直接 fetch して使用する
+    // localStorage には保存しない
+    let _appVersion = null;
+    fetch('/version.json', { cache: 'default' })
+      .then(r => r.json())
+      .then(d => { _appVersion = d.version || null; })
+      .catch(() => { _appVersion = null; });
+
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+      onIdTokenChanged
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getFirestore,
+      initializeFirestore,
+      persistentLocalCache,
+      persistentMultipleTabManager,
+      memoryLocalCache,
+      doc,
+      getDoc,
+      addDoc,
+      setDoc,
+      updateDoc,
+      deleteDoc,
+      onSnapshot,
+      collection,
+      query,
+      where,
+      serverTimestamp,
+      orderBy,
+      getDocs,
+      writeBatch,
+      limit,
+      startAfter,
+      startAt,
+      arrayUnion,
+      arrayRemove,
+      increment,
+      documentId,
+      collectionGroup,
+      deleteField
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import {
+      getMessaging,
+      getToken,
+      onMessage,
+      deleteToken
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
+
+    // Firebase設定
+    const firebaseConfig = {
+      apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+      authDomain: "simplechat-65a0d.firebaseapp.com",
+      projectId: "simplechat-65a0d",
+      storageBucket: "simplechat-65a0d.firebasestorage.app",
+      messagingSenderId: "611067360180",
+      appId: "1:611067360180:web:5c43144af3ccc4988878e1",
+      measurementId: "G-2JMHWNMG4R",
+      databaseURL: "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app",
+    };
+
+    const appId = "simplechat-65a0d";
+
+    /* ===== 開発者ツール: コンソールログを画面で見られるよう保持＆オンスクリーン表示 =====
+       iPhone PWA には開発者コンソールが無いので、console.* を配列にも記録しておき、
+       設定>開発者ツールから表示・コピーできるようにする。 */
+    window._devConsoleLog = [];
+    (function hookConsole() {
+      const MAX = 300; // 直近300件だけ保持（メモリ保護）
+      const fmt = (args) => {
+        try {
+          return Array.from(args).map(a => {
+            if (typeof a === 'string') return a;
+            if (a instanceof Error) return a.message;
+            try { return JSON.stringify(a); } catch (e) { return String(a); }
+          }).join(' ');
+        } catch (e) { return '[log整形エラー]'; }
+      };
+      const stamp = () => {
+        const d = new Date();
+        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      };
+      ['log', 'warn', 'error', 'info'].forEach(level => {
+        const orig = console[level] ? console[level].bind(console) : function(){};
+        console[level] = function(...args) {
+          try {
+            window._devConsoleLog.push(`[${stamp()}][${level}] ${fmt(args)}`);
+            if (window._devConsoleLog.length > MAX) window._devConsoleLog.shift();
+            if (window._devConsolePanelAppend) window._devConsolePanelAppend(level, fmt(args));
+          } catch (e) {}
+          return orig(...args);
+        };
+      });
+      // 未捕捉エラーも記録（バグ調査に重要）
+      window.addEventListener('error', (e) => {
+        try { window._devConsoleLog.push(`[${stamp()}][uncaught] ${e.message} @${(e.filename||'').split('/').pop()}:${e.lineno}`); } catch (_) {}
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        try { window._devConsoleLog.push(`[${stamp()}][promise] ${e.reason && (e.reason.message || e.reason)}`); } catch (_) {}
+      });
+    })();
+
+    /* =====================================================================
+       Tauri ロード完了シグナル (早期送信)
+       ---------------------------------------------------------------------
+       アプリのJSが正常に実行開始されたことをTauriに知らせ、誤ったリカバリーポップアップを防ぐ
+       ===================================================================== */
+    setTimeout(() => {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('notify_app_loaded').catch(e => console.warn("Failed early notify_app_loaded:", e));
+      }
+    }, 1000);
+
+    /* =====================================================================
+       E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
+       ---------------------------------------------------------------------
+       設計方針（最重要：壊れてもアプリを止めない）
+       - 暗号化は「最善努力」。鍵が用意できない/失敗したら必ず平文で送る
+         （= 送れない・固まる、を絶対に起こさない）。
+       - 復号は常に安全。平文(プレフィックス無し)はそのまま表示。暗号文で
+         復号失敗した時だけプレースホルダを返す。チャットは決して白画面に
+         しない。
+       - 鍵は localStorage(JWK) に保存。プライベートブラウズ等で書き込み
+         禁止でも try-catch でメモリ(_e2ee.mem)に保持して動作継続。
+       - Firestore に秘密鍵(本人のみ)・公開鍵・ルーム鍵をバックアップし、
+         キャッシュ消去後も自動復元する。
+       ===================================================================== */
+    const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平文と区別する）
+    const E2EE_LS_PRIV = "covo_e2ee_priv"; // localStorageキー（秘密鍵JWK）
+    const E2EE_LS_PUB  = "covo_e2ee_pub";  // localStorageキー（公開鍵JWK）
+
+    const _e2ee = {
+      ready: false,
+      privateKey: null,   // CryptoKey (RSA-OAEP decrypt)
+      publicKey: null,    // CryptoKey (RSA-OAEP encrypt)
+      publicKeyJwk: null, // JWK (Firestore保存・他者配布用)
+      mem: {},            // localStorage不可時のメモリ退避
+      roomKeyCache: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
+      pubKeyCache: {},    // userId -> CryptoKey(public) インポート済みキャッシュ
+      _initPromise: null,
+      _roomKeyPromises: {},
+      _rescueRequestFlags: {}, // roomId -> timestamp 救済リクエストのデバウンス用
+    };
+
+    const _subtleOK = !!(window.crypto && window.crypto.subtle);
+    // Tauriデスクトップ(http://tauri.localhost等)で意図せずhttpsへ強制転送されERR_CONNECTION_REFUSEDで全ユーザーが詰む致命的バグを完全解消
+    if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && !location.hostname.endsWith('.localhost') && !window.__TAURI__) {
+      location.href = location.href.replace('http:', 'https:');
+    }
+    const _td = new TextDecoder(), _te = new TextEncoder();
+
+    function _abToB64(buf) {
+      const bytes = new Uint8Array(buf);
+      let bin = "";
+      const CH = 0x8000;
+      for (let i = 0; i < bytes.length; i += CH) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+      }
+      return btoa(bin);
+    }
+    function _b64ToAb(b64) {
+      try {
+        if (typeof b64 !== "string") return new ArrayBuffer(0);
+        let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+        while (norm.length % 4 > 0) norm += "=";
+        const bin = atob(norm);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out.buffer;
+      } catch (e) {
+        return new ArrayBuffer(0);
+      }
+    }
+
+    // localStorage 安全アクセス（プライベートブラウズ等で例外でも落ちない）
+    function _lsGet(key) {
+      try { const v = localStorage.getItem(key); if (v != null) return v; } catch (e) {}
+      return (key in _e2ee.mem) ? _e2ee.mem[key] : null;
+    }
+    function _lsSet(key, val) {
+      _e2ee.mem[key] = val; // 常にメモリにも保持
+      try { localStorage.setItem(key, val); } catch (e) {}
+    }
+
+    async function _genUserKeyPair() {
+      return await window.crypto.subtle.generateKey(
+        { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+        true, ["encrypt", "decrypt"]
+      );
+    }
+    async function _importPriv(jwk) {
+      return await window.crypto.subtle.importKey("jwk", jwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+    }
+    async function _importPub(jwk) {
+      return await window.crypto.subtle.importKey("jwk", jwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+    }
+
+    // ユーザー鍵の初期化：ローカル→Firestore→新規生成 の順で自動復元/作成
+    async function ensureE2EEKeys() {
+      if (!_subtleOK || !userId) return false;
+      if (_e2ee.ready) return true;
+      if (_e2ee._initPromise) return _e2ee._initPromise;
+      _e2ee._initPromise = (async () => {
+        const res = await _ensureE2EEKeysImpl();
+        if (!res) _e2ee._initPromise = null;
+        return res;
+      })();
+      return _e2ee._initPromise;
+    }
+    async function _ensureE2EEKeysImpl() {
+      try {
+        // 1) ローカル(JWK)から復元
+        const privStr = _lsGet(E2EE_LS_PRIV);
+        const pubStr = _lsGet(E2EE_LS_PUB);
+        if (privStr && pubStr) {
+          const privJwk = JSON.parse(privStr), pubJwk = JSON.parse(pubStr);
+          _e2ee.privateKey = await _importPriv(privJwk);
+          _e2ee.publicKey = await _importPub(pubJwk);
+          _e2ee.publicKeyJwk = pubJwk;
+          _e2ee.ready = true;
+          // Firestoreに公開鍵が無ければバックアップ（端末間共有のため）
+          _backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
+          return true;
+        }
+
+        // 2) Firestore/D1の本人専用ドキュメントから復元
+        try {
+          
+            const privRef = doc(db, `artifacts/${appId}/users/${userId}/private/keys`);
+            const privSnap = await getDoc(privRef);
+            if (privSnap.exists() && privSnap.data().privateKeyJwk) {
+              const privJwk = privSnap.data().privateKeyJwk;
+              const pubJwk = privSnap.data().publicKeyJwk;
+              _e2ee.privateKey = await _importPriv(privJwk);
+              _e2ee.publicKey = await _importPub(pubJwk);
+              _e2ee.publicKeyJwk = pubJwk;
+              _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+              _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+              _e2ee.ready = true;
+              return true;
+            }
+          
+        } catch (e) {
+          console.warn("[E2EE] 鍵の復元チェック中に通信エラーが発生しました。個人鍵の上書き自爆を防止するため処理を中断します:", e);
+          return false;
+        }
+
+        // 3) 新規生成して保存（ローカル＋Firestoreバックアップ）
+        const pair = await _genUserKeyPair();
+        const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
+        const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
+        _e2ee.privateKey = pair.privateKey;
+        _e2ee.publicKey = pair.publicKey;
+        _e2ee.publicKeyJwk = pubJwk;
+        _lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+        _lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+        _e2ee.ready = true;
+        await _backupKeysToFirestore(privJwk, pubJwk);
+        return true;
+      } catch (e) {
+        console.warn("[E2EE] 鍵初期化に失敗（平文モードで継続）:", e);
+        return false;
+      }
+    }
+
+    async function _backupKeysToFirestore(privJwk, pubJwk) {
+      if (!userId) return;
+      
+      // 公開鍵を users/{uid} に（全員が読めてOK）
+      try {
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}`), { publicKeyJwk: pubJwk }, { merge: true });
+      } catch (e) {}
+      // 秘密鍵を本人専用サブドキュメントに（ルールで本人のみ読み書き）
+      try {
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/private/keys`),
+          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+      } catch (e) {}
+    }
+
+    // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き）。無ければnull。
+    async function _getUserPublicKey(uid) {
+      if (_e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
+      
+      try {
+        const snap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}`));
+        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        if (!jwk) return null;
+        const key = await _importPub(jwk);
+        _e2ee.pubKeyCache[uid] = key;
+        return key;
+      } catch (e) { return null; }
+    }
+
+    // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
+    async function _getEscrowPublicKey() {
+      
+      try {
+        const snap = await getDoc(doc(db, `artifacts/${appId}/settings/escrowKey`));
+        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        if (!jwk) return null;
+        return await _importPub(jwk);
+      } catch (e) { return null; }
+    }
+
+    async function requestEscrowRescue(serverId, roomId) {
+      if (!userId) return;
+      const now = Date.now();
+      if (_e2ee._rescueRequestFlags && _e2ee._rescueRequestFlags[roomId] && (now - _e2ee._rescueRequestFlags[roomId] < 60000)) {
+        return; // 1分以内の連続リクエストはスキップ
+      }
+      if (_e2ee._rescueRequestFlags) {
+        _e2ee._rescueRequestFlags[roomId] = now;
+      }
+      try {
+        
+          await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/rescueRequests/${userId}`), {
+            userId: userId, requestedAt: serverTimestamp()
+          }, { merge: true });
+          console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
+          delete _e2ee.roomKeyCache[roomId];
+        
+      } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
+    }
+
+    // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
+    // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に保存。
+    // 既に存在すれば何もしない。管理者以外・失敗時は黙ってスキップ（アプリは止めない）。
+    async function ensureEscrowKey() {
+      if (!_subtleOK || !userId || !isAdmin) return;
+      try {
+        
+
+        const escrowRef = doc(db, `artifacts/${appId}/settings/escrowKey`);
+        const snap = await getDoc(escrowRef);
+        if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
+        const pair = await _genUserKeyPair();
+        const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
+        const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
+        // 管理者本人の private に秘密鍵を保管（本人のみ読める）
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`),
+          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+        // 公開鍵を全体設定に（合鍵の公開部分）
+        await setDoc(escrowRef, { publicKeyJwk: pubJwk, createdBy: userId, updatedAt: serverTimestamp() }, { merge: true });
+        console.log("[E2EE] エスクロー鍵を生成しました");
+      } catch (e) {
+        console.warn("[E2EE] エスクロー鍵の生成に失敗（スキップ）:", e);
+      }
+    }
+
+    // ルーム共通鍵(AES-GCM)を取得。無ければ生成し、全メンバー＋エスクローへ配布。
+    // 取得・生成いずれも失敗したら null（呼び出し側は平文で送る）。
+    async function getOrCreateRoomKey(serverId, roomId, memberIds) {
+      if (!_subtleOK) return null;
+      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      if (_e2ee._roomKeyPromises[roomId]) return _e2ee._roomKeyPromises[roomId];
+      _e2ee._roomKeyPromises[roomId] = (async () => {
+        const res = await _getOrCreateRoomKeyImpl(serverId, roomId, memberIds);
+        if (!res) delete _e2ee._roomKeyPromises[roomId];
+        return res;
+      })();
+      return _e2ee._roomKeyPromises[roomId];
+    }
+    async function _getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
+      if (!_subtleOK) return null;
+
+      try {
+        // 1) 共有ルームキー (Shared Room Key) がすでにルームドキュメントに存在するかチェック
+        const rSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
+        let roomData = null;
+        if (rSnap.exists()) {
+          roomData = rSnap.data();
+          if (roomData.sharedKey) {
+             try {
+                // 共有キーが存在する場合はインポートして利用
+                const raw = _b64ToAb(roomData.sharedKey);
+                const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                const keysObj = { "1": key, latest: key, latestVersion: "1" };
+                _e2ee.roomKeyCache[roomId] = keysObj;
+                return keysObj;
+             } catch(e) {
+                console.warn("[SharedKey] 共有キーのインポートに失敗:", e);
+             }
+          }
+        }
+
+        // 2) 共有ルームキーが存在しない場合、過去のE2EE（レガシー）鍵を探す
+        const ok = await ensureE2EEKeys();
+        if (ok) {
+          let legacyKey = null;
+          const myWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${userId}`));
+          if (myWrapSnap.exists()) {
+            const data = myWrapSnap.data();
+            let wrappedStr = data.wrappedKey;
+            if (data.versions && data.latestVersion && data.versions[data.latestVersion]) {
+              wrappedStr = data.versions[data.latestVersion];
+            } else if (data[`versions.${data.latestVersion}`]) {
+              wrappedStr = data[`versions.${data.latestVersion}`];
+            }
+            if (wrappedStr) {
+               try {
+                 const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(wrappedStr));
+                 legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+               } catch(e) {}
+            }
+          }
+          
+          // 管理者エスクローからの復旧
+          if (!legacyKey && isAdmin) {
+             const escWrapSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
+             if (escWrapSnap.exists()) {
+               try {
+                 const escPrivSnap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/private/escrowKey`));
+                 if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) {
+                   const escrowPrivKey = await _importPriv(escPrivSnap.data().privateKeyJwk);
+                   const data = escWrapSnap.data();
+                   let wrappedStr = data.wrappedKey;
+                   if (data.versions && data.latestVersion && data.versions[data.latestVersion]) wrappedStr = data.versions[data.latestVersion];
+                   else if (data[`versions.${data.latestVersion}`]) wrappedStr = data[`versions.${data.latestVersion}`];
+                   if (wrappedStr) {
+                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(wrappedStr));
+                     legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                   }
+                 }
+               } catch(e) {}
+             }
+          }
+
+          // レガシーキーが復元できた場合、それを共有キーとして保存してアップグレード
+          if (legacyKey) {
+             console.log(`[SharedKey] レガシーE2EEキーを復元しました。共有キーとしてアップグレードします (room=${roomId})`);
+             try {
+                const raw = await window.crypto.subtle.exportKey("raw", legacyKey);
+                const b64 = _abToB64(raw);
+                await updateDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
+                const keysObj = { "1": legacyKey, latest: legacyKey, latestVersion: "1" };
+                _e2ee.roomKeyCache[roomId] = keysObj;
+                return keysObj;
+             } catch(e) {
+                console.warn("[SharedKey] 共有キーへのアップグレードに失敗:", e);
+             }
+          }
+        }
+
+        // 3) それでもキーがない場合、もし過去メッセージが存在するなら上書きを避けるためブロック
+        let hasExistingData = false;
+        if (roomData && roomData.currentKeyVersion > 1) hasExistingData = true;
+        const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
+        if (!msgsSnap.empty) hasExistingData = true;
+        
+        if (hasExistingData) {
+          console.warn(`[SharedKey] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。`);
+          await requestEscrowRescue(serverId, roomId);
+          return null;
+        }
+
+        // 4) 完全に新規の場合、新しい共有ルームキーを生成してドキュメントに保存
+        const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+        const raw = await window.crypto.subtle.exportKey("raw", key);
+        const b64 = _abToB64(raw);
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
+        
+        const keysObj = { "1": key, latest: key, latestVersion: "1" };
+        _e2ee.roomKeyCache[roomId] = keysObj;
+        return keysObj;
+
+      } catch (e) {
+        console.error(`[SharedKey] ルーム鍵の取得・生成処理に失敗 (room=${roomId}):`, e);
+        return null;
+      }
+    }
+
+    async function getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500) {
+      if (!_subtleOK) return null;
+      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      const deadline = Date.now() + maxWaitMs;
+      let attempt = 0;
+      while (true) {
+        const keyObj = await getOrCreateRoomKey(serverId, roomId, memberIds);
+        if (keyObj) return keyObj;
+        if (Date.now() >= deadline) return null; 
+        const delay = Math.min(150 * Math.pow(2, attempt++), 500);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+
+    // Forward Secrecy: ルーム鍵のローテーション
+    async function rotateAllRoomKeys(serverId, remainingMembers) {
+       if (!_subtleOK) return;
+       try {
+         
+
+         const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
+         const promises = [];
+         roomsSnap.forEach(roomSnap => {
+            const roomId = roomSnap.id;
+            promises.push((async () => {
+               const roomRef = roomSnap.ref;
+               let nextVer = Date.now(); // 同時ローテーション時の競合上書きを防ぐためタイムスタンプ一意バージョン
+               const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+               const raw = await window.crypto.subtle.exportKey("raw", key);
+               await _distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
+               await updateDoc(roomRef, { currentKeyVersion: nextVer });
+               delete _e2ee.roomKeyCache[roomId];
+            })());
+         });
+         await Promise.all(promises);
+         console.log(`[E2EE] All room keys rotated for server ${serverId}`);
+       } catch(e) {
+         console.error("[E2EE] rotateAllRoomKeys failed:", e);
+       }
+    }
+
+    async function _distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
+      const ids = Array.from(new Set([...(memberIds || []), userId]));
+      const isD1 = false;
+      const writes = [];
+      const d1Keys = [];
+      for (const uid of ids) {
+        const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
+        if (!pub) continue; 
+        try {
+          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+          if (isD1) {
+            d1Keys.push({ userId: uid, keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
+          } else {
+            writes.push(setDoc(
+              doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+              { 
+                 [`versions.${version}`]: _abToB64(wrapped),
+                 latestVersion: version,
+                 wrappedKey: _abToB64(wrapped), // fallback
+                 updatedAt: serverTimestamp() 
+              }, { merge: true }
+            ));
+          }
+        } catch (e) {}
+      }
+      const escrowPub = await _getEscrowPublicKey();
+      if (escrowPub) {
+        try {
+          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
+          if (isD1) {
+            d1Keys.push({ userId: "__escrow__", keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
+          } else {
+            writes.push(setDoc(
+              doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
+              { 
+                 [`versions.${version}`]: _abToB64(wrapped),
+                 latestVersion: version,
+                 wrappedKey: _abToB64(wrapped),
+                 updatedAt: serverTimestamp() 
+              }, { merge: true }
+            ));
+          }
+        } catch (e) {}
+      }
+      if (isD1 && d1Keys.length > 0) {
+        await saveD1RoomKeys(serverId, roomId, d1Keys);
+      } else {
+        await Promise.all(writes);
+      }
+    }
+
+
+    async function backfillRoomKeysForMembers(serverId, roomId, memberIds) {
+      if (!_subtleOK || !userId) return;
+      try {
+        const isD1 = false;
+        const roomKeyObj = _e2ee.roomKeyCache[roomId];
+        if (!roomKeyObj) return; 
+        for (const ver in roomKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion') continue;
+          const rawKey = await window.crypto.subtle.exportKey("raw", roomKeyObj[ver]);
+          const ids = Array.from(new Set(memberIds || []));
+          const d1Keys = [];
+          for (const uid of ids) {
+            try {
+              const pub = (uid === userId) ? _e2ee.publicKey : await _getUserPublicKey(uid);
+              if (!pub) continue; 
+              const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+              if (isD1) {
+                d1Keys.push({ userId: uid, keyData: { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: Date.now() } });
+              } else {
+                await setDoc(
+                  doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+                  { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: serverTimestamp() }, 
+                  { merge: true }
+                );
+              }
+            } catch (e) { }
+          }
+          if (isD1 && d1Keys.length > 0) {
+            await saveD1RoomKeys(serverId, roomId, d1Keys);
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function encryptText(plaintext, roomKeyObj) {
+      if (!_subtleOK || !roomKeyObj || !roomKeyObj.latest || typeof plaintext !== "string" || plaintext.length === 0) return null;
+      try {
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const ct = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, roomKeyObj.latest, _te.encode(plaintext));
+        return `enc::v${roomKeyObj.latestVersion}::` + _abToB64(iv.buffer) + "::" + _abToB64(ct);
+      } catch (e) {
+        console.warn("[E2EE] 暗号化失敗（平文で送信）:", e);
+        return null;
+      }
+    }
+
+    function isEncrypted(text) {
+      return typeof text === "string" && text.startsWith(E2EE_PREFIX);
+    }
+
+    async function decryptText(text, serverId, roomId, memberIds) {
+      if (!isEncrypted(text)) return text; 
+      if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      try {
+        const roomKeyObj = await getOrCreateRoomKey(serverId, roomId, memberIds || []);
+        if (!roomKeyObj) return "（復号化エラー：鍵が見つかりません）";
+        
+        const parts = text.split("::"); 
+        if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
+        const version = parts[1].replace('v', '');
+        let keyToUse = roomKeyObj[version];
+        const iv = new Uint8Array(_b64ToAb(parts[2]));
+        const ctBuf = _b64ToAb(parts[3]);
+
+        if (keyToUse) {
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, keyToUse, ctBuf);
+            return _td.decode(pt);
+          } catch(e) { /* 指定バージョンで失敗した場合は下部の総当たりフォールバックへ */ }
+        }
+
+        // 【キー総当たりフォールバック復号】ローテーション競合等でバージョン番号がずれているメッセージを救済
+        for (const ver in roomKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKeyObj[ver], ctBuf);
+            return _td.decode(pt);
+          } catch(e) {}
+        }
+
+        // それでも復号できない場合は、鍵が根本から違っているか欠落しているため自動救済トリガーを発行
+        await requestEscrowRescue(serverId, roomId);
+        return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
+      } catch (e) {
+        return "（復号化エラー：メッセージを解読できません）";
+      }
+    }
+
+    async function decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
+      if (!_subtleOK || !Array.isArray(messages)) return;
+      for (const m of messages) {
+        if (!m || typeof m.text !== "string") continue;
+        if (m._decrypted) continue;            
+
+        if (!m._originalText && isEncrypted(m.text)) {
+          m._originalText = m.text;
+        }
+        const textToDecrypt = m._originalText || m.text;
+
+        if (!isEncrypted(textToDecrypt)) { m._decrypted = true; continue; } 
+        try {
+          const decrypted = await decryptText(textToDecrypt, serverId, roomId, memberIds);
+          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+            m._decryptedErrorText = decrypted;
+            m._decrypted = false;
+          } else {
+            m.text = decrypted;
+            m._decryptedErrorText = null;
+            m._decrypted = true;
+          }
+        } catch (e) {
+          m.text = "（復号化エラー：メッセージを解読できません）";
+          m._decrypted = false;
+        }
+      }
+    }
+
+    // --- ファイルのE2EE暗号化/復号化 ---
+    async function encryptFileE2EE(file, roomKeyObj) {
+      if (!_subtleOK || !roomKeyObj || !roomKeyObj.latest) throw new Error("Key not found");
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const buffer = await file.arrayBuffer();
+      const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, roomKeyObj.latest, buffer);
+      
+      const verNum = parseInt(roomKeyObj.latestVersion);
+      let header;
+      if (verNum < 255) {
+        header = new Uint8Array([verNum]);
+      } else {
+        header = new Uint8Array(9);
+        header[0] = 255;
+        const dv = new DataView(header.buffer);
+        dv.setFloat64(1, Number(verNum), false);
+      }
+      return new Blob([header, iv, ciphertext]);
+    }
+
+    async function decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
+      if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
+      const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
+      if (data.length === 0) throw new Error("Empty buffer");
+      const firstByte = data[0];
+      let version, iv, ciphertext;
+      if (firstByte < 255) {
+        version = firstByte.toString();
+        iv = data.subarray(1, 13);
+        ciphertext = data.subarray(13);
+      } else {
+        const headerBuf = data.subarray(1, 9);
+        const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
+        version = dv.getFloat64(0, false).toString();
+        iv = data.subarray(9, 21);
+        ciphertext = data.subarray(21);
+      }
+      let keyToUse = roomKeyObj[version];
+      
+      if (keyToUse) {
+        try {
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, keyToUse, ciphertext);
+          return new Blob([plaintext]);
+        } catch(e){}
+      }
+      for (const ver in roomKeyObj) {
+        if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+        try {
+          const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, roomKeyObj[ver], ciphertext);
+          return new Blob([pt]);
+        } catch(e){}
+      }
+      if (serverId && roomId) {
+        await requestEscrowRescue(serverId, roomId);
+      }
+      throw new Error(`Missing or mismatched key for version ${version}`);
+    }
+
+    // 設定>アプリ情報 の「メッセージの暗号化」状態表示を更新する。
+    // ユーザーが自分で暗号化が効いているか確認できるようにする（実機での動作確認用）。
+    async function updateE2EEStatusUI() {
+      // PC設定モーダルとスマホUIの両方を同時に更新する
+      const els = [document.getElementById('appInfoE2EE'), document.getElementById('mobileAppInfoE2EE')].filter(Boolean);
+      if (!els.length) return;
+      const set = (text, color) => { els.forEach(el => { el.textContent = text; el.style.color = color; }); };
+      if (!_subtleOK) {
+        set('利用できません（端末非対応）', '#dc2626'); // 赤
+        return;
+      }
+      set('確認中…', '#6b7280');
+      try {
+        const ok = await ensureE2EEKeys();
+        if (ok && _e2ee.ready) {
+          set('有効（自動暗号化）', '#0d9488'); // ティール (Covoスタイル)
+        } else {
+          set('準備中…（まだ鍵がありません）', '#d97706'); // オレンジ
+        }
+      } catch (e) {
+        set('準備中…', '#d97706');
+      }
+    }
+
+    // 影ハンター本体: 入力欄とナビの境目付近を走査し、影/境界/グラデの容疑者テキストを返す純粋関数。
+    function runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+    // アプリ情報の診断行を更新（タップでコピー）。
+    function updateLayoutDebugUI() {
+      const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+      if (!els.length) return;
+      const txt = runShadowHunter();
+      const n = txt.split('\n').length;
+      els.forEach(el => {
+        el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+        el.style.cursor = 'pointer';
+        el.style.textDecoration = 'underline';
+        el.style.whiteSpace = 'normal';
+        el.title = 'タップでコピー';
+        el.onclick = () => copyDebugText(txt, el);
+      });
+    }
+
+    // 診断テキストをクリップボードにコピー（失敗時はフォールバック）。コピー後は一時的に「コピーしました」表示。
+    async function copyDebugText(txt, el) {
+      const original = el.textContent;
+      let ok = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(txt);
+          ok = true;
+        }
+      } catch (e) { /* 下のフォールバックへ */ }
+      if (!ok) {
+        // HTTPS以外や古い環境向けのフォールバック
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          ok = document.execCommand('copy');
+          ta.remove();
+        } catch (e) {}
+      }
+      el.textContent = ok ? 'コピーしました ✓' : 'コピー失敗（長押しで選択してね）';
+      el.style.color = ok ? '#16a34a' : '#dc2626';
+      setTimeout(() => { el.textContent = original; el.style.color = '#6b7280'; }, 1500);
+    }
+
+    // 送信をブロックする危険な拡張子（クライアント側で事前チェック）
+    const BLOCKED_EXTENSIONS = new Set([
+      'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+      'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+      'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+      'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+      'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap'
+    ]);
+
+    function checkFileAllowed(file) {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (BLOCKED_EXTENSIONS.has(ext)) {
+        alertMessage(`この形式のファイル（.${ext}）は送信できません`, "error");
+        return false;
+      }
+      return true;
+    }
+
+    // Cloudflare Worker(KV) へのアップロード。進捗対応(XHR)。
+    // uploadToCloudinary と同じ (file, onProgress, folder) で呼べるようにしている（folderは未使用）。
+    function uploadToExternalService(file, onProgress, _folder) {
+      return new Promise(async (resolve, reject) => {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('uploaderId', userId || '');
+        fd.append('idToken', idToken);
+        if (_folder) {
+          fd.append('folder', _folder);
+        }
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${WORKER_BASE_URL}/api/uploadFile`);
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            try {
+              const d = JSON.parse(xhr.responseText);
+              d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+            } catch (e) { reject(new Error('応答の解析に失敗')); }
+          } else {
+            let msg = `HTTP ${xhr.status}`;
+            try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+            reject(new Error(msg));
+          }
+        });
+        xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+        xhr.addEventListener('abort', () => reject(new Error('アップロードがキャンセルされました')));
+        xhr.send(fd);
+      });
+    }
+
+    let app;
+    let db;
+    let auth;
+    let messaging;
+    let currentFcmToken = null;
+    const roomNames = {};
+    // 通知位置はすべて Rust 側 saved_position で管理（localStorage は使わない）
+    let userId = null;
+    let userNickname = null;
+    let isAdmin = false;
+    let isListAdmin = false;
+    const isTauri = window.__TAURI__ !== undefined;
+
+    let currentRoomId = null;
+    let unsubscribeMessages = null;
+    let unsubscribeUserStatus = null;
+
+    let isAuthReady = false;
+    let pendingRoomJoin = null;
+    let pendingRoomDelete = null;
+
+    let lastMessagesData = [];
+    let attachedFile = null;
+    let attachedKvFile = null; // KV アップロード済みファイル { url, name, type, size }
+    let replyingToMessage = null;
+    let currentPdfUrl = "";
+    let currentPdfName = "";
+
+    let readReceiptsUnsubscribe = null;
+    let roomReadReceipts = {};
+    let messagesIndexMap = {};
+
+    // 未読バッジ用
+    let unreadCounts = {};
+    let unreadListeners = {};
+
+    // サーバー管理用
+    let currentServerId = null;
+    let currentServerData = null;
+    let serverListUnsubscribe = null;
+    let currentServerNickname = null;
+    let allServersCache = [];
+
+    let awayTimer = null;
+    const AWAY_TIMEOUT = 5 * 60 * 1000;
+
+    // ★ メンバーリストのキャッシュと更新用インターバル
+    let cachedUsers = [];
+    let memberListRefreshInterval = null;
+    let userAvatarUrl = null;
+    let lightboxCurrentFile = null;
+    let typingTimeout = null;
+    let isCurrentlyTyping = false;
+    let typingUnsubscribe = null;
+    let readReceiptDebounceTimer = null;
+    let _lastSentReadMessageId = null;
+
+    // P2P Voice Call
+    let _callDoc = null, _callId = null, _peerConnection = null;
+    let _localStream = null, _callTimerInterval = null, _callTimeoutHandle = null;
+    let _callUnsubOffer = null, _callEndUnsub = null, _callIncomingUnsub = null;
+    let _isMuted = false, _callRole = null, _pendingCallerData = null;
+    let _ringRepeatHandle = null, _ringCtx = null, _prewarmPC = null;
+    let _iceDisconnectTimer = null;
+    let _iceRestartTimer = null;
+    let _lastIceRestartAt = null;
+    let _usingTurnRelay = false;
+    let _iceRestartAttempts = 0; // ICE failed時の再試行回数カウンター
+    const CALL_TIMEOUT_MS = 30000;
+    const STUN_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.relay.metered.ca:80' },
+        {
+          urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+            'turns:openrelay.metered.ca:443',
+          ],
+          username: 'openrelayproject',
+          credential: 'openrelayproject',
+        },
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+    };
+    // ファイル共有専用: STUNのみ（TURN中継なし）。
+    // ファイル本体は大容量になり得るので、TURN(無料の中継サーバー)を経由させると
+    // 帯域制限にすぐ達する。そのため「P2P直結できる時だけ送れる／できなければ繋がらない」
+    // という方針にし、TURNは一切使わない（＝制限を食わない）。STUNはIPを教え合うだけで無通信に近い。
+    const STUN_ONLY_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      iceCandidatePoolSize: 4,
+      bundlePolicy: 'max-bundle',
+    };
+    let messageLimit = 20;
+    let rtdbMessagesLimit = 20;
+    let allowPagination = false;
+    // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
+    let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
+
+    function getMsgTimestamp(msg) {
+      if (!msg || !msg.timestamp) return Date.now(); // pending local message
+      if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
+      return msg.timestamp;
+    }
+
+    let isLoadingOlderMessages = false; // 二重ローディング防止
+    let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
+
+    // --- リアルタイム維持＆極省リード・ジャンプ用管理変数 ---
+    let isJumpView = false;             // 過去の周辺ログを部分表示している状態
+    let realTimeMessagesCache = [];     // onSnapshotが常に最新を更新し続けるタイムライン
+    let jumpViewMessages = [];          // ジャンプ周辺ログ（上下スクロールで部分的に増える）
+    let hasMoreJumpOlder = true;
+    let hasMoreJumpNewer = true;
+    let isLoadingJumpOlder = false;
+    let isLoadingJumpNewer = false;
+    let unsubscribePinnedMessages = null;
+    let currentPinnedMessages = [];
+    // onAuthStateChanged の再入防止
+    let _authHandlerBusy = false;
+    let _lastAuthUserId = null; // 同一ユーザーの重複初期化防止
+
+    // DOM Elements
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const authContainer = document.getElementById("authContainer");
+
+    const tabLogin = document.getElementById("tabLogin");
+    const tabSignup = document.getElementById("tabSignup");
+    const loginFormArea = document.getElementById("loginFormArea");
+    const signupFormArea = document.getElementById("signupFormArea");
+
+    const emailInput = document.getElementById("emailInput");
+    const passwordInput = document.getElementById("passwordInput");
+    const authButton = document.getElementById("authButton");
+
+    const signupEmailInput = document.getElementById("signupEmailInput");
+    const signupPasswordInput = document.getElementById("signupPasswordInput");
+    const signupButton = document.getElementById("signupButton");
+
+    const authMessage = document.getElementById("authMessage");
+
+    const nicknameContainer = document.getElementById("nicknameContainer");
+    const nicknameInput = document.getElementById("nicknameInput");
+    const setNicknameButton = document.getElementById("setNicknameButton");
+    const nicknameMessage = document.getElementById("nicknameMessage");
+
+    // Header Title
+    const headerTitle = document.getElementById("headerTitle");
+
+    // Settings Modal
+    const settingsModal = document.getElementById("settingsModal");
+    const closeSettingsButton = document.getElementById("closeSettingsButton");
+    const settingsNicknameInput = document.getElementById("settingsNicknameInput");
+    const saveSettingsButton = document.getElementById("saveSettingsButton");
+    const logoutButtonInModal = document.getElementById("logoutButtonInModal");
+    const settingsMessage = document.getElementById("settingsMessage");
+    const settingsAvatarText = document.getElementById("settingsAvatarText");
+    const adminPanelContainer = document.getElementById("adminPanelContainer");
+    const openAdminModalButton = document.getElementById("openAdminModalButton");
+
+    // Admin Modal
+    const newAllowedEmailInput = document.getElementById("newAllowedEmailInput");
+    const addAllowedEmailButton = document.getElementById("addAllowedEmailButton");
+    const allowedEmailsList = document.getElementById("allowedEmailsList");
+    const newAdminEmailInput = document.getElementById("newAdminEmailInput");
+    const addAdminEmailButton = document.getElementById("addAdminEmailButton");
+    const adminEmailsList = document.getElementById("adminEmailsList");
+    const newListAdminEmailInput = document.getElementById("newListAdminEmailInput");
+    const addListAdminEmailButton = document.getElementById("addListAdminEmailButton");
+    const listAdminEmailsList = document.getElementById("listAdminEmailsList");
+    const adminMessage = document.getElementById("adminMessage");
+
+    // User Panel
+    const userPanel = document.getElementById("userPanel");
+    const userPanelAvatar = document.getElementById("userPanelAvatar");
+    const userPanelName = document.getElementById("userPanelName");
+    const userPanelId = document.getElementById("userPanelId");
+
+    const createRoomPasswordModal = document.getElementById("createRoomPasswordModal");
+    const newRoomPasswordInput = document.getElementById("newRoomPasswordInput");
+    const confirmCreateRoomButton = document.getElementById("confirmCreateRoomButton");
+    const cancelCreateRoomButton = document.getElementById("cancelCreateRoomButton");
+    const createRoomPasswordMessage = document.getElementById("createRoomPasswordMessage");
+
+    const joinRoomPasswordModal = document.getElementById("joinRoomPasswordModal");
+    const joinRoomTitle = document.getElementById("joinRoomTitle");
+    const joinRoomPasswordInput = document.getElementById("joinRoomPasswordInput");
+    const confirmJoinRoomButton = document.getElementById("confirmJoinRoomButton");
+    const cancelJoinRoomButton = document.getElementById("cancelJoinRoomButton");
+    const joinRoomPasswordMessage = document.getElementById("joinRoomPasswordMessage");
+
+    const deleteRoomConfirmModal = document.getElementById("deleteRoomConfirmModal");
+    const roomToDeleteNameSpan = document.getElementById("roomToDeleteName");
+    const confirmDeleteButton = document.getElementById("confirmDeleteButton");
+    const cancelDeleteButton = document.getElementById("cancelDeleteButton");
+    const deleteConfirmErrorMessage = document.getElementById("deleteConfirmErrorMessage");
+
+    const deleteRoomPasswordModal = document.getElementById("deleteRoomPasswordModal");
+    const roomToDeletePasswordNameSpan = document.getElementById("roomToDeletePasswordName");
+    const deleteRoomPasswordInput = document.getElementById("deleteRoomPasswordInput");
+    const confirmDeletePasswordButton = document.getElementById("confirmDeletePasswordButton");
+    const cancelDeletePasswordButton = document.getElementById("cancelDeletePasswordButton");
+    const deletePasswordErrorMessage = document.getElementById("deletePasswordErrorMessage");
+
+    const appContainer = document.getElementById("appContainer");
+    const roomList = document.getElementById("roomList");
+
+    const membersSidebar = document.getElementById("membersSidebar");
+    const membersList = document.getElementById("membersList");
+    const bottomSheetOverlay = document.getElementById("bottomSheetOverlay");
+    const bottomSheetHandle = document.getElementById("bottomSheetHandle");
+
+    const currentRoomHeader = document.getElementById("currentRoomHeader");
+    const messagesDisplay = document.getElementById("messagesDisplay");
+    function clearMessagesDOM() {
+      const spinner = document.getElementById('topLoadingSpinner');
+      messagesDisplay.innerHTML = '';
+      
+    }
+    const messageInput = document.getElementById("messageInput");
+
+    const filePreviewContainer = document.getElementById("filePreviewContainer");
+    const filePreviewName = document.getElementById("filePreviewName");
+    const clearFileButton = document.getElementById("clearFileButton");
+
+    const replyingToContainer = document.getElementById("replyingToContainer");
+    const replyingToNickname = document.getElementById("replyingToNickname");
+    const replyingToText = document.getElementById("replyingToText");
+    const cancelReplyButton = document.getElementById("cancelReplyButton");
+
+    const messageContextMenu = document.getElementById("messageContextMenu");
+    const replyMessageButton = document.getElementById("replyMessageButton");
+    const copyMessageButton = document.getElementById("copyMessageButton");
+    const downloadMessageButton = document.getElementById("downloadMessageButton");
+    const deleteMessageButton = document.getElementById("deleteMessageButton");
+    const toggleSearchButton = document.getElementById("toggleSearchButton");
+    const searchContainer = document.getElementById("searchContainer");
+    const searchInput = document.getElementById("searchInput");
+    const closeSearchBtn = document.getElementById("closeSearchBtn");
+    const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
+    const currentRoomTitleText = document.getElementById("currentRoomTitleText");
+    // ===== 開発者ツール（設定 > 開発者ツール から操作）=====
+    // iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ＆オンスクリーンコンソール。
+    let _inspectMode = false;
+
+    // 安全なクリップボードコピー（async拒否を必ず飲み込む＋execCommandフォールバック）。
+    // iOS PWAで clipboard.writeText が拒否されても unhandledrejection を出さない。
+    function safeCopy(txt) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          // .catch を必ず付けて未捕捉Promiseにしない
+          navigator.clipboard.writeText(txt).catch(() => _execCopyFallback(txt));
+          return;
+        }
+      } catch (e) {}
+      _execCopyFallback(txt);
+    }
+    function _execCopyFallback(txt) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+        ta.setAttribute('data-inspect-ignore', '1');
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      } catch (e) {}
+    }
+
+    // 検査モードのON/OFF（設定のトグル、または専用バーの終了ボタンから呼ばれる）
+    window.setInspectMode = function(on) {
+      _inspectMode = !!on;
+      const bar = document.getElementById('inspectModeBar');
+      const cb = document.getElementById('toggleInspectMode');
+      if (cb) cb.checked = _inspectMode;
+      if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+      if (!_inspectMode) _clearInspectHighlight();
+      if (_inspectMode) {
+        try { alertMessage('🔍 検査モードON\n通常の操作はそのまま使えます。調べたい場所を「長押し」すると、その要素を検査してコピーします。', 'info'); } catch (e) {}
+      }
+    };
+
+    // ハイライト用オーバーレイ要素（タップした要素の範囲を枠で示す）
+    let _inspectHL = null;
+    function _clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+    function _showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+
+    // 検査モード中は「長押し(0.5秒)」で検査する。通常のタップ・スクロール・画面遷移は普通に動く。
+    // → 検査モードONのままでもアプリを普通に操作でき、調べたい時だけ長押しすればよい。
+    (function attachInspectorLongPress() {
+      let timer = null, sx = 0, sy = 0, fired = false;
+
+      const ignore = (target) => target && target.closest && target.closest('[data-inspect-ignore], #inspectModeBar, #devConsolePanel, #customAlertModal, #customConfirmModal');
+
+      const doInspect = (x, y) => {
+        fired = true;
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} } // 触覚フィードバック
+        try {
+          const top = (document.elementsFromPoint(x, y) || []).find(e => !ignore(e));
+          if (top) _showInspectHighlight(top.getBoundingClientRect());
+        } catch (e) {}
+        const txt = inspectPoint(x, y);
+        safeCopy(txt);
+        try { alertMessage('🔍 検査結果（コピー済み）@' + x + ',' + y + ':\n' + txt, 'info'); } catch (e) { alert(txt); }
+      };
+
+      const start = (ev) => {
+        if (!_inspectMode) return;
+        if (ignore(ev.target)) return; // 検査UI上では通常動作
+        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+        sx = t.clientX; sy = t.clientY; fired = false;
+        timer = setTimeout(() => doInspect(Math.round(sx), Math.round(sy)), 500);
+      };
+      const move = (ev) => {
+        if (!timer) return;
+        const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+        // 指が10px以上動いたらスクロール扱いで検査キャンセル
+        if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) { clearTimeout(timer); timer = null; }
+      };
+      const end = (ev) => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        // 長押しが発火していたら、その後の click（通常タップ動作）を1回だけ抑止
+        if (fired) {
+          fired = false;
+          const kill = (e) => { e.preventDefault(); e.stopPropagation(); document.removeEventListener('click', kill, true); };
+          document.addEventListener('click', kill, { capture: true, once: true });
+        }
+      };
+      document.addEventListener('touchstart', start, { capture: true, passive: true });
+      document.addEventListener('touchmove', move, { capture: true, passive: true });
+      document.addEventListener('touchend', end, { capture: true });
+      // マウス（PC）でも使えるように
+      document.addEventListener('mousedown', start, { capture: true });
+      document.addEventListener('mousemove', move, { capture: true });
+      document.addEventListener('mouseup', end, { capture: true });
+    })();
+
+    // レイアウト診断（safe-area・ナビ位置など）をダイアログ表示＋コピー
+    window.showLayoutDiagnostics = function() {
+      let txt = '';
+      try {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;';
+        document.body.appendChild(probe);
+        const safeBottom = Math.round(probe.getBoundingClientRect().height);
+        probe.remove();
+        const nav = document.getElementById('mobileBottomNav');
+        const r = nav ? nav.getBoundingClientRect() : null;
+        const docH = document.documentElement.clientHeight;
+        const cs = getComputedStyle(document.documentElement);
+        const cont = document.querySelector('.container');
+        const cr = cont ? cont.getBoundingClientRect() : null;
+        const bodyCS = getComputedStyle(document.body);
+        // ナビ下端のすぐ下(余白部分)に何の要素があるかを実測
+        let belowNavInfo = '-';
+        if (r) {
+          const x = Math.round(r.left + r.width / 2);
+          const probes = [];
+          for (const dy of [1, 5, 12, 20]) {
+            const y = Math.round(r.bottom + dy);
+            const el = document.elementFromPoint(x, y);
+            probes.push(`+${dy}:${el ? (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')) : 'null'}`);
+          }
+          belowNavInfo = probes.join(' ');
+        }
+        // ★画面下半分にある box-shadow / gradient を持つ要素を全部洗い出す（黒いグラデの犯人探し）
+        let shadowScan = [];
+        try {
+          const half = window.innerHeight * 0.6;
+          document.querySelectorAll('body *').forEach(el => {
+            if (el.closest('[data-inspect-ignore], #devConsolePanel, #inspectModeBar, .mobile-settings-detail, #mobileProfileScreen')) return;
+            const rc = el.getBoundingClientRect();
+            if (rc.bottom < half || rc.height === 0 || rc.width === 0) return; // 画面下60%以下のみ
+            if (rc.top > window.innerHeight) return; // 画面外は除外
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden') return;
+            const tags = [];
+            if (s.boxShadow && s.boxShadow !== 'none') tags.push('SH:' + s.boxShadow.replace(/rgba?\([^)]*\)/g, 'C').slice(0, 30));
+            if (s.backgroundImage && s.backgroundImage.includes('gradient')) tags.push('GRAD');
+            if (s.filter && s.filter !== 'none') tags.push('FIL:' + s.filter.slice(0, 16));
+            if (tags.length) {
+              const nm = el.tagName.toLowerCase() + (el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : ''));
+              shadowScan.push(nm + ' y' + Math.round(rc.top) + '-' + Math.round(rc.bottom) + ' ' + tags.join(','));
+            }
+          });
+        } catch (e) { shadowScan = ['scanErr:' + e.message]; }
+        txt = [
+          'safe-area-bottom=' + safeBottom,
+          'nav: ' + (r ? `h=${Math.round(r.height)} top=${Math.round(r.top)} bottom=${Math.round(r.bottom)}` : 'なし'),
+          'navParent=' + (nav && nav.parentElement ? (nav.parentElement.tagName.toLowerCase() + (nav.parentElement.id ? '#' + nav.parentElement.id : '.' + nav.parentElement.className.split(' ')[0])) : '-'),
+          'container: ' + (cr ? `h=${Math.round(cr.height)} bottom=${Math.round(cr.bottom)}` : 'なし'),
+          'body bg=' + bodyCS.backgroundColor,
+          'in-chat-view=' + document.body.classList.contains('in-chat-view'),
+          'navPadB=' + (nav ? getComputedStyle(nav).paddingBottom : '-'),
+          '--mnav-total=' + cs.getPropertyValue('--mnav-total').trim(),
+          'winH=' + window.innerHeight + ' docH=' + docH,
+          'gapBelowNav=' + (r ? Math.round(docH - r.bottom) : '-'),
+          'belowNav要素=' + belowNavInfo,
+          '影スキャン(下半分):\n' + (shadowScan.length ? shadowScan.join('\n') : '(影/グラデなし)'),
+          'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
+        ].join('\n');
+      } catch (e) { txt = 'err:' + (e && e.message); }
+      safeCopy(txt);
+      try { alertMessage('📐 レイアウト診断（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
+    };
+
+    // オンスクリーン・コンソールの表示/非表示
+    window.toggleDevConsole = function() {
+      const panel = document.getElementById('devConsolePanel');
+      if (!panel) return;
+      const showing = panel.style.display !== 'none';
+      if (showing) { panel.style.display = 'none'; return; }
+      // 開く時は既存ログを流し込む
+      const body = document.getElementById('devConsoleBody');
+      if (body) {
+        body.innerHTML = '';
+        (window._devConsoleLog || []).forEach(line => _appendConsoleLine(line));
+        body.scrollTop = body.scrollHeight;
+      }
+      panel.style.display = 'flex';
+    };
+    function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]')) return '#f87171';
+      if (line.includes('[warn]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      return '#cbd5e1';
+    }
+    function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      body.appendChild(div);
+    }
+    // console フックから新規ログが来たらライブ追記する
+    window._devConsolePanelAppend = function(level, msg) {
+      const panel = document.getElementById('devConsolePanel');
+      if (!panel || panel.style.display === 'none') return;
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 20;
+      const d = new Date();
+      const stamp = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      _appendConsoleLine(`[${stamp}][${level}] ${msg}`);
+      if (atBottom) body.scrollTop = body.scrollHeight;
+    };
+    window.clearDevConsole = function() {
+      window._devConsoleLog = [];
+      const body = document.getElementById('devConsoleBody');
+      if (body) body.innerHTML = '';
+    };
+    window.copyDevConsole = function() {
+      const txt = (window._devConsoleLog || []).join('\n') || '(ログなし)';
+      safeCopy(txt);
+      try { alertMessage('📋 コンソールログをコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件）', 'success'); } catch (e) { alert(txt); }
+    };
+
+    // コンソールログ＋診断をまとめてコピー
+    window.copyDiagnosticsBundle = function() {
+      const logs = (window._devConsoleLog || []).join('\n');
+      const txt = '=== Covo診断バンドル ===\nversion: ' + (_appVersion || '?') + '\nUA: ' + navigator.userAgent + '\n\n=== コンソールログ(最新' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件) ===\n' + (logs || '(なし)');
+      safeCopy(txt);
+      try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
+    };
+
+    // Cloudinary移行関数は廃止
+
+    // 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
+    function inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+    const pinMessageButton = document.getElementById("pinMessageButton");
+    const mobileBackButton = document.getElementById("mobileBackButton");
+    const sidebar = document.getElementById("sidebar");
+
+    let searchQuery = "";
+    let isInitialMessageLoad = true;
+    // 未読の境界線用: 入室時点での最終既読時刻(ms)。これより新しい最初のメッセージの上に線を出す。
+    // 0 のときは線を表示しない（全既読 or 履歴なし）。
+    let unreadBoundaryAt = 0;
+    // 一度描画した区切り線が既読更新で消えないよう、確定した境界メッセージIDを保持する。
+    let unreadBoundaryMessageId = null;
+    // Web Audio API による洗練された通知チャイム
+    function playNotificationSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = ctx.currentTime;
+        const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6 の和音チャイム
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + i * 0.09);
+          gain.gain.setValueAtTime(0, now + i * 0.09);
+          gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + i * 0.09);
+          osc.stop(now + i * 0.09 + 0.5);
+        });
+        setTimeout(() => ctx.close(), 1500);
+      } catch (e) { }
+    }
+    let selectedMessageForContext = null;
+
+    // =========================================================================
+    // Initialization & Auth
+    // =========================================================================
+    function initializeFirebase() {
+      try {
+        if (!app) {
+          app = initializeApp(firebaseConfig);
+          try {
+            initializeAppCheck(app, {
+              provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
+              isTokenAutoRefreshEnabled: true
+            });
+            console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+          } catch(e) { console.error("AppCheck init error", e); }
+          try {
+            db = initializeFirestore(app, {
+              localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+            });
+          } catch (e) {
+            console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
+            try {
+              db = initializeFirestore(app, { localCache: memoryLocalCache() });
+            } catch (e2) {
+              db = getFirestore(app);
+            }
+          }
+          auth = getAuth(app);
+        }
+        onIdTokenChanged(auth, async (user) => {
+          if (user) {
+            _cachedIdToken = await user.getIdToken();
+          } else {
+            _cachedIdToken = null;
+          }
+        });
+
+        onAuthStateChanged(auth, async (user) => {
+          // 再入防止: 前回の処理が終わっていない場合はスキップ
+          if (_authHandlerBusy) return;
+          _authHandlerBusy = true;
+          loadingOverlay.classList.add("hidden");
+          try {
+
+          if (user) {
+            // 同一ユーザーIDで既に初期化済みならスキップ（FCM再登録等の無駄な処理を防止）
+            if (_lastAuthUserId === user.uid && userNickname) {
+              _authHandlerBusy = false;
+              return;
+            }
+            userId = user.uid;
+            userAuthEmail = user.email;
+            isAuthReady = true;
+
+            // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
+            await user.getIdToken();
+
+            try {
+              // Firestoreの adminList から自身のメールアドレスがあるかチェック
+              const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
+              const adminSnap = await getDoc(adminDocRef);
+              if (adminSnap.exists() && adminSnap.data().emails) {
+                isAdmin = adminSnap.data().emails.includes(user.email);
+              } else {
+                isAdmin = false;
+              }
+            } catch (adminError) {
+              console.error("Admin check error:", adminError);
+              isAdmin = false;
+            }
+
+            // 非管理者は allowedEmails を確認してアクセス制御
+            if (!isAdmin) {
+              try {
+                const allowedRef = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
+                const allowedSnap = await getDoc(allowedRef);
+                if (allowedSnap.exists()) {
+                  const allowed = allowedSnap.data().emails || [];
+                  if (allowed.length > 0 && !allowed.includes(user.email)) {
+                    await signOut(auth);
+                    authMessage.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
+                    loadingOverlay.classList.add("hidden");
+                    return;
+                  }
+                }
+              } catch (e) {
+                console.error("allowedEmails check error:", e);
+              }
+
+              // リスト管理者チェック
+              try {
+                const listAdminRef = doc(db, `artifacts/${appId}/settings`, "listAdminList");
+                const listAdminSnap = await getDoc(listAdminRef);
+                if (listAdminSnap.exists() && listAdminSnap.data().emails) {
+                  isListAdmin = listAdminSnap.data().emails.includes(user.email);
+                } else {
+                  isListAdmin = false;
+                }
+              } catch (e) {
+                isListAdmin = false;
+              }
+            }
+
+            // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
+            if (isAdmin || isListAdmin) {
+              if (adminPanelContainer) adminPanelContainer.classList.remove("hidden");
+              const snavAdmin = document.getElementById("snav-admin-container");
+              if (snavAdmin) snavAdmin.classList.remove("hidden");
+              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+              if (mobileAdminSec) {
+                mobileAdminSec.style.display = "";
+                mobileAdminSec.classList.remove("hidden");
+              }
+            } else {
+              if (adminPanelContainer) adminPanelContainer.classList.add("hidden");
+              const snavAdmin = document.getElementById("snav-admin-container");
+              if (snavAdmin) snavAdmin.classList.add("hidden");
+              const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+              if (mobileAdminSec) {
+                mobileAdminSec.style.display = "none";
+                mobileAdminSec.classList.add("hidden");
+              }
+            }
+
+            // 管理者ツール（開発者向け診断）は「全体管理者(isAdmin)」のみ表示。リスト管理者には出さない。
+            const adminToolsSec = document.getElementById("mobileAdminToolsSection");
+            if (adminToolsSec) {
+              if (isAdmin) adminToolsSec.classList.remove("hidden");
+              else adminToolsSec.classList.add("hidden");
+            }
+
+            const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+            const userProfileSnap = await getDoc(userProfileRef);
+
+            if (userProfileSnap.exists() && userProfileSnap.data().nickname) {
+              userNickname = userProfileSnap.data().nickname;
+              userAvatarUrl = userProfileSnap.data().avatarUrl || null;
+
+              headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
+              updateUserPanelUI();
+
+              authContainer.classList.add("hidden");
+              nicknameContainer.classList.add("hidden");
+              appContainer.classList.add("hidden");
+              document.getElementById("serverListScreen").classList.remove("hidden");
+              showServerList();
+              startPresenceSystem();
+              initializeFCM();
+              // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
+              // 続けて管理者ならエスクロー鍵（合鍵）も用意する
+              ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => {});
+              _lastAuthUserId = user.uid;
+              // SW にuserIdを通知（自分のメッセージへの通知バグ防止）
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(reg => {
+                  if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId, appId: appId, idToken: _cachedIdToken });
+                }).catch(() => {});
+              }
+              // FCMが有効な場合はFirestoreグローバルリスナーは不要（FCMが通知を担当）
+              // Tauriのみ或いはFCMトークン取得失敗時はFirestoreリスナーをフォールバック
+              setTimeout(() => setupGlobalNotificationListeners(), 2000);
+              initCallListener();
+              initFileShareListener();
+              initReadStatesSync();
+              setupGlobalRtdbListener();
+            } else {
+              authContainer.classList.add("hidden");
+              appContainer.classList.add("hidden");
+              document.getElementById("serverListScreen").classList.add("hidden");
+              nicknameContainer.classList.remove("hidden");
+              nicknameInput.value = "";
+            }
+          } else {
+            // Cleanup on logout
+            // SW にuserIdクリアを通知
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.ready.then(reg => {
+                if (reg.active) reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+              }).catch(() => {});
+            }
+            _lastAuthUserId = null;
+            userId = null; userNickname = null; isAdmin = false; isListAdmin = false; isAuthReady = false;
+            currentRoomId = null; currentServerId = null; currentServerData = null;
+            headerTitle.textContent = "";
+            currentRoomHeader.classList.add("hidden");
+            clearMessagesDOM();
+            messageInput.disabled = true;
+            sendMessageButton.disabled = true;
+            document.getElementById('callButton').disabled = true;
+            stopPrewarmPC();
+            if (_callId) endCall(false);
+            if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
+            stopPresenceSystem();
+            if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
+
+            authContainer.classList.remove("hidden");
+            appContainer.classList.add("hidden");
+            document.getElementById("serverListScreen").classList.add("hidden");
+            nicknameContainer.classList.add("hidden");
+            membersSidebar.classList.add("hidden");
+          }
+        } catch (authErr) {
+          console.error('[Auth] onAuthStateChanged handler error:', authErr);
+          if (typeof showEmergencyRecoveryPanel === 'function') showEmergencyRecoveryPanel(authErr.message || '認証初期化エラー', authErr);
+        } finally {
+          _authHandlerBusy = false;
+          window.__app_fully_loaded__ = true;
+          const _invoke = window.__TAURI__?.core?.invoke;
+          if (_invoke) {
+            _invoke('notify_app_loaded').catch(e => console.warn("Failed to notify Tauri:", e));
+          }
+        }
+        });
+      } catch (error) {
+        console.error("Firebase Init Error:", error);
+        authMessage.textContent = `エラー: ${error.message}`;
+      }
+    }
+
+    function updateUserPanelUI() {
+      if (userNickname) {
+        userPanelName.textContent = userNickname;
+        userPanelId.textContent = `#${userId.substring(0, 4)}`;
+
+        if (userAvatarUrl) {
+          __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
+        } else {
+          userPanelAvatar.innerHTML = userNickname.charAt(0).toUpperCase();
+        }
+
+        const stat = document.createElement('div');
+        stat.id = 'userPanelStatus';
+        stat.className = 'status-indicator status-online';
+        userPanelAvatar.appendChild(stat);
+
+        // サーバーリスト画面のアバターボタンも更新
+        updateServerListUserBtn();
+      }
+    }
+
+    // タブ切り替え処理
+    tabLogin.addEventListener("click", () => {
+      tabLogin.classList.replace("text-gray-400", "text-gray-800");
+      tabLogin.classList.replace("border-transparent", "border-gray-800");
+      tabSignup.classList.replace("text-gray-800", "text-gray-400");
+      tabSignup.classList.replace("border-gray-800", "border-transparent");
+      loginFormArea.classList.remove("hidden");
+      signupFormArea.classList.add("hidden");
+      authMessage.textContent = "";
+    });
+
+    tabSignup.addEventListener("click", () => {
+      tabSignup.classList.replace("text-gray-400", "text-gray-800");
+      tabSignup.classList.replace("border-transparent", "border-gray-800");
+      tabLogin.classList.replace("text-gray-800", "text-gray-400");
+      tabLogin.classList.replace("border-gray-800", "border-transparent");
+      signupFormArea.classList.remove("hidden");
+      loginFormArea.classList.add("hidden");
+      authMessage.textContent = "";
+    });
+
+    authButton.addEventListener("click", async () => {
+      const email = emailInput.value;
+      const password = passwordInput.value;
+      authMessage.textContent = "";
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        const code = error.code || "";
+        if (code === "auth/user-not-found") {
+          authMessage.textContent = "このメールアドレスは登録されていません。";
+        } else if (code === "auth/wrong-password") {
+          authMessage.textContent = "パスワードが正しくありません。";
+        } else if (code === "auth/invalid-credential") {
+          authMessage.textContent = "メールアドレスまたはパスワードが正しくありません。";
+        } else if (code === "auth/invalid-email") {
+          authMessage.textContent = "メールアドレスの形式が正しくありません。";
+        } else if (code === "auth/user-disabled") {
+          authMessage.textContent = "このアカウントは無効になっています。管理者にお問い合わせください。";
+        } else if (code === "auth/too-many-requests") {
+          authMessage.textContent = "ログイン試行が多すぎます。しばらく待ってからお試しください。";
+        } else {
+          authMessage.textContent = "ログインに失敗しました。";
+        }
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    // サインアップ処理（誰でも登録可能）
+    signupButton.addEventListener("click", async () => {
+      const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+      const email = signupEmailInput.value;
+      const password = signupPasswordInput.value;
+      authMessage.textContent = "";
+
+      if (!email || !password) {
+        authMessage.textContent = "メールアドレスとパスワードを入力してください。";
+        return;
+      }
+      if (password.length < 6) {
+        authMessage.textContent = "パスワードは6文字以上で設定してください。";
+        return;
+      }
+
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        console.error("Signup error:", err);
+        if (err.code === "auth/email-already-in-use") {
+          authMessage.textContent = "このメールアドレスはすでに使われています。";
+        } else if (err.code === "auth/invalid-email") {
+          authMessage.textContent = "メールアドレスの形式が正しくありません。";
+        } else if (err.code === "auth/weak-password") {
+          authMessage.textContent = "パスワードが弱すぎます（6文字以上）。";
+        } else {
+          authMessage.textContent = "アカウント作成に失敗しました。もう一度お試しください。";
+        }
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    // authEmail を保持するための変数
+    let userAuthEmail = "";
+
+    // --- 管理者パネルの処理 ---
+
+    // タブ切り替え
+    let adminCurrentTab = "allowed";
+    function switchAdminTab(tab) {
+      adminCurrentTab = tab;
+      const tabs = [
+        { id: "adminTabAllowedBtn", content: "adminTabAllowedContent", key: "allowed" },
+        { id: "adminTabAdminsBtn", content: "adminTabAdminsContent", key: "admins" },
+        { id: "adminTabListAdminsBtn", content: "adminTabListAdminsContent", key: "listAdmins" },
+        { id: "adminTabStorageBtn", content: "adminTabStorageContent", key: "storage" },
+        { id: "adminTabFeedbacksBtn", content: "adminTabFeedbacksContent", key: "feedbacks" },
+      ];
+      tabs.forEach(t => {
+        const btn = document.getElementById(t.id);
+        const cnt = document.getElementById(t.content);
+        if (!btn || !cnt) return;
+        if (t.key === tab) {
+          btn.classList.replace("border-transparent", "border-gray-900");
+          btn.classList.replace("text-gray-400", "text-gray-900");
+          cnt.classList.remove("hidden");
+        } else {
+          btn.classList.replace("border-gray-900", "border-transparent");
+          btn.classList.replace("text-gray-900", "text-gray-400");
+          cnt.classList.add("hidden");
+        }
+      });
+      if (tab === "storage") loadStorageStats();
+      if (tab === "feedbacks") loadAdminFeedbacks();
+    }
+    document.getElementById("adminTabAllowedBtn").addEventListener("click", () => switchAdminTab("allowed"));
+    document.getElementById("adminTabAdminsBtn").addEventListener("click", () => switchAdminTab("admins"));
+    document.getElementById("adminTabListAdminsBtn").addEventListener("click", () => switchAdminTab("listAdmins"));
+    document.getElementById("adminTabStorageBtn").addEventListener("click", () => switchAdminTab("storage"));
+    document.getElementById("adminTabFeedbacksBtn").addEventListener("click", () => switchAdminTab("feedbacks"));
+
+    // メールアドレスのアバター頭文字取得
+    window.loadAdminFeedbacks = async function() {
+      const listEl = document.getElementById("adminFeedbacksList");
+      if (!listEl) return;
+      listEl.innerHTML = "<p class='text-xs text-gray-400 text-center py-4'>読み込み中...</p>";
+      try {
+        const { collection, query, orderBy, getDocs, doc, deleteDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const q = query(collection(db, `artifacts/${appId}/feedbacks`), orderBy('createdAt', 'desc'));
+        const snap = await getDocs(q);
+        listEl.innerHTML = "";
+        if (snap.empty) {
+          listEl.innerHTML = "<p class='text-xs text-gray-400 text-center py-4'>フィードバックはありません。</p>";
+          return;
+        }
+        snap.forEach(d => {
+          const fb = d.data();
+          fb.id = d.id;
+          const item = document.createElement("div");
+          item.className = "p-3 bg-white border border-gray-200 rounded-xl shadow-sm text-sm flex flex-col gap-2 relative group";
+          
+          const dt = fb.createdAt && typeof fb.createdAt.toDate === 'function' ? fb.createdAt.toDate().toLocaleString() : "不明";
+          
+          let catLabel = fb.category;
+          let catColor = "text-gray-500 bg-gray-100";
+          if (fb.category === 'bug') { catLabel = "バグ"; catColor = "text-red-600 bg-red-100"; }
+          if (fb.category === 'feature') { catLabel = "要望"; catColor = "text-blue-600 bg-blue-100"; }
+          
+          const isClosed = fb.status === 'closed';
+          const titleEsc = escapeHtml(fb.content.substring(0, 50).replace(/\n/g, ' '));
+          
+          item.innerHTML = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${catLabel}</span>
+                <span class="text-xs text-gray-400">${dt}</span>
+                ${isClosed ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-green-600 bg-green-100">対応済</span>' : ''}
+              </div>
+              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button class="fb-issue-btn text-xs px-2 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 transition" title="GitHub Issueを作成"><i class="fab fa-github"></i></button>
+                <button class="fb-close-btn text-xs px-2 py-1 ${isClosed ? 'bg-gray-300 text-gray-600' : 'bg-green-500 text-white'} rounded hover:opacity-80 transition">${isClosed ? '未対応に戻す' : '対応済にする'}</button>
+                <button class="fb-del-btn text-xs px-2 py-1 bg-red-50 text-red-500 rounded hover:bg-red-100 transition"><i class="fas fa-trash"></i></button>
+              </div>
+            </div>
+            <p class="text-gray-700 whitespace-pre-wrap break-words mt-1 text-[13px] bg-gray-50 p-2 rounded">${escapeHtml(fb.content)}</p>
+            <div class="text-[10px] text-gray-400">By: ${escapeHtml(fb.email || fb.createdBy || '不明')}</div>
+          `;
+          
+          item.querySelector(".fb-issue-btn").addEventListener("click", () => {
+             const issueBody = `**投稿者**: ${fb.email || fb.createdBy}\n**日時**: ${dt}\n\n**内容**:\n${fb.content}`;
+             const issueTitle = `[${catLabel}] ${titleEsc}...`;
+             const url = `https://github.com/qwertyuiop1229/Covo/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(issueBody)}`;
+             window.open(url, '_blank');
+          });
+          
+          item.querySelector(".fb-close-btn").addEventListener("click", async () => {
+             try {
+               await updateDoc(doc(db, `artifacts/${appId}/feedbacks`, fb.id), { status: isClosed ? 'open' : 'closed' });
+               loadAdminFeedbacks();
+             } catch(e) { console.error(e); }
+          });
+          
+          item.querySelector(".fb-del-btn").addEventListener("click", async () => {
+             if (!confirm("本当に削除しますか？")) return;
+             try {
+               await deleteDoc(doc(db, `artifacts/${appId}/feedbacks`, fb.id));
+               loadAdminFeedbacks();
+             } catch(e) { console.error(e); }
+          });
+          
+          listEl.appendChild(item);
+        });
+      } catch (e) {
+        console.error("Feedbacks fetch error:", e);
+        listEl.innerHTML = "<p class='text-xs text-red-400 text-center py-4'>エラーが発生しました</p>";
+      }
+    };
+
+    function emailInitial(email) {
+      return (email || "?").charAt(0).toUpperCase();
+    }
+
+    // リストアイテムのDOMを生成（ユーザーネーム＆アイコン対応版）
+    function makeEmailListItem(email, isSelf, onRemove) {
+      const div = document.createElement("div");
+      div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
+
+      const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
+      let username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
+      let iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
+
+      const avatar = document.createElement("div");
+      avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
+      if (iconUrl) {
+        avatar.innerHTML = `<img src="${iconUrl}" class="w-full h-full object-cover" />`;
+      } else {
+        avatar.textContent = emailInitial(email);
+      }
+
+      const textContainer = document.createElement("div");
+      textContainer.className = "flex-1 flex flex-col min-w-0";
+
+      const emailSpan = document.createElement("span");
+      emailSpan.className = "text-sm text-gray-900 font-bold truncate";
+      emailSpan.textContent = email;
+
+      const userSpan = document.createElement("span");
+      userSpan.className = "text-[11px] text-gray-500 font-medium truncate mt-0.5";
+      userSpan.textContent = `ユーザーネーム: ${username}`;
+
+      textContainer.appendChild(emailSpan);
+      textContainer.appendChild(userSpan);
+
+      div.appendChild(avatar);
+      div.appendChild(textContainer);
+
+      if (userData && userData.id) {
+        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, getDoc }) => {
+          getDoc(doc(db, `artifacts/${appId}/users/${userData.id}/profile`, "nicknameDoc")).then(snap => {
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.nickname) {
+                userSpan.textContent = `ユーザーネーム: ${data.nickname}`;
+              }
+              if (data.avatarUrl) {
+                avatar.innerHTML = `<img src="${data.avatarUrl}" class="w-full h-full object-cover" />`;
+              }
+            }
+          }).catch(e => console.error(e));
+        });
+      }
+
+      if (isSelf) {
+        const badge = document.createElement("span");
+        badge.className = "text-xs text-gray-400 flex-shrink-0 font-semibold";
+        badge.textContent = "あなた";
+        div.appendChild(badge);
+      } else {
+        const btn = document.createElement("button");
+        btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-100 transition-colors flex-shrink-0";
+        btn.innerHTML = `<i class="fas fa-times text-xs"></i>`;
+        btn.addEventListener("click", onRemove);
+        div.appendChild(btn);
+      }
+      return div;
+    }
+
+    function renderAllowedEmails(emails) {
+      allowedEmailsList.innerHTML = "";
+      if (emails.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-xs text-gray-400 text-center py-4";
+        empty.textContent = "リストが空です。誰でも登録可能な状態です。";
+        allowedEmailsList.appendChild(empty);
+        return;
+      }
+      emails.forEach(e => {
+        allowedEmailsList.appendChild(makeEmailListItem(e, false, () => removeAllowedEmail(e)));
+      });
+    }
+
+    function renderAdminEmails(emails) {
+      adminEmailsList.innerHTML = "";
+      if (emails.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-xs text-gray-400 text-center py-4";
+        empty.textContent = "管理者がいません。";
+        adminEmailsList.appendChild(empty);
+        return;
+      }
+      emails.forEach(e => {
+        adminEmailsList.appendChild(makeEmailListItem(e, e === userAuthEmail, () => removeAdminEmail(e)));
+      });
+    }
+
+    async function loadAdminPanelData() {
+      adminMessage.textContent = "読み込み中...";
+      try {
+        // 全ユーザーデータを取得してメールアドレスキーでキャッシュ
+        window.__adminUsersByEmail = {};
+        
+          try {
+            const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+            uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = { ...u, id: d.id }; });
+          } catch(e){}
+        
+
+        if (isAdmin) {
+          const [allowedSnap, adminSnap, listAdminSnap] = await Promise.all([
+            getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
+            getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
+            getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
+          ]);
+          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
+          renderAdminEmails(adminSnap.exists() ? adminSnap.data().emails || [] : []);
+          renderListAdminEmails(listAdminSnap.exists() ? listAdminSnap.data().emails || [] : []);
+        } else if (isListAdmin) {
+          const allowedSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
+          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
+        }
+        adminMessage.textContent = "";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "データの取得に失敗しました。";
+      }
+    }
+
+    openAdminModalButton.addEventListener("click", () => {
+      if (!isAdmin && !isListAdmin) return;
+      document.querySelectorAll(".admin-only-tab").forEach(el => {
+        el.style.display = isAdmin ? "" : "none";
+      });
+      document.querySelectorAll(".admin-only-section").forEach(el => {
+        el.classList.toggle("hidden", !isAdmin);
+      });
+      switchAdminTab("allowed");
+      loadAdminPanelData();
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        openMobileDetail('admin');
+      } else {
+        switchDiscordSettingsTab('admin');
+      }
+    });
+
+    // 許可リスト追加
+    // ストレージ統計
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    async function loadStorageStats() {
+      const kvBar = document.getElementById('kvUsageBar');
+      const kvText = document.getElementById('kvUsageText');
+      const kvCount = document.getElementById('kvFileCount');
+      if (!kvText) return;
+      kvText.textContent = '読み込み中...';
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        if (!idToken) { kvText.textContent = '認証エラー'; return; }
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats?appId=${appId}`, {
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // KV（Cloudflare）
+        const kvLimitBytes = 1 * 1024 * 1024 * 1024;
+        const kvUsed = data.kv?.totalBytes || 0;
+        const kvPct = Math.min((kvUsed / kvLimitBytes) * 100, 100);
+        kvBar.style.width = kvPct + '%';
+        kvText.textContent = formatBytes(kvUsed) + ' / 1 GB';
+        kvCount.textContent = (data.kv?.fileCount || 0) + ' ファイル';
+      } catch (e) {
+        kvText.textContent = '取得に失敗しました';
+        console.error('[storageStats] fetch error:', e);
+      }
+    }
+
+    document.getElementById('refreshStorageStatsBtn').addEventListener('click', loadStorageStats);
+
+    async function cleanupFirestoreMessages() {
+      let msgDeleted = 0;
+      try {
+        const kvWorkerPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/[A-Za-z0-9_]+');
+        const serversSnap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+        for (const serverDoc of serversSnap.docs) {
+          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms`));
+          for (const roomDoc of roomsSnap.docs) {
+            const msgsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${serverDoc.id}/rooms/${roomDoc.id}/messages`));
+            for (const msgDoc of msgsSnap.docs) {
+              const d = msgDoc.data();
+              const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
+              // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
+              const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
+              const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
+              if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
+                await deleteDoc(msgDoc.ref);
+                msgDeleted++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[bulkDelete] Message cleanup error:', e);
+      }
+      return msgDeleted;
+    }
+
+    document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async () => {
+      const first = await showCustomConfirm('チャットの「添付ファイルのみ」を削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等のシステムファイルは保持されます。');
+      if (!first) return;
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      if (!idToken) return;
+      
+      const btn = document.getElementById('bulkDeleteMessagesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=messages_only`, { 
+          method: 'DELETE',
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
+          const msgDeleted = await cleanupFirestoreMessages();
+          alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+          loadStorageStats();
+        } else {
+          alertMessage('削除に失敗しました: ' + data.error, 'error');
+        }
+      } catch (e) {
+        console.error(e);
+        alertMessage('通信エラーが発生しました', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-image"></i> 添付ファイルのみを一括削除';
+      }
+    });
+
+    document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
+      const first = await showCustomConfirm('【警告】アイコンやスタンプも含めた全ファイルを完全に削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+      if (!first) return;
+      const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'ユーザーアイコンやサーバーアイコン等も無効になります。');
+      if (!second) return;
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      if (!idToken) return;
+      
+      const btn = document.getElementById('bulkDeleteAllFilesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 削除中...';
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=all_danger`, { 
+          method: 'DELETE',
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
+          const msgDeleted = await cleanupFirestoreMessages();
+          alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+          loadStorageStats();
+        } else {
+          alertMessage('削除に失敗しました: ' + data.error, 'error');
+        }
+      } catch (e) {
+        console.error(e);
+        alertMessage('通信エラーが発生しました', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)';
+      }
+    });
+
+    addAllowedEmailButton.addEventListener("click", async () => {
+      const email = newAllowedEmailInput.value.trim();
+      if (!email) return;
+      adminMessage.textContent = "追加中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
+        const snap = await getDoc(ref);
+        const emails = snap.exists() ? snap.data().emails || [] : [];
+        if (emails.includes(email)) { adminMessage.textContent = "すでに追加されています。"; return; }
+        emails.push(email);
+        await setDoc(ref, { emails }, { merge: true });
+        newAllowedEmailInput.value = "";
+        renderAllowedEmails(emails);
+        adminMessage.textContent = "追加しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    });
+
+    async function removeAllowedEmail(email) {
+      if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
+      adminMessage.textContent = "削除中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
+        await updateDoc(ref, { emails: arrayRemove(email) });
+        const snap = await getDoc(ref);
+        renderAllowedEmails(snap.exists() ? snap.data().emails || [] : []);
+        adminMessage.textContent = "削除しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    }
+
+    // 管理者リスト追加
+    addAdminEmailButton.addEventListener("click", async () => {
+      const email = newAdminEmailInput.value.trim();
+      if (!email) return;
+      adminMessage.textContent = "追加中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
+        const snap = await getDoc(ref);
+        const emails = snap.exists() ? snap.data().emails || [] : [];
+        if (emails.includes(email)) { adminMessage.textContent = "すでに管理者です。"; return; }
+        emails.push(email);
+        await setDoc(ref, { emails }, { merge: true });
+        newAdminEmailInput.value = "";
+        renderAdminEmails(emails);
+        adminMessage.textContent = "追加しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    });
+
+    async function removeAdminEmail(email) {
+      if (email === userAuthEmail) { adminMessage.textContent = "自分自身は削除できません。"; return; }
+      if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
+      adminMessage.textContent = "削除中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
+        await updateDoc(ref, { emails: arrayRemove(email) });
+        const snap = await getDoc(ref);
+        renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        adminMessage.textContent = "削除しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    }
+
+    // リスト管理者の render / add / remove
+    function renderListAdminEmails(emails) {
+      listAdminEmailsList.innerHTML = "";
+      if (emails.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-sm text-gray-400 text-center py-4";
+        empty.textContent = "リスト管理者はいません";
+        listAdminEmailsList.appendChild(empty);
+        return;
+      }
+      emails.forEach(e => {
+        listAdminEmailsList.appendChild(makeEmailListItem(e, false, () => removeListAdminEmail(e)));
+      });
+    }
+
+    addListAdminEmailButton.addEventListener("click", async () => {
+      const email = newListAdminEmailInput.value.trim();
+      if (!email) return;
+      adminMessage.textContent = "追加中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
+        const snap = await getDoc(ref);
+        const emails = snap.exists() ? snap.data().emails || [] : [];
+        if (emails.includes(email)) { adminMessage.textContent = "すでにリスト管理者です。"; return; }
+        emails.push(email);
+        await setDoc(ref, { emails }, { merge: true });
+        newListAdminEmailInput.value = "";
+        renderListAdminEmails(emails);
+        adminMessage.textContent = "追加しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    });
+
+    async function removeListAdminEmail(email) {
+      if (!await showCustomConfirm(`「${email}」をリスト管理者から削除しますか？`, "削除")) return;
+      adminMessage.textContent = "削除中...";
+      try {
+        const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
+        await updateDoc(ref, { emails: arrayRemove(email) });
+        const snap = await getDoc(ref);
+        renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+        adminMessage.textContent = "削除しました。";
+      } catch (e) {
+        console.error(e);
+        adminMessage.textContent = "エラーが発生しました。";
+      }
+    }
+
+    // ★ ショートカットから呼ばれるフォーカス関数
+    window.focusMessageInput = function () {
+      if (currentRoomId) {
+        messageInput.focus();
+      } else {
+        // ルームを開いていない場合は検索にフォーカス
+        if (searchContainer.classList.contains("hidden")) {
+          toggleSearchButton.click();
+        } else {
+          searchInput.focus();
+        }
+      }
+    };
+
+    // ============ Discord-style settings tab ============
+    window.switchDiscordSettingsTab = function(tab) {
+      document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.settings-content-section').forEach(s => s.classList.remove('active'));
+      
+      const navBtnId = tab === 'admin' ? 'openAdminModalButton' : 'snav-' + tab;
+      const nb = document.getElementById(navBtnId);
+      if (nb) nb.classList.add('active');
+      
+      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', appinfo:'appinfoSection', admintools:'admintoolsSection' };
+      if (tab === 'appinfo') {
+        const verEl = document.getElementById('appInfoVersion');
+        if (verEl) {
+          if (_appVersion) {
+            verEl.textContent = 'v' + _appVersion;
+          } else {
+            verEl.textContent = '読込中…';
+            fetch('/version.json', { cache: 'default' })
+              .then(r => r.json())
+              .then(d => { verEl.textContent = 'v' + (d.version || '—'); _appVersion = d.version; })
+              .catch(() => { verEl.textContent = '—'; });
+          }
+        }
+        updateE2EEStatusUI();
+        updateLayoutDebugUI();
+        if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+        if (typeof fetchGitHubReleasesHistory === 'function') fetchGitHubReleasesHistory('settingsPastVersionsContainer');
+      }
+      const sec = document.getElementById(smap[tab] || 'profileSection');
+      if (sec) sec.classList.add('active');
+      if (tab === 'admin') {
+         const container = document.getElementById('pcAdminContainer');
+         const shared = document.getElementById('adminPanelSharedContent');
+         if (container && shared) {
+           container.appendChild(shared);
+           shared.classList.remove('hidden');
+         }
+      }
+    };
+
+    function switchSettingsTab(tab) { switchDiscordSettingsTab(tab === 'settings' ? 'settings' : 'profile'); }
+
+    function updateSettingsSidebar() {
+      const sa = document.getElementById('sidebarAvatar');
+      const sn = document.getElementById('sidebarName');
+      if (!sa || !sn) return;
+      sn.textContent = userNickname || '';
+      __setAvatarImg(sa, userAvatarUrl, userNickname);
+    }
+
+    // ============ Mobile Bottom Nav ============
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      document.body.classList.add('has-mobile-nav');
+      // ナビを .container の最下子要素として移動（position:fixed をやめ、自然なflexで配置）
+      try {
+        const _mnav = document.getElementById('mobileBottomNav');
+        const _cont = document.querySelector('.container');
+        if (_mnav && _cont && _mnav.parentElement !== _cont) {
+          _cont.appendChild(_mnav);
+        }
+      } catch(_) {}
+    }
+
+    // ボトムナビ高さは :root の --mnav-total (= --mnav-h 44px + --mnav-safe) で一元管理。
+    // --mnav-safe = min(env(safe-area-inset-bottom), 10px) なので iPhone の34px全量ではなく
+    // 最大10pxだけホームインジケータ用に確保し、棒の無い端末では0になる。
+    // position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
+
+    window.switchMobileTab = function(tab) {
+      document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
+      const tb = document.getElementById('mobileTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+      if (tb) tb.classList.add('active');
+      document.getElementById('mobileProfileScreen').classList.remove('active');
+      document.getElementById('mobileNotifScreen').classList.remove('active');
+      if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); requestScanAllUnread(); }
+      else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
+    };
+
+    
+    let _scanAllUnreadTimer = null;
+    function requestScanAllUnread() {
+      if (_scanAllUnreadTimer) clearTimeout(_scanAllUnreadTimer);
+      _scanAllUnreadTimer = setTimeout(() => {
+        if (_scanUnreadBusy) {
+          requestScanAllUnread();
+          return;
+        }
+        scanAllUnreadAndRender();
+      }, 500);
+    }
+
+    window.openNotifModal = function() {
+      const pm = document.getElementById('pcNotifModal');
+      pm.style.display = pm.style.display === 'none' ? 'flex' : 'none';
+      if (pm.style.display !== 'none') requestScanAllUnread();
+    };
+
+    window.__globalRoomsCache = window.__globalRoomsCache || {};
+
+    function updateGlobalNotifUI() {
+      try {
+        let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+        items = items.filter(it => it.serverId !== currentServerId);
+        Object.keys(unreadCounts).forEach(rid => {
+          if (rid === currentRoomId) {
+            unreadCounts[rid] = 0;
+            const badge = document.getElementById(`unread-badge-${rid}`);
+            if (badge) badge.style.display = 'none';
+          } else if (unreadCounts[rid] > 0) {
+            items.push({ 
+              serverId: currentServerId, 
+              serverName: currentServerData?.name || currentServerId, 
+              roomId: rid, 
+              roomName: roomNames[rid] || rid, 
+              lastAt: Date.now() 
+            });
+          }
+        });
+        localStorage.setItem('covo_global_items', JSON.stringify(items));
+        renderNotifList(items);
+
+        if (isTauri && window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => {});
+        }
+      } catch(e) {}
+      if (typeof updateServerCardDots === 'function') updateServerCardDots();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    }
+    window.goToRoom = function(rid) {
+      const pModal = document.getElementById('pcNotifModal');
+      if (pModal) pModal.style.display = 'none';
+      switchMobileTab('home');
+      const rItem = document.getElementById('room-item-' + rid);
+      if (rItem) rItem.click();
+    };
+
+    // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
+    // DBへのgetDocsを完全撤廃し、window.__globalRoomsCacheのリアルタイムオンメモリーデータを参照。
+    let _scanUnreadBusy = false;
+    async function scanAllUnreadAndRender() {
+      if (_scanUnreadBusy || !userId) return;
+      _scanUnreadBusy = true;
+      try {
+        const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+        let servers = (allServersCache && allServersCache.length)
+          ? allServersCache.filter(s => (s.joinedUsers || []).includes(userId))
+          : null;
+        if (!servers) {
+          const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId)));
+          servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+        const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]').filter(it => it.serverId === currentServerId);
+        
+        for (const sv of servers) {
+          if (sv.id === currentServerId) continue;
+          
+          let roomsData = window.__globalRoomsCache[sv.id];
+          if (!roomsData) {
+            // キャッシュが未登録の場合のみ初期1回取得し、以後はオンメモリ参照
+            try {
+              const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sv.id}/rooms`));
+              roomsData = {};
+              roomsSnap.forEach(rd => { roomsData[rd.id] = rd.data(); });
+              window.__globalRoomsCache[sv.id] = roomsData;
+            } catch (e) { continue; }
+          }
+          
+          Object.keys(roomsData).forEach(rmId => {
+            const room = roomsData[rmId];
+            const lastAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+            if (!lastAt) return;
+            const lastRead = rm[rmId] || 0;
+            const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+            const isOpen = (sv.id === currentServerId && rmId === currentRoomId && document.hasFocus());
+            if (lastAt > lastRead && !bySelf && !isOpen) {
+              items.push({ serverId: sv.id, serverName: sv.name || sv.id, roomId: rmId, roomName: room.name || rmId, lastAt });
+            }
+          });
+        }
+        items.sort((a, b) => b.lastAt - a.lastAt);
+        localStorage.setItem('covo_global_items', JSON.stringify(items));
+        renderNotifList(items);
+
+        if (isTauri && window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('[Notif] 未読スキャン失敗:', e);
+      } finally {
+        _scanUnreadBusy = false;
+      }
+    }
+
+    function renderNotifList(items) {
+      let html = '';
+      items.forEach(it => {
+        const sName = escapeHtml(it.serverName);
+        const rName = escapeHtml(it.roomName);
+        html += `<div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:shadow-md transition-shadow group" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+           <div class="flex items-center gap-2 mb-1">
+             <div class="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-[10px] text-gray-500 font-bold flex-shrink-0">${sName.charAt(0).toUpperCase()}</div>
+             <div class="text-xs text-gray-500 dark:text-gray-400 font-medium truncate flex-1">${sName}</div>
+           </div>
+           <div class="text-sm font-bold text-gray-900 dark:text-gray-100"># ${rName}</div>
+           <div class="flex justify-between items-center mt-2">
+             <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">未読メッセージ</div>
+             <div class="text-xs font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">開く &rarr;</div>
+           </div>
+        </div>`;
+      });
+      const count = items.length;
+      const mList = document.getElementById('mobileNotifList');
+      const pList = document.getElementById('pcNotifList');
+      if (mList) mList.innerHTML = html;
+      if (pList) pList.innerHTML = html;
+      const me = document.getElementById('mobileNotifEmpty');
+      const pe = document.getElementById('pcNotifEmpty');
+      if (me) me.style.display = count > 0 ? 'none' : 'block';
+      if (pe) pe.style.display = count > 0 ? 'none' : 'block';
+      // 通知タブのドット
+      const mobileNotifTab = document.getElementById('mobileTabNotif');
+      if (mobileNotifTab) {
+        let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
+        if (count > 0) {
+          if (!nb) { nb = document.createElement('span'); nb.className = 'mobile-notif-dot'; mobileNotifTab.appendChild(nb); }
+          nb.style.display = 'block';
+        } else if (nb) { nb.style.display = 'none'; }
+      }
+      const badge = document.getElementById('globalUnreadBadge');
+      if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
+        document.title = 'Covo';
+      } else {
+        document.title = count > 0 ? `(新着あり) Covo` : 'Covo';
+      }
+      if ('setAppBadge' in navigator) {
+        if (count > 0) navigator.setAppBadge(count).catch(e => console.warn('Badge error:', e));
+        else navigator.clearAppBadge().catch(e => console.warn('Badge clear error:', e));
+      }
+      if (typeof updateServerCardDots === 'function') updateServerCardDots();
+    }
+
+    // 他サーバーのルームへ移動する（通知一覧から）
+    window.goToServerRoom = async function(serverId, roomId) {
+      const pModal = document.getElementById('pcNotifModal');
+      if (pModal) pModal.style.display = 'none';
+      try {
+        if (serverId && serverId !== currentServerId && typeof enterServer === 'function') {
+          // サーバーデータを用意（キャッシュ優先、無ければ取得）
+          let sv = (allServersCache || []).find(s => s.id === serverId);
+          if (!sv) {
+            const sd = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+            if (sd.exists()) sv = { id: serverId, ...sd.data() };
+          }
+          if (sv) {
+            await enterServer(serverId, sv);
+            switchMobileTab('home');
+            setTimeout(() => { const ri = document.getElementById('room-item-' + roomId); if (ri) ri.click(); }, 700);
+            return;
+          }
+        }
+      } catch (e) { console.warn('[Notif] サーバー移動失敗:', e); }
+      // 同じサーバー内（またはフォールバック）
+      switchMobileTab('home');
+      const rItem = document.getElementById('room-item-' + roomId);
+      if (rItem) rItem.click();
+    };
+
+    window.openMobileDetail = function(type) {
+      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin', appinfo:'mobileDetailAppInfo', admintools:'mobileDetailAdminTools' };
+      const el = document.getElementById(m[type]);
+      if (el) {
+        if (type === 'admin') {
+           const container = document.getElementById('mobileAdminContainer');
+           const shared = document.getElementById('adminPanelSharedContent');
+           if (container && shared) {
+             container.appendChild(shared);
+             shared.classList.remove('hidden');
+           }
+        }
+        if (type === 'appinfo') {
+          const verEl = document.getElementById('mobileAppInfoVersion');
+          if (verEl) {
+            if (_appVersion) {
+              verEl.textContent = _appVersion;
+            } else {
+              fetch('/version.json', { cache: 'default' })
+                .then(r => r.json())
+                .then(d => {
+                  _appVersion = d.version || null;
+                  verEl.textContent = _appVersion || '—';
+                })
+                .catch(() => { verEl.textContent = '取得失敗'; });
+            }
+          }
+          // スマホUI側のE2EE状態・レイアウト診断も更新
+          updateE2EEStatusUI();
+          updateLayoutDebugUI();
+        }
+        el.classList.add('active');
+      }
+    };
+
+    window.closeMobileDetail = function(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('closing');
+        setTimeout(() => {
+          el.classList.remove('active', 'closing');
+        }, 200); // アニメーション時間に合わせて待機
+      }
+    };
+
+    function updateMobileProfileScreen() {
+      const ne = document.getElementById('mobileProfileName');
+      const ae = document.getElementById('mobileProfileAvatar');
+      const at = document.getElementById('mobileAvatarText');
+      const ap = document.getElementById('mobileAvatarPreview');
+      const ni = document.getElementById('mobileNicknameInput');
+      if (ne) ne.textContent = userNickname || '';
+      if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname);
+      if (at) at.textContent = (userNickname||'?').charAt(0).toUpperCase();
+      if (ap) {
+        if (isUsableAvatarUrl(userAvatarUrl)) {
+          const _u = userAvatarUrl;
+          try { ap.referrerPolicy = 'no-referrer'; } catch(_) {}
+          try { ap.decoding = 'async'; } catch(_) {}
+          ap.onerror = function() {
+            ap.style.display = 'none';
+          };
+          ap.src = userAvatarUrl;
+          ap.style.display = '';
+        } else {
+          ap.style.display = 'none';
+        }
+      }
+      if (ni) ni.value = userNickname || '';
+      if (isAdmin || isListAdmin) { const as2 = document.getElementById('mobileAdminRowSection'); if (as2) as2.style.display = ''; }
+    }
+
+    window.mobileProfileSave = async function() {
+      const inp = document.getElementById('mobileNicknameInput');
+      const msg = document.getElementById('mobileSettingsMessage');
+      if (!inp || !inp.value.trim()) return;
+      const pcIn = document.getElementById('settingsNicknameInput');
+      if (pcIn) pcIn.value = inp.value.trim();
+      document.getElementById('saveSettingsButton').click();
+      if (msg) { msg.textContent = '保存しました'; msg.style.color = '#059669'; setTimeout(() => { msg.textContent = ''; }, 2000); }
+    };
+
+    const atm = document.getElementById('avatarUploadTriggerMobile');
+    if (atm) atm.addEventListener('click', () => document.getElementById('avatarUploadInput').click());
+
+    const tnsm = document.getElementById('toggleNotifSoundMobile');
+    const tnbm = document.getElementById('toggleBrowserNotifMobile');
+    const tnsp = document.getElementById('toggleNotifSound');
+    const tnbp = document.getElementById('toggleBrowserNotif');
+    if (tnsm && tnsp) { tnsm.checked = tnsp.checked; tnsm.addEventListener('change', () => { tnsp.checked = tnsm.checked; tnsp.dispatchEvent(new Event('change')); }); }
+    if (tnbm && tnbp) { tnbm.checked = tnbp.checked; tnbm.addEventListener('change', () => { tnbp.checked = tnbm.checked; tnbp.dispatchEvent(new Event('change')); }); }
+
+    // serverListUserBtn on mobile → go to "you" tab
+    document.getElementById('serverListUserBtn')?.addEventListener('click', (e) => {
+      if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); switchMobileTab('you'); }
+    }, true);
+
+    // ============ Server View Toggle ============
+    const viewToggleBtn = document.getElementById('viewToggleBtn');
+    const serverGridEl = document.getElementById('serverGrid');
+    let currentServerView = localStorage.getItem('covo_server_view') || 'grid';
+    function applyServerView(v) {
+      if (v === 'list') { serverGridEl.classList.add('list-view'); viewToggleBtn.innerHTML = '<i class="fas fa-th"></i>'; viewToggleBtn.title = 'グリッド表示'; }
+      else { serverGridEl.classList.remove('list-view'); viewToggleBtn.innerHTML = '<i class="fas fa-list"></i>'; viewToggleBtn.title = 'リスト表示'; }
+    }
+    if (viewToggleBtn && serverGridEl) {
+      applyServerView(currentServerView);
+      viewToggleBtn.addEventListener('click', () => { currentServerView = currentServerView === 'grid' ? 'list' : 'grid'; localStorage.setItem('covo_server_view', currentServerView); applyServerView(currentServerView); });
+    }
+
+
+    let pendingAvatarUrl = null;
+    async function startPresenceSystem() {
+      _beaconSent = false;
+      refreshCachedIdToken();
+      if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
+      _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
+
+      // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
+      try {
+        const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue } =
+          await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        
+        const connectedRef = ref(rtdb, '.info/connected');
+        onValue(connectedRef, async (snap) => {
+          if (snap.val() === true) {
+            _rtdbStatusRef = ref(rtdb, `status/${userId}`);
+            _rtdbOnDisconnect = rtdbOnDisconnect(_rtdbStatusRef);
+            // 接続が切れたらFirebaseサーバーが自動でofflineに書く（iOS強制終了・ネット切断も対応）
+            await _rtdbOnDisconnect.set({
+              state: 'offline',
+              last_changed: serverTimestamp(),
+              nickname: userNickname,
+              avatarUrl: userAvatarUrl || null
+            });
+            console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
+            
+            // 接続直後は強制的にオンラインを再送信する
+            _lastReportedStatusStr = null;
+            await updateUserStatus('online');
+          }
+        });
+      } catch (e) {
+        console.warn('[RTDB] presence setup failed:', e);
+      }
+
+      resetAwayTimer();
+      // startHeartbeat() はRTDB onDisconnect経由のため不要
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("beforeunload", handlePageClose);
+      window.addEventListener("pagehide", handlePageClose);
+      window.addEventListener("freeze", handlePageClose);
+      window.addEventListener("pageshow", handlePageShow);
+      window.addEventListener("focus", handleWindowFocus);
+      window.addEventListener("blur", handleWindowBlur);
+      window.addEventListener("online", _handleNetworkOnline);
+      window.addEventListener("offline", _handleNetworkOffline);
+      subscribeToUserStatus();
+      clearAppBadgeFull();
+
+      if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
+      // リアルタイムリスナーで変更管理されているため、不要な定期的再描画・ポーリングを撤廃
+      renderMembersList(cachedUsers);
+    }
+    
+    const avatarUploadTrigger = document.getElementById("avatarUploadTrigger");
+    const avatarUploadInput = document.getElementById("avatarUploadInput");
+    const settingsAvatarPreview = document.getElementById("settingsAvatarPreview");
+
+    avatarUploadTrigger.addEventListener("click", () => avatarUploadInput.click());
+
+    // アバター調整モーダル
+    const avatarCropModal = document.getElementById('avatarCropModal');
+    const avatarCropCanvas = document.getElementById('avatarCropCanvas');
+    const avatarZoomSlider = document.getElementById('avatarZoomSlider');
+    // Retina/HiDPI対応: devicePixelRatioでcanvas解像度を上げる
+    const CROP_CSS_SIZE = 260;
+    const CROP_DPR = Math.min(window.devicePixelRatio || 1, 3);
+    avatarCropCanvas.width = CROP_CSS_SIZE * CROP_DPR;
+    avatarCropCanvas.height = CROP_CSS_SIZE * CROP_DPR;
+    avatarCropCanvas.style.width = CROP_CSS_SIZE + 'px';
+    avatarCropCanvas.style.height = CROP_CSS_SIZE + 'px';
+    const cropCtx = avatarCropCanvas.getContext('2d');
+    cropCtx.scale(CROP_DPR, CROP_DPR);
+    const CROP_SIZE = CROP_CSS_SIZE;
+
+    let cropImage = null, cropOffsetX = 0, cropOffsetY = 0, cropScale = 1, cropMinScale = 1;
+    let cropIsDragging = false, cropDragStartX = 0, cropDragStartY = 0;
+    let cropDragStartOffsetX = 0, cropDragStartOffsetY = 0;
+
+    function drawCropPreview() {
+      cropCtx.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+      cropCtx.save();
+      cropCtx.beginPath();
+      cropCtx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
+      cropCtx.clip();
+      cropCtx.drawImage(cropImage, cropOffsetX, cropOffsetY, cropImage.naturalWidth * cropScale, cropImage.naturalHeight * cropScale);
+      cropCtx.restore();
+    }
+
+    function clampCropOffset() {
+      const drawW = cropImage.naturalWidth * cropScale;
+      const drawH = cropImage.naturalHeight * cropScale;
+      // 円を常に画像で埋めるよう、オフセットを制限
+      cropOffsetX = Math.min(0, Math.max(CROP_SIZE - drawW, cropOffsetX));
+      cropOffsetY = Math.min(0, Math.max(CROP_SIZE - drawH, cropOffsetY));
+    }
+
+    function closeCropModal() {
+      avatarCropModal.classList.add('hidden');
+      cropImage = null;
+      avatarUploadInput.value = '';
+    }
+
+    function openAvatarCropModal(objectUrl) {
+      cropImage = new Image();
+      cropImage.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        cropImage = null;
+        alertMessage("画像の読み込みに失敗しました", "error");
+      };
+      cropImage.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scaleX = CROP_SIZE / cropImage.naturalWidth;
+        const scaleY = CROP_SIZE / cropImage.naturalHeight;
+        // 円を完全に埋めるスケールを最小値に設定（空白が出ない）
+        cropMinScale = Math.max(scaleX, scaleY);
+        cropScale = cropMinScale;
+        avatarZoomSlider.min = cropMinScale;
+        avatarZoomSlider.max = cropMinScale * 4;
+        avatarZoomSlider.value = cropScale;
+        cropOffsetX = (CROP_SIZE - cropImage.naturalWidth * cropScale) / 2;
+        cropOffsetY = (CROP_SIZE - cropImage.naturalHeight * cropScale) / 2;
+        document.getElementById('avatarUploadProgress').classList.add('hidden');
+        avatarCropModal.classList.remove('hidden');
+        drawCropPreview();
+      };
+      cropImage.src = objectUrl;
+    }
+
+    avatarCropCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      cropIsDragging = true;
+      cropDragStartX = e.clientX; cropDragStartY = e.clientY;
+      cropDragStartOffsetX = cropOffsetX; cropDragStartOffsetY = cropOffsetY;
+      avatarCropCanvas.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!cropIsDragging || !cropImage) return;
+      cropOffsetX = cropDragStartOffsetX + (e.clientX - cropDragStartX);
+      cropOffsetY = cropDragStartOffsetY + (e.clientY - cropDragStartY);
+      clampCropOffset(); drawCropPreview();
+    });
+    document.addEventListener('mouseup', () => {
+      if (cropIsDragging) { cropIsDragging = false; avatarCropCanvas.style.cursor = 'grab'; }
+    });
+
+    let lastTouchX = 0, lastTouchY = 0, lastPinchDist = 0;
+    avatarCropCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // iOSのスクロールを防ぐ
+      if (e.touches.length === 1) { lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY; }
+      lastPinchDist = 0;
+    }, { passive: false });
+    avatarCropCanvas.addEventListener('touchmove', (e) => {
+      e.preventDefault(); // iOSのページスクロールを防ぐ（passive:falseが必須）
+      if (!cropImage) return;
+      if (e.touches.length === 1) {
+        cropOffsetX += e.touches[0].clientX - lastTouchX;
+        cropOffsetY += e.touches[0].clientY - lastTouchY;
+        lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+        clampCropOffset(); drawCropPreview();
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (lastPinchDist > 0) {
+          const ratio = dist / lastPinchDist;
+          const newScale = Math.max(parseFloat(avatarZoomSlider.min), Math.min(parseFloat(avatarZoomSlider.max), cropScale * ratio));
+          const cx = CROP_SIZE / 2, cy = CROP_SIZE / 2;
+          cropOffsetX = cx - (cx - cropOffsetX) * (newScale / cropScale);
+          cropOffsetY = cy - (cy - cropOffsetY) * (newScale / cropScale);
+          cropScale = newScale; avatarZoomSlider.value = cropScale;
+          clampCropOffset(); drawCropPreview();
+        }
+        lastPinchDist = dist;
+      }
+    }, { passive: false });
+    avatarCropCanvas.addEventListener('touchend', () => { lastPinchDist = 0; }, { passive: true });
+
+    avatarCropCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (!cropImage) return;
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      const newScale = Math.max(parseFloat(avatarZoomSlider.min), Math.min(parseFloat(avatarZoomSlider.max), cropScale + delta * cropScale));
+      const rect = avatarCropCanvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      cropOffsetX = mx - (mx - cropOffsetX) * (newScale / cropScale);
+      cropOffsetY = my - (my - cropOffsetY) * (newScale / cropScale);
+      cropScale = newScale; avatarZoomSlider.value = cropScale;
+      clampCropOffset(); drawCropPreview();
+    }, { passive: false });
+
+    avatarZoomSlider.addEventListener('input', () => {
+      if (!cropImage) return;
+      const newScale = parseFloat(avatarZoomSlider.value);
+      const cx = CROP_SIZE / 2, cy = CROP_SIZE / 2;
+      cropOffsetX = cx - (cx - cropOffsetX) * (newScale / cropScale);
+      cropOffsetY = cy - (cy - cropOffsetY) * (newScale / cropScale);
+      cropScale = newScale; clampCropOffset(); drawCropPreview();
+    });
+
+    document.getElementById('avatarCropCancel').addEventListener('click', closeCropModal);
+
+    document.getElementById('avatarCropConfirm').addEventListener('click', async () => {
+      if (!cropImage) return;
+      // 解像度を 400→640 に上げ、高品質リサイズ＋JPEG品質0.92で鮮明に保存する
+      // （Cloudflare はファイルをそのまま保存するだけなので、画質はここの設定で決まる）
+      const OUTPUT = 640;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = OUTPUT; offscreen.height = OUTPUT;
+      const offCtx = offscreen.getContext('2d');
+      offCtx.imageSmoothingEnabled = true;
+      offCtx.imageSmoothingQuality = 'high';
+      const sf = OUTPUT / CROP_SIZE;
+      offCtx.beginPath();
+      offCtx.arc(OUTPUT / 2, OUTPUT / 2, OUTPUT / 2, 0, Math.PI * 2);
+      offCtx.clip();
+      offCtx.drawImage(cropImage, cropOffsetX * sf, cropOffsetY * sf, cropImage.naturalWidth * cropScale * sf, cropImage.naturalHeight * cropScale * sf);
+
+      offscreen.toBlob(async (blob) => {
+        if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+        const progressDiv = document.getElementById('avatarUploadProgress');
+        const progressFill = document.getElementById('avatarUploadProgressFill');
+        const progressText = document.getElementById('avatarUploadProgressText');
+        const confirmBtn = document.getElementById('avatarCropConfirm');
+        const cancelBtn = document.getElementById('avatarCropCancel');
+        progressDiv.classList.remove('hidden');
+        progressFill.style.width = '0%';
+        confirmBtn.disabled = true; cancelBtn.disabled = true;
+        try {
+          const fileUrl = await uploadToExternalService(
+            new File([blob], 'avatar.jpg', { type: 'image/jpeg' }),
+            (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
+            'simplechat/avatars'
+          );
+          pendingAvatarUrl = fileUrl;
+          settingsAvatarPreview.src = fileUrl;
+          settingsAvatarPreview.classList.remove("hidden");
+          document.getElementById("resetAvatarButton").classList.remove("hidden");
+          avatarCropModal.classList.add('hidden');
+          cropImage = null;
+          alertMessage("アイコンを設定しました", "success");
+        } catch (err) {
+          console.error(err);
+          alertMessage("アップロードに失敗しました: " + err.message, "error");
+        } finally {
+          confirmBtn.disabled = false; cancelBtn.disabled = false;
+        }
+      }, 'image/jpeg', 0.95);
+    });
+
+    avatarUploadInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const objectUrl = URL.createObjectURL(file);
+      openAvatarCropModal(objectUrl);
+      avatarUploadInput.value = '';
+    });
+
+    // Settings Modal Logic
+    const resetAvatarButton = document.getElementById("resetAvatarButton");
+
+    function openSettingsModal(tab) {
+      if (!userNickname) return;
+      switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
+      settingsNicknameInput.value = userNickname;
+      settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
+      pendingAvatarUrl = null;
+      if (isUsableAvatarUrl(userAvatarUrl)) {
+        const _u = userAvatarUrl;
+        try { settingsAvatarPreview.referrerPolicy = 'no-referrer'; } catch(_) {}
+        try { settingsAvatarPreview.decoding = 'async'; } catch(_) {}
+        settingsAvatarPreview.dataset.retries = '0';
+        settingsAvatarPreview.onerror = function() {
+          const r = parseInt(settingsAvatarPreview.dataset.retries || '0', 10);
+          if (r < 2) {
+            settingsAvatarPreview.dataset.retries = String(r + 1);
+            setTimeout(() => {
+              try {
+                const sep = _u.indexOf('?') >= 0 ? '&' : '?';
+                settingsAvatarPreview.src = _u + sep + '_r=' + Date.now();
+              } catch(_) {}
+            }, 800 * (r + 1));
+          } else {
+            try { settingsAvatarPreview.classList.add('hidden'); } catch(_) {}
+          }
+        };
+        settingsAvatarPreview.src = userAvatarUrl;
+        settingsAvatarPreview.classList.remove("hidden");
+        resetAvatarButton.classList.remove("hidden");
+      } else {
+        settingsAvatarPreview.classList.add("hidden");
+        resetAvatarButton.classList.add("hidden");
+      }
+      settingsMessage.textContent = "";
+      updateSettingsSidebar();
+      openModal(settingsModal);
+    }
+
+    // モーダルをアニメーション付きで開くヘルパー
+    function openModal(overlayEl) {
+      overlayEl.classList.remove("hidden");
+      const box = overlayEl.querySelector(".modal-box");
+      if (box) {
+        box.classList.remove("modal-opening");
+        void box.offsetWidth; // reflow でアニメーションをリセット
+        box.classList.add("modal-opening");
+      }
+    }
+
+    // サーバーリスト画面のユーザーアバターボタン
+    function updateServerListUserBtn() {
+      const btn = document.getElementById("serverListUserBtn");
+      if (!btn || !userNickname) return;
+      btn.title = `${userNickname} — プロフィール・設定`;
+      __setAvatarImg(btn, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: 'border-radius:50%' });
+    }
+    document.getElementById("serverListUserBtn").addEventListener("click", () => {
+      openSettingsModal("profile");
+    });
+
+    userPanel.addEventListener("click", (e) => {
+      if (e.target.closest('#openSettingsBtn')) return;
+      // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
+      if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+      openSettingsModal("profile");
+    });
+
+    document.getElementById("openSettingsBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
+      if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+      openSettingsModal("settings");
+    });
+
+    // アイコンリセットボタン
+    resetAvatarButton.addEventListener("click", async () => {
+      loadingOverlay.classList.remove("hidden");
+      try {
+        const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+        await updateDoc(userProfileRef, { avatarUrl: null });
+        userAvatarUrl = null;
+        pendingAvatarUrl = null;
+        settingsAvatarPreview.classList.add("hidden");
+        settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
+        resetAvatarButton.classList.add("hidden");
+        updateUserPanelUI();
+        await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+        settingsMessage.textContent = "アイコンをリセットしました";
+        settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
+      } catch (e) {
+        console.error(e);
+        settingsMessage.textContent = "リセットに失敗しました";
+        settingsMessage.className = "text-center mt-2 text-sm text-red-600";
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    closeSettingsButton.addEventListener("click", () => {
+      settingsModal.classList.add("hidden");
+    });
+
+    // ★ モーダルの背景クリックで閉じる処理
+    settingsModal.addEventListener("click", (e) => {
+      if (e.target === settingsModal) {
+        settingsModal.classList.add("hidden");
+        closeCropModal(); // 設定モーダルを閉じたらクロップモーダルも閉じる
+      }
+    });
+
+    saveSettingsButton.addEventListener("click", async () => {
+      const newName = settingsNicknameInput.value.trim();
+      if (newName.length < 1 || newName.length > 20) {
+        settingsMessage.textContent = "1〜20文字で入力してください。";
+        settingsMessage.className = "text-center mt-2 text-sm text-red-600";
+        return;
+      }
+      loadingOverlay.classList.remove("hidden");
+      try {
+        const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+        const updateData = { nickname: newName, createdAt: serverTimestamp() };
+        if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
+        await setDoc(userProfileRef, updateData, { merge: true });
+        userNickname = newName;
+        if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+
+        // ★ヘッダータイトルの更新
+        headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
+        updateUserPanelUI();
+
+        await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+
+        settingsMessage.textContent = "保存しました";
+        settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
+        closeCropModal();
+        setTimeout(() => settingsModal.classList.add("hidden"), 1000);
+      } catch (e) {
+        settingsMessage.textContent = "エラーが発生しました";
+        settingsMessage.className = "text-center mt-2 text-sm text-red-600";
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    logoutButtonInModal.addEventListener("click", async () => {
+      if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
+      closeCropModal();
+      settingsModal.classList.add("hidden");
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await updateUserStatus('offline');
+        await signOut(auth);
+      } catch (error) {
+        console.error("Logout Error:", error);
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+
+    setNicknameButton.addEventListener("click", async () => {
+      const nickname = nicknameInput.value.trim();
+      if (nickname.length < 1 || nickname.length > 20) {
+        nicknameMessage.textContent = "1〜20文字で入力してください。";
+        return;
+      }
+      loadingOverlay.classList.remove("hidden");
+      try {
+        const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+        await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
+        userNickname = nickname;
+
+        // ★ヘッダータイトルの更新
+        headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
+        updateUserPanelUI();
+
+        nicknameContainer.classList.add("hidden");
+        appContainer.classList.remove("hidden");
+        loadRooms();
+        startPresenceSystem();
+        // ★ initializeFCM() は onAuthStateChanged で既に呼ばれるためここからは削除
+      } catch (error) {
+        nicknameMessage.textContent = `エラー: ${error.message}`;
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    // =========================================================================
+    // Presence System (Online/Offline Status)
+    // =========================================================================
+
+    function resetAwayTimer() {
+      if (awayTimer) clearTimeout(awayTimer);
+      awayTimer = setTimeout(() => {
+        updateUserStatus('away');
+      }, AWAY_TIMEOUT);
+    }
+
+    function stopAwayTimer() {
+      if (awayTimer) {
+        clearTimeout(awayTimer);
+        awayTimer = null;
+      }
+    }
+
+    let _heartbeatInterval = null;
+
+    function startHeartbeat() {
+      // RTDB onDisconnectを使用中のためハートビート不要
+    }
+
+    function stopHeartbeat() {
+      if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
+    }
+
+
+    // ネット復帰: ステータスをリセットしてonlineに更新
+    function _handleNetworkOnline() {
+      _beaconSent = false;
+      updateUserStatus('online');
+      refreshCachedIdToken();
+    }
+    // ネット切断: 即座にofflineビーコンを送る
+    function _handleNetworkOffline() {
+      sendOfflineBeacon();
+    }
+
+    function stopPresenceSystem() {
+      stopAwayTimer();
+      stopHeartbeat();
+      _beaconSent = false;
+      if (_idTokenRefreshTimer) { clearInterval(_idTokenRefreshTimer); _idTokenRefreshTimer = null; }
+      _cachedIdToken = null;
+      if (memberListRefreshInterval) {
+        clearInterval(memberListRefreshInterval);
+        memberListRefreshInterval = null;
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handlePageClose);
+      window.removeEventListener("pagehide", handlePageClose);
+      window.removeEventListener("freeze", handlePageClose);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("online", _handleNetworkOnline);
+      window.removeEventListener("offline", _handleNetworkOffline);
+      if (unsubscribeUserStatus) {
+        unsubscribeUserStatus();
+        unsubscribeUserStatus = null;
+      }
+      unsubscribeStatusArray.forEach(unsub => unsub());
+      unsubscribeStatusArray = [];
+    }
+
+    function clearAppBadgeFull() {
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(registration => {
+          if (registration.active) {
+            registration.active.postMessage({ type: 'CLEAR_BADGE' });
+          }
+        }).catch(() => {});
+      }
+    }
+
+    const handleWindowFocus = () => {
+      _beaconSent = false;
+      updateUserStatus('online');
+      resetAwayTimer();
+      if (typeof currentRoomId !== 'undefined' && currentRoomId) {
+         try {
+            const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+            rm[currentRoomId] = Date.now() + 10000;
+            localStorage.setItem('covo_last_read', JSON.stringify(rm));
+         } catch(e) {}
+         if (typeof unreadCounts !== 'undefined') unreadCounts[currentRoomId] = 0;
+         const badge = document.getElementById(`unread-badge-${currentRoomId}`);
+         if (badge) badge.style.display = 'none';
+         updateGlobalNotifUI();
+      }
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        let globalCount = 0;
+        try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
+      }
+      clearAppBadgeFull();
+    };
+
+    const handleWindowBlur = () => {
+      updateUserStatus('offline');
+      sendOfflineBeacon();
+      stopAwayTimer();
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        let globalCount = 0;
+        try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        updateUserStatus('offline');
+        sendOfflineBeacon();
+        stopAwayTimer();
+        setTimeout(() => {
+          if (document.visibilityState === 'hidden') {
+            _beaconSent = false;
+            sendOfflineBeacon();
+          }
+        }, 30000);
+      } else {
+        _beaconSent = false;
+        updateUserStatus('online');
+        resetAwayTimer();
+        clearAppBadgeFull();
+        if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
+        if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
+      }
+    };
+
+    const handlePageShow = (e) => {
+      if (e.persisted) handleWindowFocus();
+    };
+
+    // タブ閉じ・ページ離脱時の確実なオフライン化
+    const handlePageClose = (e) => {
+      // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
+      if (e && e.type === 'pagehide' && e.persisted === false) {
+        _beaconSent = false; // 強制リセット
+      }
+      sendOfflineBeacon();
+    };
+
+    // ビーコン送信済みフラグ（visibilitychange:hidden → pagehide/freeze の重複送信防止）
+    let _beaconSent = false;
+    // Worker認証用: Firebase IDトークンをキャッシュ（sendBeaconは同期のため事前取得が必要）
+    let _cachedIdToken = null;
+    let _idTokenRefreshTimer = null;
+
+    async function refreshCachedIdToken() {
+      try {
+        const { getAuth } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+        const user = getAuth().currentUser;
+        if (user) {
+          _cachedIdToken = await user.getIdToken(false);
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(reg => {
+              if (reg.active) reg.active.postMessage({ type: 'CACHE_AUTH_TOKEN', idToken: _cachedIdToken, userId: userId, appId: appId });
+            }).catch(() => {});
+          }
+        }
+      } catch(e) {}
+    }
+
+    // sendBeacon（ページアンロード・タスクキル時に最も信頼性が高い）+ fallback fetch
+    function sendOfflineBeacon() {
+      if (!userId || _beaconSent || !_cachedIdToken) return;
+      _beaconSent = true;
+      const url = 'https://simplechat-api.astro-fray-server.workers.dev/api/setOffline';
+      const data = JSON.stringify({ userId, appId, idToken: _cachedIdToken || '' });
+      try {
+        // sendBeacon はブラウザがバックグラウンドで送信完了を保証する
+        if (navigator.sendBeacon) {
+          const blob = new Blob([data], { type: 'text/plain' }); // text/plainはシンプルリクエスト→プリフライト不要→credentials=includeでも届く
+          navigator.sendBeacon(url, blob);
+          return;
+        }
+      } catch (_) {}
+      // フォールバック: keepalive fetch
+      try {
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: data,
+          keepalive: true,
+          credentials: 'omit'
+        }).catch(() => { });
+      } catch (e) {}
+    }
+
+    let _lastReportedStatusStr = null;
+    // RTDB presence管理
+    let _rtdb = null;
+    let _rtdbStatusRef = null;
+    let _rtdbOnDisconnect = null;
+
+    async function _getOrInitRTDB() {
+      if (_rtdb) return _rtdb;
+      const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      _rtdb = getDatabase(app);
+      return _rtdb;
+    }
+
+    // =========================================================================
+    // RTDB Database Toggle Logic
+    // =========================================================================
+    // トグルは廃止され、RTDBによる同期が恒久的に有効化されました。
+    window.globalUseRtdb = true; 
+    let rtdbGlobalSettingUnsub = null;
+    async function setupGlobalRtdbListener() {
+      // no-op: 常に true
+    }
+
+    // Initialize toggle when DOM is loaded
+    document.addEventListener("DOMContentLoaded", () => {
+
+    // Force migration to Modern UI
+    if (!localStorage.getItem('covo_modern_ui_migrated_v2')) {
+        localStorage.setItem('covo_discord_ui', 'true');
+        localStorage.setItem('covo_modern_ui_migrated_v2', '1');
+    }
+
+      // Just in case, the Auth observer handles actual db fetching
+    });
+
+    async function updateUserStatus(state) {
+      if (!userId || !userNickname) return;
+
+      // 差分チェック（同じ状態ならスキップ）
+      const currentStatusStr = JSON.stringify({ state, roomId: currentRoomId, nickname: userNickname, avatarUrl: userAvatarUrl });
+      if (_lastReportedStatusStr === currentStatusStr) return;
+      _lastReportedStatusStr = currentStatusStr;
+
+      try {
+        const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const statusRef = ref(rtdb, `status/${userId}`);
+        _rtdbStatusRef = statusRef;
+        if (state === 'online') {
+          await set(statusRef, {
+            state: 'online',
+            last_changed: serverTimestamp(),
+            currentRoomId: currentRoomId || null,
+            nickname: userNickname,
+            avatarUrl: userAvatarUrl || null
+          });
+        } else {
+          await set(statusRef, {
+            state: 'offline',
+            last_changed: serverTimestamp(),
+            nickname: userNickname,
+            avatarUrl: userAvatarUrl || null
+          });
+        }
+      } catch (error) {
+        console.error('[RTDB] Status update error:', error);
+      }
+    }
+
+    // Rust側(Tauri)から呼べるようにwindowにエクスポート
+    window.blockingUpdateCheck = blockingUpdateCheck;
+    window.sendOfflineBeacon = sendOfflineBeacon;
+    window.updateUserStatus = updateUserStatus;
+
+    // 通話関数をグローバルに公開（type="module" スコープから onclick で呼ぶため）
+    window.openCallPicker = openCallPicker;
+    window.closeCallPicker = closeCallPicker;
+    function setCallReconnectStatus(isReconnecting) {
+      const lbl = document.getElementById('callStatusLabel');
+      if (!lbl) return;
+      if (isReconnecting) {
+        lbl.textContent = '再接続中...';
+        lbl.classList.add('reconnecting');
+      } else {
+        lbl.textContent = '通話中';
+        lbl.classList.remove('reconnecting');
+      }
+    }
+
+    function setCallConnectionType(type) {
+      const el = document.getElementById('callConnectionType');
+      if (!el) return;
+      if (!type) { el.style.display = 'none'; el.className = ''; el.innerHTML = ''; return; }
+      el.className = type;
+      el.style.display = 'inline-flex';
+      el.textContent = type === 'turn' ? 'TURN中継' : 'P2P直接接続';
+    }
+
+    function showCallEndedReason(reason) {
+      const msgs = {
+        declined:         '通話が拒否されました',
+        remoteEnded:      '相手が通話を終了しました',
+        callerCancelled:  '発信者がキャンセルしました',
+        connectionLost:   '接続が切れました',
+        turnDisconnected: '中継サーバー経由の接続が切れました（制限の可能性）',
+        micDenied:        'マイクへのアクセスが拒否されました',
+      };
+      const msg = msgs[reason] || reason;
+      const toast = document.getElementById('callEndedToast');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.remove('show');
+      void toast.offsetWidth;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3700);
+    }
+
+    window.acceptCall = acceptCall;
+    window.declineCall = declineCall;
+    window.endCall = endCall;
+    window.toggleMute = toggleMute;
+
+    // ダークサーバーリストテーマ
+    function setDarkServerTheme(isDark) {
+      localStorage.setItem('covo_dark_server', isDark ? 'true' : 'false');
+      document.body.classList.toggle('dark-server-theme', isDark);
+      document.documentElement.classList.toggle('dark-server-theme', isDark);
+      if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+      const pcToggle = document.getElementById('toggleDarkServer');
+      const mobileToggle = document.getElementById('toggleDarkServerMobile');
+      if (pcToggle) pcToggle.checked = isDark;
+      if (mobileToggle) mobileToggle.checked = isDark;
+    }
+    function loadDarkServerTheme() {
+      const isDark = localStorage.getItem('covo_dark_server') === 'true';
+      document.body.classList.toggle('dark-server-theme', isDark);
+      document.documentElement.classList.toggle('dark-server-theme', isDark);
+      if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+      const pcToggle = document.getElementById('toggleDarkServer');
+      const mobileToggle = document.getElementById('toggleDarkServerMobile');
+      if (pcToggle) pcToggle.checked = isDark;
+      if (mobileToggle) mobileToggle.checked = isDark;
+    }
+    window.setDarkServerTheme = setDarkServerTheme;
+    window.prewarmPeerConnection = prewarmPeerConnection;
+    window.stopPrewarmPC = stopPrewarmPC;
+
+    let unsubscribeStatusArray = [];
+
+    function getTimestampMs(obj) {
+      if (!obj || !obj.last_changed) return 0;
+      if (typeof obj.last_changed === 'number') return obj.last_changed; // RTDB
+      if (obj.last_changed.toDate) return obj.last_changed.toDate().getTime(); // Firestore
+      return 0;
+    }
+
+    function subscribeToUserStatus() {
+      // 旧リスナーをクリーンアップ
+      if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
+      unsubscribeStatusArray.forEach(unsub => unsub());
+      unsubscribeStatusArray = [];
+
+      const memberIds = currentServerData?.joinedUsers || [];
+      if (memberIds.length === 0) {
+        cachedUsers = [];
+        renderMembersList(cachedUsers);
+        return;
+      }
+
+      const usersMap = new Map();
+
+      // 1. Firestoreフォールバック（過去にログインしたユーザーや旧バージョンのステータス）
+      for (let i = 0; i < memberIds.length; i += 30) {
+        const chunk = memberIds.slice(i, i + 30);
+        const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
+        const unsub = onSnapshot(statusQuery, (snapshot) => {
+          let changed = false;
+          snapshot.forEach((doc) => {
+            const fsData = doc.data();
+            const existing = usersMap.get(doc.id) || { id: doc.id };
+            
+            const fsTime = getTimestampMs(fsData);
+            const rtdbTime = existing._rtdbTime || 0;
+            
+            if (fsTime >= rtdbTime) {
+              // Firestoreの方が新しい（旧アプリで更新を続けている場合）
+              usersMap.set(doc.id, { 
+                ...existing, 
+                ...fsData, 
+                _fsTime: fsTime,
+                _fsData: fsData
+              });
+            } else {
+              // RTDBの方が新しい
+              usersMap.set(doc.id, {
+                ...fsData,
+                ...existing,
+                _fsTime: fsTime,
+                _fsData: fsData
+              });
+            }
+            changed = true;
+          });
+          if (changed) {
+            cachedUsers = Array.from(usersMap.values());
+            renderMembersList(cachedUsers);
+          }
+        });
+        unsubscribeStatusArray.push(unsub);
+      }
+
+      // 2. RTDBでリアルタイムなステータスを監視
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
+        _getOrInitRTDB().then(rtdb => {
+          memberIds.forEach(uid => {
+            const statusRef = ref(rtdb, `status/${uid}`);
+            const callback = (snapshot) => {
+              const data = snapshot.val();
+              const existing = usersMap.get(uid) || { id: uid };
+              
+              if (data) {
+                const rtdbTime = getTimestampMs(data);
+                const fsTime = existing._fsTime || 0;
+                const fsData = existing._fsData || {};
+                
+                if (rtdbTime >= fsTime) {
+                  // RTDBの方が新しい
+                  usersMap.set(uid, { ...existing, ...data, _rtdbTime: rtdbTime });
+                } else {
+                  // Firestoreの方が新しい（旧アプリを使っている）
+                  usersMap.set(uid, { ...existing, ...data, ...fsData, _rtdbTime: rtdbTime });
+                }
+              } else {
+                // RTDBにデータがない場合、Firestore(既存)のstateを優先。なければoffline
+                usersMap.set(uid, { id: uid, state: 'offline', ...existing, _rtdbTime: 0 });
+              }
+              cachedUsers = Array.from(usersMap.values());
+              renderMembersList(cachedUsers);
+            };
+            onValue(statusRef, callback);
+            unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
+          });
+        });
+      }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
+    }
+
+    function renderMembersList(users) {
+      if (!membersList) return;
+      membersList.innerHTML = "";
+
+      // サーバーメンバーのみ表示（currentServerData がない場合は全員）
+      const serverMemberIds = currentServerData?.joinedUsers || null;
+      const filtered = serverMemberIds
+        ? users.filter(u => serverMemberIds.includes(u.id))
+        : users;
+
+      const processedUsers = filtered.map(u => {
+        let computedState = u.state || 'offline';
+        
+        // RTDB形式(Unix ms整数)とFirestore形式(Timestampオブジェクト)の両方に対応
+        // onDisconnect後はRTDBが即座に反映するため、35分は保守的なフォールバック
+        if (computedState === 'online' || computedState === 'away') {
+          let timeDiff = null;
+          if (typeof u.last_changed === 'number') {
+            timeDiff = Date.now() - u.last_changed; // RTDB: Unix ms
+          } else if (u.last_changed && u.last_changed.toDate) {
+            timeDiff = Date.now() - u.last_changed.toDate().getTime(); // Firestore Timestamp
+          }
+          if (timeDiff !== null && timeDiff > 35 * 60 * 1000) {
+            computedState = 'offline';
+          }
+        }
+
+        // update own UI status indicator here
+        if (u.id === userId) {
+          const statusElement = document.getElementById('userPanelStatus');
+          if (statusElement) statusElement.className = `status-indicator status-${computedState}`;
+        }
+        return { ...u, computedState };
+      });
+
+      const onlineMembers = processedUsers.filter(u => u.computedState === 'online');
+      const awayMembers = processedUsers.filter(u => u.computedState === 'away');
+      const offlineMembers = processedUsers.filter(u => u.computedState === 'offline');
+
+      onlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+      awayMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+      offlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+
+      const createGroup = (title, members) => {
+        if (members.length === 0) return;
+
+        const titleDiv = document.createElement("div");
+        titleDiv.className = "member-group-title";
+        titleDiv.textContent = `${title} — ${members.length}`;
+        membersList.appendChild(titleDiv);
+
+        members.forEach((member, idx) => {
+          const item = document.createElement("div");
+          item.className = "member-item";
+
+          const avatar = document.createElement("div");
+          avatar.className = "avatar-placeholder";
+          if (isUsableAvatarUrl(member.avatarUrl)) {
+            const avatarImg = document.createElement("img");
+            avatarImg.alt = member.nickname || "";
+            avatarImg.referrerPolicy = 'no-referrer';
+            avatarImg.decoding = 'async';
+            avatarImg.dataset.retries = '0';
+            const _u = member.avatarUrl;
+            avatarImg.onerror = function() {
+              _invalidAvatars.add(member.avatarUrl);
+              try { avatarImg.remove(); avatar.insertBefore(document.createTextNode((member.nickname || " ").charAt(0).toUpperCase()), avatar.firstChild); } catch(_) {}
+            };
+            avatarImg.src = member.avatarUrl;
+            avatar.appendChild(avatarImg);
+            avatar.style.cursor = "pointer";
+            avatar.addEventListener("click", () => openAvatarLightbox(member.avatarUrl));
+          } else {
+            avatar.textContent = (member.nickname || " ").charAt(0).toUpperCase();
+          }
+
+          const statusDot = document.createElement("div");
+          statusDot.className = `status-indicator status-${member.computedState}`;
+          avatar.appendChild(statusDot);
+
+          const info = document.createElement("div");
+          info.className = "member-info";
+
+          const name = document.createElement("div");
+          name.className = "member-name";
+          name.textContent = member.nickname || "不明なユーザー";
+          info.appendChild(name);
+
+          if (member.computedState === 'away') {
+            const statusText = document.createElement("div");
+            statusText.className = "member-status-text";
+            statusText.textContent = "離席中";
+            info.appendChild(statusText);
+          } else if (member.computedState === 'offline') {
+            const statusText = document.createElement("div");
+            statusText.className = "member-status-text";
+            statusText.textContent = formatTimeAgo(member.last_changed);
+            info.appendChild(statusText);
+          }
+
+          item.appendChild(avatar);
+          item.appendChild(info);
+          membersList.appendChild(item);
+        });
+      };
+
+      createGroup("Online", onlineMembers);
+      createGroup("Away", awayMembers);
+      createGroup("Offline", offlineMembers);
+    }
+
+    function formatTimeAgo(timestamp) {
+      if (!timestamp) return "";
+      let past;
+      if (typeof timestamp === 'number') {
+        past = new Date(timestamp);
+      } else if (timestamp.toDate) {
+        past = timestamp.toDate();
+      } else {
+        return "";
+      }
+      
+      const now = new Date();
+      const diffInSeconds = Math.floor((now - past) / 1000);
+
+      if (diffInSeconds < 60) return `数秒前`;
+      const diffInMinutes = Math.floor(diffInSeconds / 60);
+      if (diffInMinutes < 60) return `${diffInMinutes}分前`;
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      if (diffInHours < 24) return `${diffInHours}時間前`;
+      const diffInDays = Math.floor(diffInHours / 24);
+      return `${diffInDays}日前`;
+    }
+
+
+    // =========================================================================
+    // =========================================================================
+    // Server Features
+    // =========================================================================
+
+    const _invalidAvatars = new Set();
+
+    function isUsableAvatarUrl(url) {
+      return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
+    }
+
+    function __setAvatarImg(container, url, name, opts) {
+      if (!container) return;
+      opts = opts || {};
+      const styleStr = opts.style || 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+      const className = opts.className || '';
+      const initial = ((name || '?').charAt(0) || '?').toUpperCase();
+      try { container.innerHTML = ''; } catch(_) {}
+      // Cloudinary は廃止。旧Cloudinaryアイコンは表示せずデフォルト(イニシャル)に戻す。
+      // ユーザーが新しくアイコンを設定すると Cloudflare(KV) に保存され、自然に移行する。
+      if (!isUsableAvatarUrl(url)) { try { container.textContent = initial; } catch(_) {} return; }
+      const img = document.createElement('img');
+      img.alt = '';
+      img.decoding = 'async';
+      img.loading = 'eager';
+      img.referrerPolicy = 'no-referrer'; // CloudinaryのReferer制限を回避
+      if (className) img.className = className;
+      if (styleStr) img.style.cssText = styleStr;
+      img.dataset.retries = '0';
+      img.onerror = function() {
+        const r = parseInt(img.dataset.retries || '0', 10);
+        if (r < 2) {
+          img.dataset.retries = String(r + 1);
+          setTimeout(() => {
+            try {
+              const sep = url.indexOf('?') >= 0 ? '&' : '?';
+              img.src = url + sep + '_r=' + Date.now();
+            } catch(_) {}
+          }, 800 * (r + 1));
+        } else {
+          _invalidAvatars.add(url);
+          try { container.innerHTML = ''; container.textContent = initial; } catch(_) {}
+        }
+      };
+      img.src = url;
+      try { container.appendChild(img); } catch(_) {}
+    }
+
+    // HTMLエスケープ（XSS対策: innerHTML に埋め込む全ての文字列に適用する）
+    function escapeHtml(s) {
+      if (s == null) return "";
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // PBKDF2 ハッシュ（SHA-256より総当たり耐性が大幅に高い）
+    async function hashPassword(password, serverId) {
+      const encoder = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
+      );
+      const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: encoder.encode(serverId), iterations: 100000, hash: 'SHA-256' },
+        keyMaterial, 256
+      );
+      return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // サーバー一覧の表示
+    async function showServerList() {
+      const serverListScreen = document.getElementById("serverListScreen");
+      const serverGrid = document.getElementById("serverGrid");
+      const empty = document.getElementById("serverListEmpty");
+
+      updateServerListUserBtn();
+      if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
+
+      function appendServerCard(server, idx) {
+        const card = document.createElement("div");
+        card.className = "server-card anim-card";
+        card.dataset.serverId = server.id;
+        card.style.animationDelay = `${idx * 55}ms`;
+        const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+        const memberCount = Number.isFinite(server.memberCount) ? server.memberCount : (server.joinedUsers ? server.joinedUsers.length : 0);
+        let hasUnread = false;
+        try { const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); hasUnread = items.some(it => it.serverId === server.id); } catch(e) {}
+        const serverName = escapeHtml(server.name || server.id);
+        const initial = (server.name || server.id).charAt(0).toUpperCase();
+        // デフォルトアイコンの背景色を上品なCovoグレーに完全統一
+        const bgColor = '#374151';
+        const iconHtml = server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />` : initial;
+        
+        card.innerHTML = `
+            <div class="server-card-icon" style="background-color: ${server.iconUrl ? 'transparent' : bgColor}">${iconHtml}</div>
+            <div class="server-card-info"><div class="server-card-name">${serverName}</div>
+            <div class="server-card-meta"><i class="fas fa-users mr-1"></i>${memberCount} メンバー</div></div>
+            ${isMine ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+            ${isAdmin && !isMine && (server.joinedUsers || []).includes(userId) ? '<span class="server-card-admin-badge"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+            ${hasUnread ? '<span class="server-card-unread-dot"></span>' : ''}
+          `;
+        let lpTimer, lpTriggered = false;
+        card.addEventListener("click", () => { if (lpTriggered) { lpTriggered = false; return; } enterServer(server.id, server); });
+        card.addEventListener("contextmenu", (e) => { e.preventDefault(); showServerContextMenu(server, e.clientX, e.clientY); });
+        card.addEventListener("touchstart", (e) => {
+          lpTriggered = false;
+          lpTimer = setTimeout(() => {
+            lpTriggered = true;
+            const t = e.touches[0];
+            showServerContextMenu(server, t.clientX, t.clientY);
+          }, 300);
+        }, { passive: true });
+        card.addEventListener("touchend", () => clearTimeout(lpTimer), { passive: true });
+        card.addEventListener("touchmove", () => clearTimeout(lpTimer), { passive: true });
+        serverGrid.appendChild(card);
+      }
+
+      function appendSectionLabel(text) {
+        const el = document.createElement("p");
+        el.className = "server-section-label";
+        el.textContent = text;
+        serverGrid.appendChild(el);
+      }
+
+      window.renderServerList = function() {
+        if (!allServersCache) return;
+        if (document.body.classList.contains('discord-ui-mode')) {
+          if (!currentServerId) {
+            document.body.classList.add("discord-home-view");
+            const appCont = document.getElementById("appContainer");
+            if (appCont) appCont.classList.remove("hidden");
+            const sls = document.getElementById("serverListScreen");
+            if (sls) sls.classList.add("hidden");
+          }
+        }
+        serverGrid.innerHTML = "";
+        const servers = [...allServersCache];
+        // 最近開いた順ソート
+        try { const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}'); servers.sort((a,b) => (rm[b.id]||0)-(rm[a.id]||0)); } catch(e) {}
+
+        if (!isAdmin) {
+          if (servers.length === 0) {
+            serverGrid.appendChild(Object.assign(document.createElement("div"), {
+              className: "server-list-empty",
+              style: "grid-column:1/-1",
+              innerHTML: `<i class="fas fa-server" style="display:block;font-size:2.5rem;margin-bottom:1rem;color:#d1d5db"></i>
+                  <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
+                  <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>`
+            }));
+            return;
+          }
+          servers.forEach((s, i) => appendServerCard(s, i));
+          return;
+        }
+
+        // 管理者：参加済み / 未参加 に分けて表示
+        const joined = servers.filter(s => (s.joinedUsers || []).includes(userId));
+        const notJoined = servers.filter(s => !(s.joinedUsers || []).includes(userId));
+
+        if (joined.length === 0 && notJoined.length === 0) {
+          serverGrid.appendChild(Object.assign(document.createElement("div"), {
+            className: "server-list-empty",
+            style: "grid-column:1/-1",
+            innerHTML: `<i class="fas fa-server" style="display:block;font-size:2.5rem;margin-bottom:1rem;color:#d1d5db"></i>
+                <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>`
+          }));
+          if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+          return;
+        }
+
+        if (joined.length > 0) {
+          appendSectionLabel("参加済みのサーバー");
+          joined.forEach((s, i) => appendServerCard(s, i));
+        }
+        if (notJoined.length > 0) {
+          appendSectionLabel("未参加のサーバー");
+          notJoined.forEach((s, i) => appendServerCard(s, joined.length + i));
+        }
+        if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      };
+
+      
+
+      // 管理者は全件取得、一般ユーザーは自分が参加しているサーバーのみをFirestore側でフィルタリング
+      const serversQuery = isAdmin
+        ? query(collection(db, `artifacts/${appId}/servers`))
+        : query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId));
+
+      serverListUnsubscribe = onSnapshot(serversQuery, (snapshot) => {
+        const servers = [];
+        snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
+        allServersCache = servers;
+        window.renderServerList();
+        
+        // 初回ロード時、前回開いていたサーバーがあれば自動復帰 (Discordと同等のオートロード挙動)
+        if (!window.hasAutoOpenedLastServer) {
+          window.hasAutoOpenedLastServer = true;
+          const lastServerId = localStorage.getItem('covo_last_opened_server');
+          if (lastServerId) {
+            const target = servers.find(s => s.id === lastServerId);
+            if (target && (isAdmin || (target.joinedUsers || []).includes(userId))) {
+              if (typeof enterServer === 'function') enterServer(lastServerId, target);
+            }
+          }
+        }
+      });
+    }
+
+    // サーバーに入る
+    async function enterServer(serverId, serverData) {
+      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+      if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+      currentServerId = serverId;
+      currentServerData = serverData;
+      
+      // Self-heal RTDB membership via Worker to bypass strict RTDB rules
+      if (serverData && (serverData.joinedUsers || []).includes(userId)) {
+        try {
+          auth.currentUser.getIdToken().then(idToken => {
+            fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                serverId,
+                userId,
+                appId,
+                idToken,
+                rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined
+              })
+            }).catch(() => {});
+          });
+        } catch(e) {}
+      }
+      try {
+        const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
+        rm[serverId] = Date.now();
+        localStorage.setItem('covo_recent_servers', JSON.stringify(rm));
+        localStorage.setItem('covo_last_opened_server', serverId);
+      } catch(e) {}
+      // サーバーに入ったら未読フラグをクリア
+
+
+      document.getElementById("serverListScreen").classList.add("hidden");
+      appContainer.classList.remove("hidden");
+      appContainer.style.animation = "fadeIn 0.2s ease both";
+      if (document.body.classList.contains("discord-ui-mode")) {
+        document.body.classList.remove("discord-home-view");
+      }
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+
+      // ニックネームヘッダーを表示
+      const hdr = document.getElementById("globalAppHeader");
+      const hdrTitle = document.getElementById("headerTitle");
+      if (hdr) {
+        hdrTitle.textContent = `ニックネーム：${userNickname || ""}${isAdmin ? "（管理者）" : ""}`;
+        hdr.classList.add("server-mode");
+      }
+
+      // サーバーヘッダー更新
+      document.getElementById("serverNameDisplay").textContent = serverData.name || serverId;
+      const settingsBtn = document.getElementById("serverSettingsBtn");
+      settingsBtn.classList.remove("hidden");
+
+      // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
+      try {
+        const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
+        currentServerNickname = (profileSnap.exists() && profileSnap.data().nickname)
+          ? profileSnap.data().nickname
+          : null;
+      } catch (e) { currentServerNickname = null; }
+
+      // カスタムスタンプを読み込む
+      if (typeof loadCurrentServerStamps === 'function') {
+        loadCurrentServerStamps();
+      }
+
+      // ルームを読み込む
+      loadServerRooms(serverId);
+      if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
+        membersSidebar.style.setProperty("display", "", "important");
+        membersSidebar.classList.remove("hidden");
+        membersSidebar.classList.add("md:flex");
+      }
+      // サーバーメンバーでメンバーリストを即時更新
+      renderMembersList(cachedUsers);
+
+      // サーバーに入室したタイミングで、対象メンバーを絞り込んでステータス監視を再設定
+      subscribeToUserStatus();
+    }
+
+    // サーバーを出てリストに戻る
+    window.leaveServerView = function() {
+      currentServerId = null;
+      currentServerData = null;
+      currentRoomId = null;
+      currentServerNickname = null;
+      try { localStorage.removeItem('covo_last_opened_server'); } catch(e) {}
+
+      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+      if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+      if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
+
+      Object.values(unreadListeners).forEach(u => u());
+      unreadListeners = {}; unreadCounts = {};
+
+      roomList.innerHTML = "";
+      clearMessagesDOM();
+      currentRoomHeader.classList.add("hidden");
+      messageInput.disabled = true;
+      sendMessageButton.disabled = true;
+      membersSidebar.classList.add("hidden");
+
+      // モバイルビューの全クラス・表示状態を徹底的にリセット
+      document.body.classList.remove("in-chat-view");
+      const sidebar = document.getElementById("sidebar");
+      if (sidebar) sidebar.classList.remove("mobile-hidden");
+      const mobileBottomNav = document.getElementById("mobileBottomNav");
+      if (mobileBottomNav) mobileBottomNav.style.display = "flex";
+
+      if (document.body.classList.contains("discord-ui-mode")) {
+        document.body.classList.add("discord-home-view");
+        appContainer.classList.remove("hidden");
+      } else {
+        appContainer.classList.add("hidden");
+        document.getElementById("serverListScreen").classList.remove("hidden");
+      }
+
+      // ニックネームヘッダーを非表示
+      document.getElementById("globalAppHeader")?.classList.remove("server-mode");
+      if (window.renderServerList) window.renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    }
+
+    // サーバー存在確認
+    async function checkServerIdAvailable(serverId) {
+      const snap = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+      return !snap.exists();
+    }
+
+    // サーバー作成
+    async function createServer(name, customId, password) {
+      const passwordHash = await hashPassword(password, customId);
+      let iconUrl = null;
+      if (window.pendingNewServerIconBlob) {
+        try {
+          iconUrl = await uploadToExternalService(
+            new File([window.pendingNewServerIconBlob], 'server_icon.jpg', { type: 'image/jpeg' }),
+            (pct) => {},
+            'simplechat/servericons'
+          );
+        } catch(e) { console.error(e); }
+        window.pendingNewServerIconBlob = null;
+      }
+      const serverData = {
+        name,
+        serverId: customId,
+        iconUrl,
+        joinedUsers: [userId],
+        serverAdmins: [userId],
+        createdBy: userId,
+        createdAt: serverTimestamp(),
+        memberCount: 1
+      };
+      await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
+
+      // 新しい形式：パスワードハッシュを secrets/auth に保存
+      await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/secrets`, 'auth'), {
+        passwordHash
+      });
+
+      // プロフィール作成
+      await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/profiles`, userId), {
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || null,
+        joinedAt: serverTimestamp()
+      });
+
+      // 最初のルームを作成
+      const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
+        name: "一般",
+        createdAt: serverTimestamp(),
+        createdBy: userId
+      });
+      try {
+        const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
+        await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+      } catch (e) { console.error("E2EE key gen failed", e); }
+      try {
+        const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
+        await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+      } catch (e) { console.error("E2EE key gen failed", e); }
+
+      enterServer(customId, serverData);
+    }
+
+    // パスワードでサーバー参加
+    async function joinServerByPassword(serverId, password) {
+      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+      if (!serverSnap.exists()) throw new Error("サーバーが見つかりません");
+
+      const serverData = serverSnap.data();
+      if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+        // 既に参加済み
+        enterServer(serverId, serverData);
+        return;
+      }
+
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const hash = await hashPassword(password, serverId);
+
+      const res = await fetch(`${WORKER_BASE_URL}/api/joinServer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverId,
+          password: hash,
+          userId,
+          appId,
+          idToken,
+          rtdbUrl: firebaseConfig.databaseURL
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "サーバーに参加できませんでした");
+      }
+
+      await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId), {
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || null,
+        joinedAt: serverTimestamp()
+      });
+      enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+    }
+
+    // 招待コードでサーバー参加
+    async function joinServerByInviteCode(code) {
+      code = code.toUpperCase().trim();
+
+      // inviteIndex からサーバーIDを逆引き（全サーバー一覧取得不要）
+      const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, code));
+      if (!indexSnap.exists()) throw new Error("招待コードが見つかりません");
+      const foundServerId = indexSnap.data().serverId;
+
+      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, foundServerId));
+      if (!serverSnap.exists()) throw new Error("サーバーが見つかりません");
+      const serverData = serverSnap.data();
+
+      if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+        enterServer(foundServerId, serverData);
+        return;
+      }
+
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch(`${WORKER_BASE_URL}/api/joinServer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverId: foundServerId,
+          inviteCode: code,
+          userId,
+          appId,
+          idToken,
+          rtdbUrl: firebaseConfig.databaseURL
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "招待コードが無効か、使用期限/上限に達しています");
+      }
+
+      await setDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/profiles`, userId), {
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || null,
+        joinedAt: serverTimestamp()
+      });
+      enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+    }
+
+    // 管理者向け：パスワードなしでサーバーに参加
+    async function adminJoinServer(serverId, serverData) {
+      const list = document.getElementById("adminJoinList");
+      if ((serverData.joinedUsers || []).includes(userId)) {
+        document.getElementById("adminJoinModal").classList.add("hidden");
+        enterServer(serverId, serverData);
+        return;
+      }
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, serverId), {
+          joinedUsers: arrayUnion(userId),
+          memberCount: (serverData.memberCount || 0) + 1
+        });
+        await setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId), {
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null,
+          joinedAt: serverTimestamp()
+        });
+        document.getElementById("adminJoinModal").classList.add("hidden");
+        enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
+      } catch (e) {
+        console.error("adminJoinServer error:", e);
+        alertMessage("参加に失敗しました", "error");
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    }
+
+    // 管理者向け参加モーダルを開く
+    function openAdminJoinModal() {
+      const list = document.getElementById("adminJoinList");
+      const notJoined = allServersCache.filter(s => !(s.joinedUsers || []).includes(userId));
+      list.innerHTML = "";
+      if (notJoined.length === 0) {
+        list.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:2rem 0;font-size:0.875rem">未参加のサーバーはありません</p>`;
+      } else {
+        notJoined.forEach(s => {
+          const memberCount = Number.isFinite(s.memberCount) ? s.memberCount : (s.joinedUsers ? s.joinedUsers.length : 0);
+          const item = document.createElement("button");
+          item.className = "admin-join-item";
+          item.innerHTML = `
+              <div class="admin-join-icon"><i class="fas fa-server"></i></div>
+              <div style="flex:1;min-width:0">
+                <div class="admin-join-name">${escapeHtml(s.name || s.id)}</div>
+                <div class="admin-join-meta"><i class="fas fa-users" style="margin-right:3px"></i>${memberCount} メンバー</div>
+              </div>
+              <span class="admin-join-badge">参加</span>
+            `;
+          item.addEventListener("click", () => adminJoinServer(s.id, s));
+          list.appendChild(item);
+        });
+      }
+      openModal(document.getElementById("adminJoinModal"));
+    }
+
+    // =========================================================================
+    // Room Features (Server-based)
+    // =========================================================================
+    function loadServerRooms(serverId, _retry = 0) {
+      if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
+      
+      const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
+
+      let hasLoaded = false;
+
+      function renderRooms(snapshot) {
+        hasLoaded = true;
+        roomList.innerHTML = "";
+        const currentRoomIds = new Set();
+        const roomDocs = [];
+        snapshot.forEach(docSnap => roomDocs.push(docSnap));
+        roomDocs.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+
+        let categories = currentServerData?.categories || [];
+        if(!Array.isArray(categories)) categories = Object.values(categories);
+        categories.sort((a,b) => a.order - b.order);
+
+        const renderSingleRoom = (docSnap) => {
+          currentRoomIds.add(docSnap.id);
+          const room = docSnap.data();
+          roomNames[docSnap.id] = room.name;
+          const div = document.createElement("div");
+          // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
+          div.className = "flex items-center justify-between py-1 px-2 mb-0.5 text-sm cursor-pointer group room-item-animate";
+          div.id = `room-item-${docSnap.id}`;
+          if (docSnap.id === currentRoomId) div.classList.add("active");
+          div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
+
+          const nameDiv = document.createElement("div");
+          nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
+          nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+
+          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+          const lastRead = rm[docSnap.id] || 0;
+          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+          const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
+          const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+          
+          if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
+             try {
+                // Ensure the read timestamp is strictly greater than the message timestamp to prevent clock skew issues
+                const newRead = Math.max(Date.now(), lastMsgAt) + 10000;
+                rm[docSnap.id] = newRead;
+                localStorage.setItem('covo_last_read', JSON.stringify(rm));
+             } catch(e) {}
+          }
+          
+          const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
+          unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+          
+          const rightContainer = document.createElement("div");
+          rightContainer.className = "flex items-center gap-1";
+
+          const badgeSpan = document.createElement("span");
+          badgeSpan.className = "unread-badge mr-1";
+          badgeSpan.id = `unread-badge-${docSnap.id}`;
+          badgeSpan.style.display = isUnread ? "block" : "none";
+          rightContainer.appendChild(badgeSpan);
+
+          div.appendChild(nameDiv);
+          div.appendChild(rightContainer);
+          return div;
+        };
+
+        // 1. Categories and their rooms
+        categories.forEach(cat => {
+           const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
+           
+           const catDiv = document.createElement("div");
+           catDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group";
+           catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
+           roomList.appendChild(catDiv);
+           
+           if(catRooms.length > 0) {
+              const roomContainer = document.createElement("div");
+              catRooms.forEach(d => {
+                  roomContainer.appendChild(renderSingleRoom(d));
+              });
+              roomList.appendChild(roomContainer);
+           } else {
+              // Empty category placeholder? (Optional: could hide or show something else)
+           }
+        });
+
+        // 2. Uncategorized rooms
+        const uncatRooms = roomDocs.filter(d => !d.data().categoryId);
+        if(uncatRooms.length > 0) {
+           if(categories.length > 0) {
+               const uncatDiv = document.createElement("div");
+               uncatDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
+               uncatDiv.innerHTML = `<i class="fas fa-minus mr-1.5 text-[9px]"></i>その他`;
+               roomList.appendChild(uncatDiv);
+           }
+           const roomContainer = document.createElement("div");
+           uncatRooms.forEach(d => {
+               roomContainer.appendChild(renderSingleRoom(d));
+           });
+           roomList.appendChild(roomContainer);
+        }
+
+        // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
+        // ここでの boolean 保存(covo_server_unread)は廃止しました。
+      }
+
+      window.changeRoomOrder = async function(roomId, direction, currentOrder) {
+        if (!currentServerId || !roomId) return;
+        const newOrder = currentOrder + direction;
+        try {
+          
+            await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
+          
+        } catch(e) { console.error(e); }
+      };
+
+      let isRoomsFirst = true;
+      function onRoomsChanged(snapshot) {
+         renderRooms(snapshot);
+         if (!isRoomsFirst) {
+            snapshot.docChanges().forEach(change => {
+               if (change.type === "modified") {
+                  const room = change.doc.data();
+                  const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+                  const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+                  const lastRead = rm[change.doc.id] || 0;
+                  const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
+                  if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
+                     updateGlobalNotifUI();
+                     const serverName = currentServerData?.name || 'Covo';
+                     const roomName = room.name || 'room';
+                     let text = room.lastMessageText || '新着メッセージ';
+
+                     (async () => {
+                       try {
+                         if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+                           const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                           text = await decryptText(text, currentServerId, change.doc.id, _members);
+                         }
+                       } catch (e) { text = '（暗号化されたメッセージ）'; }
+                       if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
+
+                       const isMentioned = text && typeof text === "string" && (text.includes(`@${userNickname}`) || text.includes('@all'));
+                       if (isMentioned && !document.hasFocus()) {
+                         // Fallback mention toast when not focused is handled by showNotification title
+                       }
+
+                       const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
+
+                       // In-app Notification
+                       if (typeof showInAppNotification === 'function') {
+                          showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
+                       }
+                       // Push Notification
+                       if (!document.hasFocus()) {
+                         if (isTauri) {
+                            if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                         } else if (!currentFcmToken) {
+                            if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                         }
+                       }
+                     })();
+                  }
+               }
+            });
+         }
+         isRoomsFirst = false;
+      }
+      
+      loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
+        console.error("loadServerRooms error:", error);
+        if (_retry < 3 && currentServerId === serverId) {
+          try { await auth.currentUser?.getIdToken(true); } catch (_) { }
+          setTimeout(() => loadServerRooms(serverId, _retry + 1), 1200 * (_retry + 1));
+        }
+      });
+
+      // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
+      getDocs(roomsQuery).then(snap => {
+        if (currentServerId === serverId && snap.size > 0 && roomList.children.length === 0) {
+          renderRooms(snap);
+        }
+      }).catch(e => console.error("loadServerRooms kickstart error:", e));
+
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".dropdown-container")) {
+          document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
+        }
+        if (!e.target.closest("#pcNotifModal") && !e.target.closest("#serverListNotifBtn")) {
+          const pm = document.getElementById('pcNotifModal');
+          if (pm) pm.style.display = 'none';
+        }
+      });
+    }
+
+    function updateUnreadBadge(roomId) {
+      const badge = document.getElementById(`unread-badge-${roomId}`);
+      if (!badge) return;
+      const count = unreadCounts[roomId] || 0;
+      badge.style.display = (count > 0 && roomId !== currentRoomId) ? "block" : "none";
+    }
+
+    function updateServerCardDots() {
+      try {
+        const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+        document.querySelectorAll('.server-card[data-server-id]').forEach(card => {
+          const sid = card.dataset.serverId;
+          let dot = card.querySelector('.server-card-unread-dot');
+          if (sid !== currentServerId && items.some(it => it.serverId === sid)) {
+            if (!dot) { dot = document.createElement('span'); dot.className = 'server-card-unread-dot'; card.appendChild(dot); }
+            dot.style.display = 'block';
+          } else if (dot) {
+            dot.style.display = 'none';
+          }
+        });
+      } catch(e) {}
+    }
+
+    async function loadOlderMessages() {
+      if (!hasMoreOlderMessages || isLoadingOlderMessages) return;
+      if (allLoadedMessages.length === 0) return;
+      isLoadingOlderMessages = true;
+      const spinner = document.getElementById('topLoadingSpinner');
+      const spinnerText = document.getElementById('topLoadingSpinnerText');
+      if (spinnerText) spinnerText.textContent = "読み込み中...";
+      if (spinner) spinner.style.display = 'flex';
+
+      try {
+        if (window.globalUseRtdb) {
+            const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            // Oldest message is at the end of the array (since we sort descending)
+            const oldestMessage = allLoadedMessages[0];
+            const rtdbTime = getMsgTimestamp(oldestMessage);
+            
+            const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+            const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(rtdbTime, oldestMessage.id), limitToLast(21));
+            const snapshot = await get(q);
+            
+            if (snapshot.exists()) {
+                
+                const data = snapshot.val();
+                let docs = Object.keys(data).map(k => ({...data[k], id: k}));
+                docs.sort((a, b) => getMsgTimestamp(b) - getMsgTimestamp(a)); // descending
+                
+                const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+                
+                // endAt(..., id) に合致する基準メッセージ自体を除外
+                docs = docs.filter(d => d.id !== oldestMessage.id);
+                
+                if (docs.length > 0) {
+                   allLoadedMessages = [...allLoadedMessages, ...docs];
+                   const seen = new Set();
+                   allLoadedMessages = allLoadedMessages.filter(m => {
+                       if(seen.has(m.id)) return false;
+                       seen.add(m.id);
+                       return true;
+                   });
+                   allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+                   lastMessagesData = [...allLoadedMessages];
+                   messagesIndexMap = {};
+                   lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+                   
+                   renderMessagesWithReadReceipts();
+                   
+                   rtdbMessagesLimit += docs.length; // keep limit expanded
+                }
+                if (docs.length < 20) {
+                   hasMoreOlderMessages = false;
+                }
+            } else {
+                hasMoreOlderMessages = false;
+            }
+            
+        } else {
+            const oldestMessage = allLoadedMessages[0];
+            if (!oldestMessage) throw new Error("No oldest message");
+            const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, oldestMessage.id);
+            const docSnap = await getDoc(docRef);
+            if (!docSnap.exists()) {
+                hasMoreOlderMessages = false;
+                throw new Error("Doc not found");
+            }
+            
+            messageLimit += 20;
+            const q = query(
+              collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+              orderBy("timestamp", "desc"),
+              startAfter(docSnap),
+              limit(20)
+            );
+            const querySnapshot = await getDocs(q);
+            if (querySnapshot.empty) {
+              hasMoreOlderMessages = false;
+            } else {
+              const olderDocs = [];
+              querySnapshot.forEach(d => {
+                const data = d.data(); data.id = d.id;
+                olderDocs.push(data);
+              });
+              const _members = (currentServerData && currentServerData.joinedUsers) || [];
+              await decryptMessagesInPlace(olderDocs, currentServerId, currentRoomId, _members).catch(() => {});
+              
+              allLoadedMessages = [...allLoadedMessages, ...olderDocs];
+              const seen = new Set();
+              allLoadedMessages = allLoadedMessages.filter(m => {
+                  if(seen.has(m.id)) return false;
+                  seen.add(m.id);
+                  return true;
+              });
+              allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+              lastMessagesData = [...allLoadedMessages];
+              renderMessagesWithReadReceipts();
+              
+              if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+              const newQ = query(
+                collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+                orderBy("timestamp", "desc"),
+                limit(messageLimit)
+              );
+              unsubscribeMessages = onSnapshot(newQ, async (snap) => {
+                  // Reduced for brevity in script, rely on main subscriber update
+              });
+            }
+        }
+      } catch (e) {
+        console.error("Older messages load error", e);
+      }
+      
+      isLoadingOlderMessages = false;
+      if (spinner) spinner.style.display = 'none';
+      allowPagination = true;
+    }
+
+    function subscribeToMessages() {
+      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+
+      allLoadedMessages = [];
+      hasMoreOlderMessages = true;
+      isLoadingOlderMessages = false;
+      rtdbMessagesLimit = 20;
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) spinner.style.display = 'none';
+
+      subscribeToMessagesRTDB();
+    }
+
+    async function subscribeToMessagesRTDB() {
+      const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, orderByChild, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
+
+      let initialLoadTimeout = null;
+      let buffer = [];
+      let isInitialPhase = true;
+      
+      const processBuffer = async () => {
+         if (buffer.length === 0) return;
+         const docsToProcess = [...buffer];
+         buffer = [];
+         
+         const _members = (currentServerData && currentServerData.joinedUsers) || [];
+         await decryptMessagesInPlace(docsToProcess, currentServerId, currentRoomId, _members).catch(() => {});
+         
+         docsToProcess.forEach(msg => {
+            const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+            if (idx >= 0) allLoadedMessages[idx] = msg;
+            else allLoadedMessages.push(msg);
+         });
+         
+         // Sort descending (newest first) to match Firestore reversed array
+         allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+         lastMessagesData = [...allLoadedMessages];
+         messagesIndexMap = {};
+         lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+         
+         renderPinnedMessages();
+         renderMessagesWithReadReceipts();
+         updateReadReceiptForCurrentUser();
+      };
+
+      const handleAdded = async (snapshot) => {
+        const data = snapshot.val();
+        data.id = snapshot.key;
+        
+        // Notification logic
+        if (!isInitialPhase && data.senderId !== userId) {
+            let bodyText = data.text;
+            try {
+              if (isEncrypted(bodyText)) {
+                const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
+              }
+            } catch (e) {}
+            const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
+            if (isMentioned && document.hasFocus()) {
+              showMentionToast(data.senderNickname || "ユーザー");
+            }
+        }
+        
+        buffer.push(data);
+        if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
+        initialLoadTimeout = setTimeout(() => {
+           if (isInitialPhase) {
+               isInitialPhase = false;
+               isInitialMessageLoad = true; 
+               processBuffer().then(() => {
+                   messagesDisplay.scrollTop = 0;
+                   requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
+                   isInitialMessageLoad = false;
+                   setTimeout(() => {
+                       allowPagination = true;
+                       if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+                           loadOlderMessages();
+                       }
+                   }, 500);
+               });
+           } else {
+               const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
+               processBuffer().then(() => {
+                   if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
+               });
+           }
+        }, 100);
+      };
+      
+      const handleChanged = async (snapshot) => {
+        const data = snapshot.val();
+        data.id = snapshot.key;
+        buffer.push(data);
+        processBuffer();
+      };
+      
+      const handleRemoved = (snapshot) => {
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== snapshot.key);
+        lastMessagesData = [...allLoadedMessages];
+        renderMessagesWithReadReceipts();
+      };
+
+      onChildAdded(q, handleAdded);
+      onChildChanged(q, handleChanged);
+      onChildRemoved(q, handleRemoved);
+      
+      const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
+      if (window.typingUnsubscribe) { window.typingUnsubscribe(); }
+      const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const onTyping = onValue(typingRef, (snap) => {
+        const now = Date.now();
+        const others = [];
+        snap.forEach((child) => {
+          if (child.key !== userId) {
+            const data = child.val();
+            if (data && data.t && (now - data.t) < 10000) {
+              others.push(data.n);
+            }
+          }
+        });
+        const indicator = document.getElementById('typingIndicator');
+        if (others.length > 0) {
+          indicator.textContent = others.join(', ') + ' が入力中...';
+          indicator.classList.remove('hidden');
+        } else {
+          indicator.classList.add('hidden');
+        }
+      });
+      window.typingUnsubscribe = () => off(typingRef, 'value', onTyping);
+
+      const rrRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
+      if (window.readReceiptsUnsubscribe) { window.readReceiptsUnsubscribe(); }
+      const onRR = onValue(rrRef, (snap) => {
+        roomReadReceipts = {};
+        snap.forEach((child) => {
+          roomReadReceipts[child.key] = child.val();
+        });
+        renderMessagesWithReadReceipts();
+      });
+      window.readReceiptsUnsubscribe = () => off(rrRef, 'value', onRR);
+
+      window.rtdbMessagesUnsub = () => { 
+        off(q); 
+        if(window.typingUnsubscribe) window.typingUnsubscribe();
+        if(window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
+      };
+      
+      membersSidebar.classList.remove("hidden");
+    }
+
+    // subscribeToMessagesFirestore removed (permanently using RTDB)
+    function selectRoom(roomId, roomName) {
+      // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
+      if (window.innerWidth < 768 && currentRoomId === roomId) {
+        sidebar.classList.add("mobile-hidden");
+        currentRoomHeader.classList.remove("hidden");
+        return;
+      }
+
+      if (currentRoomId === roomId) return;
+      currentRoomId = roomId;
+      // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
+      unreadBoundaryAt = 0;
+      unreadBoundaryMessageId = null;
+      try {
+        const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+        // covo_last_read には「+60000/+10000」した先読み値が入るので、その分を引いて実際の既読時刻に戻す
+        const prevRead = rm[roomId];
+        if (typeof prevRead === 'number' && prevRead > 0) {
+          unreadBoundaryAt = prevRead - 60000;
+        }
+        if (typeof updateLocalAndRemoteReadState === 'function') {
+           updateLocalAndRemoteReadState(roomId, Date.now() + 60000);
+        } else {
+           rm[roomId] = Date.now() + 60000;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+        }
+        const badge = document.getElementById('unread-badge-' + roomId);
+        if (badge) badge.style.display = 'none';
+      } catch(e) {}
+      updateUserStatus('online'); // Sync room selection for notifications
+      document.querySelectorAll('.room-item-animate').forEach(el => el.classList.remove('active'));
+      const activeItem = document.getElementById('room-item-' + roomId);
+      if (activeItem) activeItem.classList.add('active');
+      currentRoomTitleText.textContent = roomName;
+      currentRoomHeader.classList.remove("hidden");
+      clearMessagesDOM();
+      lastMessagesData = [];
+      messageInput.disabled = false;
+      fileAttachButton.disabled = false;
+      { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
+      { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = false; }
+      document.getElementById('callButton').disabled = false;
+      { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
+      prewarmPeerConnection();
+      sendMessageButton.disabled = false;
+      messageLimit = 20; // ルームに入り直したらリミットをリセット
+      clearAttachedFile();
+      cancelReply();
+
+      // 未読バッジを確実かつ即座にクリア
+      unreadCounts[roomId] = 0;
+      const badgeElem = document.getElementById(`unread-badge-${roomId}`);
+      if (badgeElem) badgeElem.style.display = 'none';
+      updateGlobalNotifUI();
+      updateUnreadBadge(roomId);
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        let globalCount = 0;
+        try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
+        window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(() => {});
+      }
+
+      // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
+      if (window.innerWidth < 768) {
+        sidebar.classList.add("mobile-hidden");
+        const bottomNav = document.getElementById("mobileBottomNav");
+        if (bottomNav) bottomNav.style.display = "none";
+        document.body.classList.add('in-chat-view');
+      }
+
+      if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+      clearTimeout(typingTimeout);
+      isCurrentlyTyping = false;
+      setTypingStatus(false);
+
+      isInitialMessageLoad = true;
+      allLoadedMessages = [];
+      hasMoreOlderMessages = true;
+      isLoadingOlderMessages = false;
+
+      subscribeToMessages();
+
+
+      // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
+      (async () => {
+        try {
+          if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+          if (key) {
+            await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+            // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
+            
+              const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/rescueRequests`));
+              if (!resSnap.empty) {
+                const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
+                for (const resDoc of resSnap.docs) {
+                  const reqUserId = resDoc.id;
+                  await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [reqUserId], key.latestVersion);
+                  await deleteDoc(resDoc.ref);
+                }
+              }
+            
+          } else {
+            // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
+            let retryCount = 0;
+            const checkTimer = setInterval(async () => {
+              retryCount++;
+              if (retryCount > 15 || _e2ee.roomKeyCache[currentRoomId]) { clearInterval(checkTimer); return; }
+              const arrived = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+              if (arrived) {
+                clearInterval(checkTimer);
+                if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+              }
+            }, 2000);
+          }
+        } catch (e) {}
+      })();
+
+      const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
+      readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
+        roomReadReceipts = {};
+        snap.forEach(d => roomReadReceipts[d.id] = d.data());
+        renderMessagesWithReadReceipts();
+      });
+
+      const typingColRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
+      typingUnsubscribe = onSnapshot(typingColRef, (snap) => {
+        const now = Date.now();
+        const others = snap.docs
+          .filter(d => d.id !== userId)
+          .filter(d => {
+            const t = d.data().t;
+            if (!t || !t.toDate) return true;
+            return (now - t.toDate().getTime()) < 10000;
+          })
+          .map(d => d.data().n)
+          .filter(Boolean);
+        const indicator = document.getElementById('typingIndicator');
+        if (others.length > 0) {
+          indicator.textContent = others.join(', ') + ' が入力中...';
+          indicator.classList.remove('hidden');
+        } else {
+          indicator.classList.add('hidden');
+        }
+      });
+
+      membersSidebar.classList.remove("hidden");
+    }
+
+    let floatingDateTimer = null;
+    messagesDisplay.addEventListener("scroll", async () => {
+      if (!allowPagination) return;
+      
+      const floatingContainer = document.getElementById('floatingDateContainer');
+      const floatingBadge = document.getElementById('floatingDateBadge');
+      if (floatingContainer && floatingBadge) {
+        const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
+        const dividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
+        
+        // 1. チャット内ディバイダーは一切いじらない（そのまま残す）
+        dividers.forEach(div => {
+          const inner = div.querySelector('.date-divider-inner');
+          if (inner) inner.style.opacity = '1';
+        });
+
+        // 2. viewTop（画面最上部）の直下に存在する「現在の日付」と、衝突しつつある「押し出し日付」を特定する
+        // DOMツリー上は上が最新(offsetTop小)、下が過去(offsetTop大)。
+        // viewTop以下のうち最もoffsetTopが大きいもの（画面最上部に位置するもの）が activeDivider となる
+        let activeDivider = null;
+        let pushingDivider = null;
+
+        for (let i = 0; i < dividers.length; i++) {
+          const top = dividers[i].offsetTop;
+          if (top <= viewTop) {
+            if (!activeDivider || top > activeDivider.offsetTop) {
+              activeDivider = dividers[i];
+            }
+          }
+        }
+
+        // 次に、activeDivider の1つ新しい側（offsetTopが小さい側＝下から昇ってくる側）のディバイダーが、
+        // viewTopから下方向へ 38px 以内（バッジの高さ付近）にめり込んでいるかを判定する
+        if (activeDivider) {
+          for (let j = 0; j < dividers.length; j++) {
+            const top = dividers[j].offsetTop;
+            if (top < activeDivider.offsetTop && top > viewTop - 38) {
+              pushingDivider = dividers[j];
+              break;
+            }
+          }
+        }
+
+        if (activeDivider && messagesDisplay.scrollTop > 50) {
+          const text = activeDivider.textContent.trim();
+          if (text) {
+            if (floatingBadge.textContent !== text) {
+              floatingBadge.textContent = text;
+            }
+            
+            // ★PC・スマホ両方でチャット内の日付バッジとミリ単位で座標を完全一致させる神業
+            const activeInner = activeDivider.querySelector('.date-divider-inner');
+            if (activeInner) {
+              const rect = activeInner.getBoundingClientRect();
+              const containerRect = floatingContainer.getBoundingClientRect();
+              const offsetLeft = rect.left - containerRect.left;
+              floatingBadge.style.position = 'absolute';
+              floatingBadge.style.left = `${offsetLeft}px`;
+              floatingBadge.style.width = `${rect.width}px`;
+            }
+            
+            // 押し出しアニメーション（Sticky Pushing Replacement Effect）の計算
+            if (pushingDivider) {
+              const diff = viewTop - pushingDivider.offsetTop; // 0px 〜 38px
+              const translateY = -(diff); // ぶつかり始め(0px)から上に押し出されていく(-38px)
+              floatingContainer.style.transform = `translateY(${translateY}px)`;
+            } else {
+              floatingContainer.style.transform = `translateY(0px)`;
+            }
+            
+            floatingContainer.classList.remove('opacity-0');
+            floatingContainer.classList.add('opacity-100');
+            
+            if (floatingDateTimer) clearTimeout(floatingDateTimer);
+            floatingDateTimer = setTimeout(() => {
+              floatingContainer.classList.add('opacity-0');
+              floatingContainer.classList.remove('opacity-100');
+              setTimeout(() => { floatingContainer.style.transform = `translateY(0px)`; }, 300);
+            }, 1400);
+          } else {
+            floatingContainer.classList.add('opacity-0');
+            floatingContainer.classList.remove('opacity-100');
+          }
+        } else {
+          floatingContainer.classList.add('opacity-0');
+          floatingContainer.classList.remove('opacity-100');
+        }
+      }
+
+      const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
+      if (messagesDisplay.scrollTop <= 20) {
+        jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+        jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+        
+        // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
+        if (isJumpView && !hasMoreJumpNewer) {
+          isJumpView = false;
+          allLoadedMessages = [...realTimeMessagesCache];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+        }
+      } else if (isJumpView || messagesDisplay.scrollTop > 300) {
+        jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
+        jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
+      }
+
+      const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
+      
+      // 過去への読み込み (scrollTop大 = 上スクロール)
+      if (scrollDistanceToTop < 300) {
+        if (!isJumpView && !isLoadingOlderMessages && hasMoreOlderMessages) {
+          await loadOlderMessages();
+        } else if (isJumpView && !isLoadingJumpOlder && hasMoreJumpOlder) {
+          await loadJumpOlderMessages();
+        }
+      }
+
+      // ジャンプ中のみ、未来への読み込み (scrollTop小 = 下スクロール)
+      if (isJumpView && messagesDisplay.scrollTop < 300 && !isLoadingJumpNewer && hasMoreJumpNewer) {
+        await loadJumpNewerMessages();
+      }
+    });
+
+    async function loadJumpOlderMessages() {
+      if (isLoadingJumpOlder || !hasMoreJumpOlder || !jumpViewMessages.length) return;
+      isLoadingJumpOlder = true;
+      try {
+        const oldestMsg = jumpViewMessages[0];
+        if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAfter(oldestMsg.timestamp),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
+        if (!snap.empty) {
+          const fetched = [];
+          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          fetched.reverse();
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
+          
+          jumpViewMessages = [...fetched, ...jumpViewMessages];
+          allLoadedMessages = [...jumpViewMessages];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+        }
+      } catch (e) { console.error("loadJumpOlderMessages error:", e); }
+      finally { isLoadingJumpOlder = false; }
+    }
+
+    async function loadJumpNewerMessages() {
+      if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
+      isLoadingJumpNewer = true;
+      try {
+        const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
+        if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
+        const q = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(newestMsg.timestamp),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
+        if (!snap.empty) {
+          const fetched = [];
+          snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => {});
+          
+          const oldScrollHeight = messagesDisplay.scrollHeight;
+          const oldScrollTop = messagesDisplay.scrollTop;
+          
+          jumpViewMessages = [...jumpViewMessages, ...fetched];
+          allLoadedMessages = [...jumpViewMessages];
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+          renderMessagesWithReadReceipts();
+          
+          messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+        }
+      } catch (e) { console.error("loadJumpNewerMessages error:", e); }
+      finally { isLoadingJumpNewer = false; }
+    }
+
+    window.exitJumpMode = function() {
+      const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
+      jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+      jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+      
+      if (isJumpView) {
+        isJumpView = false;
+        if (window.globalUseRtdb) {
+            allLoadedMessages = [];
+            lastMessagesData = [];
+            messagesIndexMap = {};
+            messagesDisplay.innerHTML = '';
+            if (typeof subscribeToMessagesRTDB === 'function') {
+                if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
+                subscribeToMessagesRTDB();
+            }
+        } else {
+            // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
+            allLoadedMessages = [...realTimeMessagesCache];
+            lastMessagesData = [...allLoadedMessages];
+            messagesIndexMap = {};
+            lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+            
+            renderMessagesWithReadReceipts();
+            messagesDisplay.scrollTop = 0;
+        }
+      } else {
+        messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    // PCでのマウスホイールによるスクロール方向逆転の修正
+    messagesDisplay.addEventListener("wheel", (e) => {
+      // flipped (scaleY(-1)) されているため、デフォルトのスクロール方向が逆になる。
+      // これをキャンセルし、自力で正しい方向にスクロール位置を加算・減算する。
+      e.preventDefault();
+      messagesDisplay.scrollTop -= e.deltaY;
+    }, { passive: false });
+
+    // 旧ルーム作成ボタンは無効化（サーバー設定から管理）
+
+    function handleDeleteRoomClick(id, name) {
+      pendingRoomDelete = { roomId: id, roomName: name };
+      deleteRoomConfirmModal.classList.remove("hidden");
+      roomToDeleteNameSpan.textContent = name;
+    }
+    confirmDeleteButton.addEventListener("click", async () => {
+      deleteRoomConfirmModal.classList.add("hidden");
+      await deleteRoomAndMessages(pendingRoomDelete.roomId);
+    });
+    cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
+
+    async function deleteRoomAndMessages(roomId) {
+      if (!currentServerId) return;
+      if (currentRoomId === roomId) {
+        currentRoomId = null;
+        updateUserStatus('online');
+        currentRoomHeader.classList.add("hidden");
+        clearMessagesDOM();
+        messageInput.disabled = true;
+        sendMessageButton.disabled = true;
+        if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+        if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+        if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+        if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+      }
+
+      try {
+        const batch = writeBatch(db);
+
+        // 1. messages サブコレクションの全削除
+        const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
+        const messagesSnap = await getDocs(messagesRef);
+        messagesSnap.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+
+        // 2. readReceipts サブコレクションの全削除
+        const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
+        const readReceiptsSnap = await getDocs(readReceiptsRef);
+        readReceiptsSnap.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+
+        // 3. ルーム本体の削除
+        const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
+        batch.delete(roomRef);
+
+        await batch.commit();
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
+        } catch(err) { console.error("RTDB Room Delete Failed", err); }
+        console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
+      } catch (error) {
+        console.error("Error during room deletion process:", error);
+        throw error;
+      }
+    }
+    const executeDeleteRoom = async () => {
+      if (!pendingRoomDelete) return;
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await deleteRoomAndMessages(pendingRoomDelete.roomId);
+        alertMessage(`ルーム「${pendingRoomDelete.roomName}」を削除しました。`, "success");
+      } catch (error) {
+        alertMessage("ルームの削除に失敗しました。", "error");
+      } finally {
+        loadingOverlay.classList.add("hidden");
+        pendingRoomDelete = null;
+      }
+    };
+
+    // =========================================================================
+    // Server UI イベントハンドラー
+    // =========================================================================
+
+    // サーバー一覧へ戻るボタン
+    document.getElementById("backToServerListBtn").addEventListener("click", () => {
+      leaveServerView();
+    });
+
+    // サーバー作成ボタン
+    document.getElementById("createServerBtn").addEventListener("click", () => {
+      document.getElementById("newServerName").value = "";
+      document.getElementById("newServerId").value = "";
+      document.getElementById("newServerPassword").value = "";
+      document.getElementById("newServerPasswordConfirm").value = "";
+      document.getElementById("createServerMessage").textContent = "";
+      document.getElementById("serverIdAvailability").textContent = "";
+      openModal(document.getElementById("createServerModal"));
+    });
+
+    document.getElementById("cancelCreateServerBtn").addEventListener("click", () => {
+      document.getElementById("createServerModal").classList.add("hidden");
+    });
+
+    // サーバーID リアルタイムバリデーション
+    let serverIdCheckTimer = null;
+    document.getElementById("newServerId").addEventListener("input", (e) => {
+      const val = e.target.value;
+      const availEl = document.getElementById("serverIdAvailability");
+      // 英数字・ハイフンのみ
+      if (!/^[a-z0-9-]*$/i.test(val)) {
+        availEl.textContent = "英数字とハイフンのみ使えます";
+        availEl.className = "text-xs mt-1 ml-1 text-red-500";
+        return;
+      }
+      if (val.length < 3) {
+        availEl.textContent = "3文字以上必要です";
+        availEl.className = "text-xs mt-1 ml-1 text-gray-400";
+        return;
+      }
+      clearTimeout(serverIdCheckTimer);
+      serverIdCheckTimer = setTimeout(async () => {
+        const available = await checkServerIdAvailable(val.toLowerCase());
+        if (available) {
+          availEl.textContent = "✓ 使用可能";
+          availEl.className = "text-xs mt-1 ml-1 text-gray-600";
+        } else {
+          availEl.textContent = "✗ このIDは使われています";
+          availEl.className = "text-xs mt-1 ml-1 text-red-500";
+        }
+      }, 500);
+    });
+
+    document.getElementById("confirmCreateServerBtn").addEventListener("click", async () => {
+      const name = document.getElementById("newServerName").value.trim();
+      const rawId = document.getElementById("newServerId").value.trim().toLowerCase();
+      const pass = document.getElementById("newServerPassword").value;
+      const passConfirm = document.getElementById("newServerPasswordConfirm").value;
+      const msgEl = document.getElementById("createServerMessage");
+
+      if (!name) { msgEl.textContent = "サーバー名を入力してください"; return; }
+      if (!rawId || rawId.length < 3) { msgEl.textContent = "サーバーID（3文字以上）を入力してください"; return; }
+      if (!/^[a-z0-9-]+$/.test(rawId)) { msgEl.textContent = "IDは英数字とハイフンのみ使えます"; return; }
+      if (!pass) { msgEl.textContent = "パスワードを入力してください"; return; }
+      if (pass !== passConfirm) { msgEl.textContent = "パスワードが一致しません"; return; }
+
+      loadingOverlay.classList.remove("hidden");
+      try {
+        // 作成上限チェック（全体管理者は無制限、それ以外は同時に2つまで）
+        if (!isAdmin) {
+          const myServersSnap = await getDocs(
+            query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+          );
+          const myCreated = myServersSnap.docs.filter(d => d.data().createdBy === userId).length;
+          if (myCreated >= 2) {
+            msgEl.textContent = "サーバーは同時に2つまで作成できます";
+            loadingOverlay.classList.add("hidden");
+            return;
+          }
+        }
+        const available = await checkServerIdAvailable(rawId);
+        if (!available) { msgEl.textContent = "このIDは既に使われています"; loadingOverlay.classList.add("hidden"); return; }
+        await createServer(name, rawId, pass);
+        document.getElementById("createServerModal").classList.add("hidden");
+      } catch (e) {
+        console.error(e);
+        msgEl.textContent = "作成に失敗しました: " + e.message;
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    // サーバー参加ボタン
+    document.getElementById("joinServerBtn").addEventListener("click", () => {
+      if (isAdmin) {
+        openAdminJoinModal();
+        return;
+      }
+      document.getElementById("joinServerId").value = "";
+      document.getElementById("joinServerPassword").value = "";
+      document.getElementById("joinInviteCode").value = "";
+      document.getElementById("joinServerMessage").textContent = "";
+      openModal(document.getElementById("joinServerModal"));
+    });
+
+    document.getElementById("cancelAdminJoinBtn").addEventListener("click", () => {
+      document.getElementById("adminJoinModal").classList.add("hidden");
+    });
+
+    document.getElementById("cancelJoinServerBtn").addEventListener("click", () => {
+      document.getElementById("joinServerModal").classList.add("hidden");
+    });
+
+    // 参加モーダルのタブ切り替え
+    document.getElementById("joinTabPassword").addEventListener("click", () => {
+      document.getElementById("joinTabPassword").classList.add("active");
+      document.getElementById("joinTabCode").classList.remove("active");
+      document.getElementById("joinByPasswordSection").classList.remove("hidden");
+      document.getElementById("joinByCodeSection").classList.add("hidden");
+    });
+    document.getElementById("joinTabCode").addEventListener("click", () => {
+      document.getElementById("joinTabCode").classList.add("active");
+      document.getElementById("joinTabPassword").classList.remove("active");
+      document.getElementById("joinByCodeSection").classList.remove("hidden");
+      document.getElementById("joinByPasswordSection").classList.add("hidden");
+    });
+
+    document.getElementById("confirmJoinServerBtn").addEventListener("click", async () => {
+      const msgEl = document.getElementById("joinServerMessage");
+      msgEl.textContent = "";
+      loadingOverlay.classList.remove("hidden");
+      try {
+        const isCodeTab = !document.getElementById("joinByCodeSection").classList.contains("hidden");
+        if (isCodeTab) {
+          const code = document.getElementById("joinInviteCode").value.trim();
+          if (!code) { msgEl.textContent = "招待コードを入力してください"; return; }
+          await joinServerByInviteCode(code);
+        } else {
+          const serverId = document.getElementById("joinServerId").value.trim().toLowerCase();
+          const password = document.getElementById("joinServerPassword").value;
+          if (!serverId) { msgEl.textContent = "サーバーIDを入力してください"; return; }
+          if (!password) { msgEl.textContent = "パスワードを入力してください"; return; }
+          await joinServerByPassword(serverId, password);
+        }
+        document.getElementById("joinServerModal").classList.add("hidden");
+      } catch (e) {
+        console.error(e);
+        msgEl.textContent = e.message || "参加に失敗しました";
+      } finally {
+        loadingOverlay.classList.add("hidden");
+      }
+    });
+
+    // サーバー設定モーダル
+    const serverSettingsModal = document.getElementById("serverSettingsModal");
+    document.getElementById("serverSettingsBtn").addEventListener("click", openServerSettings);
+    document.getElementById("closeServerSettingsBtn").addEventListener("click", () => serverSettingsModal.classList.add("hidden"));
+
+    // サーバー設定のタブ
+    let currentSsTab = "rooms";
+    window.switchSsTab = function(tab) {
+      currentSsTab = tab;
+      ["rooms", "members", "invites", "stamps", "danger"].forEach(t => {
+        const tabBtn = document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        if (tabBtn) tabBtn.classList.toggle("active", t === tab);
+        const sec = document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`);
+        if (sec) {
+          if (t === tab) {
+            sec.classList.remove("hidden");
+            sec.classList.add("active");
+          } else {
+            sec.classList.add("hidden");
+            sec.classList.remove("active");
+          }
+        }
+      });
+    }
+
+
+    async function openServerSettings() {
+      if (!currentServerId) return;
+      document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
+      document.getElementById("serverSettingsMessage").textContent = "";
+
+      const isOwner = currentServerData?.createdBy === userId ||
+        (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+      const hasAdminRights = isOwner || isAdmin;
+
+      // サーバーアイコン設定の表示・更新
+      const iconWrapper = document.getElementById("serverIconSettingsWrapper");
+      const iconPreview = document.getElementById("serverIconSettingsPreview");
+      if (iconWrapper && iconPreview) {
+        // 全体コンテナは常に表示するが、管理者以外はホバーエフェクトとクリックを無効化
+        if (hasAdminRights || isListAdmin) {
+          iconWrapper.classList.add("cursor-pointer", "group");
+          iconWrapper.dataset.canEdit = "true";
+        } else {
+          iconWrapper.classList.remove("cursor-pointer", "group");
+          iconWrapper.dataset.canEdit = "false";
+        }
+        if (currentServerData?.iconUrl) {
+          iconPreview.innerHTML = `<img src="${currentServerData.iconUrl}" class="w-full h-full object-cover" />`;
+          iconPreview.style.backgroundColor = "transparent";
+        } else {
+          const initial = (currentServerData?.name || currentServerId).charAt(0).toUpperCase();
+          iconPreview.textContent = initial;
+          iconPreview.style.backgroundColor = '#374151';
+        }
+      }
+
+      // 削除ボタンは管理者向け
+      const deleteBtn = document.getElementById("deleteServerBtn");
+      if (deleteBtn) {
+        deleteBtn.style.display = hasAdminRights ? "" : "none";
+      }
+
+      // タブの表示制御
+      const tabs = ["ssTabRooms", "ssTabMembers", "ssTabInvites", "ssTabDanger"];
+      tabs.forEach(tabId => {
+        const el = document.getElementById(tabId);
+        if (el) el.style.display = hasAdminRights ? "" : "none";
+      });
+
+      openModal(serverSettingsModal);
+      
+      if (hasAdminRights) {
+        switchSsTab("rooms");
+        await loadServerSettingsRooms();
+      } else {
+        switchSsTab("stamps");
+        await loadServerStampsForAdmin();
+      }
+    }
+
+    async function loadServerSettingsRooms() {
+      const listEl = document.getElementById("serverRoomsList");
+      listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
+      let roomsData = [];
+      try {
+        
+          const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+          let idx = 0;
+          snap.forEach(d => { roomsData.push({ id: d.id, ...d.data(), order: typeof d.data().order === 'number' ? d.data().order : (idx++) * 10 }); });
+        
+      } catch (e) { console.error(e); }
+
+      roomsData.sort((a, b) => a.order - b.order);
+      
+      // DB上のorder値が重複または未設定の状態を防ぐため、整流されたorder値を確保
+      roomsData.forEach((r, i) => { r.order = i * 10; });
+
+      let categories = [];
+      if (typeof currentServerData !== 'undefined' && currentServerData && currentServerData.categories) {
+          categories = currentServerData.categories;
+          if(!Array.isArray(categories)) categories = Object.values(categories);
+          categories.sort((a,b) => a.order - b.order);
+      }
+      
+      const catList = document.getElementById("newRoomCategoryList");
+      if (catList) {
+          catList.innerHTML = `<li class="px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>`;
+          categories.forEach(cat => {
+              const li = document.createElement("li");
+              li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option truncate";
+              li.dataset.val = cat.id;
+              li.textContent = cat.name;
+              catList.appendChild(li);
+          });
+          
+          document.querySelectorAll('.cat-select-option').forEach(el => {
+              el.addEventListener('click', (e) => {
+                  const val = e.target.dataset.val;
+                  const label = e.target.textContent;
+                  document.getElementById('newRoomCategorySelect').value = val;
+                  document.getElementById('newRoomCategoryLabel').textContent = label;
+                  const dd = document.getElementById('newRoomCategoryDropdown');
+                  dd.classList.add('opacity-0');
+                  document.getElementById('newRoomCategoryIcon').classList.remove('rotate-180');
+                  setTimeout(() => dd.classList.add('hidden'), 200);
+              });
+          });
+      }
+
+      // メモリ上の最新リストを使ってDOMを構築・即時更新する関数
+      window.toggleCategory = function(catId) {
+      if(!currentServerData) return;
+      let cats = currentServerData.categories || {};
+      if(Array.isArray(cats)) {
+         let newCats = {};
+         cats.forEach(c => { newCats[c.id] = c; });
+         cats = newCats;
+      }
+      if(cats[catId]) {
+         cats[catId].isExpanded = !(cats[catId].isExpanded !== false);
+         import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(module => {
+            const { doc, updateDoc } = module;
+            updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}`), { categories: cats });
+         });
+         const btn = document.querySelector(`div[onclick="toggleCategory('${catId}')"] i`);
+         if(btn) {
+           btn.style.transform = cats[catId].isExpanded ? "rotate(0deg)" : "rotate(-90deg)";
+         }
+         const container = document.getElementById(`cat-rooms-${catId}`);
+         if(container) {
+           container.style.display = cats[catId].isExpanded ? "block" : "none";
+         }
+      }
+    };
+
+    const createCategoryBtn = document.getElementById("createCategoryBtn");
+    if(createCategoryBtn) {
+      createCategoryBtn.addEventListener("click", async () => {
+          const name = prompt("カテゴリー名を入力してください");
+          if(!name) return;
+          loadingOverlay.classList.remove("hidden");
+          try {
+            const { doc, updateDoc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+            const serverRef = doc(db, `artifacts/${appId}/servers/${currentServerId}`);
+            const snap = await getDoc(serverRef);
+            if(snap.exists()) {
+                const data = snap.data();
+                let cats = data.categories || [];
+                if(!Array.isArray(cats)) cats = Object.values(cats);
+                const newId = "cat_" + Date.now();
+                cats.push({ id: newId, name: name, order: cats.length, isExpanded: true });
+                await updateDoc(serverRef, { categories: cats });
+                alert("カテゴリーを作成しました");
+            }
+          } catch(e) {
+            console.error("カテゴリー作成エラー", e);
+            alert("エラーが発生しました");
+          }
+          loadingOverlay.classList.add("hidden");
+      });
+    }
+      function renderRoomsListUI() {
+        listEl.innerHTML = "";
+        
+        const renderRoomItem = (room, index, arr) => {
+          const item = document.createElement("div");
+          item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2 min-w-0";
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2 truncate";
+          nameSpan.innerHTML = `<i class="fas fa-hashtag text-gray-500 text-xs"></i> ${escapeHtml(room.name)}`;
+
+          const btnsContainer = document.createElement("div");
+          btnsContainer.className = "flex items-center gap-1.5";
+
+          // Order Up
+          const upBtn = document.createElement("button");
+          upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
+          upBtn.disabled = index === 0;
+          upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
+          upBtn.addEventListener("click", async () => {
+            if (index === 0) return;
+            listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
+            upBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+            
+            const prev = arr[index - 1];
+            const tempOrder = room.order;
+            room.order = prev.order;
+            prev.order = tempOrder;
+
+            await updateRoomOrderBoth(room.id, room.order);
+            await updateRoomOrderBoth(prev.id, prev.order);
+            renderRoomsListUI();
+            if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+          });
+
+          // Order Down
+          const downBtn = document.createElement("button");
+          downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === arr.length - 1 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
+          downBtn.disabled = index === arr.length - 1;
+          downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
+          downBtn.addEventListener("click", async () => {
+            if (index === arr.length - 1) return;
+            listEl.querySelectorAll(".room-order-btn, .del-room-btn").forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
+            downBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+
+            const next = arr[index + 1];
+            const tempOrder = room.order;
+            room.order = next.order;
+            next.order = tempOrder;
+
+            await updateRoomOrderBoth(room.id, room.order);
+            await updateRoomOrderBoth(next.id, next.order);
+            renderRoomsListUI();
+            if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+          });
+
+          // Custom Category Dropdown (Style matched to stampAdminServerSelectContainer)
+          const catContainer = document.createElement("div");
+          catContainer.className = "relative ml-2";
+          
+          const catBtn = document.createElement("button");
+          catBtn.type = "button";
+          catBtn.className = "w-28 bg-[#1e1f22] border border-[#2b2d31] hover:bg-[#2b2d31] rounded-lg p-1.5 flex items-center justify-between shadow-sm focus:outline-none transition-all text-gray-300 text-xs";
+          
+          const currentCat = (typeof categories !== 'undefined') ? categories.find(c => c.id === room.categoryId) : null;
+          const catLabel = document.createElement("span");
+          catLabel.className = "truncate mr-1 text-[11px] font-bold";
+          catLabel.textContent = currentCat ? currentCat.name : "カテゴリなし";
+          
+          const catIcon = document.createElement("i");
+          catIcon.className = "fas fa-chevron-down text-gray-500 transition-transform duration-200 text-[10px] room-cat-icon";
+          
+          catBtn.appendChild(catLabel);
+          catBtn.appendChild(catIcon);
+          
+          const catDropdown = document.createElement("div");
+          catDropdown.className = "room-cat-dropdown absolute z-50 w-36 right-0 mt-1 bg-[#1e1f22] border border-[#2b2d31] rounded-lg shadow-2xl max-h-40 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top";
+          
+          const catList = document.createElement("ul");
+          catList.className = "py-1";
+          
+          const createOption = (val, text) => {
+             const li = document.createElement("li");
+             li.className = "px-3 py-2 hover:bg-[#2b2d31] hover:text-white cursor-pointer text-[11px] font-bold text-gray-300 transition-colors truncate";
+             li.textContent = text;
+             li.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                catDropdown.classList.add("hidden");
+                catDropdown.classList.remove("opacity-100");
+                catDropdown.classList.add("opacity-0");
+                catIcon.classList.remove("rotate-180");
+                if (room.categoryId === val || (room.categoryId === null && val === "none")) return;
+                
+                catLabel.textContent = text;
+                const newCat = val === "none" ? null : val;
+                try {
+                  const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                  await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${room.id}`), { categoryId: newCat });
+                  room.categoryId = newCat;
+                  loadServerSettingsRooms();
+                  if(typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+                } catch(err) {
+                  console.error(err);
+                  alertMessage("カテゴリの変更に失敗しました", "error");
+                }
+             });
+             return li;
+          };
+          
+          catList.appendChild(createOption("none", "カテゴリなし"));
+          if (typeof categories !== 'undefined') {
+             categories.forEach(c => catList.appendChild(createOption(c.id, c.name)));
+          }
+          
+          catDropdown.appendChild(catList);
+          catContainer.appendChild(catBtn);
+          catContainer.appendChild(catDropdown);
+          
+          catBtn.addEventListener("click", (e) => {
+             e.stopPropagation();
+             const isHidden = catDropdown.classList.contains("hidden");
+             document.querySelectorAll('.room-cat-dropdown').forEach(d => {
+                d.classList.add("hidden");
+                d.classList.remove("opacity-100");
+                d.classList.add("opacity-0");
+             });
+             document.querySelectorAll('.room-cat-icon').forEach(i => i.classList.remove("rotate-180"));
+             
+             if (isHidden) {
+                catDropdown.classList.remove("hidden");
+                void catDropdown.offsetWidth;
+                catDropdown.classList.remove("opacity-0");
+                catDropdown.classList.add("opacity-100");
+                catIcon.classList.add("rotate-180");
+             }
+          });
+          
+          document.addEventListener("click", (e) => {
+             if (document.body.contains(catContainer) && !catContainer.contains(e.target)) {
+                catDropdown.classList.add("hidden");
+                catDropdown.classList.remove("opacity-100");
+                catDropdown.classList.add("opacity-0");
+                catIcon.classList.remove("rotate-180");
+             }
+          });
+
+          // Delete
+          const delBtn = document.createElement("button");
+          delBtn.className = "del-room-btn text-red-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg text-xs transition-all ml-2";
+          delBtn.dataset.roomId = room.id;
+          delBtn.dataset.roomName = room.name;
+          delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
+          delBtn.addEventListener("click", async () => {
+            if (!await showCustomConfirm(`「${delBtn.dataset.roomName}」を削除しますか？`, "削除")) return;
+            loadingOverlay.classList.remove("hidden");
+            try {
+              await deleteRoomCascade(currentServerId, delBtn.dataset.roomId);
+              if (currentRoomId === delBtn.dataset.roomId) {
+                currentRoomId = null;
+                currentRoomHeader.classList.add("hidden");
+                clearMessagesDOM();
+                messageInput.disabled = true;
+                sendMessageButton.disabled = true;
+              }
+              roomsData = roomsData.filter(r => r.id !== delBtn.dataset.roomId);
+              renderRoomsListUI();
+              if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+            } catch (e) { alertMessage("削除に失敗しました", "error"); }
+            finally { loadingOverlay.classList.add("hidden"); }
+          });
+
+          btnsContainer.appendChild(upBtn);
+          btnsContainer.appendChild(downBtn);
+          btnsContainer.appendChild(catContainer);
+          btnsContainer.appendChild(delBtn);
+          item.appendChild(nameSpan);
+          item.appendChild(btnsContainer);
+          return item;
+        };
+
+        // Render categories and rooms inside them
+        categories.forEach((cat) => {
+          const catDiv = document.createElement("div");
+          catDiv.className = "mb-4";
+          
+          const catHeader = document.createElement("div");
+          catHeader.className = "flex items-center justify-between mb-2 p-2 bg-[#1e1f22] rounded-lg";
+          catHeader.innerHTML = `
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fas fa-folder-open text-[10px]"></i> ${escapeHtml(cat.name)}
+            </span>
+            <div class="flex gap-1">
+              <button class="cat-del-btn text-gray-500 hover:text-red-400 p-1" data-cat-id="${cat.id}"><i class="fas fa-trash text-sm"></i></button>
+            </div>
+          `;
+          catDiv.appendChild(catHeader);
+          
+          // delete cat
+          catHeader.querySelector('.cat-del-btn').addEventListener("click", async (e) => {
+             const cid = e.currentTarget.dataset.catId;
+             if(await showCustomConfirm(`カテゴリー「${cat.name}」を削除しますか？（中のルームは「カテゴリーなし」に移動します）`, "削除")) {
+                const newCats = categories.filter(c => c.id !== cid);
+                await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}`), { categories: newCats });
+                for(let r of roomsData.filter(r => r.categoryId === cid)) {
+                   await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${r.id}`), { categoryId: null });
+                   r.categoryId = null;
+                }
+                loadServerSettingsRooms();
+                if(typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+             }
+          });
+
+          const catRooms = roomsData.filter(r => r.categoryId === cat.id);
+          catRooms.sort((a,b) => a.order - b.order);
+          catRooms.forEach((r, i) => {
+            catDiv.appendChild(renderRoomItem(r, i, catRooms));
+          });
+          if (catRooms.length === 0) {
+            const emptySpan = document.createElement("div");
+            emptySpan.className = "text-xs text-gray-600 italic ml-4 mb-2";
+            emptySpan.textContent = "ルームがありません";
+            catDiv.appendChild(emptySpan);
+          }
+          listEl.appendChild(catDiv);
+        });
+
+        // Uncategorized rooms
+        const uncategorized = roomsData.filter(r => !r.categoryId);
+        uncategorized.sort((a,b) => a.order - b.order);
+        
+        if (uncategorized.length > 0) {
+           const uncatDiv = document.createElement("div");
+           uncatDiv.className = "mb-4";
+           uncatDiv.innerHTML = `<span class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-2 block">カテゴリーなし</span>`;
+           uncategorized.forEach((r, i) => {
+              uncatDiv.appendChild(renderRoomItem(r, i, uncategorized));
+           });
+           listEl.appendChild(uncatDiv);
+        }
+      }
+
+      renderRoomsListUI();
+    }
+
+    async function updateRoomOrderBoth(roomId, newOrder) {
+      try {
+        
+          await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
+        
+      } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('newRoomCategoryCustomBtn')?.addEventListener('click', (e) => {
+      const dd = document.getElementById('newRoomCategoryDropdown');
+      const icon = document.getElementById('newRoomCategoryIcon');
+      if (dd.classList.contains('hidden')) {
+        dd.classList.remove('hidden');
+        setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
+      } else {
+        dd.classList.add('opacity-0');
+        icon.classList.remove('rotate-180');
+        setTimeout(() => dd.classList.add('hidden'), 200);
+      }
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#newRoomCategorySelectContainer')) {
+        const dd = document.getElementById('newRoomCategoryDropdown');
+        if (dd && !dd.classList.contains('hidden')) {
+          dd.classList.add('opacity-0');
+          document.getElementById('newRoomCategoryIcon')?.classList.remove('rotate-180');
+          setTimeout(() => dd.classList.add('hidden'), 200);
+        }
+      }
+    });
+
+    document.getElementById("createRoomInServerBtn").addEventListener("click", async () => {
+      const name = document.getElementById("newRoomNameInput").value.trim();
+      const categoryId = document.getElementById("newRoomCategorySelect").value || null;
+      if (!name) return;
+      loadingOverlay.classList.remove("hidden");
+      try {
+        const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
+            name, categoryId, createdAt: serverTimestamp(), createdBy: userId
+          });
+          try {
+            const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
+            await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+          } catch (e) { console.error("E2EE key gen failed", e); }
+        document.getElementById("newRoomNameInput").value = "";
+        await loadServerSettingsRooms();
+        alertMessage("ルームを作成しました", "success");
+      } catch (e) { alertMessage("作成に失敗しました", "error"); }
+      finally { loadingOverlay.classList.add("hidden"); }
+    });
+
+    // メンバー管理タブ
+    document.getElementById("ssMembersSection").parentElement; // (reference check)
+    async function loadServerSettingsMembers() {
+      if (currentSsTab !== "members") return;
+      const listEl = document.getElementById("serverMembersManageList");
+      listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
+      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+      const serverData = serverSnap.data();
+      const members = serverData.joinedUsers || [];
+      const admins = serverData.serverAdmins || [];
+
+      listEl.innerHTML = "";
+      for (const uid of members) {
+        const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/profiles`, uid));
+        const profile = profileSnap.exists() ? profileSnap.data() : { nickname: uid.substring(0, 8) };
+        const isAdmin_ = admins.includes(uid);
+        const item = document.createElement("div");
+        item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg mb-2";
+        const displayName = profile.nickname || uid.substring(0, 8);
+        const initial = escapeHtml((profile.nickname || '?').charAt(0).toUpperCase());
+        item.innerHTML = `
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-full bg-gray-700 text-white flex items-center justify-center text-sm font-bold">${initial}</div>
+              <div>
+                <div class="text-sm font-medium text-gray-800">${escapeHtml(displayName)}</div>
+                ${isAdmin_ ? '<span class="text-xs text-amber-600 font-bold"><i class="fas fa-crown mr-1"></i>管理者</span>' : ''}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              ${uid !== userId ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
+              ${uid !== userId ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
+            </div>`;
+        // data-uid はサニタイズ不要な UID だが innerHTML の外で設定して安全に
+        if (uid !== userId) {
+          const tb = item.querySelector(".toggle-admin-btn");
+          const kb = item.querySelector(".kick-btn");
+          if (tb) { tb.dataset.uid = uid; tb.dataset.isAdmin = String(isAdmin_); }
+          if (kb) { kb.dataset.uid = uid; }
+        }
+        listEl.appendChild(item);
+      }
+
+      // イベント
+      listEl.querySelectorAll(".toggle-admin-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const targetUid = btn.dataset.uid;
+          const wasAdmin = btn.dataset.isAdmin === "true";
+          try {
+            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
+              serverAdmins: wasAdmin ? arrayRemove(targetUid) : arrayUnion(targetUid)
+            });
+            await loadServerSettingsMembers();
+          } catch (e) { alertMessage("操作に失敗しました", "error"); }
+        });
+      });
+      listEl.querySelectorAll(".kick-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          if (!await showCustomConfirm("このメンバーをキックしますか？", "キック")) return;
+          const targetUid = btn.dataset.uid;
+          try {
+            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
+              joinedUsers: arrayRemove(targetUid),
+              serverAdmins: arrayRemove(targetUid),
+              memberCount: Math.max(0, ((await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId))).data().memberCount || 1) - 1)
+            });
+            try {
+              const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+              const rtdb = await _getOrInitRTDB();
+              await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/members/${targetUid}`));
+            } catch (rtdbErr) { console.warn("RTDB kick sync failed:", rtdbErr); }
+            await loadServerSettingsMembers();
+            // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
+            if (typeof rotateAllRoomKeys === 'function') {
+               const svSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+               if (svSnap.exists() && svSnap.data().joinedUsers) {
+                  await rotateAllRoomKeys(currentServerId, svSnap.data().joinedUsers);
+               }
+            }
+          } catch (e) { alertMessage("キックに失敗しました", "error"); }
+        });
+      });
+    }
+    document.getElementById("ssTabMembers").addEventListener("click", loadServerSettingsMembers);
+
+    // 招待コードタブ
+    document.getElementById("ssTabInvites").addEventListener("click", loadInviteCodes);
+    async function loadInviteCodes() {
+      if (currentSsTab !== "invites") return;
+      const listEl = document.getElementById("inviteCodesList");
+      listEl.innerHTML = "";
+      const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`));
+      snap.forEach(d => {
+        const inv = d.data();
+        if (inv.disabled) return;
+        const item = document.createElement("div");
+        item.className = "invite-code-item";
+        const uses = Number.isFinite(inv.uses) ? inv.uses : 0;
+        const maxUsesLabel = inv.maxUses > 0 ? inv.maxUses : '∞';
+        const expLabel = inv.expiresAt ? '・' + new Date(inv.expiresAt.toDate()).toLocaleDateString() + 'まで' : '';
+        item.innerHTML = `
+            <div class="flex-1">
+              <div class="invite-code-text">${escapeHtml(d.id)}</div>
+              <div class="invite-code-meta">${uses}/${maxUsesLabel}回使用${escapeHtml(expLabel)}</div>
+            </div>
+            <button class="copy-invite-btn text-gray-400 hover:text-gray-700 p-1 rounded" title="コピー"><i class="fas fa-copy"></i></button>
+            <button class="disable-invite-btn text-red-400 hover:text-red-600 p-1 rounded" title="無効化"><i class="fas fa-ban"></i></button>`;
+        item.querySelector(".copy-invite-btn").dataset.code = d.id;
+        item.querySelector(".disable-invite-btn").dataset.code = d.id;
+        listEl.appendChild(item);
+      });
+      listEl.querySelectorAll(".copy-invite-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          navigator.clipboard.writeText(btn.dataset.code);
+          alertMessage("コピーしました", "success");
+        });
+      });
+      listEl.querySelectorAll(".disable-invite-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          if (!await showCustomConfirm("このコードを無効化しますか？", "無効化")) return;
+          await Promise.all([
+            updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, btn.dataset.code), { disabled: true }),
+            deleteDoc(doc(db, `artifacts/${appId}/inviteIndex`, btn.dataset.code)),
+          ]);
+          await loadInviteCodes();
+        });
+      });
+    }
+
+    // カスタムスタンプ管理タブ
+    async function loadServerStampsForAdmin() {
+      // 移行済みのため空
+    }
+
+    window.openStampAdminModal = async function() {
+      const modal = document.getElementById('stampAdminModal');
+      modal.classList.remove('hidden');
+      const selContainer = document.getElementById('stampAdminServerSelectContainer');
+      const hiddenSel = document.getElementById('stampAdminServerSelect');
+      const label = document.getElementById('saCustomSelectLabel');
+      const list = document.getElementById('saCustomSelectList');
+      
+      list.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500">読み込み中...</li>';
+      label.textContent = "読み込み中...";
+      
+      if (isAdmin) {
+        selContainer.classList.remove('hidden');
+        try {
+          const snap = await getDocs(collection(db, `artifacts/${appId}/servers`));
+          list.innerHTML = '';
+          snap.forEach(doc => {
+            const li = document.createElement('li');
+            const sName = doc.data().name || "名称未設定サーバー";
+            li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 transition-colors border-b border-gray-100 last:border-0";
+            li.textContent = sName;
+            li.onclick = () => {
+              hiddenSel.value = doc.id;
+              label.textContent = sName;
+              document.getElementById('saCustomSelectDropdown').classList.add('hidden', 'opacity-0');
+              document.getElementById('saCustomSelectIcon').classList.remove('rotate-180');
+              saLoadStamps(doc.id);
+            };
+            if (doc.id === currentServerId) {
+              hiddenSel.value = doc.id;
+              label.textContent = sName;
+            }
+            list.appendChild(li);
+          });
+        } catch(e) { list.innerHTML = '<li class="px-4 py-3 text-sm text-red-500">エラー</li>'; }
+      } else {
+        selContainer.classList.add('hidden');
+        hiddenSel.value = currentServerId;
+        label.textContent = currentServerData?.name || "現在のサーバー";
+      }
+      await saLoadStamps(hiddenSel.value || currentServerId);
+    };
+
+    window.saLoadStamps = async function(targetServerId) {
+      if (!targetServerId) return;
+      const listEl = document.getElementById('saStampsList');
+      const existingGroupList = document.getElementById('saExistingGroupList');
+      if (existingGroupList) {
+        existingGroupList.innerHTML = '';
+        document.getElementById('saSelectedExistingGroupId').value = '';
+        document.getElementById('saExistingGroupLabel').textContent = 'グループを選択';
+      }
+      listEl.innerHTML = '<p class="text-sm text-gray-500 col-span-2 text-center py-4">読み込み中...</p>';
+      try {
+        const [snapStamps, snapGroups] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${targetServerId}/stamps`)).catch(()=>({empty:true, forEach:()=>{}})),
+          getDocs(collection(db, `artifacts/${appId}/servers/${targetServerId}/stampGroups`)).catch(()=>({empty:true, forEach:()=>{}}))
+        ]);
+        listEl.innerHTML = '';
+        if (snapStamps.empty && snapGroups.empty) {
+          listEl.innerHTML = '<p class="text-sm text-gray-500 col-span-2 text-center py-4">登録されているスタンプはありません。</p>';
+          if (existingGroupList) existingGroupList.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500 text-center">グループがありません</li>';
+          return;
+        }
+        let hasAdminRights = isAdmin;
+        try {
+          const targetServerSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${targetServerId}`));
+          if (targetServerSnap.exists()) {
+            const d = targetServerSnap.data();
+            hasAdminRights = hasAdminRights || d.createdBy === userId || (d.serverAdmins && d.serverAdmins.includes(userId));
+          }
+        } catch(e) {}
+        const renderGroup = (id, name, thumbUrl, stampsList, isLegacy) => {
+          const div = document.createElement('div');
+          div.className = "flex flex-col gap-3 p-4 bg-white rounded-xl border border-gray-200 transition-shadow hover:shadow-md";
+          const stampsHtml = stampsList.map((s, index) => `
+            <div class="relative group inline-block">
+              <img src="${escapeHtml(s.url)}" class="w-10 h-10 object-contain bg-gray-50 rounded border border-gray-100" title="${escapeHtml(s.name)}" />
+              ${hasAdminRights ? `<button class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow hover:bg-red-600 z-10 text-[10px]" title="このスタンプを削除" onclick="saDeleteIndividualStamp('${targetServerId}', '${id}', ${isLegacy}, ${index}, '${escapeHtml(s.url)}')"><i class="fas fa-times"></i></button>` : ''}
+            </div>
+          `).join("");
+          div.innerHTML = `
+            <div class="flex items-center justify-between border-b pb-3 border-gray-100">
+              <div class="flex items-center gap-3">
+                <img src="${escapeHtml(thumbUrl)}" class="w-8 h-8 object-contain rounded bg-gray-50 border border-gray-200" />
+                <span class="font-bold text-gray-800 text-sm">${escapeHtml(name)} ${isLegacy ? '<span class="text-xs text-gray-400 font-normal">(レガシー)</span>' : ''}</span>
+              </div>
+              ${hasAdminRights ? `<button class="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" onclick="saDeleteGroup('${targetServerId}', '${id}', ${isLegacy})">グループごと削除</button>` : ''}
+            </div>
+            <div class="flex flex-wrap gap-3 pt-1 max-h-32 overflow-y-auto">${stampsHtml}</div>
+          `;
+          listEl.appendChild(div);
+        };
+        snapGroups.forEach(doc => {
+            renderGroup(doc.id, doc.data().name, doc.data().thumbnailUrl, doc.data().stamps || [], false);
+            if (existingGroupList) {
+                const li = document.createElement('li');
+                li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 transition-colors flex items-center gap-3 border-b border-gray-100 last:border-0";
+                li.innerHTML = `<img src="${escapeHtml(doc.data().thumbnailUrl)}" class="w-6 h-6 object-contain rounded border border-gray-200"/><span>${escapeHtml(doc.data().name)}</span>`;
+                li.onclick = () => {
+                  document.getElementById('saSelectedExistingGroupId').value = doc.id;
+                  document.getElementById('saExistingGroupLabel').textContent = doc.data().name;
+                  document.getElementById('saExistingGroupDropdown').classList.add('hidden', 'opacity-0');
+                  document.getElementById('saExistingGroupIcon').classList.remove('rotate-180');
+                };
+                existingGroupList.appendChild(li);
+            }
+        });
+        snapStamps.forEach(doc => renderGroup(doc.id, doc.data().name, doc.data().thumbnailUrl || doc.data().url, doc.data().stamps || [{name: doc.data().name, url: doc.data().url}], true));
+      } catch(e) { listEl.innerHTML = '<p class="text-sm text-red-500 col-span-2 text-center py-4">読み込みエラーが発生しました。</p>'; }
+    };
+
+    window.saDeleteIndividualStamp = async function(targetServerId, groupId, isLegacy, stampIndex, stampUrl) {
+      if (!await showCustomConfirm("このスタンプを一つ削除しますか？", "削除確認")) return;
+      try {
+        if (stampUrl) {
+          const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+          if (m) {
+            const fileKey = m[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1`;
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+          }
+        }
+        const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
+        const docRef = doc(db, path);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (isLegacy) {
+            await deleteDoc(docRef);
+          } else {
+            const stamps = data.stamps || [];
+            if (stamps.length > 0 && stampIndex >= 0 && stampIndex < stamps.length) {
+              stamps.splice(stampIndex, 1);
+              if (stamps.length === 0) {
+                await deleteDoc(docRef);
+              } else {
+                await updateDoc(docRef, { stamps: stamps });
+              }
+            }
+          }
+        }
+        alertMessage("スタンプを一つ削除しました", "success");
+        await saLoadStamps(targetServerId);
+        if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+      } catch (e) {
+        console.error(e);
+        alertMessage("削除に失敗しました", "error");
+      }
+    };
+    
+    window.saDeleteGroup = async function(targetServerId, groupId, isLegacy) {
+      if (!await showCustomConfirm("このスタンプを削除しますか？", "削除確認")) return;
+      try {
+        const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
+        await deleteDoc(doc(db, path));
+        alertMessage("削除しました", "success");
+        await saLoadStamps(targetServerId);
+      } catch(e) { alertMessage("削除に失敗しました", "error"); }
+    };
+
+    setTimeout(() => {
+      document.getElementById('saCustomSelectBtn')?.addEventListener('click', (e) => {
+        const dd = document.getElementById('saCustomSelectDropdown');
+        const icon = document.getElementById('saCustomSelectIcon');
+        if (dd.classList.contains('hidden')) {
+          dd.classList.remove('hidden');
+          setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
+        } else {
+          dd.classList.add('opacity-0');
+          icon.classList.remove('rotate-180');
+          setTimeout(() => dd.classList.add('hidden'), 200);
+        }
+      });
+      document.getElementById('saExistingGroupBtn')?.addEventListener('click', (e) => {
+        const dd = document.getElementById('saExistingGroupDropdown');
+        const icon = document.getElementById('saExistingGroupIcon');
+        if (dd.classList.contains('hidden')) {
+          dd.classList.remove('hidden');
+          setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
+        } else {
+          dd.classList.add('opacity-0');
+          icon.classList.remove('rotate-180');
+          setTimeout(() => dd.classList.add('hidden'), 200);
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#stampAdminServerSelectContainer')) {
+          const dd1 = document.getElementById('saCustomSelectDropdown');
+          if (dd1 && !dd1.classList.contains('hidden')) {
+            dd1.classList.add('opacity-0');
+            document.getElementById('saCustomSelectIcon')?.classList.remove('rotate-180');
+            setTimeout(() => dd1.classList.add('hidden'), 200);
+          }
+        }
+        if (!e.target.closest('#saSectionExisting')) {
+          const dd2 = document.getElementById('saExistingGroupDropdown');
+          if (dd2 && !dd2.classList.contains('hidden')) {
+            dd2.classList.add('opacity-0');
+            document.getElementById('saExistingGroupIcon')?.classList.remove('rotate-180');
+            setTimeout(() => dd2.classList.add('hidden'), 200);
+          }
+        }
+      });
+      const tabNew = document.getElementById('saTabNew');
+      const tabEx = document.getElementById('saTabExisting');
+      const secNew = document.getElementById('saSectionNew');
+      const secEx = document.getElementById('saSectionExisting');
+      if(tabNew && tabEx && secNew && secEx) {
+        tabNew.onclick = () => {
+          tabNew.className = "py-2 px-4 text-sm font-bold border-b-2 border-gray-800 text-gray-800 focus:outline-none transition-colors";
+          tabEx.className = "py-2 px-4 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors";
+          secNew.classList.remove('hidden');
+          secNew.classList.add('block');
+          secEx.classList.add('hidden');
+          secEx.classList.remove('block');
+        };
+        tabEx.onclick = () => {
+          tabEx.className = "py-2 px-4 text-sm font-bold border-b-2 border-gray-800 text-gray-800 focus:outline-none transition-colors";
+          tabNew.className = "py-2 px-4 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors";
+          secEx.classList.remove('hidden');
+          secEx.classList.add('block');
+          secNew.classList.add('hidden');
+          secNew.classList.remove('block');
+        };
+      }
+
+      document.getElementById("saUploadBtn")?.addEventListener("click", async () => {
+        const targetServerId = document.getElementById('stampAdminServerSelect').value;
+        if (!targetServerId) return alertMessage("サーバーが選択されていません", "error");
+        const nameInput = document.getElementById("saNewGroupName");
+        const thumbInput = document.getElementById("saNewGroupThumb");
+        const filesInput = document.getElementById("saNewGroupFiles");
+        const name = nameInput.value.trim();
+        const thumbFile = thumbInput.files[0];
+        const stampFiles = Array.from(filesInput.files);
+        if (!name || !thumbFile || stampFiles.length === 0) {
+          return alertMessage("グループ名、アイコン画像、および1枚以上のスタンプ画像を選択してください", "warning");
+        }
+        const btn = document.getElementById("saUploadBtn");
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>処理中...';
+        btn.disabled = true;
+        try {
+          const uploadImage = async (file, checkSquare = true) => {
+            if (file.size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+            const img = new Image();
+            const objUrl = URL.createObjectURL(file);
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+            if (checkSquare && img.width !== img.height) {
+              URL.revokeObjectURL(objUrl);
+              throw new Error("スタンプ画像とアイコン画像は完全な正方形である必要があります");
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+            URL.revokeObjectURL(objUrl);
+            const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+            const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+            return await uploadToExternalService(stampFile, () => {}, 'stamps');
+          };
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>アイコンをアップロード中...';
+          const thumbUrl = await uploadImage(thumbFile, true);
+          const uploadedStamps = [];
+          for (let i = 0; i < stampFiles.length; i++) {
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>スタンプアップロード中... (${i+1}/${stampFiles.length})`;
+            const url = await uploadImage(stampFiles[i], true);
+            uploadedStamps.push({ name: `${name}_${i+1}`, url });
+          }
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+          await addDoc(collection(db, `artifacts/${appId}/servers/${targetServerId}/stampGroups`), {
+            name: name,
+            thumbnailUrl: thumbUrl,
+            stamps: uploadedStamps,
+            createdBy: userId,
+            createdAt: serverTimestamp()
+          });
+          nameInput.value = ""; thumbInput.value = ""; filesInput.value = "";
+          alertMessage("スタンプを追加しました", "success");
+          await saLoadStamps(targetServerId);
+          if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+        } catch (e) {
+          console.error(e);
+          alertMessage(e.message || "アップロードに失敗しました", "error");
+        } finally {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById("saAppendBtn")?.addEventListener("click", async () => {
+        const targetServerId = document.getElementById('stampAdminServerSelect').value;
+        const groupId = document.getElementById('saSelectedExistingGroupId').value;
+        if (!targetServerId) return alertMessage("サーバーが選択されていません", "error");
+        if (!groupId) return alertMessage("対象グループを選択してください", "warning");
+        const filesInput = document.getElementById("saAppendFiles");
+        const stampFiles = Array.from(filesInput.files);
+        if (stampFiles.length === 0) return alertMessage("追加するスタンプ画像を選択してください", "warning");
+
+        const btn = document.getElementById("saAppendBtn");
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>追加中...';
+        btn.disabled = true;
+
+        try {
+          const uploadedStamps = [];
+          for (let i = 0; i < stampFiles.length; i++) {
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>画像アップロード中... (${i+1}/${stampFiles.length})`;
+            if (stampFiles[i].size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+            const img = new Image();
+            const objUrl = URL.createObjectURL(stampFiles[i]);
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
+            if (img.width !== img.height) {
+              URL.revokeObjectURL(objUrl);
+              throw new Error("スタンプ画像は完全な正方形である必要があります");
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
+            URL.revokeObjectURL(objUrl);
+            const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
+            const stampFile = new File([blob], "stamp.png", { type: "image/png" });
+            const url = await uploadToExternalService(stampFile, () => {}, 'stamps');
+            const sName = stampFiles[i].name.replace(/\.[^/.]+$/, "");
+            uploadedStamps.push({ name: sName, url });
+          }
+
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+          const groupRef = doc(db, `artifacts/${appId}/servers/${targetServerId}/stampGroups`, groupId);
+          await updateDoc(groupRef, {
+             stamps: arrayUnion(...uploadedStamps)
+          });
+
+          filesInput.value = "";
+          alertMessage("既存グループにスタンプを追加しました", "success");
+          await saLoadStamps(targetServerId);
+          if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+        } catch (e) {
+          console.error(e);
+          alertMessage(e.message || "追加に失敗しました", "error");
+        } finally {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }
+      });
+    }, 1000);
+
+    document.getElementById("createInviteCodeBtn").addEventListener("click", async () => {
+      const expiryDays = parseInt(document.getElementById("inviteExpiry").value);
+      const maxUses = parseInt(document.getElementById("inviteMaxUses").value);
+      const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      const _codeBytes = new Uint8Array(8);
+      crypto.getRandomValues(_codeBytes);
+      const code = Array.from(_codeBytes).map(b => _codeChars[b % 36]).join('');
+      const inviteData = {
+        createdBy: userId,
+        createdAt: serverTimestamp(),
+        uses: 0,
+        maxUses,
+        disabled: false
+      };
+      if (expiryDays > 0) {
+        const exp = new Date();
+        exp.setDate(exp.getDate() + expiryDays);
+        inviteData.expiresAt = exp;
+      } else {
+        inviteData.expiresAt = null;
+      }
+      try {
+        await Promise.all([
+          setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, code), inviteData),
+          setDoc(doc(db, `artifacts/${appId}/inviteIndex`, code), { serverId: currentServerId }),
+        ]);
+        await loadInviteCodes();
+        alertMessage(`招待コード ${code} を作成しました`, "success");
+      } catch (e) { alertMessage("作成に失敗しました", "error"); }
+    });
+
+    // その他タブ
+    document.getElementById("renameServerBtn").addEventListener("click", async () => {
+      const name = document.getElementById("renameServerInput").value.trim();
+      if (!name) return;
+      try {
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { name });
+        document.getElementById("serverNameDisplay").textContent = name;
+        document.getElementById("serverSettingsTitle").textContent = name;
+        currentServerData = { ...currentServerData, name };
+        alertMessage("サーバー名を変更しました", "success");
+      } catch (e) { alertMessage("変更に失敗しました", "error"); }
+    });
+
+    document.getElementById("changeServerPasswordBtn").addEventListener("click", async () => {
+      const newPass = document.getElementById("changeServerPasswordInput").value;
+      if (!newPass || newPass.length < 4) { alertMessage("パスワードは4文字以上にしてください", "error"); return; }
+      try {
+        const hash = await hashPassword(newPass, currentServerId);
+        await setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/secrets`, 'auth'), { passwordHash: hash }, { merge: true });
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: deleteField() });
+        document.getElementById("changeServerPasswordInput").value = "";
+        alertMessage("パスワードを変更しました", "success");
+      } catch (e) { alertMessage("変更に失敗しました", "error"); }
+    });
+
+    document.getElementById("deleteServerBtn").addEventListener("click", async () => {
+      if (!await showCustomConfirm(`「${currentServerData?.name || currentServerId}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
+      const canDelete = currentServerData?.createdBy === userId ||
+        (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || isAdmin;
+      if (!canDelete) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await deleteServerCascade(currentServerId);
+        serverSettingsModal.classList.add("hidden");
+        leaveServerView();
+        alertMessage("サーバーを削除しました", "success");
+      } catch (e) { console.error("deleteServer error:", e); alertMessage("削除に失敗しました", "error"); }
+      finally { loadingOverlay.classList.add("hidden"); }
+    });
+
+    let isSendingMessage = false;
+    async function sendMessage() {
+      // Allow concurrent text sends (LINE style), but block if actively uploading a file to prevent overlapping logic.
+      if (isSendingMessage && (attachedFile || attachedKvFile)) return;
+      const text = messageInput.value.trim();
+      if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
+      
+      // Optimistic input clearing (LINE style)
+      messageInput.value = "";
+      messageInput.style.height = "auto";
+      if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+      
+      // 共通のUI要素を取得 (finallyブロックでの参照エラー防止)
+      const progressBar = document.getElementById("uploadProgressBar");
+      const progressFill = document.getElementById("uploadProgressFill");
+      const progressText = document.getElementById("uploadProgressText");
+
+      // Only lock UI fully if a file is attached
+      if (attachedFile || attachedKvFile) {
+          isSendingMessage = true;
+          messageInput.disabled = true;
+          sendMessageButton.disabled = true;
+          progressBar.classList.remove("hidden");
+      }
+      
+      clearTimeout(typingTimeout);
+      isCurrentlyTyping = false;
+      setTypingStatus(false);
+
+      try {
+        // --- E2EE: 本文を暗号化（鍵が無い/失敗時はユーザーに警告確認を行う） ---
+        let textToStore = text;
+        if (text) {
+          if (!_subtleOK) {
+            console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
+            if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+               return;
+            }
+          } else {
+            try {
+              const members = (currentServerData && currentServerData.joinedUsers) || [];
+              const overlayWasHidden = loadingOverlay.classList.contains("hidden");
+              if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
+                loadingOverlay.classList.remove("hidden");
+              }
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+              if (!roomKey) {
+                console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+                loadingOverlay.classList.add("hidden");
+                alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復(レスキュー)を実行します。数秒後にもう一度お試しください。", "error");
+                await requestEscrowRescue(currentServerId, currentRoomId);
+                return;
+              } else {
+                const enc = await encryptText(text, roomKey);
+                if (enc) {
+                  textToStore = enc; // 暗号化成功時のみ保存用テキストに代入
+                } else {
+                  console.warn(`[E2EE] 本文の暗号化処理に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+                  alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
+                  await requestEscrowRescue(currentServerId, currentRoomId);
+                  return;
+                }
+              }
+            } catch (e) {
+              console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
+              loadingOverlay.classList.add("hidden");
+              alertMessage("🔒 暗号化保護エラー: 予期せぬ例外が発生したため平文での送信を強制遮断しました。自動で修復を実行します。", "error");
+              await requestEscrowRescue(currentServerId, currentRoomId);
+              return;
+            }
+          }
+        }
+        const data = { text: textToStore, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+        if (attachedKvFile) {
+          Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
+        }
+        if (attachedFile) {
+          progressBar.classList.remove("hidden");
+          progressFill.style.width = "0%";
+          progressText.textContent = "アップロード中... 0%";
+          try {
+            let fileToUpload = attachedFile.file;
+            let isFileEncrypted = false;
+            
+            // E2EE File Encryption
+            if (_subtleOK) {
+              const members = (currentServerData && currentServerData.joinedUsers) || [];
+              const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+              if (roomKey) {
+                const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
+                fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+                isFileEncrypted = true;
+              } else {
+                console.warn("[E2EE] ルーム鍵が取得できないためファイルを平文でアップロードします");
+                if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が取得できないため、ファイルを平文でアップロードします。よろしいですか？")) {
+                   return;
+                }
+              }
+            }
+
+            const fileUrl = await uploadToExternalService(
+              fileToUpload,
+              (pct) => {
+                progressFill.style.width = pct + "%";
+                progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
+              },
+              "simplechat/messages"
+            );
+            Object.assign(data, { 
+              fileData: fileUrl, 
+              fileName: attachedFile.name, 
+              fileType: attachedFile.type, 
+              fileSize: attachedFile.size,
+              isFileEncrypted: isFileEncrypted 
+            });
+          } finally {
+            // 進捗バーを確実に隠す（100%表示のまま固まって見えるのを防ぐ）
+            progressBar.classList.add("hidden");
+            progressFill.style.width = "0%";
+          }
+        }
+        if (replyingToMessage) {
+          data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+        }
+        const wasEncrypted = isEncrypted(textToStore);
+        let newMessageId;
+        
+          const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+          try {
+            const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgRef.id}`);
+            const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() }; // RTDB uses unix timestamp number
+            await set(rtdbMsgRef, rtdbData);
+          } catch(e) { console.error("RTDB Dual Write Failed in sendMessage", e); }
+          newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
+          // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
+          try {
+            await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+              lastMessageAt: data.timestamp,
+              lastMessageSender: userId,
+              lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+            });
+          } catch (updateErr) {
+            console.warn("プレビュー情報の更新に失敗しました:", updateErr);
+          }
+        
+
+        // FCMプッシュ通知（サーバーメンバー全員に送信）
+        try {
+          const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+          if (serverSnap.exists()) {
+            const serverData = serverSnap.data();
+            const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
+            if (receiverIds.length > 0) {
+              const serverName = serverData.name || 'Covo';
+              const roomName = roomNames[currentRoomId] || 'room';
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+              const notifPayload = JSON.stringify({
+                receiverIds,
+                title: `${serverName} › #${roomName}`,
+                body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
+                roomId: currentRoomId,
+                messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
+                appId: appId,
+                senderId: userId,
+                idToken
+              });
+              // sendBeaconはページを閉じても確実に届く（fetchより信頼性が高い）
+              const beaconSent = navigator.sendBeacon
+                ? navigator.sendBeacon(
+                    "https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification",
+                    new Blob([notifPayload], { type: 'application/json' })
+                  )
+                : false;
+              if (!beaconSent) {
+                fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: notifPayload,
+                  keepalive: true
+                }).catch(e => console.error("Notification trigger error:", e));
+              }
+            }
+          }
+        } catch (notifyErr) {
+          console.error("Failed to trigger notification:", notifyErr);
+        }
+
+        // messageInput.value cleared optimistically at the start
+        clearAttachedFile(); cancelReply();
+
+        // ★ メッセージ送信後にタイマーをリセット
+        resetAwayTimer();
+
+      } catch (e) {
+        console.error(e);
+        alertMessage("送信に失敗しました", "error");
+      } finally {
+        loadingOverlay.classList.add("hidden");
+        progressBar.classList.add("hidden");
+        progressFill.style.width = "0%";
+        messageInput.disabled = false;
+        sendMessageButton.disabled = false;
+        isSendingMessage = false;
+        setTimeout(() => messageInput.focus(), 10);
+      }
+    }
+    /* =====================================================================
+       スタンプ機能（Twemoji絵文字をLINE風スタンプとして送る）
+       - カテゴリ別の絵文字グリッド + よく使う(お気に入り) + 最近使った
+       - スタンプは message.sticker フィールドで送信し、受信側で大きく表示
+       - お気に入り/最近は localStorage に保存（端末ごと）
+       ===================================================================== */
+    let STICKER_CATEGORIES = [
+      { id: 'recent', icon: '🕘', label: '最近' },
+      { id: 'fav', icon: '⭐', label: 'よく使う' },
+      { id: 'covo_new', icon: 'covonew:いいね', label: 'スタンプ', emojis: ['covonew:OKです', 'covonew:ありがとう', 'covonew:いいね', 'covonew:うーん', 'covonew:え！', 'covonew:おやすみ', 'covonew:がんばるぞ', 'covonew:ごめんなさい', 'covonew:ちら', 'covonew:ぴえん', 'covonew:ぺこり', 'covonew:またねー', 'covonew:やっほー', 'covonew:わーい！', 'covonew:了解', 'covonew:大好き'] },
+      { id: 'covo', icon: 'covo:yay', label: 'Covo', emojis: ['covo:sleep','covo:yay','covo:love','covo:despair','covo:ok','covo:no','covo:roger','covo:lol','covo:good'] },
+      { id: 'twitter', icon: '😀', label: 'Twitter', emojis: [
+        ...['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😌','😔','😪','😴','😷','🤒','🤕','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','💩','🤡','👻'],
+        ...['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','✊','👊','🤛','🤜','👏','🙌','👐','🤲','💪','🦾','🖕','✍️','💅','🤳'],
+        ...['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💋','💯','💢','💥','💫','💦','💨','✨','🌟','⭐','🔥'],
+        ...['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦄','🐝','🦋','🐢','🐙','🐳','🐬','🐟','🦈','🐊','🦖','🐉'],
+        ...['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🌽','🥕','🍞','🧀','🍔','🍟','🍕','🌭','🥪','🌮','🍣','🍱','🍜','🍡','🍦','🍰','🎂','🍫','🍬','🍭','🍩','🍪','☕','🍵','🍺','🍻','🥂','🍷'],
+        ...['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥅','⛳','🎣','🎮','🕹️','🎲','🎯','🎳','🎤','🎧','🎵','🎸','🎹','🥁','🎺','🎻','🎬','🏆','🥇','🥈','🥉','🎉','🎊','🎈','🎁','🎀'],
+        ...['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖']
+      ] }
+    ];
+    let currentServerStampsData = [];
+    
+    async function loadCurrentServerStamps() {
+      if (!currentServerId) return;
+      try {
+        const [snapStamps, snapGroups] = await Promise.all([
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)).catch(err => { console.error(err); return { docs: [], empty: true, forEach: ()=>{} }; }),
+          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`)).catch(err => { console.error(err); return { docs: [], empty: true, forEach: ()=>{} }; })
+        ]);
+        
+        for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
+          if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
+            STICKER_CATEGORIES.splice(i, 1);
+          }
+        }
+        
+        let customCategories = [];
+        
+        const processDocs = (snap) => {
+          snap.forEach(d => {
+            const s = d.data();
+            if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
+              customCategories.push({
+                id: 'server_group_' + d.id,
+                icon: `serverstamp:${s.thumbnailUrl}`,
+                label: s.name,
+                emojis: s.stamps.map(st => `serverstamp:${st.url}`)
+              });
+            } else {
+              customCategories.push({
+                id: 'server_group_' + d.id,
+                icon: `serverstamp:${s.url}`,
+                label: s.name,
+                emojis: [`serverstamp:${s.url}`]
+              });
+            }
+          });
+        };
+        
+        if (!snapStamps.empty) processDocs(snapStamps);
+        if (!snapGroups.empty) processDocs(snapGroups);
+        
+        if (customCategories.length > 0) {
+          STICKER_CATEGORIES.splice(2, 0, ...customCategories);
+        }
+      } catch (e) {
+        console.error("Failed to load server stamps", e);
+      }
+    }
+    const SK_RECENT = 'covo_sticker_recent', SK_FAV = 'covo_sticker_fav';
+    let _stickerActiveCat = 'covo';
+
+    // Twemoji を「生きているCDN(jsDelivr)」のSVGで描画する共通関数。
+    // 旧デフォルトの maxcdn は閉鎖済みで画像が404→OS純正絵文字に戻ってしまうため base を明示する。
+    const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+    function getEmojiHtml(emoji, spanClass = 'sk-em') {
+      if (!emoji || typeof emoji !== 'string') return '';
+      if (emoji.startsWith('covo:')) {
+        const name = emoji.substring(5);
+        return `<img src="/covo-stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+      }
+      if (emoji.startsWith('covonew:')) {
+        const name = emoji.substring(8);
+        return `<img src="/assets/covo_stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+      }
+      if (emoji.startsWith('serverstamp:')) {
+        const url = emoji.substring(12);
+        return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+      }
+      return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+    }
+    function _twemojiParse(el) {
+      if (!window.twemoji || !el) return;
+      try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+    }
+
+    function _skLoad(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; } }
+    function _skSave(key, arr) { try { localStorage.setItem(key, JSON.stringify(arr.slice(0, 40))); } catch (e) {} }
+    function _skPushRecent(emoji) {
+      let r = _skLoad(SK_RECENT).filter(e => e !== emoji);
+      r.unshift(emoji); _skSave(SK_RECENT, r);
+    }
+    function _skToggleFav(emoji) {
+      let f = _skLoad(SK_FAV);
+      if (f.includes(emoji)) f = f.filter(e => e !== emoji);
+      else f.unshift(emoji);
+      _skSave(SK_FAV, f);
+      _skRenderGrid(_stickerActiveCat);
+    }
+
+    let _skTabsBound = false;
+    function _skRenderTabs() {
+      const tabs = document.getElementById('stickerTabs');
+      tabs.innerHTML = '';
+      STICKER_CATEGORIES.forEach(cat => {
+        const b = document.createElement('button');
+        b.className = 'sticker-tab' + (cat.id === _stickerActiveCat ? ' active' : '');
+        b.innerHTML = getEmojiHtml(cat.icon, 'sk-em');
+        b.title = cat.label;
+        b.dataset.cat = cat.id;
+        tabs.appendChild(b);
+      });
+      // イベント委譲（twemojiでimg化されてもタブ全体で確実にクリックを拾う）
+      if (!_skTabsBound) {
+        _skTabsBound = true;
+        tabs.addEventListener('click', (e) => {
+          const btn = e.target.closest('.sticker-tab');
+          if (!btn || !btn.dataset.cat) return;
+          _stickerActiveCat = btn.dataset.cat;
+          tabs.querySelectorAll('.sticker-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _stickerActiveCat));
+          _skRenderGrid(_stickerActiveCat);
+        });
+      }
+      _twemojiParse(tabs);
+    }
+
+    function _skRenderGrid(catId) {
+      const grid = document.getElementById('stickerGrid');
+      grid.innerHTML = '';
+      let emojis = [];
+      if (catId === 'recent') emojis = _skLoad(SK_RECENT);
+      else if (catId === 'fav') emojis = _skLoad(SK_FAV);
+      else { const cat = STICKER_CATEGORIES.find(c => c.id === catId); emojis = cat ? (cat.emojis || []) : []; }
+      if (emojis.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'sticker-empty';
+        empty.textContent = catId === 'recent' ? 'まだありません' : (catId === 'fav' ? 'スタンプを長押しでよく使うに追加' : '');
+        grid.appendChild(empty);
+      }
+      const favs = _skLoad(SK_FAV);
+      emojis.forEach(emoji => {
+        const cell = document.createElement('button');
+        cell.className = 'sticker-cell' + (favs.includes(emoji) ? ' is-fav' : '');
+        cell.innerHTML = getEmojiHtml(emoji, 'sk-em') + `<span class="sticker-fav-star"><i class="fas fa-star"></i></span>`;
+        // タップで送信
+        let lp = null, lpFired = false;
+        const fire = () => { lpFired = true; _skToggleFav(emoji); if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {} };
+        cell.addEventListener('touchstart', () => { lpFired = false; lp = setTimeout(fire, 450); }, { passive: true });
+        cell.addEventListener('touchend', () => { if (lp) clearTimeout(lp); });
+        cell.addEventListener('touchmove', () => { if (lp) clearTimeout(lp); });
+        cell.onclick = () => { if (lpFired) { lpFired = false; return; } sendSticker(emoji); };
+        // PC: 右クリックでお気に入りトグル
+        cell.oncontextmenu = (e) => { e.preventDefault(); _skToggleFav(emoji); };
+        grid.appendChild(cell);
+      });
+      _twemojiParse(grid);
+    }
+
+    window.toggleStickerPicker = function() {
+      const p = document.getElementById('stickerPicker');
+      if (!p) return;
+      if (p.classList.contains('show')) { 
+        p.classList.remove('show'); 
+        window._reactionTargetMessageId = null; 
+        return; 
+      }
+      // 最近があればそれを初期表示、無ければcovoカテゴリ
+      _stickerActiveCat = _skLoad(SK_RECENT).length ? 'recent' : 'covo';
+      _skRenderTabs();
+      _skRenderGrid(_stickerActiveCat);
+      // 位置決め: 入力欄の上に出す
+      const btn = document.getElementById('stickerButton');
+      const r = btn.getBoundingClientRect();
+      p.style.visibility = 'hidden'; p.classList.add('show');
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      let left = Math.min(Math.max(8, r.left - pw / 2 + r.width / 2), window.innerWidth - pw - 8);
+      let top = r.top - ph - 10;
+      if (top < 8) top = 8;
+      p.style.left = left + 'px'; p.style.top = top + 'px';
+      p.style.visibility = '';
+    };
+
+    async function sendSticker(emoji) {
+      if (!currentRoomId) return;
+      _skPushRecent(emoji);
+      document.getElementById('stickerPicker').classList.remove('show');
+      if (window._reactionTargetMessageId) {
+        window.toggleReaction(window._reactionTargetMessageId, emoji);
+        window._reactionTargetMessageId = null;
+        return;
+      }
+      try {
+        const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+        if (replyingToMessage) {
+          data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+        }
+        const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+        try {
+          const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${replyMsgRef.id}`);
+          const rtdbData = { ...data, id: replyMsgRef.id, timestamp: Date.now() };
+          await set(rtdbMsgRef, rtdbData);
+        } catch(e) { console.error("RTDB Dual Write Failed in Reply", e); }
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+          lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
+        });
+        cancelReply();
+        resetAwayTimer();
+        // 通知（スタンプ絵文字つき）
+        try {
+          const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+          if (serverSnap.exists()) {
+            const sd = serverSnap.data();
+            const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
+            if (receiverIds.length > 0) {
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+              fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId, idToken })
+              }).catch(() => {});
+            }
+          }
+        } catch (e) {}
+      } catch (e) {
+        console.error('[Sticker] 送信失敗:', e);
+        alertMessage('スタンプの送信に失敗しました', 'error');
+      }
+    }
+
+    // スタンプボタン / 外側クリックで閉じる
+    document.addEventListener('DOMContentLoaded', () => {});
+    {
+      const sbtn = document.getElementById('stickerButton');
+      if (sbtn) sbtn.addEventListener('click', (e) => { e.stopPropagation(); if (!currentRoomId) return; toggleStickerPicker(); });
+      document.addEventListener('click', (e) => {
+        const p = document.getElementById('stickerPicker');
+        if (p && p.classList.contains('show') && !p.contains(e.target) && e.target.id !== 'stickerButton' && !e.target.closest('#stickerButton')) {
+          p.classList.remove('show');
+          window._reactionTargetMessageId = null;
+        }
+      });
+    }
+
+    const imageLightbox = document.getElementById('imageLightbox');
+    const lightboxImage = document.getElementById('lightboxImage');
+    function closeLightbox() {
+      imageLightbox.style.display = 'none';
+      lightboxImage.src = '';
+      lightboxCurrentFile = null;
+    }
+    imageLightbox.addEventListener('click', (e) => { if (e.target === imageLightbox) closeLightbox(); });
+    document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+    document.getElementById('lightboxDownload').addEventListener('click', () => {
+      if (lightboxCurrentFile) downloadFile(lightboxCurrentFile.data, lightboxCurrentFile.name, lightboxCurrentFile.type);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (imageLightbox.style.display === 'flex') closeLightbox();
+        const pdfLb = document.getElementById('pdfLightbox');
+        if (pdfLb && pdfLb.style.display === 'flex') closePdfLightbox();
+      }
+    });
+
+
+
+    messageInput.addEventListener("keydown", (e) => {
+      if (isMentionPopupOpen) {
+        if (e.key === "ArrowDown" || e.key === "Tab") {
+          e.preventDefault();
+          mentionSelectedIndex++;
+          renderMentionPopup();
+          return;
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          mentionSelectedIndex--;
+          renderMentionPopup();
+          return;
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (mentionUsers.length > 0) {
+            selectMention(mentionUsers[mentionSelectedIndex].nickname);
+          }
+          return;
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closeMentionPopup();
+          return;
+        }
+      }
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault(); sendMessage();
+      }
+    });
+
+    messageInput.addEventListener("input", (e) => {
+      // メンション機能の判定
+      const val = messageInput.value;
+      const pos = messageInput.selectionStart;
+      const beforeCursor = val.substring(0, pos);
+      const match = beforeCursor.match(/[@＠]([^\s]*)$/);
+      
+      if (match) {
+        const isStartOfWord = match.index === 0 || /\s/.test(beforeCursor.charAt(match.index - 1)) || /^[^\w\s]/.test(beforeCursor.charAt(match.index - 1));
+        if (isStartOfWord) {
+          openMentionPopup(match[1]);
+        } else {
+          closeMentionPopup();
+        }
+      } else {
+        closeMentionPopup();
+      }
+
+      // 入力欄の自動拡張とタイピング状態の管理
+      messageInput.style.height = "auto";
+      messageInput.style.height = messageInput.scrollHeight + "px";
+      if (!isCurrentlyTyping) {
+        isCurrentlyTyping = true;
+        setTypingStatus(true);
+      }
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        isCurrentlyTyping = false;
+        setTypingStatus(false);
+      }, 3000);
+    });
+
+    messageInput.addEventListener("blur", () => {
+      clearTimeout(typingTimeout);
+      if (isCurrentlyTyping) {
+        isCurrentlyTyping = false;
+        setTypingStatus(false);
+      }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && isCurrentlyTyping) {
+        clearTimeout(typingTimeout);
+        isCurrentlyTyping = false;
+        setTypingStatus(false);
+      }
+    });
+
+    messageInput.addEventListener("paste", (e) => {
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const f = items[i].getAsFile();
+          if (!checkFileAllowed(f)) return;
+          const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
+          if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは10MBまでです", "error"); return; }
+          attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type, size: f.size };
+          updateFilePreview();
+          e.preventDefault();
+          return;
+        }
+      }
+    });
+    function updateFilePreview() {
+      const progressBar = document.getElementById("uploadProgressBar");
+      const progressFill = document.getElementById("uploadProgressFill");
+      if (attachedFile) {
+        const sizeStr = attachedFile.size >= 1024 * 1024
+          ? `${(attachedFile.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(attachedFile.size / 1024).toFixed(1)} KB`;
+        filePreviewName.textContent = `${attachedFile.name} (${sizeStr})`;
+        filePreviewContainer.classList.remove("hidden");
+        progressBar.classList.add("hidden");
+        progressFill.style.width = "0%";
+      } else if (attachedKvFile) {
+        const sizeStr = attachedKvFile.size >= 1024 * 1024
+          ? `${(attachedKvFile.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(attachedKvFile.size / 1024).toFixed(1)} KB`;
+        filePreviewName.innerHTML = `<i class="fas fa-paperclip mr-1 text-gray-400"></i>${escapeHtml(attachedKvFile.name)} (${escapeHtml(sizeStr)})`;
+        filePreviewContainer.classList.remove("hidden");
+        progressBar.classList.add("hidden");
+        progressFill.style.width = "0%";
+      } else {
+        filePreviewContainer.classList.add("hidden");
+        progressBar.classList.add("hidden");
+        progressFill.style.width = "0%";
+      }
+    }
+    clearFileButton.addEventListener("click", clearAttachedFile);
+    function clearAttachedFile() { attachedFile = null; attachedKvFile = null; updateFilePreview(); }
+
+
+    // --- 送信ボタン ---
+    const sendMessageButton = document.getElementById("sendMessageButton");
+    sendMessageButton.addEventListener("click", sendMessage);
+
+    // --- ファイル添付ボタン（画像→Cloudinary添付 / それ以外→catbox.moe URLリンク化） ---
+    const fileAttachButton = document.getElementById("fileAttachButton");
+    const fileAttachInput = document.getElementById("fileAttachInput");
+    fileAttachButton.disabled = true;
+    fileAttachButton.addEventListener("click", () => {
+      if (!currentRoomId) return;
+      fileAttachInput.click();
+    });
+
+    fileAttachInput.addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      fileAttachInput.value = "";
+      if (!checkFileAllowed(f)) return;
+      // 画像・その他ファイルとも共通: ここではアップロードせず添付予約だけ。
+      // 実際のCloudflare(KV)へのアップロードは「送信ボタンを押した時」に行う。
+      const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+      attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
+      updateFilePreview();
+      messageInput.focus();
+    });
+
+    // --- ドラッグ＆ドロップ ---
+    const dropOverlay = document.getElementById("dropOverlay");
+    let dragCounter = 0;
+    window.addEventListener("dragenter", (e) => {
+      e.preventDefault(); dragCounter++;
+      if (currentRoomId) dropOverlay.classList.add("active");
+    });
+    window.addEventListener("dragleave", (e) => {
+      e.preventDefault(); dragCounter--;
+      if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove("active"); }
+    });
+    window.addEventListener("dragover", (e) => e.preventDefault());
+    window.addEventListener("drop", async (e) => {
+      e.preventDefault(); dragCounter = 0;
+      dropOverlay.classList.remove("active");
+      if (!currentRoomId) return;
+      const f = e.dataTransfer.files[0];
+      if (!f) return;
+      if (!checkFileAllowed(f)) return;
+      const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+      attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
+      updateFilePreview();
+    });
+
+    // --- 拡張メニューとメンション機能 ---
+    const plusMenuButton = document.getElementById("plusMenuButton");
+    const plusMenuPopup = document.getElementById("plusMenuPopup");
+    const menuMentionBtn = document.getElementById("menuMentionBtn");
+    const mentionPopup = document.getElementById("mentionPopup");
+    let mentionSearchString = "";
+    let isMentionPopupOpen = false;
+    let mentionSelectedIndex = 0;
+    let mentionUsers = [];
+
+    function getRecentlyMentioned() {
+      try {
+        const data = localStorage.getItem("recentlyMentioned");
+        return data ? JSON.parse(data) : [];
+      } catch(e) { return []; }
+    }
+    function addRecentlyMentioned(nickname) {
+      if (nickname === "all") return;
+      let recent = getRecentlyMentioned();
+      recent = recent.filter(n => n !== nickname);
+      recent.unshift(nickname);
+      if (recent.length > 20) recent = recent.slice(0, 20);
+      localStorage.setItem("recentlyMentioned", JSON.stringify(recent));
+    }
+
+    function renderMentionPopup() {
+      if (!isMentionPopupOpen) {
+        mentionPopup.classList.add("hidden");
+        return;
+      }
+      mentionPopup.innerHTML = "";
+      mentionPopup.classList.remove("hidden");
+      
+      const serverMemberIds = currentServerData?.joinedUsers || [];
+      let users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
+      
+      // 最近メンションした順に並び替え
+      const recent = getRecentlyMentioned();
+      users.sort((a, b) => {
+        const idxA = recent.indexOf(a.nickname);
+        const idxB = recent.indexOf(b.nickname);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.nickname.localeCompare(b.nickname);
+      });
+      
+      // 先頭に @all を追加
+      mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+      
+      // 絞り込み
+      if (mentionSearchString) {
+        mentionUsers = mentionUsers.filter(u => u.nickname.toLowerCase().startsWith(mentionSearchString.toLowerCase()));
+      }
+      
+      if (mentionUsers.length === 0) {
+        mentionPopup.innerHTML = '<div class="p-3 text-sm text-gray-500 text-center">ユーザーがいません</div>';
+        return;
+      }
+      
+      if (mentionSelectedIndex >= mentionUsers.length) mentionSelectedIndex = 0;
+      if (mentionSelectedIndex < 0) mentionSelectedIndex = mentionUsers.length - 1;
+      
+      mentionUsers.forEach((u, index) => {
+        const opt = document.createElement("div");
+        opt.className = "mention-option" + (index === mentionSelectedIndex ? " active" : "");
+        
+        const iconHTML = u.id === 'all' 
+          ? `<div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0"><i class="fas fa-users"></i></div>`
+          : (u.avatarUrl 
+              ? `<img src="${u.avatarUrl}" class="w-6 h-6 rounded-full object-cover flex-shrink-0">` 
+              : `<div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 text-xs flex-shrink-0"><i class="fas fa-user"></i></div>`);
+        
+        const nameHTML = `<span class="font-medium">${escapeHtml(u.nickname)}</span>` + 
+                         (u.desc ? `<span class="mention-option-sub ml-2">${u.desc}</span>` : ``);
+                         
+        opt.innerHTML = `${iconHTML} <div class="flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">${nameHTML}</div>`;
+        
+        opt.addEventListener("click", () => {
+          selectMention(u.nickname);
+        });
+        opt.addEventListener("mouseenter", () => {
+          const oldActive = mentionPopup.querySelector(".active");
+          if (oldActive) oldActive.classList.remove("active");
+          opt.classList.add("active");
+          mentionSelectedIndex = index;
+        });
+        mentionPopup.appendChild(opt);
+        
+        if (index === mentionSelectedIndex) {
+          opt.scrollIntoView({ block: "nearest" });
+        }
+      });
+    }
+
+    function selectMention(nickname) {
+      const pos = messageInput.selectionStart;
+      const val = messageInput.value;
+      const beforeCursor = val.substring(0, pos);
+      const afterCursor = val.substring(pos);
+      
+      const lastAtMatch = beforeCursor.match(/[@＠]([^\s]*)$/);
+      let newBefore = beforeCursor;
+      if (lastAtMatch) {
+        newBefore = beforeCursor.substring(0, lastAtMatch.index) + "@" + nickname + " ";
+      } else {
+        newBefore = beforeCursor + (beforeCursor.length > 0 && !beforeCursor.endsWith(" ") ? " " : "") + "@" + nickname + " ";
+      }
+      
+      messageInput.value = newBefore + afterCursor;
+      messageInput.selectionStart = messageInput.selectionEnd = newBefore.length;
+      
+      addRecentlyMentioned(nickname);
+      closeMentionPopup();
+      messageInput.focus();
+    }
+
+    function openMentionPopup(searchStr = "") {
+      if (!currentRoomId) return;
+      isMentionPopupOpen = true;
+      mentionSearchString = searchStr;
+      renderMentionPopup();
+    }
+    
+    function closeMentionPopup() {
+      isMentionPopupOpen = false;
+      mentionPopup.classList.add("hidden");
+    }
+
+    if (plusMenuButton) {
+      plusMenuButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentRoomId) return;
+        plusMenuPopup.classList.toggle("hidden");
+      });
+    }
+
+    const menuAttachBtn = document.getElementById("menuAttachBtn");
+    if (menuAttachBtn) {
+      menuAttachBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        plusMenuPopup.classList.add("hidden");
+        fileAttachInput.click();
+      });
+    }
+
+    if (menuMentionBtn) {
+      menuMentionBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        plusMenuPopup.classList.add("hidden");
+        openMentionPopup("");
+        messageInput.focus();
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      if (plusMenuPopup && e.target !== plusMenuButton && !plusMenuButton.contains(e.target)) {
+        plusMenuPopup.classList.add("hidden");
+      }
+      if (mentionPopup && !mentionPopup.contains(e.target)) {
+        closeMentionPopup();
+      }
+    });
+
+    function escapeHtmlAndLinkUrls(text) {
+      if (!text) return "";
+      
+      const codeBlocks = [];
+      let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
+        const id = `__CODE_BLOCK_${codeBlocks.length}__`;
+        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
+        return id;
+      });
+
+      const inlineCodes = [];
+      processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+        const id = `__INLINE_CODE_${inlineCodes.length}__`;
+        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
+        return id;
+      });
+
+      let escapedText = processedText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      
+      escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+      escapedText = escapedText.replace(/\n/g, '<br>');
+
+      const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
+      escapedText = escapedText.replace(urlRegex, (safeUrl) => {
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${safeUrl}</a>`;
+      });
+
+      const mentionRegex = /@([^\s<&]+)/g;
+      escapedText = escapedText.replace(mentionRegex, (match, p1) => {
+        return `<span class="mention-text">@${p1}</span>`;
+      });
+
+      inlineCodes.forEach((html, index) => {
+        escapedText = escapedText.replace(`__INLINE_CODE_${index}__`, html);
+      });
+      codeBlocks.forEach((html, index) => {
+        escapedText = escapedText.replace(`__CODE_BLOCK_${index}__`, html);
+      });
+
+      return escapedText;
+    }
+
+    function openAvatarLightbox(url) {
+      const lb = document.getElementById("avatarLightbox");
+      document.getElementById("avatarLightboxImg").src = url;
+      lb.style.display = "flex";
+    }
+
+    window.toggleReaction = async function(messageId, emoji) {
+      if (!currentServerId || !currentRoomId || !userId) return;
+      
+      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, messageId);
+      const msgSnap = await getDoc(msgRef);
+      if (!msgSnap.exists()) return;
+      const msgData = msgSnap.data();
+      const currentReactions = msgData.reactions || {};
+      const hasReactedWithSameEmoji = currentReactions[userId] === emoji;
+      try {
+        if (hasReactedWithSameEmoji) {
+          await updateDoc(msgRef, { [`reactions.${userId}`]: deleteField() });
+          try {
+            const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${messageId}/reactions/${userId}`));
+          } catch(e) {}
+        } else {
+          await updateDoc(msgRef, { [`reactions.${userId}`]: emoji });
+          try {
+            const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${messageId}/reactions`), { [userId]: emoji });
+          } catch(e) {}
+        }
+      } catch (e) {
+        console.error("Failed to toggle reaction", e);
+      }
+    };
+
+    function updateReactionsUI(container, msg) {
+      let reactionsContainer = container.querySelector('.reactions-container');
+      if (!reactionsContainer) {
+        reactionsContainer = document.createElement('div');
+        reactionsContainer.className = 'reactions-container';
+        const timestampSpan = container.querySelector('.msg-timestamp');
+        if (timestampSpan) {
+          container.insertBefore(reactionsContainer, timestampSpan);
+        } else {
+          container.appendChild(reactionsContainer);
+        }
+      }
+      const reactions = msg.reactions || {};
+      const reactionCounts = Object.create(null);
+      const myReactions = new Set();
+      for (const [uid, emoji] of Object.entries(reactions)) {
+        if (typeof emoji !== 'string') continue;
+        if (!reactionCounts[emoji]) reactionCounts[emoji] = 0;
+        reactionCounts[emoji]++;
+        if (uid === userId) myReactions.add(emoji);
+      }
+      reactionsContainer.innerHTML = '';
+      for (const [emoji, count] of Object.entries(reactionCounts)) {
+        if (count === 0) continue;
+        const badge = document.createElement('div');
+        badge.className = 'reaction-badge';
+        if (myReactions.has(emoji)) badge.classList.add('reacted-by-me');
+        badge.innerHTML = getEmojiHtml(emoji, 'emoji-wrapper') + `<span>${count}</span>`;
+        badge.onclick = (e) => {
+          e.stopPropagation();
+          window.showReactionUsers(reactions);
+        };
+        reactionsContainer.appendChild(badge);
+      }
+      if (Object.keys(reactionCounts).length === 0) {
+        reactionsContainer.remove();
+      } else {
+        _twemojiParse(reactionsContainer);
+      }
+    }
+
+    window.showReactionUsers = function(reactionsObj) {
+      const modal = document.getElementById('reactionUsersModal');
+      const listEl = document.getElementById('reactionUsersList');
+      listEl.innerHTML = '';
+      
+      const reactionsArray = Object.entries(reactionsObj || {});
+      if (reactionsArray.length === 0) return;
+      
+      reactionsArray.forEach(([uid, emoji]) => {
+        if (typeof emoji !== 'string') return;
+        const user = (cachedUsers || []).find(u => u.id === uid) || {};
+        const nickname = user.nickname || "ユーザー";
+        const avatarUrl = user.avatarUrl;
+        
+        const row = document.createElement('div');
+        row.className = "flex items-center gap-3 p-2 bg-gray-50 rounded-lg";
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = "w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 overflow-hidden flex-shrink-0";
+        if (avatarUrl) {
+          __setAvatarImg(avatarDiv, avatarUrl, nickname);
+        } else {
+          avatarDiv.textContent = nickname.charAt(0).toUpperCase();
+        }
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = "text-sm font-bold text-gray-700 flex-1 truncate";
+        nameDiv.textContent = nickname;
+        
+        const emojiDiv = document.createElement('div');
+        emojiDiv.className = "flex items-center justify-center w-8 h-8 text-2xl flex-shrink-0 reaction-modal-emoji";
+        emojiDiv.innerHTML = getEmojiHtml(emoji, 'emoji-wrapper');
+        
+        row.appendChild(avatarDiv);
+        row.appendChild(nameDiv);
+        row.appendChild(emojiDiv);
+        listEl.appendChild(row);
+      });
+      
+      _twemojiParse(listEl);
+      openModal(modal);
+    };
+
+    function createMessageElement(message, messageId, readByCount = 0) {
+      if (message.isGap) {
+        const gapRow = document.createElement("div");
+        gapRow.className = "w-full flex justify-center py-6 opacity-60 select-none flipped";
+        gapRow.innerHTML = `<span class="text-xs text-gray-500 bg-gray-100 px-4 py-1.5 rounded-full shadow-inner"><i class="fas fa-history mr-1.5"></i>${escapeHtml(message.text)}</span>`;
+        return gapRow;
+      }
+
+      const isMyMessage = message.senderId === userId;
+      const messageRow = document.createElement("div");
+      messageRow.className = "message-row relative w-full mb-4 group flipped";
+
+      const replyIconBg = document.createElement("div");
+      replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 pointer-events-none z-0";
+      replyIconBg.style.width = "40px";
+      replyIconBg.style.height = "40px";
+      replyIconBg.style.borderRadius = "50%";
+      replyIconBg.style.background = "#3b82f6";
+      replyIconBg.style.right = "20px";
+      replyIconBg.innerHTML = '<i class="fas fa-reply text-white shadow-sm"></i>';
+      messageRow.appendChild(replyIconBg);
+
+      const messageRowInner = document.createElement("div");
+      messageRowInner.className = "message-row-inner w-full flex " + (isMyMessage ? "justify-end" : "justify-start items-start gap-1.5");
+      messageRowInner.style.willChange = "transform";
+      messageRow.appendChild(messageRowInner);
+
+      // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
+      if (!isMyMessage) {
+        const senderUser = cachedUsers.find(u => u.id === message.senderId);
+        const avatarDiv = document.createElement("div");
+        avatarDiv.className = "msg-avatar z-10";
+        if (senderUser?.avatarUrl) {
+          __setAvatarImg(avatarDiv, senderUser.avatarUrl, message.senderNickname, { style: '' });
+          avatarDiv.addEventListener("click", () => openAvatarLightbox(senderUser.avatarUrl));
+        } else {
+          avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
+        }
+        messageRowInner.appendChild(avatarDiv);
+      }
+      
+      const bubbleContainer = document.createElement("div");
+      bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] ${isMyMessage ? 'items-end' : 'items-start'}`;
+
+      if (message.replyTo && message.replyTo.messageId) {
+        const replyQuoteDiv = document.createElement("div");
+        replyQuoteDiv.className = `reply-quote ${isMyMessage ? 'my-reply' : ''} flex items-center gap-1.5 text-xs text-gray-500 mb-0.5 cursor-pointer hover:underline opacity-80 select-none`;
+        replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
+        
+        replyQuoteDiv.innerHTML = `
+          <span class="font-bold whitespace-nowrap">${escapeHtml(message.replyTo.senderNickname || "不明")}</span>
+          <span class="truncate" style="max-width: 140px;">${escapeHtml(message.replyTo._decryptedErrorText || message.replyTo.text || "（ファイル）")}</span>
+        `;
+        bubbleContainer.appendChild(replyQuoteDiv);
+      }
+
+      const messageElement = document.createElement("div");
+      messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-fit relative`;
+      messageElement.style.touchAction = "pan-y";
+      messageElement.style.maxWidth = "100%"; // 75% max-width override
+      messageElement.dataset.messageId = messageId;
+
+
+      const senderNicknameSpan = document.createElement("span");
+      senderNicknameSpan.className = `text-xs text-gray-600 mb-1 ${isMyMessage ? "text-right" : "text-left"}`;
+      senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
+      messageElement.appendChild(senderNicknameSpan);
+      
+      // スタンプメッセージ（絵文字をTwemojiで大きく表示。吹き出し背景なし）
+      if (message.sticker) {
+        messageElement.classList.add("sticker-bubble");
+        const stickerDiv = document.createElement("div");
+        stickerDiv.className = "sticker-content";
+        stickerDiv.innerHTML = getEmojiHtml(message.sticker, 'sk-em');
+        messageElement.appendChild(stickerDiv);
+        _twemojiParse(stickerDiv);
+      }
+      if (message.text) {
+        const messageTextSpan = document.createElement("span");
+        messageTextSpan.className = `message-content text-gray-900 text-left`;
+        const textToDisplay = message._decryptedErrorText || message.text;
+        messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
+        // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
+        if (message.senderId !== userId && (message.text.includes(`@${userNickname}`) || message.text.includes('@all'))) {
+          messageElement.classList.add("mention-highlight");
+        }
+        messageElement.appendChild(messageTextSpan);
+      }
+      if (message.fileData && message.fileName) {
+        const setMediaSrc = (element, propName, url) => {
+          if (message.isFileEncrypted) {
+            if (message._decryptedFileUrl) {
+              if (propName) element[propName] = message._decryptedFileUrl;
+              if (element.tagName === 'IMG') element.style.opacity = '1';
+            } else {
+              if (element.tagName === 'IMG') element.style.opacity = '0.3';
+              (async () => {
+                try {
+                  const members = (currentServerData && currentServerData.joinedUsers) || [];
+                  const roomKey = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                  if (!roomKey) throw new Error("No key");
+                  const res = await fetch(message.fileData);
+                  const buf = await res.arrayBuffer();
+                  const dec = await decryptFileE2EE(buf, roomKey, currentServerId, currentRoomId);
+                  const blob = new Blob([dec], { type: message.fileType });
+                  message._decryptedFileUrl = URL.createObjectURL(blob);
+                  if (propName) element[propName] = message._decryptedFileUrl;
+                  if (element.tagName === 'IMG') element.style.opacity = '1';
+                } catch(e) {
+                  if (element.tagName === 'IMG') element.alt = "復号化エラー";
+                }
+              })();
+            }
+          } else {
+            if (propName) element[propName] = url || message.fileData;
+          }
+        };
+
+        if (message.fileType && message.fileType.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
+          img.style.maxHeight = '250px';
+          img.loading = 'lazy';
+          setMediaSrc(img, 'src');
+          img.addEventListener("click", () => {
+            lightboxCurrentFile = { 
+              data: message._decryptedFileUrl || message.fileData, 
+              name: message.fileName, 
+              type: message.fileType 
+            };
+            lightboxImage.src = message._decryptedFileUrl || message.fileData;
+            imageLightbox.style.display = 'flex';
+          });
+          messageElement.appendChild(img);
+        } else if (message.fileType && message.fileType.startsWith('video/')) {
+          const video = document.createElement('video');
+          video.controls = true;
+          video.className = 'mt-2 rounded-lg max-w-full h-auto';
+          video.style.maxHeight = '250px';
+          setMediaSrc(video, 'src');
+          messageElement.appendChild(video);
+        } else if (message.fileType === 'application/pdf' && message.fileData.startsWith('http')) {
+          const pdfWrapper = document.createElement('div');
+          pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
+          const isRawPdf = !message.fileData.includes('/image/upload/');
+          const pdfLabel = document.createElement('div');
+          pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
+          const safeName = document.createElement('span');
+          safeName.className = 'truncate';
+          safeName.style.maxWidth = '160px';
+          safeName.textContent = message.fileName;
+          pdfLabel.innerHTML = '<i class="fas fa-file-pdf text-red-500"></i> ';
+          pdfLabel.appendChild(safeName);
+          
+          if (!isRawPdf && !message.isFileEncrypted) {
+            const thumbUrl = message.fileData.replace('/upload/', '/upload/pg_1,w_240,h_320,c_fit,f_jpg/');
+            const thumbImg = document.createElement('img');
+            thumbImg.alt = message.fileName;
+            thumbImg.className = 'rounded-lg border border-gray-200 block';
+            thumbImg.style.maxWidth = '160px';
+            thumbImg.loading = 'lazy';
+            thumbImg.onerror = () => {
+              thumbImg.style.display = 'none';
+              const fallback = document.createElement('div');
+              fallback.className = 'w-20 h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-1';
+              fallback.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-2xl"></i><span class="text-xs text-gray-400">PDF</span>';
+              pdfWrapper.insertBefore(fallback, thumbImg);
+            };
+            thumbImg.src = thumbUrl;
+            pdfWrapper.appendChild(thumbImg);
+          } else {
+            // 復号化待ちのプレースホルダ処理も兼ねてアイコン表示
+            const icon = document.createElement('div');
+            icon.className = 'w-20 h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-1';
+            icon.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-2xl"></i><span class="text-xs text-gray-400">PDF</span>';
+            pdfWrapper.appendChild(icon);
+            // ダウンロード＆復号をトリガー
+            setMediaSrc(icon, null);
+          }
+          pdfWrapper.appendChild(pdfLabel);
+          pdfWrapper.addEventListener('click', () => {
+            const url = message._decryptedFileUrl || message.fileData;
+            openPdfLightbox(url, message.fileName);
+          });
+          messageElement.appendChild(pdfWrapper);
+        } else {
+          const fileAttachmentDiv = document.createElement("div");
+          fileAttachmentDiv.className = `mt-2 p-2 rounded-lg border border-gray-300 ${isMyMessage ? "bg-gray-200" : "bg-gray-100"} flex items-center space-x-2 cursor-pointer`;
+          fileAttachmentDiv.style.color = "#333";
+          const fnSpan = document.createElement("span");
+          fnSpan.className = "flex-1 text-sm font-semibold truncate";
+          fnSpan.textContent = message.fileName;
+          const arrSpan = document.createElement("span");
+          arrSpan.textContent = "▼";
+          fileAttachmentDiv.appendChild(fnSpan);
+          fileAttachmentDiv.appendChild(arrSpan);
+          // ダウンロード＆復号をトリガー
+          setMediaSrc(fileAttachmentDiv, null);
+          fileAttachmentDiv.addEventListener("click", () => {
+            const url = message._decryptedFileUrl || message.fileData;
+            downloadFile(url, message.fileName, message.fileType);
+          });
+          messageElement.appendChild(fileAttachmentDiv);
+        }
+      }
+      // KV ファイル添付カード
+      if (message.kvFileUrl && message.fileName) {
+        const kvDiv = document.createElement("div");
+        kvDiv.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400 bg-gray-300" : "border-gray-200 bg-gray-50"} flex items-center gap-2.5 cursor-pointer select-none`;
+        const iconWrap = document.createElement("div");
+        iconWrap.className = "flex-shrink-0 w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center";
+        iconWrap.innerHTML = '<i class="fas fa-paperclip text-gray-500 text-sm"></i>';
+        const infoDiv = document.createElement("div");
+        infoDiv.className = "flex-1 min-w-0";
+        const nameSpan = document.createElement("div");
+        nameSpan.className = "text-sm font-semibold text-gray-800 truncate";
+        nameSpan.textContent = message.fileName;
+        const metaSpan = document.createElement("div");
+        metaSpan.className = "text-xs text-gray-400";
+        if (message.fileSize) {
+          metaSpan.textContent = message.fileSize >= 1048576
+            ? `${(message.fileSize / 1048576).toFixed(1)} MB`
+            : `${(message.fileSize / 1024).toFixed(1)} KB`;
+        }
+        infoDiv.appendChild(nameSpan);
+        infoDiv.appendChild(metaSpan);
+        const dlIcon = document.createElement("div");
+        dlIcon.className = "flex-shrink-0 text-gray-400";
+        dlIcon.innerHTML = '<i class="fas fa-download text-sm"></i>';
+        kvDiv.appendChild(iconWrap);
+        kvDiv.appendChild(infoDiv);
+        kvDiv.appendChild(dlIcon);
+        kvDiv.addEventListener("click", () => {
+          downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
+        });
+        messageElement.appendChild(kvDiv);
+      }
+
+      updateReactionsUI(messageElement, message);
+
+      const timestampSpan = document.createElement("span");
+      timestampSpan.className = "msg-timestamp text-[10px] text-gray-500 whitespace-nowrap";
+      // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
+      const _getDate = (ts) => {
+        if (!ts) return null;
+        if (typeof ts.toDate === 'function') return ts.toDate();
+        if (typeof ts === 'number') return new Date(ts);
+        return null;
+      };
+      const _tsDate = _getDate(message.timestamp) || _getDate(message.createdAt);
+      if (_tsDate) {
+        timestampSpan.textContent = `${String(_tsDate.getHours()).padStart(2, "0")}:${String(_tsDate.getMinutes()).padStart(2, "0")}`;
+      } else {
+        timestampSpan.textContent = "送信中...";
+      }
+
+      const metaContainer = document.createElement("div");
+      metaContainer.className = "flex flex-col mb-1 select-none " + (isMyMessage ? "items-end" : "items-start");
+      
+      let readSpan = null;
+      if (isMyMessage) {
+        readSpan = document.createElement("span");
+        readSpan.className = "read-receipt text-[10px] text-gray-500 whitespace-nowrap";
+        if (readByCount > 0) {
+          readSpan.textContent = `既読${readByCount > 1 ? `（${readByCount}）` : ""}`;
+        } else {
+          readSpan.style.display = "none";
+        }
+        metaContainer.appendChild(readSpan);
+      }
+      metaContainer.appendChild(timestampSpan);
+
+      const bubbleRowWrapper = document.createElement("div");
+      bubbleRowWrapper.className = "flex items-end gap-1.5 w-full";
+      if (isMyMessage) {
+        bubbleRowWrapper.classList.add("justify-end");
+        bubbleRowWrapper.appendChild(metaContainer);
+        bubbleRowWrapper.appendChild(messageElement);
+      } else {
+        bubbleRowWrapper.classList.add("justify-start");
+        bubbleRowWrapper.appendChild(messageElement);
+        bubbleRowWrapper.appendChild(metaContainer);
+      }
+
+      bubbleContainer.appendChild(bubbleRowWrapper);
+      messageRowInner.appendChild(bubbleContainer);
+      
+      return messageRow;
+    }
+
+    window.jumpToUnloadedMessage = jumpToUnloadedMessage;
+    async function jumpToUnloadedMessage(msgId) {
+      if (!msgId) return;
+      const modal = document.getElementById("messagePreviewModal");
+      if (modal) modal.classList.add("hidden");
+      
+      let existingEl = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+      if (existingEl) {
+        doJumpHighlight(existingEl);
+        return;
+      }
+
+      const spinner = document.getElementById('topLoadingSpinner');
+      const spinnerText = document.getElementById('topLoadingSpinnerText');
+      if (spinnerText) spinnerText.textContent = "過去ログをロード中...";
+      if (spinner) spinner.style.display = 'flex';
+
+      const _exitBtn = document.getElementById('jumpModeExitBtn');
+      _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
+
+      try {
+        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          alertMessage("メッセージが見つかりません。", "error");
+          if (spinner) spinner.style.display = 'none';
+          return;
+        }
+        const targetMsg = { id: docSnap.id, ...docSnap.data() };
+        
+        // ターゲットメッセージの周辺（過去15件・未来15件）のみを最小限フェッチ（極小リード数）
+        const fetchLimit = 15;
+        const qPast = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          startAt(targetMsg.timestamp),
+          limit(fetchLimit)
+        );
+        const qFuture = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "asc"),
+          startAfter(targetMsg.timestamp),
+          limit(fetchLimit)
+        );
+
+        const [snapPast, snapFuture] = await Promise.all([getDocs(qPast), getDocs(qFuture)]);
+        
+        const pastMsgs = [];
+        snapPast.forEach(doc => pastMsgs.push({ id: doc.id, ...doc.data() }));
+        pastMsgs.reverse(); // descをascに戻す
+
+        const futureMsgs = [];
+        snapFuture.forEach(doc => futureMsgs.push({ id: doc.id, ...doc.data() }));
+        
+        hasMoreJumpOlder = snapPast.docs.length === fetchLimit;
+        hasMoreJumpNewer = snapFuture.docs.length === fetchLimit;
+        
+        const combinedMsgs = [...pastMsgs, ...futureMsgs];
+        
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        for (let i = 0; i < combinedMsgs.length; i++) {
+          if (combinedMsgs[i].text && isEncrypted(combinedMsgs[i].text)) {
+            combinedMsgs[i].text = await decryptText(combinedMsgs[i].text, currentServerId, currentRoomId, _members).catch(()=>combinedMsgs[i].text);
+          }
+        }
+
+        // 常時リアルタイムリスナーは稼働させたまま、画面用配列をジャンプ先ログへスッ切り替え
+        isJumpView = true;
+        jumpViewMessages = combinedMsgs;
+        allLoadedMessages = [...jumpViewMessages];
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        
+        messagesDisplay.style.transition = 'none';
+        messagesDisplay.style.opacity = '0';
+        if (spinner) spinner.style.display = 'none';
+        
+        renderMessagesWithReadReceipts();
+        
+      } catch (e) {
+        console.error("Jump fetch error:", e);
+      }
+      
+      setTimeout(() => {
+        let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+        if (el2) {
+          // 画面非表示の間に一瞬で位置を確定させ、カクつきを完全になくす
+          el2.scrollIntoView({ behavior: 'auto', block: 'center' });
+          setTimeout(() => {
+            messagesDisplay.style.transition = 'opacity 0.3s ease';
+            messagesDisplay.style.opacity = '1';
+            allowPagination = true;
+            // 美しいハイライトアニメーションのみを発火
+            const isStamp = el2.querySelector('img[alt^="stamp_"]');
+            if (isStamp) {
+                isStamp.classList.add('stamp-jump-anim');
+                setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+            } else {
+                el2.classList.add('message-highlight');
+                setTimeout(() => el2.classList.remove('message-highlight'), 1200);
+            }
+          }, 50);
+        } else {
+          alertMessage("ジャンプできませんでした。", "warning");
+          messagesDisplay.style.transition = 'opacity 0.3s ease';
+          messagesDisplay.style.opacity = '1';
+          allowPagination = true;
+        }
+      }, 400);
+    }
+
+    function renderMessagesWithReadReceipts() {
+      const filteredMessages = lastMessagesData.filter(msg => {
+        if (!searchQuery) return true;
+        return (msg.text && msg.text.toLowerCase().includes(searchQuery)) ||
+          (msg.senderNickname && msg.senderNickname.toLowerCase().includes(searchQuery));
+      });
+
+      // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
+      const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
+      const existingRowsMap = new Map();
+      existingRows.forEach(row => {
+        const bubble = row.querySelector('.message-bubble');
+        if (bubble && bubble.dataset.messageId) {
+          existingRowsMap.set(bubble.dataset.messageId, row);
+        }
+      });
+
+      const existingDividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
+      const existingDividersMap = new Map();
+      existingDividers.forEach(div => {
+        const inner = div.querySelector('.date-divider-inner');
+        if (inner) {
+          existingDividersMap.set(inner.textContent.trim(), div);
+        }
+      });
+
+      // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
+      const reversedMessages = [...filteredMessages].reverse();
+
+      const getDayString = (ts) => {
+        if (!ts) return "";
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        const today = new Date();
+        const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+        if (isToday) return null;
+        const yday = new Date(today); yday.setDate(today.getDate() - 1);
+        const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
+        if (isYday) return "昨日";
+        const days = ['日', '月', '火', '水', '木', '金', '土'];
+        return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} (${days[d.getDay()]})`;
+      };
+
+      // 1. まず表示するべき全DOM要素をリスト化する（既存要素は再利用し、位置も維持する）
+      const expectedElements = [];
+
+      reversedMessages.forEach((msg, i) => {
+        const idx = messagesIndexMap[msg.id];
+        const readCount = computeReadByCount(msg, idx);
+        
+        let row = existingRowsMap.get(msg.id);
+        if (row) {
+          const readSpan = row.querySelector('.read-receipt');
+          if (readSpan) {
+            if (readCount > 0) {
+              readSpan.textContent = `既読${readCount > 1 ? `（${readCount}）` : ""}`;
+              readSpan.style.display = "";
+            } else {
+              readSpan.style.display = "none";
+            }
+          }
+          const timestampSpan = row.querySelector('.msg-timestamp');
+          if (timestampSpan) {
+            // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
+            const _getDateU = (ts) => {
+              if (!ts) return null;
+              if (typeof ts.toDate === 'function') return ts.toDate();
+              if (typeof ts === 'number') return new Date(ts);
+              return null;
+            };
+            const _tsDU = _getDateU(msg.timestamp) || _getDateU(msg.createdAt);
+            if (_tsDU) {
+              timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
+            } else {
+              timestampSpan.textContent = "送信中...";
+            }
+          }
+          const textSpan = row.querySelector('.message-content');
+          if (textSpan && msg.text) {
+             textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          }
+          const bubbleElement = row.querySelector('.message-bubble');
+          if (bubbleElement) updateReactionsUI(bubbleElement, msg);
+
+          existingRowsMap.delete(msg.id);
+        } else {
+          row = createMessageElement(msg, msg.id, readCount);
+        }
+        expectedElements.push(row);
+
+        const currentDay = getDayString(msg.timestamp);
+        const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(reversedMessages[i+1].timestamp) : null;
+        if (currentDay && currentDay !== nextMsgDay) {
+          let div = existingDividersMap.get(currentDay);
+          if (div) {
+            existingDividersMap.delete(currentDay);
+          } else {
+            div = document.createElement("div");
+            div.className = "date-divider flipped";
+            div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
+          }
+          expectedElements.push(div);
+        }
+      });
+
+      // 2. 実際のDOMとexpectedElementsを先頭から順に照合。同一要素ならinsertBefore等の再配置を一切スキップ！
+      // これにより既存要素のLayout Thrashingやアニメーション再発火（パッとなる現象）が100%根絶される
+      let currentChild = messagesDisplay.firstElementChild;
+      for (const expectedEl of expectedElements) {
+        if (currentChild === expectedEl) {
+          currentChild = currentChild.nextElementSibling;
+        } else {
+          messagesDisplay.insertBefore(expectedEl, currentChild);
+        }
+      }
+
+      // 3. 削除された不要なメッセージや古くなったディバイダーを取り除く
+      existingRowsMap.forEach(row => row.remove());
+      existingDividersMap.forEach(div => div.remove());
+
+      // スピナーや終端メッセージは過去のメッセージの「さらに上」（DOM上は最後尾）に配置
+      const spinner = document.getElementById('topLoadingSpinner');
+      if (spinner) {
+        
+        spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
+      }
+
+      // 未読の境界線（検索中は出さない。filteredMessages は時系列昇順の filteredMessages を使う）
+      if (!searchQuery) {
+        const boundaryId = resolveUnreadBoundaryMessageId(filteredMessages);
+        renderUnreadDivider(boundaryId);
+      } else {
+        const existing = messagesDisplay.querySelector('.unread-divider');
+        if (existing) existing.remove();
+      }
+    }
+
+    // 入室時に確定した未読境界(unreadBoundaryAt)を元に、最初の未読メッセージIDを返す。
+    // 一度決まったら unreadBoundaryMessageId に固定し、既読更新で線が消えないようにする。
+    function resolveUnreadBoundaryMessageId(chronologicalMessages) {
+      // 既に確定済みで、その行がまだ存在するなら使い回す
+      if (unreadBoundaryMessageId && chronologicalMessages.some(m => m.id === unreadBoundaryMessageId)) {
+        return unreadBoundaryMessageId;
+      }
+      if (!unreadBoundaryAt) return null;
+      for (const msg of chronologicalMessages) {
+        // 自分の発言は未読の起点にしない
+        if (msg.senderId === userId) continue;
+        const ts = (msg.timestamp && msg.timestamp.toMillis) ? msg.timestamp.toMillis() : 0;
+        if (ts && ts > unreadBoundaryAt) {
+          unreadBoundaryMessageId = msg.id;
+          return unreadBoundaryMessageId;
+        }
+      }
+      return null;
+    }
+
+    // 区切り線を、境界メッセージの「視覚的に直上」に配置する。
+    // 表示は scaleY(-1) で反転しているため、DOM上は境界行の直後に入れると視覚的に直上になる。
+    function renderUnreadDivider(boundaryMessageId) {
+      const existing = messagesDisplay.querySelector('.unread-divider');
+      if (existing) existing.remove();
+      if (!boundaryMessageId) return;
+      const boundaryBubble = messagesDisplay.querySelector(`.message-bubble[data-message-id="${boundaryMessageId}"]`);
+      if (!boundaryBubble) return;
+      const boundaryRow = boundaryBubble.closest('.message-row');
+      if (!boundaryRow) return;
+      const divider = document.createElement('div');
+      divider.className = 'unread-divider flipped';
+      divider.innerHTML = '<span>ここから未読</span>';
+      messagesDisplay.insertBefore(divider, boundaryRow.nextSibling);
+    }
+
+    function computeReadByCount(message, msgIndex) {
+      let count = 0;
+      // タイムスタンプをmsに変換するヘルパー（Firestoreオブジェクト・数値・シムすべて対応）
+      const toMs = (ts) => {
+        if (!ts) return 0;
+        if (typeof ts === 'number') return ts;
+        if (typeof ts.toMillis === 'function') return ts.toMillis();
+        return 0;
+      };
+      Object.entries(roomReadReceipts).forEach(([rid, receipt]) => {
+        if (!rid || rid === message.senderId) return;
+        if (receipt.lastReadMessageId && messagesIndexMap[receipt.lastReadMessageId] >= msgIndex) count++;
+        else if (receipt.lastReadAt && message.timestamp && toMs(receipt.lastReadAt) >= toMs(message.timestamp)) count++;
+      });
+      return count;
+    }
+
+    async function updateReadReceiptForCurrentUser() {
+      if (!currentRoomId || !userId) return;
+      // バックグラウンド・最小化・非フォーカス時は既読にしない
+      if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
+      // 読んでいるたびに covo_last_read を更新（60秒バッファ切れによる誤未読ドット防止）
+      if (typeof updateLocalAndRemoteReadState === 'function') {
+         updateLocalAndRemoteReadState(currentRoomId, Date.now() + 10000);
+      } else {
+         try {
+           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+           rm[currentRoomId] = Date.now() + 10000;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+         } catch(e) {}
+      }
+      const lastMsgId = lastMessagesData.length ? lastMessagesData[lastMessagesData.length - 1].id : null;
+      if (lastMsgId === _lastSentReadMessageId) return;
+      _lastSentReadMessageId = lastMsgId;
+      try {
+        const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const myReceiptRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts/${userId}`);
+        await set(myReceiptRef, { lastReadAt: Date.now(), lastReadMessageId: lastMsgId });
+      } catch (error) { }
+    }
+
+    async function setTypingStatus(isTyping) {
+      if (!currentRoomId || !userId || !appId) return;
+      try {
+        const { ref, set, remove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing/${userId}`);
+        if (isTyping) {
+          await set(typingRef, { n: userNickname, t: serverTimestamp() });
+        } else {
+          await remove(typingRef);
+        }
+      } catch (e) { }
+    }
+
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && document.hasFocus()) updateReadReceiptForCurrentUser(); });
+    window.addEventListener("focus", () => { if (!document.hidden) updateReadReceiptForCurrentUser(); });
+
+    let longPressTimer;
+    let longPressTriggered = false;
+    let ignoreNextContextMenuClick = false;
+    let msgTouchStartX = 0, msgTouchStartY = 0;
+    let swipeTargetRow = null;
+    let swipeCurrentX = 0;
+    messagesDisplay.addEventListener("touchstart", (e) => {
+      const bubble = e.target.closest(".message-bubble");
+      const row = e.target.closest(".message-row");
+      const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+      if (!targetBubble) return;
+      const touch = e.touches[0];
+      msgTouchStartX = touch.clientX;
+      msgTouchStartY = touch.clientY;
+      swipeTargetRow = row;
+      swipeCurrentX = 0;
+      const clientX = touch.clientX;
+      const clientY = touch.clientY;
+      longPressTriggered = false;
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true;
+        showContextMenu(targetBubble, clientX, clientY);
+        if (window.getSelection) window.getSelection().removeAllRanges();
+      }, 300);
+    }, { passive: false });
+
+    messagesDisplay.addEventListener("touchend", (e) => {
+      clearTimeout(longPressTimer);
+      if (longPressTriggered) {
+        longPressTriggered = false;
+        ignoreNextContextMenuClick = true;
+        setTimeout(() => ignoreNextContextMenuClick = false, 500);
+        if (e.cancelable) e.preventDefault();
+      }
+      if (swipeTargetRow) {
+        const innerRow = swipeTargetRow.querySelector(".message-row-inner");
+        if (innerRow) {
+          innerRow.style.transition = "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          innerRow.style.transform = "translateX(0)";
+          setTimeout(() => { innerRow.style.transition = ""; }, 400);
+          
+          if (Math.abs(swipeCurrentX) > 50) {
+            const bubble = innerRow.querySelector(".message-bubble");
+            const msgId = bubble ? bubble.dataset.messageId : null;
+            if (msgId) {
+              const msgData = lastMessagesData.find(m => m.id === msgId);
+              if (msgData) {
+                replyingToMessage = msgData;
+                replyingToNickname.textContent = msgData.senderNickname;
+                replyingToText.textContent = msgData.text || (msgData.fileName ? "ファイル" : "...");
+                replyingToContainer.classList.remove("hidden");
+                const input = document.getElementById("messageInput");
+                if (input && !input.disabled) {
+                   input.focus();
+                   setTimeout(() => input.focus(), 50);
+                }
+              }
+            }
+          }
+          const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
+          if (replyBg) {
+             replyBg.style.transition = "opacity 0.2s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
+             replyBg.style.opacity = "0";
+             replyBg.style.transform = "translateY(-50%) scale(0.5)";
+             setTimeout(() => { replyBg.style.transition = ""; }, 400);
+          }
+        }
+      }
+      if (swipeTargetRow) swipeTargetRow.dataset.sDir = ""; swipeTargetRow = null;
+      swipeCurrentX = 0;
+    });
+    messagesDisplay.addEventListener("touchmove", (e) => { 
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - msgTouchStartX;
+      const deltaY = touch.clientY - msgTouchStartY;
+      
+      if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+        clearTimeout(longPressTimer); 
+        if (messageContextMenu.classList.contains("hidden")) {
+          longPressTriggered = false; 
+        }
+      }
+      
+      if (swipeTargetRow) {
+        if (!swipeTargetRow.dataset.sDir) {
+           if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 5) swipeTargetRow.dataset.sDir = 'h';
+           else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 5) swipeTargetRow.dataset.sDir = 'v';
+        }
+        if (swipeTargetRow.dataset.sDir === 'h') {
+          if (e.cancelable) e.preventDefault(); // Lock horizontal swipe for iOS Safari
+          const innerRow = swipeTargetRow.querySelector(".message-row-inner");
+          const replyBg = swipeTargetRow.querySelector(".swipe-reply-icon-bg");
+          if (innerRow) {
+            let tx = deltaX;
+            // 全てのメッセージで左にスワイプ（LINE風）のみ許可
+            if (tx > 0) tx = 0;
+            
+            // 画面にちょっと見切れるくらいまでスムーズにスライドさせる
+            if (tx < -120) tx = -120 + (tx + 120) * 0.3;
+            innerRow.style.transform = `translateX(${tx}px)`;
+            swipeCurrentX = tx;
+            
+            if (replyBg) {
+              const absTx = Math.abs(tx);
+              const progress = Math.min(absTx / 60, 1);
+              replyBg.style.opacity = progress;
+              replyBg.style.transform = `translateY(-50%) scale(${0.5 + 0.5 * progress})`;
+              if (absTx > 60) {
+                 if (progress > 0.99 && !replyBg.dataset.vibrated) {
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    replyBg.dataset.vibrated = "true";
+                 }
+              } else {
+                 replyBg.dataset.vibrated = "";
+              }
+            }
+          }
+        }
+      }
+    }, { passive: false });
+    messagesDisplay.addEventListener("touchcancel", () => { clearTimeout(longPressTimer); longPressTriggered = false; if (swipeTargetRow) swipeTargetRow.dataset.sDir = ""; swipeTargetRow = null; swipeCurrentX = 0; });
+
+    const DEFAULT_REACTIONS = ['🥰', '😆', '😲', '😢', '🥺', '🙇'];
+
+    function showContextMenu(bubble, clientX, clientY) {
+      const msgData = lastMessagesData.find(m => m.id === bubble.dataset.messageId);
+      if (!msgData) return;
+      selectedMessageForContext = msgData;
+
+      const reactionBar = document.getElementById('reactionPickerBar');
+      if (reactionBar) {
+        reactionBar.innerHTML = '';
+        DEFAULT_REACTIONS.forEach(emoji => {
+          const btn = document.createElement('div');
+          btn.className = 'reaction-btn';
+          btn.innerHTML = emoji;
+          btn.onclick = (e) => {
+            if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+            window.toggleReaction(msgData.id, emoji);
+            messageContextMenu.classList.add("hidden");
+          };
+          reactionBar.appendChild(btn);
+        });
+        const moreBtn = document.createElement('div');
+        moreBtn.className = 'reaction-more-btn';
+        moreBtn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
+        moreBtn.onclick = (e) => {
+          if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+          e.stopPropagation();
+          messageContextMenu.classList.add("hidden");
+          window._reactionTargetMessageId = msgData.id;
+          window.toggleStickerPicker();
+        };
+        reactionBar.appendChild(moreBtn);
+        _twemojiParse(reactionBar);
+      }
+
+      const fileUrl = msgData._decryptedFileUrl || msgData.fileData || msgData.kvFileUrl;
+      if (fileUrl) {
+        if (downloadMessageButton) downloadMessageButton.style.display = 'block';
+      } else {
+        if (downloadMessageButton) downloadMessageButton.style.display = 'none';
+      }
+
+      messageContextMenu.classList.remove("hidden");
+
+      let menuWidth = messageContextMenu.offsetWidth;
+      let menuHeight = messageContextMenu.offsetHeight;
+
+      let safeLeft = parseFloat(clientX) || 0;
+      let safeTop = parseFloat(clientY) || 0;
+
+      // 画面外に見切れないように位置を調整
+      if (safeLeft + menuWidth > window.innerWidth) {
+        safeLeft = window.innerWidth - menuWidth - 5;
+      }
+      if (safeTop + menuHeight > window.innerHeight) {
+        safeTop = window.innerHeight - menuHeight - 5;
+      }
+
+      // 最終安全装置：左上が見切れないようにする
+      safeLeft = Math.max(5, safeLeft);
+      safeTop = Math.max(5, safeTop);
+
+      messageContextMenu.style.left = `${safeLeft}px`;
+      messageContextMenu.style.top = `${safeTop}px`;
+
+      messageContextMenu.style.pointerEvents = "none";
+      setTimeout(() => {
+        messageContextMenu.style.pointerEvents = "auto";
+      }, 400);
+    }
+
+    messagesDisplay.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      // スマホやタッチパネルPCでの長押しによって合成された contextmenu イベント (clientX/Y が 0 になる) を無視する
+      if (e.clientX === 0 && e.clientY === 0) return;
+
+      const bubble = e.target.closest(".message-bubble");
+      const row = e.target.closest(".message-row");
+      const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+      if (targetBubble) {
+        showContextMenu(targetBubble, e.clientX, e.clientY);
+      } else {
+        messageContextMenu.classList.add("hidden");
+      }
+    });
+    document.addEventListener("click", (e) => {
+      if (ignoreNextContextMenuClick) return;
+      if (!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden");
+    });
+
+    replyMessageButton.addEventListener("click", (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      if (selectedMessageForContext) {
+        replyingToMessage = selectedMessageForContext;
+        replyingToNickname.textContent = selectedMessageForContext.senderNickname;
+        replyingToText.textContent = selectedMessageForContext.text || (selectedMessageForContext.fileName ? "ファイル" : "...");
+        replyingToContainer.classList.remove("hidden");
+      }
+      messageContextMenu.classList.add("hidden");
+    });
+
+    downloadMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      messageContextMenu.classList.add("hidden");
+      if (!selectedMessageForContext) return;
+      const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+      if (fileUrl) {
+        try {
+          if (fileUrl.startsWith('blob:')) {
+            const a = document.createElement('a');
+            a.href = fileUrl;
+            a.download = selectedMessageForContext.fileName || 'download';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          } else {
+            const res = await fetch(fileUrl, { mode: 'cors' });
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = selectedMessageForContext.fileName || 'download';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          }
+        } catch (err) {
+          console.error("Direct download failed:", err);
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = selectedMessageForContext.fileName || 'download';
+          a.target = '_blank';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+      }
+    });
+
+    copyMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      messageContextMenu.classList.add("hidden");
+      if (!selectedMessageForContext) return;
+
+      const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+      if (fileUrl && (fileUrl.startsWith('http') || fileUrl.startsWith('blob:'))) {
+        try {
+          const res = await fetch(fileUrl, { mode: 'cors' });
+          const blob = await res.blob();
+          if (navigator.clipboard && navigator.clipboard.write) {
+            try {
+              let copyBlob = blob;
+              let type = blob.type || selectedMessageForContext.fileType || 'application/octet-stream';
+              const item = new ClipboardItem({ [type]: copyBlob });
+              await navigator.clipboard.write([item]);
+              alertMessage("ファイルをクリップボードにコピーしました", "success");
+              return;
+            } catch (err) {
+              console.warn("ClipboardItem write failed, trying fallback...", err);
+            }
+          }
+          if (navigator.canShare && navigator.share) {
+            const file = new File([blob], selectedMessageForContext.fileName || "attachment", { type: blob.type || 'application/octet-stream' });
+            if (navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
+                return;
+              } catch (shareErr) {
+                if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
+                  return; // ユーザーキャンセル時は後続のURLコピーを出さない
+                }
+                console.warn("Share failed with error:", shareErr);
+              }
+            }
+          }
+          copyToClipboard(fileUrl);
+          alertMessage("ファイルのURLをクリップボードにコピーしました（ブラウザ制限のためURLをコピーしました）", "success");
+        } catch (err) {
+          console.error("Copy file error:", err);
+          if (selectedMessageForContext.text) {
+            copyToClipboard(selectedMessageForContext.text);
+            alertMessage("テキストをコピーしました", "success");
+          } else {
+            alertMessage("コピーに失敗しました", "error");
+          }
+        }
+      } else if (selectedMessageForContext.text) {
+        copyToClipboard(selectedMessageForContext.text);
+        alertMessage("コピーしました", "success");
+      }
+    });
+
+    deleteMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      messageContextMenu.classList.add("hidden");
+      if (!selectedMessageForContext) return;
+      const canDelete = selectedMessageForContext.senderId === userId || isAdmin ||
+        (currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
+      if (!canDelete) { alertMessage("権限がありません", "warning"); return; }
+
+      const msgToDelete = selectedMessageForContext;
+      const isServerAdmin = !!(currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
+      const forceDelete = (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
+
+      // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
+      // 1a. kvFileUrl フィールド（新形式）
+      if (msgToDelete.kvFileUrl) {
+        const m = msgToDelete.kvFileUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        if (m) {
+          const fileKey = m[1];
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+          try {
+            const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              console.error('[deleteMessage] KV file delete failed (kvFileUrl):', fileKey, err);
+              alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+              return;
+            }
+            console.log('[deleteMessage] KV file deleted (kvFileUrl):', fileKey);
+          } catch (e) {
+            console.error('[deleteMessage] KV file delete error (kvFileUrl):', fileKey, e);
+            alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+            return;
+          }
+        }
+      }
+      // 1b. テキスト内の旧形式KV URL
+      if (msgToDelete.text) {
+        const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
+        const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
+        for (const match of kvMatches) {
+          const fileKey = match[1];
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+          try {
+            const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              console.error('[deleteMessage] KV file delete failed (text URL):', fileKey, err);
+              alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+              return;
+            }
+            console.log('[deleteMessage] KV file deleted (text URL):', fileKey);
+          } catch (e) {
+            console.error('[deleteMessage] KV file delete error (text URL):', fileKey, e);
+            alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+            return;
+          }
+        }
+      }
+
+      // 1c. fileData が Cloudflare(KV) URL の場合（画像・その他ファイルの新形式）。
+      //     画像送信もKVに移行したため、ここで実ファイルを削除しないとCloudflareに残ってしまう。
+      if (msgToDelete.fileData && msgToDelete.fileData.indexOf('/api/file/') >= 0) {
+        const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        if (m) {
+          const fileKey = m[1];
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+          try {
+            const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              console.error('[deleteMessage] KV file delete failed (fileData):', fileKey, err);
+              alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+              return;
+            }
+            console.log('[deleteMessage] KV file deleted (fileData):', fileKey);
+          } catch (e) {
+            console.error('[deleteMessage] KV file delete error (fileData):', fileKey, e);
+            alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
+            return;
+          }
+        }
+      }
+
+      // 3. Firestore / D1 メッセージ削除
+      try {
+        
+          await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+          try {
+            const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
+          } catch(err) { console.error("RTDB Dual Delete Failed", err); }
+          try {
+            const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
+          } catch(e) { console.error("RTDB Delete Failed", e); }
+        
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        renderMessagesWithReadReceipts();
+        renderPinnedMessages();
+        alertMessage("削除しました", "success");
+      } catch (e) {
+        console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
+        alertMessage("削除に失敗しました", "error");
+      }
+    });
+
+    messagesDisplay.addEventListener("dblclick", (e) => {
+      const bubble = e.target.closest(".message-bubble");
+      const row = e.target.closest(".message-row");
+      const targetBubble = bubble || (row && row.querySelector(".message-bubble"));
+      if (targetBubble) {
+        const m = lastMessagesData.find(msg => msg.id === targetBubble.dataset.messageId);
+        if (m) {
+          replyingToMessage = m;
+          replyingToNickname.textContent = m.senderNickname;
+          replyingToText.textContent = m.text || (m.fileName ? "ファイル" : "...");
+          replyingToContainer.classList.remove("hidden");
+          messageInput.focus();
+        }
+      }
+    });
+    cancelReplyButton.addEventListener("click", cancelReply);
+    function cancelReply() { replyingToMessage = null; replyingToContainer.classList.add("hidden"); }
+    messagesDisplay.addEventListener("click", (e) => {
+      const q = e.target.closest(".reply-quote");
+      if (q) {
+        const replyId = q.dataset.replyToId;
+        const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${replyId}"]`);
+        if (el) {
+          doJumpHighlight(el);
+        } else {
+          jumpToUnloadedMessage(replyId);
+        }
+      }
+    });
+
+    async function showUnloadedMessagePreview(msgId) {
+      let msgData = lastMessagesData.find(m => m.id === msgId);
+      if (!msgData) {
+        try {
+          const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            msgData = { id: docSnap.id, ...docSnap.data() };
+          } else {
+            alertMessage("メッセージが見つかりません。", "error");
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+          alertMessage("メッセージの読み込みに失敗しました。", "error");
+          return;
+        }
+      }
+      
+      if (msgData.text && isEncrypted(msgData.text)) {
+        try {
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          msgData.text = await decryptText(msgData.text, currentServerId, currentRoomId, _members);
+        } catch(e) {
+          console.error("Preview decryption error:", e);
+        }
+      }
+
+      let pTextHtml = "";
+      if (msgData.customEmojiUrl) {
+        pTextHtml = `<img src="${escapeHtml(msgData.customEmojiUrl)}" class="h-16 w-16 object-contain mt-1" />`;
+      } else if (msgData.fileName) {
+        pTextHtml = `<div class="flex items-center gap-2 mt-1"><i class="fas fa-file text-gray-400 text-lg"></i><span class="text-xs text-gray-500">${escapeHtml(msgData.fileName)}</span></div>`;
+      } else {
+        pTextHtml = escapeHtml(msgData.text || "...");
+      }
+
+      const pName = msgData.senderNickname || "ユーザー";
+      
+      const modal = document.getElementById("messagePreviewModal");
+      document.getElementById("previewModalName").textContent = pName;
+      document.getElementById("previewModalText").innerHTML = pTextHtml;
+      
+      const avatarEl = document.getElementById("previewModalAvatar");
+      avatarEl.innerHTML = "";
+      avatarEl.style.backgroundImage = "";
+      const senderUser = cachedUsers.find(u => u.id === msgData.senderId);
+      if (senderUser?.avatarUrl) {
+        __setAvatarImg(avatarEl, senderUser.avatarUrl, pName, { style: '' });
+      } else {
+        avatarEl.textContent = pName.charAt(0).toUpperCase();
+      }
+      
+      modal.querySelector('.modal-box').dataset.msgId = msgId;
+      modal.classList.remove("hidden");
+    }
+
+
+
+    function doJumpHighlight(el) {
+       // 同一画面内のジャンプは、カクつきを完全排除し、初手からsmoothスクロールのみで極めて滑らかに移動する
+       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+       
+       const isStamp = el.querySelector('img[alt^="stamp_"]');
+       if (isStamp) {
+           isStamp.classList.add('stamp-jump-anim');
+           setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+       } else {
+           el.classList.add('message-highlight');
+           setTimeout(() => el.classList.remove('message-highlight'), 1200);
+       }
+    }
+
+    // iOS/Safari 判定
+    const _isIOSSafari = (() => {
+      const ua = navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+      // iPad on iOS 13+ reports as "Macintosh" but has touch
+      const isIPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      return isIOS || isIPadOS || isSafari;
+    })();
+
+    function downloadFile(fileData, fileName, mimeType) {
+      if (isTauri && window.__TAURI__?.plugin?.shell) {
+        window.__TAURI__.plugin.shell.open(fileData).catch(e => {
+          console.warn('Tauri open failed', e);
+          window.open(fileData, '_blank');
+        });
+        return;
+      }
+
+      const tryShareOrDownloadBlob = async (blob) => {
+        if (navigator.canShare && navigator.share) {
+          try {
+            const file = new File([blob], fileName, { type: mimeType });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: fileName,
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn("Share failed", e);
+          }
+        }
+        // Fallback: download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      };
+
+      if (fileData && fileData.startsWith('blob:')) {
+        fetch(fileData)
+          .then(res => res.blob())
+          .then(blob => tryShareOrDownloadBlob(blob))
+          .catch(() => window.open(fileData, '_blank'));
+        return;
+      }
+
+      if (fileData && fileData.startsWith('http')) {
+        if (fileData.includes('res.cloudinary.com')) {
+          // Cloudinary URL はブラウザからの直接アクセスが制限される場合があるため
+          // Cloudflare Worker プロキシ経由でダウンロードする
+          const proxyUrl = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(fileData)}&name=${encodeURIComponent(fileName)}`;
+          if (_isIOSSafari && (!navigator.share)) {
+            // iOS Safari かつ Share 非対応の場合
+            window.open(proxyUrl, '_blank');
+            return;
+          }
+          fetch(proxyUrl)
+            .then(res => {
+              if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+              return res.blob();
+            })
+            .then(blob => tryShareOrDownloadBlob(blob))
+            .catch(() => window.open(fileData, '_blank'));
+          return;
+        }
+        // 非Cloudinary HTTP URL
+        if (_isIOSSafari && (!navigator.share)) {
+          window.open(fileData, '_blank');
+          return;
+        }
+        fetch(fileData, { mode: 'cors' })
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.blob();
+          })
+          .then(blob => tryShareOrDownloadBlob(blob))
+          .catch(() => window.open(fileData, '_blank'));
+        return;
+      }
+      // base64フォールバック（旧データ互換）
+      try {
+        const parts = fileData.split(';base64,');
+        const byteCharacters = atob(parts[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (e) { console.error(e); }
+    }
+
+    function closePdfLightbox() {
+      const lightbox = document.getElementById('pdfLightbox');
+      const iframe = document.getElementById('pdfLightboxIframe');
+      if (lightbox) lightbox.style.display = 'none';
+      if (iframe) iframe.src = '';
+    }
+
+    // PDFライトボックスを開く
+    function openPdfLightbox(url, fileName) {
+      const lightbox = document.getElementById('pdfLightbox');
+      const iframe = document.getElementById('pdfLightboxIframe');
+      const nameEl = document.getElementById('pdfLightboxName');
+      const dlBtn = document.getElementById('pdfLightboxDownload');
+      const closeBtn = document.getElementById('pdfLightboxClose');
+
+      nameEl.textContent = fileName;
+
+      // iOS Safari は iframe PDF 表示が不安定 → 直接タブで開く
+      if (_isIOSSafari) {
+        window.open(url, '_blank');
+        return;
+      }
+
+      iframe.src = '';
+      lightbox.style.display = 'flex';
+
+      // エラーUI準備（再表示時に重複しないよう既存を削除）
+      const contentArea = lightbox.querySelector('div:last-child');
+      contentArea.style.position = 'relative';
+      const existingErr = contentArea.querySelector('.pdf-error-msg');
+      if (existingErr) existingErr.remove();
+
+      // safeUrl: XSS対策としてinlineイベントハンドラではなくdata属性経由で開く
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'pdf-error-msg';
+      errorMsg.style.cssText = 'display:none;position:absolute;inset:0;background:#1f2937;color:white;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:1;';
+      const openBtn = document.createElement('button');
+      openBtn.className = 'px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg';
+      openBtn.textContent = '別タブで開く';
+      openBtn.addEventListener('click', () => window.open(url, '_blank', 'noopener,noreferrer'));
+      errorMsg.innerHTML = `<i class="fas fa-exclamation-circle text-red-400 text-4xl"></i><p class="text-sm text-gray-300">このPDFはプレビューできません</p>`;
+      errorMsg.appendChild(openBtn);
+      contentArea.appendChild(errorMsg);
+
+      const isRaw = url.includes('/raw/upload/');
+      // 常にWorkerプロキシ経由（raw/image両方）
+      // Cloudinaryは直接アクセスも401になる場合があるためWorker経由で統一
+      const previewSrc = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}&preview=1`;
+
+      dlBtn.onclick = () => downloadFile(url, fileName, 'application/pdf');
+
+      let timeoutId = null;
+      closeBtn.onclick = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        errorMsg.remove();
+        closePdfLightbox();
+      };
+
+      // 両タイプともWorkerプロキシ経由でfetch事前チェック
+      // → iframe.onloadは401でも発火するため直接iframeに渡すと失敗を検知できない
+      console.info(`[PDF] ${isRaw ? 'raw/upload' : 'image/upload'}型 → Workerプロキシ経由でアクセスチェック中`);
+      fetch(previewSrc)
+        .then(async res => {
+          console.info(`[PDF] Workerレスポンス: HTTP ${res.status} ${res.statusText}`);
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            if (res.status === 401) {
+              console.warn('[PDF] 401 Unauthorized: Cloudinaryがこのファイルへのアクセスを制限しています。');
+              console.warn('[PDF] 原因:', errBody.reason || 'アップロードプリセットのアクセス設定が原因の可能性があります。Cloudinaryダッシュボードでプリセットのaccess_modeをpublicに変更してください。');
+            } else {
+              console.error(`[PDF] エラー (HTTP ${res.status}):`, errBody);
+            }
+            errorMsg.style.display = 'flex';
+          } else {
+            console.info('[PDF] アクセス成功 → iframeで表示します');
+            iframe.src = previewSrc;
+          }
+        })
+        .catch(err => {
+          console.error('[PDF] fetchネットワークエラー:', err);
+          errorMsg.style.display = 'flex';
+        });
+    }
+
+    function alertMessage(msg, type = "info") {
+      const stack = document.getElementById("notifStack");
+      const box = document.createElement("div");
+      let colorClass = "bg-gray-800 text-white";
+      if (type === "error") colorClass = "bg-red-600 text-white";
+      box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass}`;
+      box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+      box.textContent = msg;
+      stack.appendChild(box);
+      setTimeout(() => {
+        box.style.animation = "fadeIn 0.2s ease reverse forwards";
+        setTimeout(() => box.remove(), 200);
+      }, 2800);
+    }
+
+    // =========================================================================
+    // カスケード削除ユーティリティ
+    // =========================================================================
+
+    // コレクション内の全ドキュメントをバッチ削除（500件制限をページングで回避）
+    async function batchDeleteCollection(colRef) {
+      let hasMore = true;
+      while (hasMore) {
+        const snap = await getDocs(query(colRef, limit(490)));
+        if (snap.empty) break;
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        hasMore = snap.docs.length === 490;
+      }
+    }
+
+    // ルームと配下の全データ（messages, readReceipts）を削除
+    async function deleteRoomCascade(serverId, roomId) {
+      const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
+      await batchDeleteCollection(collection(db, `${base}/messages`));
+      await batchDeleteCollection(collection(db, `${base}/readReceipts`));
+      await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
+          try {
+            const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+            const rtdb = await _getOrInitRTDB();
+            await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
+          } catch(err) { console.error("RTDB Room Delete Failed", err); }
+    }
+
+    // サーバーと配下の全データ（rooms, messages, readReceipts, profiles, inviteCodes, secrets）を削除
+    async function deleteServerCascade(serverId) {
+      const base = `artifacts/${appId}/servers/${serverId}`;
+      // 全ルームを取得して配下も削除
+      const roomsSnap = await getDocs(collection(db, `${base}/rooms`));
+      for (const roomDoc of roomsSnap.docs) {
+        const rb = `${base}/rooms/${roomDoc.id}`;
+        await batchDeleteCollection(collection(db, `${rb}/messages`));
+        await batchDeleteCollection(collection(db, `${rb}/readReceipts`));
+        await deleteDoc(roomDoc.ref);
+      }
+      await batchDeleteCollection(collection(db, `${base}/profiles`));
+      await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
+      await batchDeleteCollection(collection(db, `${base}/secrets`));
+      await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+      try {
+        const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}`));
+      } catch(err) { console.error("RTDB Server Delete Failed", err); }
+    }
+
+    // ===== アプリ内通知スタック =====
+        
+    async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+      // 1. 本文が暗号化されている場合は、非同期で確実に復号を実行
+      if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+        try {
+          const memberIds = serverData?.joinedUsers || [];
+          text = await decryptText(text, serverId, roomId, memberIds);
+        } catch (e) { text = '（暗号化されたメッセージ）'; }
+      }
+
+      // 2. スタンプおよび添付ファイル(画像・動画・外部ストレージ等)のスマートな表現へ変換
+      let displayBody = text;
+      if (text.includes("firebase-storage") || text.includes("cloudinary") || text.includes("r2.cloudflarestorage") || text.match(/\.(jpg|jpeg|png|gif|webp|mp4|mov)/i)) {
+        displayBody = `📎 添付ファイルが送信されました`;
+      } else if (text.startsWith("[STAMP]") || text.includes("/stamps/")) {
+        displayBody = `🌟 スタンプが送信されました`;
+      }
+
+      // 3. 通知スタックの重複あふれガード（DOMメモリリークおよび画面圧迫の防止）
+      const stack = document.getElementById("notifStack");
+      if (stack && stack.children.length >= 4) {
+        try { stack.removeChild(stack.firstChild); } catch(e){}
+      }
+
+      const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+      if (soundEnabled) {
+        playNotificationSound();
+        if (isTauri && window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
+        }
+      }
+
+      const notif = document.createElement("div");
+      // ライトモード＆ダークモード両対応の最高峰リッチデザイン（エレガントなシャドウ＆ぼかし背景）
+      notif.className = "bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-700/80 overflow-hidden w-80 backdrop-blur-md transition-all";
+      notif.style.cssText = "border-left:4px solid #6366f1; pointer-events:auto; animation:slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;";
+      const meta = escapeHtml(`${serverName} · #${roomName}`);
+      const body = escapeHtml(`${senderName}: ${displayBody}`);
+      notif.innerHTML = `
+          <div class="notif-row flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+            <div class="w-10 h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 shadow-inner">
+              <i class="fas fa-bell text-indigo-500 dark:text-indigo-400 text-base animate-pulse"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-[11px] font-bold text-gray-400 dark:text-gray-400 truncate tracking-wide">${meta}</div>
+              <div class="text-sm text-slate-900 dark:text-slate-100 font-bold truncate leading-snug mt-0.5">${body}</div>
+            </div>
+            <button class="notif-x w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 flex-shrink-0 transition-colors">
+              <i class="fas fa-times text-xs"></i>
+            </button>
+          </div>`;
+      const navData = { serverId, serverData, roomId, roomName };
+      function dismissNotif() {
+        notif.style.animation = "fadeIn 0.2s ease reverse forwards";
+        setTimeout(() => notif.remove(), 200);
+      }
+      notif.querySelector(".notif-row").addEventListener("click", async (e) => {
+        if (e.target.closest(".notif-x")) return;
+        dismissNotif();
+        if (currentServerId !== navData.serverId) {
+          await enterServer(navData.serverId, navData.serverData);
+          setTimeout(() => selectRoom(navData.roomId, navData.roomName), 600);
+        } else {
+          selectRoom(navData.roomId, navData.roomName);
+        }
+      });
+      notif.querySelector(".notif-x").addEventListener("click", (e) => {
+        e.stopPropagation();
+        dismissNotif();
+      });
+      stack.appendChild(notif);
+      setTimeout(dismissNotif, 6000);
+    }
+
+    // ===== グローバル右クリック無効 =====
+    document.addEventListener("contextmenu", (e) => {
+      // 入力欄では標準の右クリックメニュー（コピペ等）を許可する
+      const tag = e.target.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+
+      if (!e.target.closest(".message-bubble") && !e.target.closest(".server-card") && !e.target.closest(".message-row")) {
+        e.preventDefault();
+      }
+    });
+
+    // ===== サーバーカードコンテキストメニュー =====
+    let serverCtxData = null;
+
+    function showServerContextMenu(server, x, y) {
+      serverCtxData = server;
+      const menu = document.getElementById("serverContextMenu");
+      const isSvAdmin = server.serverAdmins && server.serverAdmins.includes(userId);
+      const isOwner = server.createdBy === userId;
+      const isJoined = server.joinedUsers && server.joinedUsers.includes(userId);
+      // 権限ごとに表示切り替え
+      document.getElementById("serverCtxSettings").style.display = (isAdmin || isSvAdmin) ? "" : "none";
+      document.getElementById("serverCtxLeave").style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
+      document.getElementById("serverCtxDeleteSep").style.display = (isAdmin || isOwner) ? "" : "none";
+      document.getElementById("serverCtxDelete").style.display = (isAdmin || isOwner) ? "" : "none";
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        const r = menu.getBoundingClientRect();
+        if (r.right > window.innerWidth - 8) menu.style.left = `${x - r.width}px`;
+        if (r.bottom > window.innerHeight - 8) menu.style.top = `${y - r.height}px`;
+      });
+    }
+
+    document.getElementById("serverCtxEnter").addEventListener("click", () => {
+      if (serverCtxData) enterServer(serverCtxData.id, serverCtxData);
+      document.getElementById("serverContextMenu").classList.add("hidden");
+    });
+
+    document.getElementById("serverCtxSettings").addEventListener("click", async () => {
+      const sv = serverCtxData;
+      document.getElementById("serverContextMenu").classList.add("hidden");
+      if (!sv) return;
+      await enterServer(sv.id, sv);
+      setTimeout(() => openServerSettings(), 600);
+    });
+
+    document.getElementById("serverCtxLeave").addEventListener("click", async () => {
+      const sv = serverCtxData;
+      document.getElementById("serverContextMenu").classList.add("hidden");
+      if (!sv) return;
+      if (!await showCustomConfirm(`「${sv.name || sv.id}」を退出しますか？`, "退出する", "キャンセル")) return;
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await updateDoc(doc(db, `artifacts/${appId}/servers`, sv.id), {
+          joinedUsers: arrayRemove(userId),
+          serverAdmins: arrayRemove(userId),
+          memberCount: increment(-1)
+        });
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
+        } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
+        alertMessage("サーバーを退出しました", "success");
+      } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
+      finally { loadingOverlay.classList.add("hidden"); }
+    });
+
+    document.getElementById("serverCtxDelete").addEventListener("click", async () => {
+      const sv = serverCtxData;
+      document.getElementById("serverContextMenu").classList.add("hidden");
+      if (!sv) return;
+      if (!await showCustomConfirm(`「${sv.name || sv.id}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
+      loadingOverlay.classList.remove("hidden");
+      try {
+        await deleteServerCascade(sv.id);
+        alertMessage("サーバーを削除しました", "success");
+      } catch (e) { alertMessage("削除に失敗しました: " + e.message, "error"); }
+      finally { loadingOverlay.classList.add("hidden"); }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#serverContextMenu")) {
+        document.getElementById("serverContextMenu").classList.add("hidden");
+      }
+    });
+
+    // 他サーバーのメッセージを監視するグローバルリスナー
+    let globalNotifListeners = {};
+
+    async function setupGlobalNotificationListeners() {
+      Object.values(globalNotifListeners).forEach(unsub => unsub());
+      globalNotifListeners = {};
+      if (!isTauri && currentFcmToken) {
+        console.log('🔔 [通知] FCM(プッシュ通知)が有効なため、バックグラウンド監視を最適化しました');
+        return;
+      }
+      
+      try {
+        const serversSnap = await getDocs(
+          query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+        );
+        for (const serverDoc of serversSnap.docs) {
+          const svId = serverDoc.id;
+          const svData = serverDoc.data();
+          if (svId === currentServerId) continue;
+          
+          const roomsQuery = collection(db, `artifacts/${appId}/servers/${svId}/rooms`);
+          let isFirst = true;
+          let roomLastNotifTs = {};
+          
+          window.__globalRoomsCache = window.__globalRoomsCache || {};
+          window.__globalRoomsCache[svId] = window.__globalRoomsCache[svId] || {};
+
+          const unsub = onSnapshot(roomsQuery, snapshot => {
+            if (isFirst) {
+              isFirst = false;
+              snapshot.forEach(doc => {
+                 const d = doc.data();
+                 window.__globalRoomsCache[svId][doc.id] = d;
+                 roomLastNotifTs[doc.id] = typeof d.lastMessageAt === 'number' ? d.lastMessageAt : (d.lastMessageAt?.toMillis?.() || (d.lastMessageAt?.seconds ? d.lastMessageAt.seconds * 1000 : 0));
+              });
+              return;
+            }
+            let hasNewMessage = false;
+            let newItemsToNotif = [];
+            snapshot.docChanges().forEach(change => {
+              if (change.type === "modified" || change.type === "added") {
+                const roomData = change.doc.data();
+                const rmId = change.doc.id;
+                window.__globalRoomsCache[svId][rmId] = roomData;
+                const rmName = roomData.name || rmId;
+                const ts = typeof roomData.lastMessageAt === 'number' ? roomData.lastMessageAt : (roomData.lastMessageAt?.toMillis?.() || (roomData.lastMessageAt?.seconds ? roomData.lastMessageAt.seconds * 1000 : 0));
+                const prevTs = roomLastNotifTs[rmId] || 0;
+
+                if (ts > prevTs) {
+                  roomLastNotifTs[rmId] = ts;
+                  hasNewMessage = true;
+                  if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
+                    newItemsToNotif.push({ serverId: svId, serverName: svData.name || svId, roomId: rmId, roomName: rmName, lastAt: ts });
+                    (async () => {
+                      let body = roomData.lastMessageText || '新着メッセージ';
+                      try {
+                        if (typeof isEncrypted === 'function' && isEncrypted(body)) {
+                          const _members = (svData && svData.joinedUsers) || [];
+                          body = await decryptText(body, svId, rmId, _members);
+                        }
+                      } catch (e) { body = '（暗号化されたメッセージ）'; }
+                      if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
+                      showInAppNotification(
+                        svData.name || svId, rmName,
+                        'メンバー',
+                        body,
+                        svId, svData, rmId, rmName
+                      );
+                      // Push Notification for other servers
+                      if (!document.hasFocus()) {
+                        if (isTauri) {
+                          if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                        } else if (!currentFcmToken) {
+                          if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                        }
+                      }
+                    })();
+                  }
+                }
+              }
+            });
+            // バッジ更新のために即座に更新するか、未読再スキャンをトリガー
+            if (hasNewMessage) {
+               if (newItemsToNotif.length > 0) {
+                 try {
+                   let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+                   newItemsToNotif.forEach(ni => {
+                     const idx = items.findIndex(it => it.serverId === ni.serverId && it.roomId === ni.roomId);
+                     if (idx > -1) items[idx].lastAt = ni.lastAt;
+                     else items.push(ni);
+                   });
+                   items.sort((a, b) => b.lastAt - a.lastAt);
+                   localStorage.setItem('covo_global_items', JSON.stringify(items));
+                   if (typeof renderNotifList === 'function') renderNotifList(items);
+                   if (isTauri && window.__TAURI__?.core?.invoke) {
+                     window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => {});
+                   }
+                 } catch (e) { console.error(e); }
+               } else if (typeof scanAllUnreadAndRender === 'function') {
+                 scanAllUnreadAndRender();
+               }
+            }
+          });
+          globalNotifListeners[svId] = unsub;
+        }
+      } catch (e) { console.error("globalNotifListeners error:", e); }
+    }
+
+    function showMentionToast(fromNickname) {
+      const box = document.createElement("div");
+      box.className = "fixed top-4 right-4 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium mention-toast";
+      box.style.cssText += "animation: slideUpFade 0.22s ease both;";
+      box.innerHTML = `<span class="mention-toast-badge">@メンション</span><span>${escapeHtml(fromNickname)}さんにメンションされました</span>`;
+      document.body.appendChild(box);
+      setTimeout(() => {
+        box.style.animation = "fadeIn 0.2s ease reverse forwards";
+        setTimeout(() => box.remove(), 200);
+      }, 3500);
+    }
+
+    function showCustomConfirm(message, okText = "確認", cancelText = "キャンセル", subMessage = "") {
+      return new Promise(resolve => {
+        const modal = document.getElementById("customConfirmModal");
+        document.getElementById("customConfirmMessage").textContent = message;
+        document.getElementById("customConfirmOk").textContent = okText;
+        document.getElementById("customConfirmCancel").textContent = cancelText;
+        const subEl = document.getElementById("customConfirmSub");
+        if (subMessage) { subEl.textContent = subMessage; subEl.classList.remove("hidden"); }
+        else { subEl.classList.add("hidden"); }
+
+        openModal(modal);
+
+        const okBtn = document.getElementById("customConfirmOk");
+        const cancelBtn = document.getElementById("customConfirmCancel");
+
+        function onOk() { cleanup(); resolve(true); }
+        function onCancel() { cleanup(); resolve(false); }
+        function cleanup() {
+          modal.classList.add("hidden");
+          okBtn.removeEventListener("click", onOk);
+          cancelBtn.removeEventListener("click", onCancel);
+        }
+        okBtn.addEventListener("click", onOk);
+        cancelBtn.addEventListener("click", onCancel);
+      });
+    }
+
+    function showCustomAlert(message) {
+      return new Promise(resolve => {
+        const modal = document.getElementById("customAlertModal");
+        document.getElementById("customAlertMessage").textContent = message;
+        openModal(modal);
+        const okBtn = document.getElementById("customAlertOk");
+        function onOk() {
+          modal.classList.add("hidden");
+          okBtn.removeEventListener("click", onOk);
+          resolve();
+        }
+        okBtn.addEventListener("click", onOk);
+      });
+    }
+
+
+    // --- 検索機能 ---
+    toggleSearchButton.addEventListener("click", () => {
+      searchContainer.classList.toggle("hidden");
+      if (!searchContainer.classList.contains("hidden")) {
+        searchInput.focus();
+        // 検索開始時は全メッセージを読み込む
+        messageLimit = 9999;
+        subscribeToMessages();
+      } else {
+        searchQuery = ""; searchInput.value = "";
+        // 検索終了時は通常の20件に戻す
+        messageLimit = 20;
+        subscribeToMessages();
+      }
+    });
+    closeSearchBtn.addEventListener("click", () => {
+      searchContainer.classList.add("hidden");
+      searchQuery = ""; searchInput.value = "";
+      // 通常の20件に戻す
+      messageLimit = 20;
+      subscribeToMessages();
+    });
+    searchInput.addEventListener("input", (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      renderMessagesWithReadReceipts();
+    });
+
+    // --- スマホ用戻るボタン ---
+    mobileBackButton.addEventListener("click", () => {
+      sidebar.classList.remove("mobile-hidden");
+      currentRoomHeader.classList.add("hidden");
+      // ボトムナビを再表示
+      const bottomNav = document.getElementById("mobileBottomNav");
+      if (bottomNav) bottomNav.style.display = "flex";
+      document.body.classList.remove('in-chat-view');
+
+      // ルーム退出処理（開いている判定を解除する）
+      currentRoomId = null;
+      if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+      if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+      if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+      if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+      clearMessagesDOM();
+      lastMessagesData = [];
+      messageInput.disabled = true;
+      fileAttachButton.disabled = true;
+      { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
+      { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = true; }
+      sendMessageButton.disabled = true;
+      clearAttachedFile();
+      cancelReply();
+    });
+
+    // --- スマホ用メンバー一覧（ボトムシート） ---
+    function openBottomSheet() {
+      if (window.innerWidth >= 768) return; // PCでは何もしない
+      bottomSheetOverlay.classList.add("show");
+      membersSidebar.classList.add("bottom-sheet-open");
+      membersSidebar.style.transform = ""; // JSのインラインスタイルをリセット
+    }
+
+    function closeBottomSheet() {
+      bottomSheetOverlay.classList.remove("show");
+      membersSidebar.classList.remove("bottom-sheet-open");
+      membersSidebar.style.transform = "";
+    }
+
+    currentRoomTitleText.addEventListener("click", openBottomSheet);
+    bottomSheetOverlay.addEventListener("click", closeBottomSheet);
+
+    // スワイプダウンで閉じる処理
+    let touchStartY = 0;
+    let touchCurrentY = 0;
+    let isDraggingSheet = false;
+
+    membersSidebar.addEventListener("touchstart", (e) => {
+      if (window.innerWidth >= 768) return;
+      // メンバーリストが一番上にある時だけスワイプを検知
+      if (membersList.scrollTop === 0) {
+        touchStartY = e.touches[0].clientY;
+        isDraggingSheet = true;
+        membersSidebar.style.transition = "none"; // ドラッグ中はアニメーションを切る
+      }
+    }, { passive: true });
+
+    membersSidebar.addEventListener("touchmove", (e) => {
+      if (!isDraggingSheet) return;
+      e.preventDefault(); // ページ全体のスクロールを防ぐ
+      touchCurrentY = e.touches[0].clientY;
+      const deltaY = touchCurrentY - touchStartY;
+      if (deltaY > 0) {
+        // 下に引っ張っている時
+        membersSidebar.style.transform = `translateY(${deltaY}px)`;
+      }
+    }, { passive: false });
+
+    membersSidebar.addEventListener("touchend", () => {
+      if (!isDraggingSheet) return;
+      isDraggingSheet = false;
+      membersSidebar.style.transition = "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+
+      const deltaY = touchCurrentY - touchStartY;
+      if (deltaY > 100) {
+        // 100px以上下にスワイプしたら閉じる
+        closeBottomSheet();
+      } else {
+        // 元に戻す
+        membersSidebar.style.transform = "translateY(0)";
+      }
+      touchStartY = 0;
+      touchCurrentY = 0;
+    });
+
+    // --- ピン留め機能 ---
+    pinMessageButton.addEventListener("click", async (e) => {
+      if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+      if (selectedMessageForContext) {
+        
+        const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
+        const isPinned = !selectedMessageForContext.isPinned;
+        await updateDoc(msgRef, { isPinned: isPinned });
+        try {
+          const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
+        } catch(e) { console.error("RTDB Pin Failed", e); }
+        alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
+      }
+      messageContextMenu.classList.add("hidden");
+    });
+
+    let isPinnedMessagesExpanded = false;
+    let isPinnedMessagesMinimized = false;
+
+    function renderPinnedMessages() {
+      const pinnedMessages = currentPinnedMessages;
+      pinnedMessagesArea.innerHTML = "";
+      
+      // If no pins or it's manually minimized by user, we show the floating minimized icon (or hide if no pins)
+      if (pinnedMessages.length === 0) {
+        pinnedMessagesArea.classList.add("hidden");
+        document.getElementById("minimizedPinIcon")?.remove();
+        return;
+      }
+
+      pinnedMessagesArea.classList.remove("hidden");
+      
+      // Restore minimized state from session
+      if (sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true") {
+         isPinnedMessagesMinimized = true;
+      } else {
+         isPinnedMessagesMinimized = false;
+      }
+
+      if (isPinnedMessagesMinimized) {
+         pinnedMessagesArea.classList.add("hidden");
+         // Show floating icon
+         let floatIcon = document.getElementById("minimizedPinIcon");
+         if (!floatIcon) {
+            floatIcon = document.createElement("div");
+            floatIcon.id = "minimizedPinIcon";
+            floatIcon.className = "absolute top-4 right-4 z-[60] bg-white dark:bg-gray-800 shadow-lg rounded-full w-10 h-10 flex items-center justify-center cursor-pointer border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all";
+            floatIcon.innerHTML = `<i class="fas fa-bullhorn"></i><div class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">${pinnedMessages.length}</div>`;
+            floatIcon.onclick = () => {
+                sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+                isPinnedMessagesMinimized = false;
+                renderPinnedMessages();
+            };
+            document.querySelector(".relative.flex-1").appendChild(floatIcon);
+         } else {
+            floatIcon.querySelector("div").textContent = pinnedMessages.length;
+         }
+         return;
+      } else {
+         document.getElementById("minimizedPinIcon")?.remove();
+      }
+
+      // LINE-style Announcement Banner
+      const container = document.createElement("div");
+      container.className = "w-full bg-white dark:bg-[#202225] border-b border-gray-200 dark:border-[#1e1f22] shadow-sm flex flex-col transition-all duration-300";
+      
+      // Main visible header (shows the latest pin)
+      const latestMsg = pinnedMessages[pinnedMessages.length - 1];
+      const headerRow = document.createElement("div");
+      headerRow.className = "flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#2b2d31] transition-colors relative";
+      
+      const iconWrap = document.createElement("div");
+      iconWrap.className = "text-gray-400 dark:text-gray-500 mr-3";
+      iconWrap.innerHTML = '<i class="fas fa-bullhorn"></i>';
+      
+      const contentWrap = document.createElement("div");
+      contentWrap.className = "flex-1 flex flex-col min-w-0 mr-2";
+      
+      const msgLine = document.createElement("div");
+      msgLine.className = "truncate text-sm text-gray-800 dark:text-gray-200";
+      msgLine.innerHTML = `<span class="font-bold mr-1">${escapeHtml(latestMsg.senderNickname)}:</span>${escapeHtml(latestMsg._decryptedErrorText || latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+      
+      contentWrap.appendChild(msgLine);
+      
+      // Action buttons
+      const actionsWrap = document.createElement("div");
+      actionsWrap.className = "flex items-center gap-1 text-gray-400";
+      
+      const expandBtn = document.createElement("div");
+      expandBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors";
+      expandBtn.innerHTML = `<i class="fas fa-chevron-${isPinnedMessagesExpanded ? 'up' : 'down'} transition-transform duration-300"></i>`;
+      
+      const closeBtn = document.createElement("div");
+      closeBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ml-1";
+      closeBtn.innerHTML = `<i class="fas fa-times"></i>`;
+      
+      // Events
+      msgLine.onclick = (e) => {
+         e.stopPropagation();
+         jumpToMsg(latestMsg.id);
+      };
+      
+      expandBtn.onclick = (e) => {
+         e.stopPropagation();
+         isPinnedMessagesExpanded = !isPinnedMessagesExpanded;
+         renderPinnedMessages();
+      };
+      
+      closeBtn.onclick = (e) => {
+         e.stopPropagation();
+         sessionStorage.setItem(`minimized_pins_${currentRoomId}`, "true");
+         isPinnedMessagesMinimized = true;
+         renderPinnedMessages();
+      };
+      
+      // If only 1 message, no expand button needed
+      if (pinnedMessages.length > 1) {
+          actionsWrap.appendChild(expandBtn);
+      }
+      actionsWrap.appendChild(closeBtn);
+      
+      headerRow.appendChild(iconWrap);
+      headerRow.appendChild(contentWrap);
+      headerRow.appendChild(actionsWrap);
+      container.appendChild(headerRow);
+      
+      // Expanded List
+      if (isPinnedMessagesExpanded && pinnedMessages.length > 1) {
+         const listWrap = document.createElement("div");
+         listWrap.className = "border-t border-gray-100 dark:border-[#2b2d31] bg-gray-50 dark:bg-[#1e1f22] overflow-y-auto max-h-64";
+         
+         pinnedMessages.forEach((msg, idx) => {
+             // Skip the latest one if we want, but LINE shows all in the list
+             const itemRow = document.createElement("div");
+             itemRow.className = "flex items-center px-4 py-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-[#2b2d31] transition-colors border-b border-gray-100 dark:border-gray-800 last:border-0";
+             
+             const itemText = document.createElement("div");
+             itemText.className = "flex-1 truncate text-sm text-gray-700 dark:text-gray-300";
+             itemText.innerHTML = `<span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${escapeHtml(msg.senderNickname)}:</span>${escapeHtml(msg._decryptedErrorText || msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+             
+             itemRow.appendChild(itemText);
+             itemRow.onclick = () => jumpToMsg(msg.id);
+             listWrap.appendChild(itemRow);
+         });
+         container.appendChild(listWrap);
+      }
+      
+      pinnedMessagesArea.appendChild(container);
+    }
+    
+    function jumpToMsg(id) {
+         const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${id}"]`);
+         if (el) {
+           doJumpHighlight(el);
+         } else {
+           jumpToUnloadedMessage(id);
+         }
+    }
+
+    // =========================================================================
+    // Keyboard Shortcuts (Enter for Confirm, Shift for Cancel)
+    // =========================================================================
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (
+          !authContainer.classList.contains("hidden") &&
+          (document.activeElement === emailInput || document.activeElement === passwordInput)
+        ) {
+          e.preventDefault(); authButton.click();
+        } else if (
+          !nicknameContainer.classList.contains("hidden") && document.activeElement === nicknameInput
+        ) {
+          e.preventDefault(); setNicknameButton.click();
+        } else if (
+          !createRoomPasswordModal.classList.contains("hidden") &&
+          (document.activeElement === document.getElementById("modalNewRoomNameInput") || document.activeElement === newRoomPasswordInput)
+        ) {
+          e.preventDefault(); confirmCreateRoomButton.click();
+        } else if (
+          !joinRoomPasswordModal.classList.contains("hidden") && document.activeElement === joinRoomPasswordInput
+        ) {
+          e.preventDefault(); confirmJoinRoomButton.click();
+        } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
+          e.preventDefault(); confirmDeleteButton.click();
+        } else if (
+          !deleteRoomPasswordModal.classList.contains("hidden") && document.activeElement === deleteRoomPasswordInput
+        ) {
+          e.preventDefault(); confirmDeletePasswordButton.click();
+        } else if (
+          !settingsModal.classList.contains("hidden") && document.activeElement === settingsNicknameInput
+        ) {
+          e.preventDefault(); saveSettingsButton.click();
+        }
+      }
+
+      if (e.key === "Shift") {
+        if (!createRoomPasswordModal.classList.contains("hidden")) {
+          cancelCreateRoomButton.click();
+        } else if (!joinRoomPasswordModal.classList.contains("hidden")) {
+          cancelJoinRoomButton.click();
+        } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
+          cancelDeleteButton.click();
+        } else if (!deleteRoomPasswordModal.classList.contains("hidden")) {
+          cancelDeletePasswordButton.click();
+        } else if (!settingsModal.classList.contains("hidden")) {
+          closeSettingsButton.click();
+        }
+      }
+    });
+
+
+    // =========================================================================
+    // FCM Initialization (全プラットフォーム対応)
+    // =========================================================================
+    let fcmInitialized = false;
+    async function initializeFCM() {
+      if (fcmInitialized) return;
+      // Tauri 版は FCM/Service Worker を使わない:
+      //   - WebView2 では Web Push の配信が安定しない
+      //   - 代わりに dummyUnreadListener が Firestore 経由で新着を検知し、
+      //     show_notification_window で独自UI（LINE風）の通知を出す
+      if (isTauri) {
+        fcmInitialized = true;
+
+        if (window.__TAURI__?.notification?.onAction) {
+          window.__TAURI__.notification.onAction((event) => {
+            if (window.__TAURI__?.core?.invoke) {
+               window.__TAURI__.core.invoke('show_main_window').catch(console.error);
+            }
+          }).catch(e => { /* ignore error as notification plugin might be missing some commands */ });
+        }
+        console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
+        return;
+      }
+      fcmInitialized = true;
+      try {
+        // Service Worker を明示的に登録
+        if ('serviceWorker' in navigator) {
+          const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+          console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
+
+          // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
+          const sendUserIdToSW = () => {
+            const sw = navigator.serviceWorker.controller;
+            if (sw && userId) {
+              sw.postMessage({ type: 'SET_USER_ID', userId, appId, idToken: _cachedIdToken });
+            }
+          };
+          // 即時送信 + コントローラー切り替わり時にも送信
+          sendUserIdToSW();
+          navigator.serviceWorker.addEventListener('controllerchange', sendUserIdToSW);
+
+          // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカス
+          navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
+              if (window.__TAURI__) {
+                try {
+                  window.__TAURI__.window.getCurrent().setFocus();
+                } catch (e) {
+                  try { window.__TAURI__.invoke('tauri', { __tauriModule: 'Window', message: { cmd: 'setFocus' } }); } catch (_) {}
+                }
+              }
+              if (event.data.data?.type === 'incoming_call') {
+                handleCallNotificationClick(event.data.data);
+              }
+            }
+            if (event.data && event.data.type === 'CALL_DECLINED_FROM_NOTIFICATION') {
+              handleCallDeclinedFromNotification(event.data);
+            }
+          });
+        }
+
+        if (!messaging) messaging = getMessaging(app);
+
+        // 通知権限の取得（ブラウザ通知トグルが有効な場合のみ）
+        const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+        if (browserEnabled && 'Notification' in window) {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            try {
+              // iOS 18+対策: SW が完全に有効化されるまで待つ
+              const swReg = await navigator.serviceWorker.ready;
+              const token = await getToken(messaging, {
+                vapidKey: "BCe5ICJmyyuurq1DsPBXY6AsQcSsIDuXPieZ-c4L1_5zcNwyq2HC3DBhMBND0g9oTwPmEzUhiLqsAjLrnmVlxj0",
+                serviceWorkerRegistration: swReg
+              });
+              if (token && userId) {
+                console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
+                currentFcmToken = token;
+                const userRef = doc(db, `artifacts/${appId}/users`, userId);
+                // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
+                const prevToken = localStorage.getItem('covo_fcm_token');
+                if (prevToken && prevToken !== token) {
+                  console.log('📱 [通知] プッシュ通知用トークンが更新されたため、古いものを削除しました');
+                  try { await updateDoc(userRef, { fcmTokens: arrayRemove(prevToken) }); } catch (_) { }
+                }
+                await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
+                localStorage.setItem('covo_fcm_token', token);
+
+                // ★ FCMトークン週次リフレッシュ（トークン失効による通知停止を防ぐ）
+                // 旧タイムスタンプを先に読んでから、今回の時刻を書き込む（順序が重要！）
+                const lastRefreshed = parseInt(localStorage.getItem('covo_fcm_token_refreshed_at') || '0', 10);
+                localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
+                const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+                if (lastRefreshed > 0 && Date.now() - lastRefreshed > SEVEN_DAYS) {
+                  console.log('📱 [通知] 定期的なプッシュ通知用トークンの更新を実行しました');
+                  try {
+                    const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');
+                    await deleteToken(messaging);
+                    fcmInitialized = false;
+                    await initializeFCM(); // 再初期化でトークン再取得
+                    return;
+                  } catch (_) {}
+                }
+              } else if (!token) {
+                console.warn('FCM Token not obtained — push notifications may not work on this device');
+              }
+            } catch (tokenErr) {
+              console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
+            }
+          }
+        }
+
+        // フォアグラウンドメッセージ受信
+        onMessage(messaging, (payload) => {
+          const data = payload.data;
+          if (data && data.serverId && data.serverId !== currentServerId) {
+             showInAppNotification(
+               data.serverName || data.serverId, 
+               data.roomName || data.roomId, 
+               data.senderName || 'メンバー', 
+               data.body || '新着メッセージ', 
+               data.serverId, 
+               null, 
+               data.roomId
+             );
+             try {
+               let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+               if (!items.find(it => it.roomId === data.roomId)) {
+                 items.push({
+                   serverId: data.serverId,
+                   serverName: data.serverName || data.serverId,
+                   roomId: data.roomId,
+                   roomName: data.roomName || data.roomId,
+                   lastAt: Date.now()
+                 });
+                 localStorage.setItem('covo_global_items', JSON.stringify(items));
+               }
+               if (typeof renderNotifList === 'function') renderNotifList(items);
+             } catch(e) {}
+          }
+        });
+      } catch (error) {
+        console.error('FCM Initialization Error:', error);
+      }
+    }
+
+    // ブラウザ通知トグル ON/OFF: トークンを Firestore から削除/再登録することで
+    // サーバーが push を送らなくする（SW がそもそも呼ばれない = 確実にオフになる）
+    async function setBrowserPushEnabled(enabled) {
+      if (isTauri) return;
+      if (enabled) {
+        // 再度トークンを取得して Firestore に登録
+        fcmInitialized = false;
+        await initializeFCM();
+      } else {
+        // トークンを削除して通知をブロック
+        try {
+          if (currentFcmToken && userId) {
+            const userRef = doc(db, `artifacts/${appId}/users`, userId);
+            await updateDoc(userRef, { fcmTokens: arrayRemove(currentFcmToken) });
+          }
+          if (messaging) {
+            try { await deleteToken(messaging); } catch (e) { console.warn('deleteToken failed', e); }
+          }
+          currentFcmToken = null;
+          console.log('📱 [通知] プッシュ通知が無効化されました (トークン削除済)');
+        } catch (e) {
+          console.error('Failed to disable push:', e);
+        }
+      }
+    }
+
+    // =========================================================================
+    // Sidebar Resizing Feature - ★改善版に置き換え
+    // =========================================================================
+    function initializeResizer() {
+      // --- Left Sidebar ---
+      const sidebar = document.getElementById("sidebar");
+      const resizer = document.getElementById("resizer");
+      const toggleLeftBtn = document.getElementById("toggleLeftSidebarBtn");
+      const LEFT_WIDTH_KEY = "chatAppSidebarWidth";
+      const LEFT_COLLAPSED_KEY = "chatAppSidebarCollapsed";
+
+      const savedLeftWidth = localStorage.getItem(LEFT_WIDTH_KEY);
+      if (savedLeftWidth && sidebar) {
+        sidebar.style.width = savedLeftWidth;
+      }
+      
+      const isLeftCollapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === "true";
+      if (isLeftCollapsed && window.innerWidth >= 768 && sidebar) {
+        sidebar.classList.add("hidden");
+        sidebar.classList.remove("md:flex");
+      }
+
+      let isResizingLeft = false;
+      if (resizer) {
+        resizer.addEventListener("mousedown", (e) => {
+          isResizingLeft = true;
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", handleLeftMouseMove);
+          document.addEventListener("mouseup", handleLeftMouseUp);
+        });
+      }
+
+      function handleLeftMouseMove(e) {
+        if (isResizingLeft && sidebar) {
+          const newWidth = Math.max(180, Math.min(600, e.clientX));
+          sidebar.style.width = `${newWidth}px`;
+        }
+      }
+
+      function handleLeftMouseUp() {
+        isResizingLeft = false;
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", handleLeftMouseMove);
+        document.removeEventListener("mouseup", handleLeftMouseUp);
+        if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+      }
+
+      if (toggleLeftBtn && sidebar) {
+        toggleLeftBtn.addEventListener("click", () => {
+          const isHidden = sidebar.classList.contains("hidden") || sidebar.style.display === "none";
+          if (isHidden) {
+            sidebar.classList.remove("hidden");
+            sidebar.classList.add("md:flex");
+            localStorage.setItem(LEFT_COLLAPSED_KEY, "false");
+          } else {
+            sidebar.classList.add("hidden");
+            sidebar.classList.remove("md:flex");
+            localStorage.setItem(LEFT_COLLAPSED_KEY, "true");
+          }
+        });
+      }
+
+      // --- Right Sidebar (Members) ---
+      const membersSidebar = document.getElementById("membersSidebar");
+      const resizerRight = document.getElementById("resizerRight");
+      const toggleMembersBtn = document.getElementById("toggleMembersSidebarBtn");
+      const RIGHT_WIDTH_KEY = "chatAppMembersWidth";
+      const RIGHT_COLLAPSED_KEY = "chatAppMembersCollapsed";
+
+      const savedRightWidth = localStorage.getItem(RIGHT_WIDTH_KEY);
+      if (savedRightWidth && membersSidebar) membersSidebar.style.width = savedRightWidth;
+
+      const isRightCollapsed = localStorage.getItem(RIGHT_COLLAPSED_KEY) === "true";
+      if (isRightCollapsed && window.innerWidth >= 768 && membersSidebar) {
+        membersSidebar.style.setProperty("display", "none", "important");
+        membersSidebar.classList.add("hidden");
+        membersSidebar.classList.remove("md:flex");
+      }
+
+      let isResizingRight = false;
+      if (resizerRight) {
+        resizerRight.addEventListener("mousedown", (e) => {
+          isResizingRight = true;
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", handleRightMouseMove);
+          document.addEventListener("mouseup", handleRightMouseUp);
+        });
+      }
+
+      function handleRightMouseMove(e) {
+        if (isResizingRight && membersSidebar) {
+          const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
+          membersSidebar.style.width = `${newWidth}px`;
+        }
+      }
+
+      function handleRightMouseUp() {
+        isResizingRight = false;
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", handleRightMouseMove);
+        document.removeEventListener("mouseup", handleRightMouseUp);
+        if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+      }
+
+      if (toggleMembersBtn && membersSidebar) {
+        toggleMembersBtn.addEventListener("click", () => {
+          const isHidden = membersSidebar.style.display === "none" || membersSidebar.classList.contains("hidden");
+          if (isHidden) {
+            membersSidebar.style.setProperty("display", "", "important");
+            membersSidebar.classList.remove("hidden");
+            membersSidebar.classList.add("md:flex");
+            localStorage.setItem(RIGHT_COLLAPSED_KEY, "false");
+          } else {
+            membersSidebar.style.setProperty("display", "none", "important");
+            membersSidebar.classList.add("hidden");
+            membersSidebar.classList.remove("md:flex");
+            localStorage.setItem(RIGHT_COLLAPSED_KEY, "true");
+          }
+        });
+      }
+    }
+
+    // =========================================================================
+    // Notifications & Updater
+    // =========================================================================
+
+    // 重複通知防止 (同一内容を3秒以内に複数ソースから受け取った場合は1件のみ表示)
+    let lastNotificationTime = 0;
+    let lastNotificationBody = "";
+    let lastNotificationRoomId = "";
+
+    // --- 堅牢なクリップボードコピーユーティリティ ---
+    function fallbackCopyTextToClipboard(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) { console.warn('execCommand copy failed', e); }
+      document.body.removeChild(ta);
+    }
+    async function copyToClipboard(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          fallbackCopyTextToClipboard(text);
+        }
+      } catch (e) {
+        fallbackCopyTextToClipboard(text);
+      }
+    }
+
+    // --- P2P Voice Call ---
+
+    function renderCallAvatar(el, name, url) {
+      __setAvatarImg(el, url, name, { style: '' });
+    }
+
+    function showCallOverlay(mode, opts) {
+      const overlay = document.getElementById('callOverlay');
+      const incomingView = document.getElementById('callIncomingView');
+      const activeView = document.getElementById('callActiveView');
+      incomingView.style.display = 'none';
+      activeView.style.display = 'none';
+      if (mode === 'incoming') {
+        renderCallAvatar(document.getElementById('callIncomingAvatar'), opts.name, opts.avatar);
+        document.getElementById('callIncomingName').textContent = opts.name || '不明';
+        incomingView.style.display = 'flex';
+      } else {
+        renderCallAvatar(document.getElementById('callActiveAvatar'), opts.name, opts.avatar);
+        document.getElementById('callActiveName').textContent = opts.name || '不明';
+        document.getElementById('callStatusLabel').textContent = opts.status || '発信中';
+        document.getElementById('callTimerDisplay').style.display = 'none';
+        document.getElementById('callTimeoutDisplay').style.display = 'block';
+        activeView.style.display = 'flex';
+      }
+      overlay.classList.remove('hide');
+      overlay.classList.add('show');
+    }
+
+    function hideCallOverlay() {
+      const overlay = document.getElementById('callOverlay');
+      overlay.classList.add('hide');
+      setTimeout(() => {
+        overlay.classList.remove('show', 'hide');
+      }, 300);
+    }
+
+    function startCallTimer() {
+      let elapsed = 0;
+      const display = document.getElementById('callTimerDisplay');
+      const timeoutDisplay = document.getElementById('callTimeoutDisplay');
+      display.style.display = 'block';
+      timeoutDisplay.style.display = 'none';
+      document.getElementById('callStatusLabel').textContent = '通話中';
+      _callTimerInterval = setInterval(() => {
+        elapsed++;
+        const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const s = String(elapsed % 60).padStart(2, '0');
+        display.textContent = `${m}:${s}`;
+      }, 1000);
+    }
+
+    async function cleanupWebRtcDoc(colName, docId) {
+      if (!docId) return;
+      try {
+        const { doc, deleteDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const docRef = doc(db, 'artifacts', appId, colName, docId);
+        
+        // TuRNV候補（ICE Candidates）を削除
+        const subCols = colName === 'calls' ? ['callerCandidates', 'calleeCandidates'] : ['senderCandidates', 'receiverCandidates'];
+        for (const sub of subCols) {
+          const candsSnap = await getDocs(collection(docRef, sub));
+          const deletePromises = [];
+          candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+          await Promise.all(deletePromises);
+        }
+        
+        // 親ドキュメント自体を削除
+        await deleteDoc(docRef);
+      } catch (e) {
+        console.warn(`[WebRTC Cleanup] Failed to cleanup ${colName}/${docId}:`, e);
+      }
+    }
+
+    function stopCallTimer() {
+      if (_callTimerInterval) { clearInterval(_callTimerInterval); _callTimerInterval = null; }
+    }
+
+    function playCallRingSound() {
+      stopCallRingSound();
+      try {
+        _ringCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch(_) { return; }
+      const playTone = () => {
+        if (!_ringCtx) return;
+        try {
+          const freqs = [880, 1100];
+          freqs.forEach((freq, i) => {
+            const osc = _ringCtx.createOscillator();
+            const gain = _ringCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0, _ringCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.15, _ringCtx.currentTime + 0.05);
+            gain.gain.linearRampToValueAtTime(0, _ringCtx.currentTime + 0.6);
+            osc.connect(gain);
+            gain.connect(_ringCtx.destination);
+            osc.start(_ringCtx.currentTime + i * 0.08);
+            osc.stop(_ringCtx.currentTime + 0.7);
+          });
+        } catch(_) {}
+      };
+      playTone();
+      _ringRepeatHandle = setInterval(playTone, 2000);
+    }
+
+    function stopCallRingSound() {
+      if (_ringRepeatHandle) { clearInterval(_ringRepeatHandle); _ringRepeatHandle = null; }
+      if (_ringCtx) { try { _ringCtx.close(); } catch(_) {} _ringCtx = null; }
+    }
+
+    function prewarmPeerConnection() {
+      if (_prewarmPC || _callId) return;
+      try { _prewarmPC = new RTCPeerConnection(STUN_CONFIG); } catch(_) {}
+    }
+    function stopPrewarmPC() {
+      if (_prewarmPC) { try { _prewarmPC.close(); } catch(_) {} _prewarmPC = null; }
+    }
+
+    function setupPeerConnection(role) {
+      _usingTurnRelay = false;
+      _iceRestartAttempts = 0; // 通話ごとにリセット
+      setCallConnectionType(null);
+      _peerConnection = _prewarmPC || new RTCPeerConnection(STUN_CONFIG);
+      _prewarmPC = null;
+
+      if (_localStream) {
+        _localStream.getTracks().forEach(track => _peerConnection.addTrack(track, _localStream));
+      }
+
+      _peerConnection.ontrack = (event) => {
+        const remoteAudio = document.getElementById('remoteAudio');
+        remoteAudio.srcObject = event.streams[0];
+        remoteAudio.muted = false;
+        remoteAudio.play().catch(() => {});
+        startVoiceIndicator(event.streams[0]);
+      };
+
+      _peerConnection.onicecandidate = async (event) => {
+        if (!event.candidate || !_callId) return;
+        const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const subCol = role === 'caller' ? 'callerCandidates' : 'calleeCandidates';
+        try {
+          await addDoc(collection(db, 'artifacts', appId, 'calls', _callId, subCol), event.candidate.toJSON());
+        } catch(_) {}
+      };
+
+      _peerConnection.onconnectionstatechange = () => {
+        const state = _peerConnection?.connectionState;
+        if (state === 'connected') {
+          if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+          if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
+          const lbl = document.getElementById('callStatusLabel');
+          if (lbl) lbl.textContent = '通話中';
+          startCallTimer();
+          // TURN使用を検出（getStats）
+          _usingTurnRelay = false;
+          _peerConnection.getStats().then(stats => {
+            const candidates = {};
+            stats.forEach(r => { if (r.type === 'local-candidate') candidates[r.id] = r; });
+            stats.forEach(r => {
+              if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+                const lc = candidates[r.localCandidateId];
+                if (lc && lc.candidateType === 'relay') _usingTurnRelay = true;
+              }
+            });
+            setCallConnectionType(_usingTurnRelay ? 'turn' : 'p2p');
+          }).catch(() => {});
+        } else if (state === 'failed' || state === 'closed') {
+          endCall(false, 'connectionLost');
+        }
+      };
+
+      _peerConnection.oniceconnectionstatechange = () => {
+        const iceState = _peerConnection?.iceConnectionState;
+        if (iceState === 'failed') {
+          // 即座に切攔せず、最大2回 TURN で ICE 再接続を試みる
+          if (_iceRestartAttempts < 2) {
+            _iceRestartAttempts++;
+            setCallReconnectStatus(true);
+            console.log(`[ICE] failed → restart #${_iceRestartAttempts} attempt`);
+            if (_callRole === 'caller') {
+              (async () => {
+                try {
+                  const offer = await _peerConnection.createOffer({ iceRestart: true });
+                  await _peerConnection.setLocalDescription(offer);
+                  const { doc: fsDoc2, updateDoc: fsUpdateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                  const restartAt = Date.now();
+                  await fsUpdateDoc(fsDoc2(db, 'artifacts', appId, 'calls', _callId), {
+                    offer: { type: offer.type, sdp: offer.sdp },
+                    iceRestartAt: restartAt,
+                    iceRestartAttempt: _iceRestartAttempts,
+                  });
+                  _lastIceRestartAt = restartAt;
+                  _iceRestartTimer = setTimeout(() => {
+                    _iceRestartTimer = null;
+                    const s = _peerConnection?.iceConnectionState;
+                    if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+                  }, 12000);
+                } catch(e) {
+                  console.warn('[ICE restart on failed] failed:', e);
+                  endCall(false, 'connectionLost');
+                }
+              })();
+            } else {
+              // callee: caller が restart するまで最大12秒待つ
+              _iceRestartTimer = setTimeout(() => {
+                _iceRestartTimer = null;
+                const s = _peerConnection?.iceConnectionState;
+                if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+              }, 12000);
+            }
+          } else {
+            // 2回試しても回復しなければ通話終了
+            endCall(false, 'connectionLost');
+          }
+        } else if (iceState === 'disconnected') {
+          setCallReconnectStatus(true);
+          if (_iceDisconnectTimer) return;
+          _iceDisconnectTimer = setTimeout(async () => {
+            _iceDisconnectTimer = null;
+            if (!_peerConnection || !_callId) return;
+            const cur = _peerConnection.iceConnectionState;
+            if (cur === 'connected' || cur === 'completed') return;
+            // callerのみICE restartを試みる（calleeは待機）
+            if (_callRole === 'caller') {
+              try {
+                const offer = await _peerConnection.createOffer({ iceRestart: true });
+                await _peerConnection.setLocalDescription(offer);
+                const { doc: fsDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+                const restartAt = Date.now();
+                await updateDoc(fsDoc(db, 'artifacts', appId, 'calls', _callId), {
+                  offer: { type: offer.type, sdp: offer.sdp },
+                  iceRestartAt: restartAt,
+                });
+                _lastIceRestartAt = restartAt;
+                _iceRestartTimer = setTimeout(() => {
+                  _iceRestartTimer = null;
+                  const s = _peerConnection?.iceConnectionState;
+                  if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+                }, 10000);
+              } catch(e) {
+                console.warn('[ICE restart] failed:', e);
+                endCall(false, 'connectionLost');
+              }
+            } else {
+              // callee: caller が restart するまで最大8秒待つ
+              _iceRestartTimer = setTimeout(() => {
+                _iceRestartTimer = null;
+                const s = _peerConnection?.iceConnectionState;
+                if (s !== 'connected' && s !== 'completed') endCall(false, 'connectionLost');
+              }, 8000);
+            }
+          }, 2000);
+        } else if (iceState === 'connected' || iceState === 'completed') {
+          if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
+          if (_iceRestartTimer) { clearTimeout(_iceRestartTimer); _iceRestartTimer = null; }
+          setCallReconnectStatus(false);
+          // ICEリスタート後に経路が変わっている可能性があるので再チェック
+          if (_peerConnection) {
+            _peerConnection.getStats().then(stats => {
+              const candidates = {};
+              stats.forEach(r => { if (r.type === 'local-candidate') candidates[r.id] = r; });
+              let relay = false;
+              stats.forEach(r => {
+                if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+                  const lc = candidates[r.localCandidateId];
+                  if (lc && lc.candidateType === 'relay') relay = true;
+                }
+              });
+              _usingTurnRelay = relay;
+              setCallConnectionType(relay ? 'turn' : 'p2p');
+            }).catch(() => {});
+          }
+        }
+      };
+    }
+
+    async function listenForRemoteCandidates(role) {
+      const { collection, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const subCol = role === 'caller' ? 'calleeCandidates' : 'callerCandidates';
+      const unsub = onSnapshot(collection(db, 'artifacts', appId, 'calls', _callId, subCol), (snap) => {
+        snap.docChanges().forEach(async (change) => {
+          if (change.type === 'added' && _peerConnection) {
+            try {
+              await _peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+            } catch(_) {}
+          }
+        });
+      });
+      return unsub;
+    }
+
+    let readStatesUnsub = null;
+    async function initReadStatesSync() {
+      if (!userId || !appId) return;
+      if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
+      const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const rsRef = ref(rtdb, `artifacts/${appId}/users/${userId}/readStates`);
+      const onRs = onValue(rsRef, (snap) => {
+        let changed = false;
+        let rm = {};
+        try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch(e) {}
+        snap.forEach((child) => {
+          const remoteTime = child.val().lastReadAt || 0;
+          const localTime = rm[child.key] || 0;
+          if (remoteTime && remoteTime > localTime) {
+            rm[child.key] = remoteTime;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('covo_last_read', JSON.stringify(rm));
+          if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
+        }
+      });
+      readStatesUnsub = () => off(rsRef, 'value', onRs);
+    }
+
+    const _readStateThrottle = {};
+    async function updateLocalAndRemoteReadState(roomId, time) {
+      if (!roomId) return;
+      try {
+        const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+        const prev = rm[roomId] || 0;
+        if (time > prev) {
+           rm[roomId] = time;
+           localStorage.setItem('covo_last_read', JSON.stringify(rm));
+           
+           if (userId && appId) {
+              const now = Date.now();
+              if (!_readStateThrottle[roomId] || now - _readStateThrottle[roomId] > 5000) {
+                 _readStateThrottle[roomId] = now;
+                 const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+                 const rtdb = await _getOrInitRTDB();
+                 set(ref(rtdb, `artifacts/${appId}/users/${userId}/readStates/${roomId}`), { lastReadAt: time }).catch(()=>{});
+              }
+           }
+        }
+      } catch(e) {}
+    }
+
+    function initCallListener() {
+      if (!userId) return;
+      if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ collection, query, where, onSnapshot }) => {
+        // calleeUid はトップレベルフィールドのため複合インデックス不要
+        const q = query(
+          collection(db, 'artifacts', appId, 'calls'),
+          where('calleeUid', '==', userId)
+        );
+        _callIncomingUnsub = onSnapshot(q, (snap) => {
+          snap.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              if (data.status === 'ringing' && !_callId) {
+                handleIncomingCall(change.doc.id, data.caller);
+              }
+            }
+          });
+        });
+      });
+    }
+
+    async function openCallPicker() {
+      if (!currentServerData || !userId) return;
+      const modal = document.getElementById('callPickerModal');
+      const list = document.getElementById('callPickerList');
+      const header = modal.querySelector('.call-picker-header span');
+      if (header) header.textContent = '通話する相手を選択';
+      list.innerHTML = '';
+
+      const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
+      if (memberIds.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.4);">メンバーがいません</div>';
+      } else {
+        for (const uid of memberIds) {
+          const user = cachedUsers.find(u => u.id === uid) || {};
+          const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
+          const name = escapeHtml(nameRaw);
+          const div = document.createElement('div');
+          div.className = 'call-picker-item';
+          div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${name}</div></div>`;
+          const avatarEl = div.querySelector('.call-picker-avatar');
+          __setAvatarImg(avatarEl, user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
+          div.onclick = () => {
+            closeCallPicker();
+            startCall(uid, nameRaw, user.avatarUrl || '');
+          };
+          list.appendChild(div);
+        }
+      }
+
+      modal.classList.add('show');
+    }
+
+    function closeCallPicker() {
+      document.getElementById('callPickerModal').classList.remove('show');
+    }
+
+    /* =====================================================================
+       P2P ファイル共有（WebRTC DataChannel）
+       - シグナリングだけ Firestore (fileshares/{id}) を経由（データ量ごく僅か）
+       - STUN/TURN は接続安定化の補助。ファイル本体は P2P DataChannel で直送
+       - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
+       - 通話用の peerConnection とは完全に別系統（衝突しない）
+       ===================================================================== */
+    const FS_CHUNK = 256 * 1024;          // 256KB チャンク（大きいほど少ない回数で速く送れる）
+    const FS_BUFFER_HIGH = 16 * 1024 * 1024; // 送信バッファ上限 16MB（多く積めるほど速い）
+    const FS_BUFFER_LOW = 4 * 1024 * 1024;   // ここまで減ったら再開（bufferedamountlow用）
+    let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
+    let _fsUnsub = null, _fsCandUnsub = null;
+    let _fsRecv = null; // { name, type, size, received, chunks[] }
+    let _fsAckResolve = null; // 受信完了ACK待ちのresolver
+
+    function _fsCleanup() {
+      try { if (_fsUnsub) _fsUnsub(); } catch (e) {}
+      try { if (_fsCandUnsub) _fsCandUnsub(); } catch (e) {}
+      try { if (_fsChannel) _fsChannel.close(); } catch (e) {}
+      try { if (_fsPC) _fsPC.close(); } catch (e) {}
+      _fsUnsub = _fsCandUnsub = _fsChannel = _fsPC = _fsId = _fsRole = null;
+      _fsRecv = null;
+    }
+
+    // 送信側: 相手選択ピッカーを開く（通話ピッカーと同デザインを流用）
+    window.openFileSharePicker = function() {
+      if (!currentServerData || !userId) return;
+      const modal = document.getElementById('callPickerModal');
+      const list = document.getElementById('callPickerList');
+      const header = modal.querySelector('.call-picker-header span');
+      if (header) header.textContent = 'ファイルを送る相手を選択';
+      list.innerHTML = '';
+      const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
+      if (memberIds.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.4);">メンバーがいません</div>';
+      } else {
+        for (const uid of memberIds) {
+          const user = cachedUsers.find(u => u.id === uid) || {};
+          const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
+          const div = document.createElement('div');
+          div.className = 'call-picker-item';
+          div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${escapeHtml(nameRaw)}</div></div>`;
+          __setAvatarImg(div.querySelector('.call-picker-avatar'), user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
+          div.onclick = () => { closeCallPicker(); _fsPickFileAndSend(uid, nameRaw); };
+          list.appendChild(div);
+        }
+      }
+      modal.classList.add('show');
+    };
+
+    // ファイル選択 → 送信開始
+    function _fsPickFileAndSend(targetUid, targetName) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.onchange = () => {
+        if (input.files.length > 0) startFileShare(targetUid, targetName, input.files[0]);
+      };
+      input.click();
+    }
+    async function startFileShare(targetUid, targetName, file) {
+      if (_fsId) { alertMessage('別のファイル送信が進行中です', 'error'); return; }
+      _fsRole = 'sender';
+      const { doc, setDoc, collection, serverTimestamp, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      try {
+        _fsPC = new RTCPeerConnection(STUN_ONLY_CONFIG);
+        const ref = doc(collection(db, 'artifacts', appId, 'fileshares'));
+        _fsId = ref.id;
+
+        // DataChannel を作成（送信側）
+        _fsChannel = _fsPC.createDataChannel('file', { ordered: true });
+        _fsChannel.binaryType = 'arraybuffer';
+        _fsChannel.onopen = () => _fsSendFileData(file);
+        _fsChannel.onerror = () => {};
+
+        // TURN中継を使わない（STUNのみ）ので、P2P直結できないと接続できない。
+        // その場合に永遠に待たないよう、失敗を検出してユーザーに知らせる。
+        _fsPC.oniceconnectionstatechange = () => {
+          const st = _fsPC && _fsPC.iceConnectionState;
+          if (st === 'failed' || st === 'disconnected') {
+            if (_fsChannel && _fsChannel.readyState === 'open') return; // 既に繋がっていれば無視
+            _fsShowProgress('error', file.name, 'P2P接続できませんでした（相手と直接つながれない回線です）');
+            setTimeout(() => { _fsCloseProgress(); _fsCleanup(); }, 2500);
+          }
+        };
+
+        // ICE候補を Firestore へ
+        const candCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'senderCandidates');
+        _fsPC.onicecandidate = e => { if (e.candidate) addDoc(candCol, e.candidate.toJSON()).catch(() => {}); };
+
+        const offer = await _fsPC.createOffer();
+        await _fsPC.setLocalDescription(offer);
+
+        const myUser = cachedUsers.find(u => u.id === userId) || {};
+        await setDoc(ref, {
+          sender: { uid: userId, nickname: myUser.nickname || '' },
+          receiverUid: targetUid,
+          fileName: file.name, fileType: file.type || 'application/octet-stream', fileSize: file.size,
+          status: 'offering',
+          offer: { type: offer.type, sdp: offer.sdp },
+          createdAt: serverTimestamp()
+        });
+
+        // 相手にプッシュ通知（任意・fire-and-forget）
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId, idToken })
+        }).catch(() => {});
+
+        _fsShowProgress('send', file.name, '相手の応答を待っています…');
+
+        // answer + 受信側ICEを待つ
+        _fsUnsub = onSnapshot(ref, async snap => {
+          const d = snap.data();
+          if (!d) return;
+          if (d.status === 'declined') { _fsShowProgress('error', file.name, '相手が拒否しました'); setTimeout(_fsCloseProgress, 1500); _fsCleanup(); return; }
+          if (d.answer && !_fsPC.currentRemoteDescription) {
+            await _fsPC.setRemoteDescription(new RTCSessionDescription(d.answer));
+          }
+        });
+        const rcandCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'receiverCandidates');
+        _fsCandUnsub = onSnapshot(rcandCol, snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {} } });
+        });
+      } catch (e) {
+        console.error('[FileShare] 送信開始失敗:', e);
+        alertMessage('ファイル送信を開始できませんでした', 'error');
+        _fsCleanup();
+      }
+    }
+
+    // 送信バッファが十分はけるまで待つ（送ったつもりで実際は未送信、を防ぐ）
+    async function _fsDrain(threshold) {
+      let guard = 0;
+      while (_fsChannel && _fsChannel.bufferedAmount > threshold) {
+        await new Promise(r => setTimeout(r, 30));
+        if (++guard > 100000) break; // 無限ループ保険
+      }
+    }
+    // 受信側からの完了ACKを待つPromise（チャンネルのonmessageで解決される）
+    function _fsWaitForAck(timeoutMs) {
+      return new Promise(resolve => {
+        _fsAckResolve = resolve;
+        if (timeoutMs) setTimeout(() => { if (_fsAckResolve) { _fsAckResolve = null; resolve(false); } }, timeoutMs);
+      });
+    }
+
+    // チャンク分割送信（バックプレッシャ制御つき）
+    async function _fsSendFileData(file) {
+      try {
+        // 送信側も相手からの完了ACKを受け取れるようにする
+        _fsChannel.onmessage = (ev) => {
+          if (typeof ev.data === 'string') {
+            try { const m = JSON.parse(ev.data); if (m && m.__ack && _fsAckResolve) { const r = _fsAckResolve; _fsAckResolve = null; r(true); } } catch (e) {}
+          }
+        };
+        // 送信バッファが減ったら通知してもらう（setTimeoutポーリングより高速・低負荷）
+        _fsChannel.bufferedAmountLowThreshold = FS_BUFFER_LOW;
+        const waitBufferLow = () => new Promise(resolve => {
+          if (_fsChannel.bufferedAmount <= FS_BUFFER_HIGH) return resolve();
+          const onLow = () => { _fsChannel.removeEventListener('bufferedamountlow', onLow); resolve(); };
+          _fsChannel.addEventListener('bufferedamountlow', onLow);
+        });
+
+        _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
+        let offset = 0;
+        if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
+        const reader = file.stream().getReader();
+        let pending = null; // 前チャンクの端数を保持
+        const sendSlice = async (buf) => {
+          if (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) await waitBufferLow();
+          _fsChannel.send(buf);
+          offset += buf.byteLength;
+          _fsUpdateProgress(Math.round(offset / file.size * 100));
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          // streamのチャンクをそのまま（または256KB単位で）送る
+          let chunk = value; // Uint8Array
+          for (let i = 0; i < chunk.length; i += FS_CHUNK) {
+            // subarrayはコピーを作らない（高速・省メモリ）。境界はsliceでバッファ確定
+            const end = Math.min(i + FS_CHUNK, chunk.length);
+            await sendSlice(chunk.subarray(i, end));
+          }
+        }
+        // 全チャンクがバッファからはけきるまで待ってから __done を送る
+        await _fsDrain(0);
+        _fsChannel.send(JSON.stringify({ __done: true }));
+        await _fsDrain(0);
+        // ここでは「送信完了」と即断せず、相手が受信し切るのを待つ（大容量対応で最大10分）
+        _fsShowProgress('send', file.name, '相手が受信中…');
+        const acked = await _fsWaitForAck(600000);
+        if (acked) {
+          _fsShowProgress('done', file.name, '送信完了');
+          setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
+        } else {
+          _fsShowProgress('done', file.name, '送信しました');
+          setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
+        }
+      } catch (e) {
+        console.error('[FileShare] 送信中エラー:', e);
+        _fsShowProgress('error', file.name, '送信に失敗しました');
+        setTimeout(_fsCloseProgress, 1500);
+      }
+    }
+    async function _fsSendFileDataLegacy(file) {
+      let offset = 0;
+      while (offset < file.size) {
+        const slice = await file.slice(offset, offset + FS_CHUNK).arrayBuffer();
+        while (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) { await new Promise(r => setTimeout(r, 20)); }
+        _fsChannel.send(slice);
+        offset += slice.byteLength;
+        _fsUpdateProgress(Math.round(offset / file.size * 100));
+      }
+      await _fsDrain(0);
+      _fsChannel.send(JSON.stringify({ __done: true }));
+      await _fsDrain(0);
+      _fsShowProgress('send', file.name, '相手が受信中…');
+      await _fsWaitForAck(60000);
+      _fsShowProgress('done', file.name, '送信完了');
+      setTimeout(() => { _fsCloseProgress(); _fsMarkComplete(); }, 1000);
+    }
+    async function _fsMarkComplete() {
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        if (_fsId) await cleanupWebRtcDoc('fileshares', _fsId);
+      } catch (e) {}
+      _fsCleanup();
+    }
+
+    // 受信側: 着信を監視（ログイン時に開始）
+    async function initFileShareListener() {
+      if (!userId) return;
+      const { collection, query, where, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const q = query(collection(db, 'artifacts', appId, 'fileshares'), where('receiverUid', '==', userId), where('status', '==', 'offering'));
+      onSnapshot(q, snap => {
+        snap.docChanges().forEach(ch => {
+          if (ch.type === 'added') {
+            const d = ch.doc.data();
+            if (_fsId) return; // 既に処理中
+            _fsShowIncoming(ch.doc.id, d);
+          }
+        });
+      });
+    }
+
+    function _fsShowIncoming(id, d) {
+      const human = _fsHumanSize(d.fileSize || 0);
+      showCustomConfirm(
+        `${escapeHtml(d.sender?.nickname || '相手')}さんからファイル`,
+        '受け取る', '拒否',
+        `${escapeHtml(d.fileName || '')}（${human}）をP2Pで受信しますか？`
+      ).then(ok => {
+        if (ok) acceptFileShare(id, d);
+        else _fsDecline(id);
+      });
+    }
+    async function _fsDecline(id) {
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await cleanupWebRtcDoc('fileshares', id);
+      } catch (e) {}
+    }
+
+    async function acceptFileShare(id, d) {
+      _fsRole = 'receiver';
+      _fsId = id;
+      _fsRecv = { name: d.fileName, type: d.fileType, size: d.fileSize, received: 0, chunks: [], writer: null, lastPct: -1 };
+      // 対応ブラウザ(Chrome/Edge等)では保存先を先に選び、ディスクへ直接ストリーミング書き込み。
+      // → メモリにファイル全体を溜めないので1GB級でも端末が重くならない＆速い。
+      // 非対応(iOS Safari等)はメモリに溜める従来方式へ自動フォールバック。
+      try {
+        if (window.showSaveFilePicker) {
+          const handle = await window.showSaveFilePicker({ suggestedName: d.fileName || 'file' });
+          _fsRecv.writer = await handle.createWritable();
+        }
+      } catch (e) { _fsRecv.writer = null; /* キャンセル時もメモリ方式で続行 */ }
+      const { doc, updateDoc, collection, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      try {
+        _fsPC = new RTCPeerConnection(STUN_ONLY_CONFIG);
+        const candCol = collection(db, 'artifacts', appId, 'fileshares', id, 'receiverCandidates');
+        _fsPC.onicecandidate = e => { if (e.candidate) addDoc(candCol, e.candidate.toJSON()).catch(() => {}); };
+        _fsPC.ondatachannel = e => {
+          _fsChannel = e.channel;
+          _fsChannel.binaryType = 'arraybuffer';
+          _fsChannel.onmessage = _fsOnMessage;
+        };
+        await _fsPC.setRemoteDescription(new RTCSessionDescription(d.offer));
+        const answer = await _fsPC.createAnswer();
+        await _fsPC.setLocalDescription(answer);
+        await updateDoc(doc(db, 'artifacts', appId, 'fileshares', id), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
+
+        const scandCol = collection(db, 'artifacts', appId, 'fileshares', id, 'senderCandidates');
+        _fsCandUnsub = onSnapshot(scandCol, snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {} } });
+        });
+        _fsShowProgress('recv', d.fileName, '接続中…');
+      } catch (e) {
+        console.error('[FileShare] 受信開始失敗:', e);
+        _fsCleanup();
+      }
+    }
+
+    function _fsOnMessage(ev) {
+      const data = ev.data;
+      if (typeof data === 'string') {
+        let msg; try { msg = JSON.parse(data); } catch (e) { return; }
+        if (msg.__meta) { _fsRecv.name = msg.name; _fsRecv.type = msg.type; _fsRecv.size = msg.size; _fsRecv.received = 0; _fsRecv.chunks = []; return; }
+        if (msg.__done) { _fsRecv._gotDone = true; _fsMaybeFinish(); return; }
+        return;
+      }
+      // バイナリチャンク
+      _fsRecv.received += data.byteLength;
+      if (_fsRecv.writer) {
+        // ディスクへ直接書き込み（順序保証のためPromiseチェーンで直列化）
+        _fsRecv._writeChain = (_fsRecv._writeChain || Promise.resolve())
+          .then(() => _fsRecv.writer.write(data))
+          .catch(e => { console.error('[FileShare] 書き込みエラー:', e); });
+      } else {
+        _fsRecv.chunks.push(data); // メモリ方式（フォールバック）
+      }
+      // 進捗はrAFで間引いて更新（毎チャンク更新は重くて受信を詰まらせる）
+      if (_fsRecv.size && !_fsRecv._rafPending) {
+        _fsRecv._rafPending = true;
+        requestAnimationFrame(() => {
+          _fsRecv._rafPending = false;
+          if (_fsRecv) _fsUpdateProgress(Math.round(_fsRecv.received / _fsRecv.size * 100));
+        });
+      }
+    }
+
+    // __done受信＆全書き込み完了の両方が揃ったら完了処理
+    async function _fsMaybeFinish() {
+      if (!_fsRecv || !_fsRecv._gotDone) return;
+      // 書き込みチェーンが残っていれば待つ
+      try { if (_fsRecv._writeChain) await _fsRecv._writeChain; } catch (e) {}
+      _fsFinishReceive();
+    }
+
+    async function _fsFinishReceive() {
+      // 送信側に「受信し切った」ことを通知（これで送信側が本当の完了を表示できる）
+      try { if (_fsChannel && _fsChannel.readyState === 'open') _fsChannel.send(JSON.stringify({ __ack: true })); } catch (e) {}
+      try {
+        _fsUpdateProgress(100);
+        if (_fsRecv.writer) {
+          // ディスク書き込みを確定（close）。既に保存済みなのでプレビューはファイル名のみ案内。
+          await _fsRecv.writer.close();
+          _fsCloseProgress();
+          _fsShowSavedNotice(_fsRecv.name, _fsRecv.size);
+        } else {
+          const blob = new Blob(_fsRecv.chunks, { type: _fsRecv.type || 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          _fsCloseProgress();
+          _fsShowReceivedPreview(url, _fsRecv.name, _fsRecv.type, _fsRecv.size);
+        }
+      } catch (e) {
+        console.error('[FileShare] 受信完了処理エラー:', e);
+      }
+      // ACKが送信側に届くまで少し待ってから接続を閉じる
+      setTimeout(() => { _fsCleanup(); }, 800);
+    }
+
+    // ディスク保存済みの場合の通知（プレビューは作らない＝メモリ節約）
+    function _fsShowSavedNotice(name, size) {
+      _fsShowReceivedPreview(null, name, 'application/octet-stream', size, true);
+    }
+
+    function _fsHumanSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+      if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+      return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    // 進捗オーバーレイ（送信/受信共通）
+    function _fsShowProgress(mode, fileName, statusText) {
+      let ov = document.getElementById('fsProgressOverlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'fsProgressOverlay';
+        ov.setAttribute('data-inspect-ignore', '1');
+        ov.innerHTML = `
+          <div class="fs-prog-box">
+            <div class="fs-prog-icon"><i class="fas fa-share-from-square"></i></div>
+            <div class="fs-prog-name" id="fsProgName"></div>
+            <div class="fs-prog-status" id="fsProgStatus"></div>
+            <div class="fs-prog-bar"><div class="fs-prog-fill" id="fsProgFill"></div></div>
+            <div class="fs-prog-pct" id="fsProgPct">0%</div>
+            <button class="fs-prog-cancel" onclick="cancelFileShare()">キャンセル</button>
+          </div>`;
+        document.body.appendChild(ov);
+      }
+      ov.style.display = 'flex';
+      document.getElementById('fsProgName').textContent = fileName || '';
+      document.getElementById('fsProgStatus').textContent = statusText || '';
+      const cancel = ov.querySelector('.fs-prog-cancel');
+      if (cancel) cancel.style.display = (mode === 'done' || mode === 'error') ? 'none' : '';
+    }
+    function _fsUpdateProgress(pct) {
+      const f = document.getElementById('fsProgFill'); const p = document.getElementById('fsProgPct');
+      if (f) f.style.width = pct + '%';
+      if (p) p.textContent = pct + '%';
+      const st = document.getElementById('fsProgStatus');
+      if (st && st.textContent.indexOf('待') < 0) st.textContent = (_fsRole === 'sender' ? '送信中…' : '受信中…');
+    }
+    function _fsCloseProgress() {
+      const ov = document.getElementById('fsProgressOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    window.cancelFileShare = function() {
+      _fsCloseProgress();
+      _fsCleanup();
+    };
+
+    // 受信したファイルのプレビュー＆保存
+    function _fsShowReceivedPreview(url, name, type, size, alreadySaved) {
+      let ov = document.getElementById('fsPreviewOverlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'fsPreviewOverlay';
+        ov.setAttribute('data-inspect-ignore', '1');
+        document.body.appendChild(ov);
+      }
+      // 既にディスク保存済み（ストリーミング書き込み）の場合は完了通知のみ表示
+      if (alreadySaved) {
+        ov.innerHTML = `
+          <div class="fs-prev-box">
+            <div class="fs-prev-file" style="color:#16a34a"><i class="fas fa-circle-check"></i></div>
+            <div class="fs-prev-title" style="margin-bottom:6px">保存しました</div>
+            <div class="fs-prev-name">${escapeHtml(name || '')}</div>
+            <div class="fs-prev-size">${_fsHumanSize(size || 0)}</div>
+            <div class="fs-prev-actions">
+              <button class="fs-prev-close" style="flex:1" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
+            </div>
+          </div>`;
+        ov.style.display = 'flex';
+        return;
+      }
+      let inner = '';
+      if (type && type.startsWith('image/')) {
+        inner = `<img src="${url}" class="fs-prev-media" alt="">`;
+      } else if (type && type.startsWith('video/')) {
+        inner = `<video src="${url}" class="fs-prev-media" controls></video>`;
+      } else {
+        inner = `<div class="fs-prev-file"><i class="fas fa-file"></i></div>`;
+      }
+      ov.innerHTML = `
+        <div class="fs-prev-box">
+          <div class="fs-prev-title">受信したファイル</div>
+          ${inner}
+          <div class="fs-prev-name">${escapeHtml(name || '')}</div>
+          <div class="fs-prev-size">${_fsHumanSize(size || 0)}</div>
+          <div class="fs-prev-actions">
+            <a class="fs-prev-save" href="${url}" download="${encodeURIComponent(name || 'file').replace(/"/g, '')}">保存</a>
+            <button class="fs-prev-close" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
+          </div>
+        </div>`;
+      const a = ov.querySelector('.fs-prev-save'); if (a) a.setAttribute('download', name || 'file');
+      ov.style.display = 'flex';
+    }
+
+    async function startCall(uid, name, avatar) {
+      if (_callId) return;
+      _callRole = 'caller';
+
+      // ① UIを即時表示（マイク取得前でもユーザーに即フィードバック）
+      showCallOverlay('active', { name, avatar, status: '発信中' });
+
+      const { doc, setDoc, updateDoc, collection, serverTimestamp, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+
+      try {
+        _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch(e) {
+        endCall(false);
+        alert('マイクへのアクセスが拒否されました。設定を確認してください。');
+        return;
+      }
+
+      const myUser = cachedUsers.find(u => u.id === userId) || {};
+
+      // ② ICE収集が始まる前にcallIdを確定する（onicecandidate内でcallIdが必要）
+      // doc()はクライアント側でIDを即時生成するためFirestore書き込み前でも使える
+      const newCallRef = doc(collection(db, 'artifacts', appId, 'calls'));
+      _callId = newCallRef.id;
+      _callDoc = newCallRef;
+
+      // ③ prewarmしたPeerConnectionを再利用 → ICE候補が既に収集済み
+      setupPeerConnection('caller');
+
+      // ④ offerを作成 → setLocalDescriptionでICE収集開始（_callIdが確定済みなので候補を即書き込み可能）
+      const offer = await _peerConnection.createOffer();
+      await _peerConnection.setLocalDescription(offer);
+
+      // ⑤ Firestore書き込み（offer込みで初回書き込み、setDocでIDを指定）
+      const callData = {
+        caller: { uid: userId, nickname: myUser.nickname || myUser.displayName || '', avatarUrl: myUser.avatarUrl || '' },
+        callee: { uid, nickname: name, avatarUrl: avatar },
+        calleeUid: uid,
+        status: 'ringing',
+        offer: { type: offer.type, sdp: offer.sdp },
+        createdAt: serverTimestamp()
+      };
+      await setDoc(newCallRef, callData);
+
+      // ⑥ FCM通知はfire-and-forget（awaitしない → ~1s節約）
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      fetch(`${WORKER_BASE_URL}/api/sendCallNotification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          calleeId: uid,
+          callerNickname: myUser.nickname || myUser.displayName || '',
+          callerAvatarUrl: myUser.avatarUrl || '',
+          callId: _callId,
+          appId,
+          callerId: userId,
+          idToken
+        })
+      }).catch(() => {});
+
+      // answerを待つ
+      const unsubAnswer = onSnapshot(newCallRef, async (snap) => {
+        const d = snap.data();
+        if (!d) return;
+        if (d.status === 'declined') {
+          unsubAnswer();
+          endCall(true, 'declined');
+          return;
+        }
+        if (d.status === 'ended' || d.status === 'missed') {
+          unsubAnswer();
+          endCall(true);
+          return;
+        }
+        if (d.answer && _peerConnection && !_peerConnection.currentRemoteDescription) {
+          const lbl = document.getElementById('callStatusLabel');
+          if (lbl) lbl.textContent = '接続中';
+          await _peerConnection.setRemoteDescription(new RTCSessionDescription(d.answer));
+          listenForRemoteCandidates('caller').then(unsub => {
+            if (_callId) { _callUnsubOffer = unsub; } else { unsub(); }
+          });
+          unsubAnswer();
+          // 通話確立後も相手が終了 or ICE restart応答を検知する
+          if (_callId) {
+            _callEndUnsub = onSnapshot(newCallRef, (snap2) => {
+              const d2 = snap2.data();
+              if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
+                if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
+                if (_callId) endCall(true, 'remoteEnded');
+              } else if (d2.iceRestartAt && d2.iceRestartAt === _lastIceRestartAt && d2.answer && _peerConnection) {
+                // ICE restartに対するcalleeからのanswerを適用
+                const desc = d2.answer;
+                if (_peerConnection.signalingState === 'have-local-offer') {
+                  _peerConnection.setRemoteDescription(new RTCSessionDescription(desc)).catch(e => {
+                    console.warn('[ICE restart caller setRemote] failed:', e);
+                  });
+                }
+              }
+            });
+          }
+        }
+      });
+      _callUnsubOffer = unsubAnswer;
+
+      // タイムアウト
+      _callTimeoutHandle = setTimeout(async () => {
+        if (_callId) {
+          try { await cleanupWebRtcDoc('calls', _callId); } catch(_) {}
+          endCall(true);
+        }
+      }, CALL_TIMEOUT_MS);
+    }
+
+    async function handleIncomingCall(callId, callerData) {
+      if (_callId) return;
+      _callId = callId;
+      _callRole = 'callee';
+      _pendingCallerData = callerData;
+
+      playCallRingSound();
+      showCallOverlay('incoming', { name: callerData.nickname || '不明', avatar: callerData.avatarUrl || '' });
+
+      // 相手がキャンセルした場合を監視
+      const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const unsub = onSnapshot(doc(db, 'artifacts', appId, 'calls', callId), (snap) => {
+        const d = snap.data();
+        if (!d) { unsub(); endCall(true, 'callerCancelled'); return; }
+        if (d.status === 'ended' || d.status === 'missed') {
+          unsub();
+          stopCallRingSound();
+          endCall(true, 'callerCancelled');
+        }
+      });
+      _callUnsubOffer = unsub;
+    }
+
+    async function acceptCall() {
+      if (!_callId || _callRole !== 'callee') return;
+      stopCallRingSound();
+
+      // ① UIを即時切り替えてユーザーに即フィードバック
+      const callerName = _pendingCallerData?.nickname || '不明';
+      const callerAvatar = _pendingCallerData?.avatarUrl || '';
+      showCallOverlay('active', { name: callerName, avatar: callerAvatar, status: '接続中' });
+      document.getElementById('callTimeoutDisplay').style.display = 'none';
+
+      // ② 着信監視リスナーを即時解除
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+
+      // ③ iOS Safari 自動再生ポリシー対応：ユーザージェスチャー内で audio をunlock
+      const remoteAudioEl = document.getElementById('remoteAudio');
+      if (remoteAudioEl) {
+        remoteAudioEl.muted = true;
+        remoteAudioEl.play().catch(() => {});
+        remoteAudioEl.pause();
+        remoteAudioEl.muted = false;
+      }
+
+      // ④ Firebase import・getUserMedia・getDoc を並列実行して速度改善
+      const { doc, getDoc, updateDoc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const callRef = doc(db, 'artifacts', appId, 'calls', _callId);
+      let stream, callData;
+      try {
+        const [streamResult, snapResult] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+          getDoc(callRef)
+        ]);
+        stream = streamResult;
+        callData = snapResult.data();
+      } catch(e) {
+        const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
+        if (isMicError) {
+          alert('マイクへのアクセスが拒否されました。');
+          endCall(false, 'micDenied');
+        } else {
+          endCall(false);
+        }
+        return;
+      }
+      _localStream = stream;
+
+      // ⑤ Peer接続とリモートSDP設定
+      setupPeerConnection('callee');
+      await _peerConnection.setRemoteDescription(new RTCSessionDescription(callData.offer));
+
+      // ⑥ 発信側のICE candidateをすぐ受信開始（速度改善）
+      _callUnsubOffer = await listenForRemoteCandidates('callee');
+
+      // ⑦ answerを作成して送信
+      const answer = await _peerConnection.createAnswer();
+      await _peerConnection.setLocalDescription(answer);
+      await updateDoc(callRef, {
+        answer: { type: answer.type, sdp: answer.sdp },
+        status: 'active'
+      });
+
+      // ⑧ 通話確立後、発信者が終了 or ICE restartを検知する
+      _callEndUnsub = onSnapshot(callRef, async (snap2) => {
+        const d2 = snap2.data();
+        if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
+          if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
+          if (_callId) endCall(true, 'remoteEnded');
+        } else if (d2.iceRestartAt && d2.iceRestartAt !== _lastIceRestartAt && _peerConnection && d2.offer) {
+          _lastIceRestartAt = d2.iceRestartAt;
+          setCallReconnectStatus(true);
+          try {
+            await _peerConnection.setRemoteDescription(new RTCSessionDescription(d2.offer));
+            const newAnswer = await _peerConnection.createAnswer();
+            await _peerConnection.setLocalDescription(newAnswer);
+            await updateDoc(callRef, { answer: { type: newAnswer.type, sdp: newAnswer.sdp } });
+            console.log('[ICE restart callee] answered successfully, attempt:', d2.iceRestartAttempt || 1);
+          } catch(e) {
+            console.warn('[ICE restart callee] failed:', e);
+            // callee側でanswerに失敗した場合、callerのタイムアウトを待つ（endCallはcallerが制御）
+          }
+        }
+      });
+    }
+
+    async function declineCall() {
+      if (!_callId) return;
+      stopCallRingSound();
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await cleanupWebRtcDoc('calls', _callId);
+      } catch(_) {}
+      endCall(true);
+    }
+
+    async function endCall(skipFirestore, reason) {
+      const overlay = document.getElementById('callOverlay');
+      if (!_callId && !_peerConnection && !_localStream && !(overlay?.classList.contains('show'))) return;
+      const callIdCopy = _callId;
+      _callId = null;
+      _callRole = null;
+      _pendingCallerData = null;
+      if (reason === 'connectionLost' && _usingTurnRelay) reason = 'turnDisconnected';
+      _usingTurnRelay = false;
+      setCallConnectionType(null);
+
+      stopCallRingSound();
+      stopCallTimer();
+
+      if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+      if (_iceDisconnectTimer) { clearTimeout(_iceDisconnectTimer); _iceDisconnectTimer = null; }
+      if (_iceRestartTimer) { clearTimeout(_iceRestartTimer); _iceRestartTimer = null; }
+      _lastIceRestartAt = null;
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+      if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
+
+      if (_peerConnection) {
+        _peerConnection.onconnectionstatechange = null;
+        _peerConnection.oniceconnectionstatechange = null;
+        _peerConnection.ontrack = null;
+        _peerConnection.onicecandidate = null;
+        _peerConnection.close();
+        _peerConnection = null;
+      }
+      if (_localStream) {
+        _localStream.getTracks().forEach(t => t.stop());
+        _localStream = null;
+      }
+      const remoteAudio = document.getElementById('remoteAudio');
+      if (remoteAudio) { remoteAudio.srcObject = null; }
+
+      stopVoiceIndicator();
+
+      if (!skipFirestore && callIdCopy) {
+        try {
+          const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+          await cleanupWebRtcDoc('calls', callIdCopy);
+        } catch(_) {}
+      }
+
+      _isMuted = false;
+      const muteBtn = document.getElementById('muteButton');
+      if (muteBtn) { muteBtn.classList.remove('active'); muteBtn.querySelector('i').className = 'fas fa-microphone'; }
+      document.getElementById('muteLabel').textContent = 'ミュート';
+
+      hideCallOverlay();
+      if (reason) showCallEndedReason(reason);
+    }
+
+    let _voiceAudioContext = null;
+    let _voiceAnalyser = null;
+    let _voiceAnimFrame = null;
+
+    function startVoiceIndicator(remoteStream) {
+      const canvas = document.getElementById('voiceWaveform');
+      if (!canvas) return;
+      canvas.style.display = 'block';
+      const ctx = canvas.getContext('2d');
+      
+      if (!_voiceAudioContext) {
+        _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_voiceAudioContext.state === 'suspended') {
+        _voiceAudioContext.resume();
+      }
+      if (_voiceAnalyser) {
+        _voiceAnalyser.disconnect();
+      }
+      _voiceAnalyser = _voiceAudioContext.createAnalyser();
+      _voiceAnalyser.fftSize = 64;
+      
+      const sources = [];
+      if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+        sources.push(_voiceAudioContext.createMediaStreamSource(remoteStream));
+      }
+      if (_localStream && _localStream.getAudioTracks().length > 0) {
+        sources.push(_voiceAudioContext.createMediaStreamSource(_localStream));
+      }
+      
+      sources.forEach(s => s.connect(_voiceAnalyser));
+      
+      const bufferLength = _voiceAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
+      
+      let smoothedData = new Float32Array(20);
+      function draw() {
+        if (!_voiceAnalyser) return;
+        _voiceAnimFrame = requestAnimationFrame(draw);
+        
+        _voiceAnalyser.getByteFrequencyData(dataArray);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const numBars = 20;
+        const barWidth = 4;
+        const gap = 4;
+        const totalWidth = numBars * (barWidth + gap) - gap;
+        let startX = (canvas.width - totalWidth) / 2;
+        const centerY = canvas.height / 2;
+        
+        ctx.lineCap = 'round';
+        ctx.lineWidth = barWidth;
+        
+        for (let i = 0; i < numBars; i++) {
+          const binStart = Math.floor(i * (bufferLength / numBars));
+          const binEnd = Math.floor((i + 1) * (bufferLength / numBars));
+          let sum = 0;
+          for (let j = binStart; j < binEnd; j++) {
+            sum += dataArray[j] || 0;
+          }
+          const avg = sum / (binEnd - binStart || 1);
+          const targetHeight = (avg / 255) * (canvas.height - 10) * 0.8 + 4;
+          
+          // Smooth interpolation
+          smoothedData[i] += (targetHeight - smoothedData[i]) * 0.2;
+          const barHeight = Math.max(4, smoothedData[i]);
+          
+          ctx.beginPath();
+          ctx.moveTo(startX, centerY - barHeight / 2);
+          ctx.lineTo(startX, centerY + barHeight / 2);
+          ctx.strokeStyle = '#ffffff'; // 以前の色（白）
+          ctx.stroke();
+          
+          startX += barWidth + gap;
+        }
+      }
+      draw();
+    }
+
+    function stopVoiceIndicator() {
+      if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
+      _voiceAnimFrame = null;
+      if (_voiceAnalyser) { _voiceAnalyser.disconnect(); _voiceAnalyser = null; }
+      const canvas = document.getElementById('voiceWaveform');
+      if (canvas) {
+        canvas.style.display = 'none';
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    function toggleMute() {
+      if (!_localStream) return;
+      _isMuted = !_isMuted;
+      _localStream.getAudioTracks().forEach(t => { t.enabled = !_isMuted; });
+      const btn = document.getElementById('muteButton');
+      const label = document.getElementById('muteLabel');
+      if (_isMuted) {
+        btn.classList.add('active');
+        btn.querySelector('i').className = 'fas fa-microphone-slash';
+        label.textContent = 'ミュート解除';
+      } else {
+        btn.classList.remove('active');
+        btn.querySelector('i').className = 'fas fa-microphone';
+        label.textContent = 'ミュート';
+      }
+    }
+
+    async function handleCallNotificationClick(data) {
+      if (!data.callId) return;
+      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      try {
+        const snap = await getDoc(doc(db, 'artifacts', appId, 'calls', data.callId));
+        if (snap.exists() && snap.data().status === 'ringing') {
+          handleIncomingCall(data.callId, { nickname: data.callerNickname, avatarUrl: data.callerAvatarUrl });
+        }
+      } catch(_) {}
+    }
+
+    function handleCallDeclinedFromNotification(data) {
+      if (_callId && data.callId === _callId) {
+        declineCall();
+      }
+    }
+
+    // --- 統合通知関数 ---
+    async function showNotification(title, body, roomId) {
+      if (typeof isEncrypted === 'function') {
+        if (isEncrypted(body)) body = '新しいメッセージがあります';
+        if (isEncrypted(title)) title = 'Covo';
+      }
+      const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+      const desktopEnabled = localStorage.getItem('simplechat_desktop_notif') !== 'false';
+      const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+
+      if (!isTauri && !browserEnabled) return;
+      if (isTauri && !desktopEnabled) return;
+
+      const now = Date.now();
+      const sameContent = body === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
+      if (now - lastNotificationTime < 3000 && sameContent) return;
+      lastNotificationTime = now;
+      lastNotificationBody = body;
+      lastNotificationRoomId = roomId || '';
+
+      if (soundEnabled) {
+        playNotificationSound();
+      }
+
+      if (isTauri) {
+        if (window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
+        }
+
+        if (window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: body }).catch(console.error);
+        } else if (Notification.permission === 'granted') {
+          const n = new Notification(title, { body: body });
+          n.onclick = () => {
+            if (roomId) selectRoom(roomId);
+            if (window.__TAURI__?.core?.invoke) {
+              window.__TAURI__.core.invoke('show_main_window').catch(console.error);
+            }
+          };
+        }
+      } else {
+        // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
+        if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
+          try {
+            const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
+            n.onclick = () => { 
+              window.focus(); 
+              n.close(); 
+              if (roomId) {
+                if (typeof goToRoom === 'function') goToRoom(roomId);
+                else { const roomItem = document.getElementById(`room-item-${roomId}`); if (roomItem) roomItem.click(); }
+              }
+            };
+          } catch (e) { }
+        }
+      }
+    }
+
+    // --- ブロッキングアップデートチェック ---
+    let pendingUpdate = null;
+    window.__bgDownloading = false;
+    window.__bgDownloaded = false;
+    window.__bgProgressText = '';
+
+    window.performBackgroundUpdateRestart = async function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (!invoke) { window.location.reload(); return; }
+      try {
+        if (pendingUpdate && pendingUpdate.rid) {
+          await invoke('plugin:updater|install', { rid: pendingUpdate.rid, updateRid: pendingUpdate.rid });
+        }
+      } catch(e) { console.warn(e); }
+      try {
+        await invoke('plugin:process|restart');
+      } catch(e) { window.location.reload(); }
+    };
+
+    async function blockingUpdateCheck() {
+      if (!isTauri) return false;
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (!invoke) {
+        console.warn('Tauri core.invoke not available, skipping update check.');
+        return false;
+      }
+
+      try {
+        console.log('📦 [アップデート] 新しいバージョンがないか確認しています...');
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata) {
+          console.log('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
+
+          let isForced = false;
+          try {
+            const vRes = await fetch('version.json?_t=' + Date.now(), { cache: 'no-store' });
+            const vData = await vRes.json();
+            if (vData && vData.force === true) {
+              isForced = true;
+            }
+          } catch(e) { console.warn('Failed to fetch version.json:', e); }
+
+          if (localStorage.getItem('covo_ignore_force_update') === '1') {
+            console.log('[Update] バージョンロックが有効なため、自動アップデートをスキップします。');
+            return false;
+          }
+
+          const Channel = window.__TAURI__?.core?.Channel;
+          const rid = metadata.rid;
+
+          const tryInvokeWithRidVariants = async (cmd, extraArgs) => {
+            const variants = [
+              { rid },
+              { updateRid: rid },
+              { rid, updateRid: rid },
+            ];
+            let lastErr = null;
+            for (const v of variants) {
+              try {
+                const args = { ...v, ...extraArgs };
+                return await invoke(cmd, args);
+              } catch (e) {
+                lastErr = e;
+                const msg = String(e?.message || e || '').toLowerCase();
+                if (msg.includes('missing required key') || msg.includes('invalid args')) {
+                  continue;
+                }
+                throw e;
+              }
+            }
+            throw lastErr || new Error(`${cmd}: all variants failed`);
+          };
+
+          pendingUpdate = {
+            rid: rid,
+            version: metadata.version,
+            body: metadata.body,
+            downloadAndInstall: async () => {
+              console.log('[Updater] Starting, rid:', rid);
+              const makeChannel = () => {
+                if (!Channel) return null;
+                const ch = new Channel();
+                ch.onmessage = (msg) => console.log('[Updater event]', msg);
+                return ch;
+              };
+
+              try {
+                const ch = makeChannel();
+                const extra = ch ? { onEvent: ch } : {};
+                await tryInvokeWithRidVariants('plugin:updater|download_and_install', extra);
+                console.log('[Updater] download_and_install OK');
+                return;
+              } catch (e1) {
+                console.warn('[Updater] download_and_install failed, trying download+install', e1);
+              }
+
+              try {
+                const ch = makeChannel();
+                const extra = ch ? { onEvent: ch } : {};
+                await tryInvokeWithRidVariants('plugin:updater|download', extra);
+                console.log('[Updater] download OK, installing');
+              } catch (e2) {
+                throw new Error('download failed: ' + (e2?.message || JSON.stringify(e2)));
+              }
+              try {
+                await tryInvokeWithRidVariants('plugin:updater|install', {});
+                console.log('[Updater] install OK');
+              } catch (e3) {
+                throw new Error('install failed: ' + (e3?.message || JSON.stringify(e3)));
+              }
+            }
+          };
+
+          // アップデートオーバーレイを表示して自動でアップデートを開始する
+          const overlay = document.getElementById('updateOverlay');
+          const versionText = document.getElementById('updateVersionText');
+          const bodyText = document.getElementById('updateBodyText');
+          const closeBtn = document.getElementById('updateCloseButton');
+          const updateBtn = document.getElementById('updateButton');
+          const updateMainTitle = document.getElementById('updateMainTitle');
+
+          versionText.textContent = `v${metadata.version} を自動でダウンロード中...`;
+          bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+          
+          if (closeBtn) closeBtn.classList.add('hidden');
+          if (updateBtn) updateBtn.classList.add('hidden');
+          if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+
+          overlay.classList.add('show');
+
+          setTimeout(() => {
+            performUpdate();
+          }, 500);
+
+          return true; // アプリ起動をブロック
+        }
+        console.log('📦 [アップデート] 現在のバージョンは最新です');
+      } catch (error) {
+        console.warn('Update check failed:', error);
+      }
+      return false;
+    }
+
+    window.closeUpdateOverlay = function() {
+      const overlay = document.getElementById('updateOverlay');
+      if (overlay) {
+        overlay.classList.remove('show');
+      }
+      if (!app) {
+        initializeFirebase();
+        if ('Notification' in window) Notification.requestPermission();
+        if (typeof initializeResizer === 'function') initializeResizer();
+      }
+    };
+
+    // =========================================================================
+    // 🛡️ リリース履歴取得＆強制アプデ回避機能管理（設定モーダル＆リカバリー用）
+    // =========================================================================
+    window.updateForceOverrideUI = function() {
+      const cb = document.getElementById('toggleForceOverrideCheckbox');
+      if (!cb) return;
+      cb.checked = localStorage.getItem('covo_ignore_force_update') === '1';
+    };
+
+    window.handleForceOverrideToggle = function(event) {
+      const checked = event.target.checked;
+      if (checked) {
+        // オンにしようとしている → 確認モーダルを表示し、まずチェックをキャンセル
+        event.target.checked = false;
+        const modal = document.getElementById('forceOverrideConfirmModal');
+        if (modal) {
+          modal.classList.remove('hidden');
+          modal.style.display = 'flex';
+        }
+      } else {
+        // オフにする → そのまま保存
+        localStorage.setItem('covo_ignore_force_update', '0');
+        updateForceOverrideUI();
+      }
+    };
+
+    window.confirmForceOverrideToggle = function() {
+      localStorage.setItem('covo_ignore_force_update', '1');
+      updateForceOverrideUI();
+      const modal = document.getElementById('forceOverrideConfirmModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    };
+
+    window.cancelForceOverrideToggle = function() {
+      const modal = document.getElementById('forceOverrideConfirmModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+      updateForceOverrideUI();
+    };
+
+    // 無限スクロール対応 過去バージョンモーダル
+    
+    window.downloadLatestWindowsApp = async function(btn) {
+      const origText = btn.textContent;
+      btn.textContent = "準備中...";
+      btn.disabled = true;
+      try {
+        const res = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases/latest', { cache: 'no-store' });
+        if (!res.ok) throw new Error('API limit or network error');
+        const release = await res.json();
+        const exeAsset = release.assets?.find(a => a.name?.endsWith('.exe'));
+        const url = exeAsset ? exeAsset.browser_download_url : release.html_url;
+        window.open(url, '_blank');
+      } catch(e) {
+        alert("最新バージョンの取得に失敗しました。GitHubページを開きます。");
+        window.open('https://github.com/qwertyuiop1229/Covo/releases/latest', '_blank');
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
+    };
+
+    // DOMロード後にTauri環境以外でのUI制御
+    document.addEventListener("DOMContentLoaded", () => {
+      const isTauriEnv = window.__TAURI__ !== undefined;
+      if (!isTauriEnv) {
+        const vlc = document.getElementById("versionLockContainer");
+        if (vlc) vlc.style.display = "none";
+        
+        const wdc = document.getElementById("windowsDownloadContainer");
+        if (wdc) wdc.style.display = "flex";
+      }
+    });
+
+    window.openPastVersionsModal = function() {
+      const modal = document.getElementById('pastVersionsModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      }
+      window.__pastVersionsPage = 1;
+      window.__pastVersionsHasMore = true;
+      window.__pastVersionsLoading = false;
+      const listEl = document.getElementById('pastVersionsList');
+      if (listEl) listEl.innerHTML = '';
+      loadPastVersionsPage(1);
+    };
+
+    window.closePastVersionsModal = function() {
+      const modal = document.getElementById('pastVersionsModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    };
+
+    window.loadPastVersionsPage = async function(page) {
+      if (window.__pastVersionsLoading || !window.__pastVersionsHasMore) return;
+      window.__pastVersionsLoading = true;
+      const listEl = document.getElementById('pastVersionsList');
+      const loadingEl = document.getElementById('pastVersionsLoading');
+      if (!listEl) return;
+      if (loadingEl) loadingEl.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${page}`, { cache: 'no-store' });
+        if (!res.ok) {
+          window.__pastVersionsHasMore = false;
+          if (res.status === 403) {
+            listEl.innerHTML = `
+              <div class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-2">
+                <p class="font-bold text-amber-400"><i class="fas fa-exclamation-triangle mr-1.5"></i>GitHub API の取得上限 (1時間60回) に到達しました</p>
+                <p>ターミナルでのデプロイ監視 (<code>npm run deploy</code>) が匿名APIリクエスト枠をすべて消費したため、過去のリリース履歴を取得できませんでした。</p>
+                <p class="pt-1 text-white font-semibold">💡 解決方法：</p>
+                <p>Windows の環境変数に <code class="px-1.5 py-0.5 bg-amber-500/20 rounded font-mono text-amber-300">GITHUB_TOKEN</code> を設定してください。ターミナル監視が無料枠を消費しなくなり、アプリ内の履歴表示がいつでも正常に動作するようになります！</p>
+              </div>
+            `;
+          } else {
+            listEl.innerHTML = `<div class="text-center text-xs text-red-400 py-4">エラーが発生しました: HTTP ${res.status}</div>`;
+          }
+          if (loadingEl) loadingEl.classList.add('hidden');
+          window.__pastVersionsLoading = false;
+          return;
+        }
+        const releases = await res.json();
+        if (!Array.isArray(releases) || releases.length === 0) {
+          window.__pastVersionsHasMore = false;
+          if (page === 1) {
+            listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-4">リリース履歴が見つかりませんでした。</div>';
+          }
+          if (loadingEl) loadingEl.classList.add('hidden');
+          window.__pastVersionsLoading = false;
+          return;
+        }
+
+        if (releases.length < 10) {
+          window.__pastVersionsHasMore = false;
+        }
+
+        releases.forEach(rel => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith('.exe'));
+          const tag = rel.tag_name || '不明';
+          const dateStr = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
+          const bodyStr = (rel.body || '説明なし').substring(0, 100) + (rel.body?.length > 100 ? '...' : '');
+
+          const card = document.createElement('div');
+          card.className = 'p-4 bg-gray-800/60 border border-gray-700/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow transition text-white';
+          card.innerHTML = `
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold font-mono text-gray-100">${tag}</span>
+                <span class="text-xs text-gray-400">(${dateStr})</span>
+              </div>
+              <p class="text-xs text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
+            </div>
+            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}', this)">
+              <i class="fas fa-download"></i>${typeof window.__TAURI__ !== "undefined" ? "このバージョンをインストール" : "インストーラーをダウンロード"}
+            </button>
+          `;
+          listEl.appendChild(card);
+        });
+        window.__pastVersionsPage = page;
+      } catch (e) {
+        console.warn('Failed to fetch GitHub releases:', e);
+        if (page === 1) {
+          listEl.innerHTML = '<div class="text-center text-xs text-red-500 py-4">リリース履歴の取得に失敗しました。</div>';
+        }
+      } finally {
+        if (loadingEl) loadingEl.classList.add('hidden');
+        window.__pastVersionsLoading = false;
+      }
+    };
+
+    window.handlePastVersionsScroll = function(container) {
+      if (container.scrollHeight - container.scrollTop <= container.clientHeight + 150) {
+        loadPastVersionsPage(window.__pastVersionsPage + 1);
+      }
+    };
+
+    window.installPastRelease = async function(url, tag, btnEl) {
+      if (!url) return;
+      console.log(`[Install Past Release] ${tag} -> ${url}`);
+      localStorage.setItem('covo_ignore_force_update', '1');
+      if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+
+      // カード内に進捗UIを動的挿入
+      let progressEl = null;
+      if (btnEl) {
+        btnEl.disabled = true;
+        const card = btnEl.closest('.past-version-card') || btnEl.parentElement;
+        if (card) {
+          progressEl = document.createElement('div');
+          progressEl.style.cssText = 'margin-top:0.75rem;';
+          progressEl.innerHTML = `
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;">
+              <span class="past-spinner" style="font-size:0.9rem;">⠋</span>
+              <span class="past-progress-text" style="font-size:0.8rem;color:#a5b4fc;font-weight:600;">準備中...</span>
+            </div>
+            <div style="background:rgba(99,102,241,0.15);border-radius:999px;height:6px;overflow:hidden;border:1px solid rgba(99,102,241,0.3);">
+              <div class="past-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#a78bfa);border-radius:999px;transition:width 0.25s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b;margin-top:0.3rem;">
+              <span class="past-bytes-text"></span>
+              <span class="past-pct-text" style="font-weight:700;color:#818cf8;">0%</span>
+            </div>
+          `;
+          card.appendChild(progressEl);
+        }
+
+        // スピナーアニメーション
+        const SPINNERS = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+        let si = 0;
+        const spinTimer = setInterval(() => {
+          const sp = progressEl?.querySelector('.past-spinner');
+          if (sp) sp.textContent = SPINNERS[si++ % SPINNERS.length];
+        }, 80);
+        progressEl._spinTimer = spinTimer;
+      }
+
+      const updatePastProgress = ({ progress = 0, downloaded = 0, total = 0, text = '' } = {}) => {
+        if (!progressEl) return;
+        const bar = progressEl.querySelector('.past-progress-bar');
+        const pct = progressEl.querySelector('.past-pct-text');
+        const bytes = progressEl.querySelector('.past-bytes-text');
+        const txt = progressEl.querySelector('.past-progress-text');
+        if (bar) bar.style.width = Math.min(progress, 100) + '%';
+        if (pct) pct.textContent = progress + '%';
+        if (bytes && total > 0) bytes.textContent = (downloaded / (1024*1024)).toFixed(1) + ' MB / ' + (total / (1024*1024)).toFixed(1) + ' MB';
+        else if (bytes && downloaded > 0) bytes.textContent = (downloaded / (1024*1024)).toFixed(1) + ' MB ダウンロード済み';
+        if (txt && text) txt.textContent = text;
+      };
+
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke && url.endsWith('.exe')) {
+        // download-progress イベントをリッスン
+        let unlisten = null;
+        try {
+          const tauriEvent = window.__TAURI__?.event;
+          if (tauriEvent?.listen) {
+            unlisten = await tauriEvent.listen('download-progress', (event) => {
+              const { progress, downloaded, total } = event.payload;
+              updatePastProgress({
+                progress: Math.min(95, Math.round(5 + progress * 0.9)),
+                downloaded, total,
+                text: `ダウンロード中... (${progress}%)`
+              });
+            });
+          }
+        } catch(e) { console.warn('past version event listen unavailable:', e); }
+
+        updatePastProgress({ progress: 2, text: 'ダウンロードを開始中...' });
+        try {
+          await invoke('silent_install_past_version', { url, tag });
+          if (unlisten) unlisten();
+          if (progressEl) clearInterval(progressEl._spinTimer);
+          updatePastProgress({ progress: 100, text: '再起動します。更新を適用中...' });
+          const sp = progressEl?.querySelector('.past-spinner');
+          if (sp) { sp.textContent = '✔'; sp.style.animation = 'none'; }
+        } catch (err) {
+          console.warn('silent_install_past_version failed, fallback to shell open', err);
+          if (unlisten) unlisten();
+          if (progressEl) clearInterval(progressEl._spinTimer);
+          updatePastProgress({ progress: 0, text: 'ブラウザでダウンロードページを開いています...' });
+          invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+        }
+      } else if (invoke) {
+        invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+      } else {
+        window.open(url, '_blank');
+      }
+    };
+
+
+    window.emergencyCheckUpdate = async function(btn) {
+      const origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '確認中...';
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri API unavailable');
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata) {
+          alert(`最新バージョン v${metadata.version} が利用可能です！ただちに自動更新を開始します。`);
+          document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');
+          document.getElementById('emergencyRecoveryOverlay').style.display = 'none';
+          localStorage.setItem('covo_ignore_force_update', '0');
+          await blockingUpdateCheck();
+        } else {
+          alert('現在提供されている最新バージョンです。更新プログラムはありません。');
+        }
+      } catch (e) {
+        alert('アップデートの確認に失敗しました: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    };
+
+    // 手動アップデート確認（設定のアプリ情報から呼ばれる）
+    window.manualCheckUpdate = async function(btnId, statusId) {
+      const btn = document.getElementById(btnId);
+      const statusEl = statusId ? document.getElementById(statusId) : null;
+      if (!btn || btn.dataset.checking === '1') return;
+      btn.dataset.checking = '1';
+      if (btn.tagName === 'BUTTON') { btn.disabled = true; btn.textContent = '確認中…'; }
+      if (statusEl) { statusEl.textContent = '確認中…'; statusEl.style.color = '#6b7280'; }
+
+      const resetBtn = () => {
+        if (btn) { btn.dataset.checking = '0'; if (btn.tagName === 'BUTTON') { btn.disabled = false; btn.textContent = 'アップデートを確認'; } }
+      };
+
+      if (!isTauri) {
+        if (statusEl) { statusEl.textContent = 'キャッシュをクリアして再読み込み中...'; statusEl.style.color = '#6b7280'; }
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) {
+              await r.unregister();
+            }
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            for (const k of keys) {
+              await caches.delete(k);
+            }
+          }
+        } catch(e) { console.warn('[manualCheckUpdate] cache clear failed:', e); }
+        window.location.href = window.location.pathname + '?v=' + new Date().getTime();
+        return;
+      }
+
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri invoke unavailable');
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata) {
+          resetBtn();
+          if (statusEl) { statusEl.textContent = ''; }
+          
+          localStorage.setItem('covo_ignore_force_update', '0');
+          if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
+
+          const result = await blockingUpdateCheck();
+          if (!result) {
+            const overlay = document.getElementById('updateOverlay');
+            const versionText = document.getElementById('updateVersionText');
+            const bodyText = document.getElementById('updateBodyText');
+            const closeBtn = document.getElementById('updateCloseButton');
+            const updateBtn = document.getElementById('updateButton');
+            const updateMainTitle = document.getElementById('updateMainTitle');
+            if (overlay && versionText) {
+              versionText.textContent = `v${metadata.version} を自動でダウンロード中...`;
+              if (bodyText) bodyText.textContent = metadata.body || 'バグ修正とパフォーマンス改善が含まれています。';
+              if (closeBtn) closeBtn.classList.add('hidden');
+              if (updateBtn) updateBtn.classList.add('hidden');
+              if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+              overlay.classList.add('show');
+              setTimeout(() => { performUpdate(); }, 500);
+            }
+          }
+        } else {
+          if (statusEl) { statusEl.textContent = '最新バージョンです'; statusEl.style.color = '#4f46e5'; }
+          resetBtn();
+        }
+      } catch (e) {
+        console.warn('[manualCheckUpdate] failed:', e);
+        if (statusEl) { statusEl.textContent = '確認に失敗しました'; statusEl.style.color = '#ef4444'; }
+        resetBtn();
+      }
+    };
+
+    // デスクトップショートカット作成（設定のアプリ情報から呼ばれる）
+    window.createDesktopShortcut = async function(btnId, statusId) {
+      const btn = document.getElementById(btnId);
+      const statusEl = statusId ? document.getElementById(statusId) : null;
+      if (!btn || btn.dataset.creating === '1') return;
+      btn.dataset.creating = '1';
+      const origText = btn.tagName === 'BUTTON' ? btn.textContent : null;
+      if (origText) { btn.disabled = true; btn.textContent = '作成中…'; }
+      if (statusEl) { statusEl.textContent = '作成中…'; statusEl.style.color = '#6b7280'; }
+
+      const reset = () => {
+        if (btn) { btn.dataset.creating = '0'; if (origText) { btn.disabled = false; btn.textContent = origText; } }
+      };
+
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error('Tauri unavailable');
+        await invoke('create_desktop_shortcut');
+        if (statusEl) { statusEl.textContent = 'ショートカットを作成しました'; statusEl.style.color = '#4f46e5'; }
+        reset();
+        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+      } catch (e) {
+        console.warn('[createDesktopShortcut] failed:', e);
+        if (statusEl) { statusEl.textContent = '作成に失敗しました'; statusEl.style.color = '#ef4444'; }
+        reset();
+      }
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // 進捗UI ヘルパー
+    // ─────────────────────────────────────────────────────────────
+    const SPINNERS = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    let _spinIdx = 0;
+    let _spinTimer = null;
+
+    function startSpinner() {
+      const el = document.getElementById('updateSpinnerIcon');
+      if (!el) return;
+      _spinIdx = 0;
+      _spinTimer = setInterval(() => {
+        if (el) el.textContent = SPINNERS[_spinIdx++ % SPINNERS.length];
+      }, 80);
+    }
+    function stopSpinner(symbol = '✔') {
+      clearInterval(_spinTimer);
+      _spinTimer = null;
+      const el = document.getElementById('updateSpinnerIcon');
+      if (el) { el.textContent = symbol; el.style.animation = 'none'; }
+    }
+
+    function formatDownloadBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function updateProgressUI({ progress = 0, downloaded = 0, total = 0, text = '' } = {}) {
+      const bar = document.getElementById('updateProgressBar');
+      const pct = document.getElementById('updatePercentText');
+      const bytes = document.getElementById('updateBytesText');
+      const statusText = document.getElementById('updateProgressText');
+      const area = document.getElementById('updateProgressArea');
+
+      if (area && area.classList.contains('hidden')) area.classList.remove('hidden');
+      if (bar) bar.style.width = Math.min(progress, 100) + '%';
+      if (pct) pct.textContent = progress + '%';
+      if (bytes && total > 0) bytes.textContent = formatDownloadBytes(downloaded) + ' / ' + formatDownloadBytes(total);
+      else if (bytes && downloaded > 0) bytes.textContent = formatDownloadBytes(downloaded) + ' ダウンロード済み';
+      if (statusText && text) statusText.textContent = text;
+    }
+
+    // 自動再起動カウントダウン
+    function startAutoRestartCountdown(seconds = 3) {
+      const el = document.getElementById('countdownSec');
+      const restartContainer = document.getElementById('updateRestartContainer');
+      if (restartContainer) restartContainer.classList.remove('hidden');
+      let remaining = seconds;
+      if (el) el.textContent = remaining;
+      const timer = setInterval(() => {
+        remaining--;
+        if (el) el.textContent = Math.max(0, remaining);
+        if (remaining <= 0) {
+          clearInterval(timer);
+          forceRestartNow();
+        }
+      }, 1000);
+    }
+
+    window.forceRestartNow = function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        // Tauri環境では app.restart() 相当のコマンドを呼ぶ
+        invoke('plugin:process|restart').catch(() => {
+          // フォールバック: reload
+          window.location.reload();
+        });
+      } else {
+        window.location.reload();
+      }
+    };
+
+    // アップデート実行（HTMLのonclickまたは自動更新から呼ばれる）
+    window.performUpdate = async function () {
+      if (!pendingUpdate) return;
+      const btn = document.getElementById('updateButton');
+      const invoke = window.__TAURI__?.core?.invoke;
+
+      if (btn) { btn.disabled = true; btn.classList.add('hidden'); }
+      updateProgressUI({ progress: 20, text: 'アップデートを準備中...' });
+      startSpinner();
+
+      try {
+        // Tauri標準の確実なビルトインアップデーターを実行
+        // 完了後に自動的にインストーラー(Covoセットアップ)が起動するため、同時にアプリを自動終了させる
+        updateProgressUI({ progress: 60, text: '更新データを取得中...' });
+        await pendingUpdate.downloadAndInstall();
+        updateProgressUI({ progress: 100, text: '完了。covoセットアップを起動します...' });
+        stopSpinner('✔');
+        if (invoke) {
+          invoke('plugin:process|exit', { code: 0 }).catch(() => {
+            invoke('tauri', { __tauriModule: 'Process', message: { cmd: 'exit', exitCode: 0 } }).catch(()=>{});
+          });
+        }
+      } catch (error) {
+        stopSpinner('✖');
+        console.error('Update failed:', error);
+        const detail = error instanceof Error
+          ? (error.message + (error.stack ? '\n\n' + error.stack : ''))
+          : (typeof error === 'object' ? JSON.stringify(error, null, 2) : String(error));
+
+        if (detail.includes('The signature was created with a different key')) {
+          const url = 'https://github.com/qwertyuiop1229/covo/releases/latest';
+          if (invoke) {
+            invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank'));
+          } else {
+            window.open(url, '_blank');
+          }
+          updateProgressUI({ progress: 0, text: '手動でのアップデートが必要です。ブラウザを開いています...' });
+          if (btn) {
+            btn.innerHTML = '<i class="fas fa-external-link-alt"></i>&nbsp;&nbsp;ダウンロードページへ';
+            btn.disabled = false; btn.classList.remove('hidden');
+            btn.onclick = () => { if (invoke) invoke('plugin:shell|open', { path: url }).catch(() => window.open(url, '_blank')); else window.open(url, '_blank'); };
+          }
+          return;
+        }
+
+        updateProgressUI({ progress: 0, text: 'アップデート失敗（詳細は下のエラー欄を確認）' });
+        const errBox = document.getElementById('updateErrorBox');
+        const errArea = document.getElementById('updateErrorDetail');
+        if (errBox && errArea) { errArea.value = detail; errBox.classList.remove('hidden'); }
+        if (btn) { btn.disabled = false; btn.classList.remove('hidden'); btn.innerHTML = '<i class="fas fa-download"></i>&nbsp;&nbsp;もう一度試す'; }
+      }
+    };
+
+    // エラーコピー
+    document.addEventListener('click', (e) => {
+      if (e.target?.id === 'copyErrorBtn') {
+        const ta = document.getElementById('updateErrorDetail');
+        if (ta) {
+          copyToClipboard(ta.value).then(() => {
+            e.target.textContent = 'コピーしました ✓';
+            setTimeout(() => { e.target.textContent = 'エラーをコピー'; }, 1500);
+          });
+        }
+      }
+    });
+
+    // =========================================================================
+    // PWA & Settings Management
+    // =========================================================================
+
+    let deferredPrompt;
+    const pwaBanner = document.getElementById('pwaInstallBanner');
+    const pwaInstallBtn = document.getElementById('pwaInstallButton');
+    const pwaCloseBtn = document.getElementById('pwaInstallClose');
+
+    const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      // スマホのみバナー表示
+      if (!isStandalone && !isTauri && isMobileDevice) {
+        e.preventDefault();
+        deferredPrompt = e;
+        pwaBanner.classList.add('show');
+      }
+    });
+
+    pwaInstallBtn.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          pwaBanner.classList.remove('show');
+        }
+        deferredPrompt = null;
+      } else if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+        // iOS Safariの場合
+        showCustomAlert("Safariの「共有」ボタンから「ホーム画面に追加」を選択してください。\n追加すると通知を受け取れるようになります。");
+      }
+    });
+
+    pwaCloseBtn.addEventListener('click', () => {
+      pwaBanner.classList.remove('show');
+    });
+
+    // iOS向けヒント表示（スマホのみ）
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !window.navigator.standalone && !isTauri) {
+      document.getElementById('pwaInstallHint').textContent = "共有ボタンから「ホーム画面に追加」してください";
+      pwaBanner.classList.add('show');
+    }
+
+
+    function initSettings() {
+      const toggleNotifSound = document.getElementById('toggleNotifSound');
+      const toggleBrowserNotif = document.getElementById('toggleBrowserNotif');
+      const toggleDesktopNotif = document.getElementById('toggleDesktopNotif');
+      const toggleAutoStart = document.getElementById('toggleAutoStart');
+
+      // 初期値の読み込み
+      toggleNotifSound.checked = localStorage.getItem('simplechat_sound') !== 'false';
+      toggleBrowserNotif.checked = localStorage.getItem('simplechat_browser_notif') !== 'false';
+      loadDarkServerTheme();
+
+      if (isTauri) {
+        // Windows版: ブラウザ通知行を非表示、デスクトップ通知・自動起動・ショートカットを表示
+        document.getElementById('desktopSettingsContainer').classList.remove('hidden');
+        document.getElementById('desktopNotifRow').classList.remove('hidden');
+        document.getElementById('shortcutInfoContainer').classList.remove('hidden');
+        document.getElementById('browserNotifRow').classList.add('hidden');
+        // デスクトップショートカット作成ボタン（Tauri専用）
+        const pcRow = document.getElementById('pcCreateShortcutRow');
+        if (pcRow) pcRow.style.setProperty('display', 'flex', 'important');
+        const mobileRow = document.getElementById('mobileCreateShortcutBtn');
+        if (mobileRow) mobileRow.style.display = 'flex';
+
+        // ログフォルダボタンをdesktopSettingsContainer内に動的追加する代わりに、
+        // notifPositionContainerが削除されたため openLogDirBtn は追加しない
+
+        // バージョン表示
+        (async () => {
+          try {
+            const app = window.__TAURI__?.app;
+            const verSpan = document.getElementById('installedVersion');
+            if (!verSpan) return;
+            if (app?.getVersion) {
+              const v = await app.getVersion();
+              verSpan.textContent = 'v' + v;
+            } else if (window.__TAURI__?.core?.invoke) {
+              const v = await window.__TAURI__.core.invoke('plugin:app|version').catch(() => null);
+              verSpan.textContent = v ? ('v' + v) : '不明';
+            } else {
+              verSpan.textContent = 'Tauri 不検知';
+            }
+          } catch (e) {
+            const el = document.getElementById('installedVersion');
+            if (el) el.textContent = 'エラー: ' + (e?.message || e);
+          }
+        })();
+
+        toggleDesktopNotif.checked = localStorage.getItem('simplechat_desktop_notif') !== 'false';
+        if (isTauri && toggleDesktopNotif.checked) {
+          const tauriNotif = window.__TAURI__?.notification;
+          if (tauriNotif && tauriNotif.requestPermission) {
+            tauriNotif.requestPermission();
+          } else if ('Notification' in window && Notification.permission !== 'granted') {
+            Notification.requestPermission();
+          }
+        }
+
+        if (window.__TAURI__?.autostart) {
+          window.__TAURI__.autostart.isEnabled().then(enabled => {
+            toggleAutoStart.checked = enabled;
+          }).catch(console.error);
+        }
+
+        // ショートカットキー入力欄の初期化
+        const shortcutInput = document.getElementById('shortcutKeyInput');
+        const shortcutDisplay = document.getElementById('shortcutKeyDisplay');
+        const savedKey = localStorage.getItem('simplechat_shortcut_key') || 'S';
+        shortcutInput.value = savedKey.toUpperCase();
+        shortcutDisplay.textContent = savedKey.toUpperCase();
+
+        shortcutInput.addEventListener('input', (e) => {
+          const val = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
+          e.target.value = val;
+          if (val.length === 1) {
+            localStorage.setItem('simplechat_shortcut_key', val);
+            shortcutDisplay.textContent = val;
+            if (window.__TAURI__?.core?.invoke) {
+              window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(console.error);
+            }
+          }
+        });
+
+        shortcutInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') e.preventDefault();
+        });
+      }
+      // Web/PWA版: ブラウザ通知行はデフォルトで表示済み。他のTauri専用UIは hidden のまま。
+
+      // Event Listeners
+      toggleNotifSound.addEventListener('change', (e) => {
+        localStorage.setItem('simplechat_sound', e.target.checked);
+      });
+
+      toggleBrowserNotif.addEventListener('change', (e) => {
+        localStorage.setItem('simplechat_browser_notif', e.target.checked);
+        setBrowserPushEnabled(e.target.checked).catch(console.error);
+      });
+
+      toggleDesktopNotif.addEventListener('change', (e) => {
+        localStorage.setItem('simplechat_desktop_notif', e.target.checked);
+        if (isTauri && e.target.checked) {
+          const tauriNotif = window.__TAURI__?.notification;
+          if (tauriNotif && tauriNotif.requestPermission) {
+            tauriNotif.requestPermission();
+          } else if ('Notification' in window && Notification.permission !== 'granted') {
+            Notification.requestPermission();
+          }
+        }
+      });
+
+      toggleAutoStart.addEventListener('change', async (e) => {
+        if (!window.__TAURI__?.autostart) return;
+        try {
+          if (e.target.checked) {
+            await window.__TAURI__.autostart.enable();
+          } else {
+            await window.__TAURI__.autostart.disable();
+          }
+        } catch (err) {
+          console.error("Autostart toggle failed", err);
+          e.target.checked = !e.target.checked;
+        }
+      });
+
+      const closeBehaviorSelect = document.getElementById('closeBehaviorSelect');
+      if (closeBehaviorSelect) {
+        const saved = localStorage.getItem('covo_close_behavior') || 'minimize';
+        closeBehaviorSelect.value = saved;
+        if (window.__TAURI__?.core) {
+          window.__TAURI__.core.invoke('set_close_behavior', { behavior: saved }).catch(console.error);
+        }
+        
+        closeBehaviorSelect.addEventListener('change', (e) => {
+          const val = e.target.value;
+          localStorage.setItem('covo_close_behavior', val);
+          if (window.__TAURI__?.core) {
+            window.__TAURI__.core.invoke('set_close_behavior', { behavior: val }).catch(console.error);
+          }
+        });
+      }
+    }
+
+
+
+    // =========================================================================
+    // Application Startup
+    // =========================================================================
+    window.onload = async () => {
+      loadingOverlay.classList.remove('hidden');
+
+      initSettings();
+
+      // 保存済みショートカットキーを Tauri に適用
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        const savedKey = localStorage.getItem('simplechat_shortcut_key') || 'S';
+        window.__TAURI__.core.invoke('update_shortcut_key', { key: savedKey }).catch(console.error);
+      }
+
+      // Tauri 通知からのルーム遷移イベントリッスン
+      if (isTauri && window.__TAURI__?.event?.listen) {
+        window.__TAURI__.event.listen('open-room', (event) => {
+          const rId = event.payload?.roomId;
+          if (rId) {
+            // Focus main window
+            if (window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+              window.__TAURI__.window.getCurrentWindow().unminimize();
+              window.__TAURI__.window.getCurrentWindow().show();
+              window.__TAURI__.window.getCurrentWindow().setFocus();
+            } else if (window.__TAURI__.webviewWindow && window.__TAURI__.webviewWindow.getCurrentWebviewWindow) {
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
+              window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
+            } else if (window.__TAURI__.window && window.__TAURI__.window.getCurrent) {
+              window.__TAURI__.window.getCurrent().unminimize();
+              window.__TAURI__.window.getCurrent().show();
+              window.__TAURI__.window.getCurrent().setFocus();
+            }
+            if (typeof goToRoom === 'function') goToRoom(rId);
+            else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
+          }
+        });
+        window.__TAURI__.event.listen('notification-clicked', (event) => {
+          console.log("[DEBUG] notification-clicked fired", event);
+          const rId = event.payload;
+          
+          if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
+            console.log("[DEBUG] invoking show_main_window");
+            window.__TAURI__.core.invoke('show_main_window').then(() => {
+              console.log("[DEBUG] show_main_window invoke succeeded");
+            }).catch((err) => {
+              console.error("[DEBUG] show_main_window invoke error:", err);
+            });
+          }
+
+          if (rId && typeof rId === 'string') {
+            console.log("[DEBUG] jumping to room", rId);
+            if (typeof goToRoom === 'function') {
+              goToRoom(rId);
+            } else {
+              const roomItem = document.getElementById(`room-item-${rId}`);
+              if (roomItem) roomItem.click();
+            }
+          } else {
+            console.warn("[DEBUG] payload did not contain actionTypeId", payload);
+          }
+        });
+      }
+
+      // Tauri版: まずアップデートチェック（ブロッキング）
+      const hasUpdate = await blockingUpdateCheck();
+      if (hasUpdate) {
+        // アップデートがある場合、オーバーレイを表示したまま
+        // Firebase初期化はしない（ユーザーにアプデを促す）
+        loadingOverlay.classList.add('hidden');
+        return;
+      }
+
+      // アップデートがない場合、通常起動
+      initializeFirebase();
+      if ('Notification' in window) Notification.requestPermission();
+      initializeResizer();
+
+      const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') === 'true';
+      setDiscordUIMode(isDiscordMode);
+    };
+
+    // === Discord風UIモード制御JSロジック ===
+    window.setDiscordUIMode = function(enabled) {
+      localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
+      document.body.classList.toggle('discord-ui-mode', enabled);
+      const pcToggle = document.getElementById('toggleDiscordUI');
+      const mobileToggle = document.getElementById('toggleDiscordUIMobile');
+      if (pcToggle) pcToggle.checked = enabled;
+      if (mobileToggle) mobileToggle.checked = enabled;
+
+      if (enabled) {
+        if (!currentServerId) {
+          document.body.classList.add("discord-home-view");
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.remove("hidden");
+        } else {
+          document.body.classList.remove("discord-home-view");
+        }
+        renderDiscordServerNav();
+      } else {
+        document.body.classList.remove("discord-home-view");
+        if (!currentServerId) {
+          const appCont = document.getElementById("appContainer");
+          if (appCont) appCont.classList.add("hidden");
+          const sls = document.getElementById("serverListScreen");
+          if (sls) sls.classList.remove("hidden");
+        }
+      }
+    };
+
+    window.renderDiscordServerNav = function() {
+      const navList = document.getElementById("discordServerNavList");
+      const homeGrid = document.getElementById("discordHomeServerGrid");
+      const homeBtn = document.querySelector(".discord-home-btn");
+      if (!navList) return;
+      navList.innerHTML = "";
+      if (homeGrid) homeGrid.innerHTML = "";
+
+      if (!currentServerId) {
+        if (homeBtn) homeBtn.classList.add("active");
+      } else {
+        if (homeBtn) homeBtn.classList.remove("active");
+      }
+
+      if (typeof allServersCache !== 'undefined' && allServersCache) {
+        const servers = [...allServersCache];
+        // 順序を一定に固定するため、過去のアクセス順ソート処理を完全排除
+        
+        // 未読情報の取得
+        let globalItems = [];
+        try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch(e) {}
+
+        const joinedServers = servers.filter(server => {
+            if (!isAdmin) return (server.joinedUsers || []).includes(userId);
+            return (server.joinedUsers || []).includes(userId);
+        });
+        const unjoinedServers = isAdmin ? servers.filter(server => !(server.joinedUsers || []).includes(userId)) : [];
+        
+        const renderServer = (server) => {
+          const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+          const hasUnread = globalItems.some(it => it.serverId === server.id);
+          const isActive = currentServerId === server.id;
+
+          // 1. 左側サーバーナビゲーションへの追加
+          const item = document.createElement("div");
+          item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
+          item.title = server.name || server.id;
+
+          const pill = document.createElement("div");
+          pill.className = "discord-server-pill";
+          item.appendChild(pill);
+
+          const icon = document.createElement("div");
+          icon.className = "discord-server-icon";
+          if (server.iconUrl) {
+            icon.className += " custom-bg";
+            icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+          } else {
+            icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+          }
+          item.appendChild(icon);
+
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (currentServerId !== server.id) {
+              enterServer(server.id, server);
+            }
+          });
+          navList.appendChild(item);
+
+          // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
+          if (homeGrid) {
+            const card = document.createElement("div");
+            card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
+            
+            const cardIcon = document.createElement("div");
+            cardIcon.className = "discord-card-icon w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden transition-all duration-300 group-hover:rounded-2xl";
+            if (server.iconUrl) {
+              cardIcon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+            } else {
+              cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+            }
+            card.appendChild(cardIcon);
+
+            const cardInfo = document.createElement("div");
+            cardInfo.className = "flex-1 min-w-0";
+            cardInfo.innerHTML = `
+              <div class="font-bold text-base truncate mb-1">${escapeHtml(server.name || server.id)}</div>
+              <div class="text-xs text-gray-400 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                <span>${(server.joinedUsers || []).length} 名のメンバー</span>
+              </div>
+            `;
+            card.appendChild(cardInfo);
+
+            const enterBtn = document.createElement("button");
+            enterBtn.className = "discord-card-btn font-bold px-5 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
+            enterBtn.textContent = "開く";
+            card.appendChild(enterBtn);
+
+            card.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (currentServerId !== server.id) {
+                enterServer(server.id, server);
+              }
+            });
+            homeGrid.appendChild(card);
+          }
+        };
+
+        joinedServers.forEach(server => renderServer(server));
+        
+        if (isAdmin && unjoinedServers.length > 0) {
+            // nav separator
+            const navSep = document.createElement("div");
+            navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
+            navList.appendChild(navSep);
+            
+            // home grid separator
+            if (homeGrid) {
+                const homeSep = document.createElement("div");
+                homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
+                homeSep.innerHTML = `<span class="bg-gray-50 dark:bg-gray-900 px-4 text-xs font-bold text-gray-400 -mt-2">未参加のサーバー</span>`;
+                homeGrid.appendChild(homeSep);
+            }
+            unjoinedServers.forEach(server => renderServer(server));
+        }
+
+        if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
+          homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
+        }
+      }
+    };
+
+    // 既存のrenderServerList実行時に連動させるためのフックを強化
+    const _origRenderServerList = window.renderServerList;
+    window.renderServerList = function() {
+      if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    };
+
+    // サーバーアイコン変更用JS (Moved from global scope)
+    // サーバーアイコン変更用JSロジック
+    const serverIconUploadInput = document.getElementById("serverIconUploadInput");
+    const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
+    const serverIconCropModal = document.getElementById("serverIconCropModal");
+    const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
+    const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
+    let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
+    let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
+    let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
+    let isNewServerIconCrop = false;
+    window.pendingNewServerIconBlob = null;
+    const SICON_SIZE = 240;
+
+    if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
+      document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => {
+        if (document.getElementById("serverIconSettingsWrapper").dataset.canEdit === "false") return;
+        isNewServerIconCrop = false;
+        serverIconUploadInput.click();
+      });
+    }
+    window.openNewServerIconPicker = function() {
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
+    };
+
+    function handleSIconFileChange(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const objectUrl = URL.createObjectURL(file);
+      sIconImage = new Image();
+      sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
+      sIconImage.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scaleX = SICON_SIZE / sIconImage.naturalWidth;
+        const scaleY = SICON_SIZE / sIconImage.naturalHeight;
+        sIconMinScale = Math.max(scaleX, scaleY);
+        sIconScale = sIconMinScale;
+        serverIconZoomSlider.min = sIconMinScale;
+        serverIconZoomSlider.max = sIconMinScale * 4;
+        serverIconZoomSlider.value = sIconScale;
+        sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
+        sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
+        document.getElementById('serverIconUploadProgress').classList.add('hidden');
+        serverIconCropModal.classList.remove('hidden');
+        drawSIconPreview();
+      };
+      e.target.value = '';
+      if (sIconImage) sIconImage.src = objectUrl;
+    }
+
+    if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
+    if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
+
+    function clampSIconOffset() {
+      if (!sIconImage) return;
+      const maxW = sIconImage.naturalWidth * sIconScale;
+      const maxH = sIconImage.naturalHeight * sIconScale;
+      if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
+      else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
+      if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
+      else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
+    }
+
+    function drawSIconPreview() {
+      if (!sIconImage) return;
+      const ctx = serverIconCropCanvas.getContext('2d');
+      ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
+      ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
+    }
+
+    serverIconCropCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault(); sIconIsDragging = true;
+      sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
+      sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
+      serverIconCropCanvas.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    });
+    document.addEventListener('mouseup', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+    });
+
+    // タッチドラッグ対応（スマホ・タブレット）
+    serverIconCropCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // スクロール防止
+      if (e.touches.length !== 1) return;
+      sIconIsDragging = true;
+      sIconDragStartX = e.touches[0].clientX;
+      sIconDragStartY = e.touches[0].clientY;
+      sIconDragStartOffsetX = sIconOffsetX;
+      sIconDragStartOffsetY = sIconOffsetY;
+    }, { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if (!sIconIsDragging || !sIconImage) return;
+      if (e.touches.length !== 1) return;
+      e.preventDefault(); // スクロール防止
+      sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
+      sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
+      clampSIconOffset(); drawSIconPreview();
+    }, { passive: false });
+    document.addEventListener('touchend', () => {
+      if (sIconIsDragging) { sIconIsDragging = false; }
+    }, { passive: true });
+
+    serverIconZoomSlider.addEventListener('input', () => {
+      if (!sIconImage) return;
+      const newScale = parseFloat(serverIconZoomSlider.value);
+      const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
+      sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
+      sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
+      sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
+    });
+
+    document.getElementById('serverIconCropCancel').addEventListener('click', () => {
+      serverIconCropModal.classList.add('hidden'); sIconImage = null;
+      if (serverIconUploadInput) serverIconUploadInput.value = '';
+      const newFileInput = document.getElementById("newServerIconUploadInput");
+      if (newFileInput) newFileInput.value = '';
+    });
+
+    document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
+      if (!sIconImage) return;
+      if (!isNewServerIconCrop && !currentServerId) return;
+
+      // 元画像サイズを考慮した最適な出力解像度（最大1024px）
+      const maxOutputSize = 1024;
+      const OUTPUT = Math.min(maxOutputSize, Math.max(
+        sIconImage.naturalWidth * sIconScale,
+        sIconImage.naturalHeight * sIconScale,
+        640 // 最低限640px
+      ));
+      const offscreen = document.createElement('canvas');
+      offscreen.width = OUTPUT; offscreen.height = OUTPUT;
+      const offCtx = offscreen.getContext('2d');
+      offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
+      const sf = OUTPUT / SICON_SIZE;
+      offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
+
+      // WebP対応確認（非対応の場合はJPEGにフォールバック）
+      const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
+      const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+      const quality = 0.95;
+      const ext = supportsWebp ? 'webp' : 'jpg';
+
+      offscreen.toBlob(async (blob) => {
+        if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+        
+        if (isNewServerIconCrop) {
+          window.pendingNewServerIconBlob = blob;
+          const previewContent = document.getElementById("newServerIconPreviewContent");
+          const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
+          if (previewContent && previewWrapper) {
+            const tempUrl = URL.createObjectURL(blob);
+            previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
+            previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
+          }
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンのプレビューを設定しました", "success");
+          return;
+        }
+
+        const progressDiv = document.getElementById('serverIconUploadProgress');
+        const progressFill = document.getElementById('serverIconUploadProgressFill');
+        const progressText = document.getElementById('serverIconUploadProgressText');
+        const confirmBtn = document.getElementById('serverIconCropConfirm');
+        const cancelBtn = document.getElementById('serverIconCropCancel');
+        progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
+        confirmBtn.disabled = true; cancelBtn.disabled = true;
+        try {
+          const fileUrl = await uploadToExternalService(
+            new File([blob], `server_icon.${ext}`, { type: mimeType }),
+            (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
+            'simplechat/servericons'
+          );
+          
+            await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+          
+          if (currentServerData) currentServerData.iconUrl = fileUrl;
+          if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
+            window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
+          }
+          const iconPreview = document.getElementById("serverIconSettingsPreview");
+          if (iconPreview) {
+            iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
+            iconPreview.style.backgroundColor = "transparent";
+          }
+          if (typeof renderServerList === 'function') renderServerList();
+          if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+          serverIconCropModal.classList.add('hidden');
+          sIconImage = null;
+          alertMessage("サーバーアイコンを更新しました", "success");
+        } catch (err) {
+          console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
+        } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
+      }, mimeType, quality);
+    });
