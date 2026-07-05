@@ -41,12 +41,29 @@ service cloud.firestore {
 
       // 1. 全体設定
       match /settings/{docId} {
-        allow read: if isAuthenticated();
+        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
+        allow read: if isAuthenticated() && docId != 'allowedEmails';
         allow write: if isGlobalAdmin(appId);
       }
-      // リスト管理者は allowedEmails のみ書き込み可
-      match /settings/allowedEmails {
-        allow write: if isListAdmin(appId);
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
+      match /allowedEmails/{emailId} {
+        // 全体管理者はフルアクセス。
+        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
+        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
+        allow get: if isGlobalAdmin(appId) ||
+                   (isAuthenticated() && request.auth.token.email == emailId) ||
+                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
       }
 
       // 全体サーバーカスタムスタンプ
@@ -67,12 +84,13 @@ service cloud.firestore {
         allow get: if isAuthenticated();
         allow create: if isServerAdmin(appId, request.resource.data.serverId);
         allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
+        allow delete: if isServerAdmin(appId, request.resource.data.serverId);
       }
 
       // 2. ユーザー情報
       match /users/{userId} {
-        allow read: if isAuthenticated();
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
@@ -83,7 +101,8 @@ service cloud.firestore {
       }
 
       match /users/{userId}/profile/{docId} {
-        allow read: if isAuthenticated();
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 

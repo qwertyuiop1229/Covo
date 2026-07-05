@@ -820,11 +820,12 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             // 非管理者は allowedEmails を確認してアクセス制御
             if (!isAdmin) {
               try {
-                const allowedRef = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-                const allowedSnap = await getDoc(allowedRef);
-                if (allowedSnap.exists()) {
-                  const allowed = allowedSnap.data().emails || [];
-                  if (allowed.length > 0 && !allowed.includes(user.email)) {
+                const configRef = doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig");
+                const configSnap = await getDoc(configRef);
+                if (configSnap.exists() && configSnap.data().active) {
+                  const allowedRef = doc(db, `artifacts/${appId}/allowedEmails`, user.email);
+                  const allowedSnap = await getDoc(allowedRef);
+                  if (!allowedSnap.exists()) {
                     await signOut(auth);
                     authMessage.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
                     loadingOverlay.classList.add("hidden");
@@ -1191,30 +1192,41 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     // リストアイテムのDOMを生成（ユーザーネーム＆アイコン対応版）
     function makeEmailListItem(email, isSelf, onRemove) {
       const div = document.createElement("div");
-      div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100";
+      div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50 transition-colors";
 
       const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
-      let username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : "未設定");
+      let username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : (userData ? "未設定" : "未参加"));
       let iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
 
       const avatar = document.createElement("div");
-      avatar.className = "w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0 overflow-hidden shadow-sm";
+      avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors";
       if (iconUrl) {
+        avatar.classList.add("bg-gray-300", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
         avatar.innerHTML = `<img src="${iconUrl}" class="w-full h-full object-cover" />`;
       } else {
-        avatar.textContent = emailInitial(email);
+        if (userData) {
+          avatar.classList.add("bg-gray-300", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
+          avatar.textContent = emailInitial(email);
+        } else {
+          avatar.classList.add("bg-gray-200", "dark:bg-gray-700/50", "text-gray-400", "dark:text-gray-500");
+          avatar.innerHTML = `<i class="fas fa-question"></i>`;
+        }
       }
 
       const textContainer = document.createElement("div");
       textContainer.className = "flex-1 flex flex-col min-w-0";
 
       const emailSpan = document.createElement("span");
-      emailSpan.className = "text-sm text-gray-900 font-bold truncate";
+      emailSpan.className = "text-sm text-gray-900 dark:text-gray-100 font-bold truncate transition-colors";
       emailSpan.textContent = email;
 
       const userSpan = document.createElement("span");
-      userSpan.className = "text-[11px] text-gray-500 font-medium truncate mt-0.5";
-      userSpan.textContent = `ユーザーネーム: ${username}`;
+      userSpan.className = "text-[11px] text-gray-500 dark:text-gray-400 font-medium truncate mt-0.5 transition-colors";
+      if (userData) {
+        userSpan.textContent = `ユーザーネーム: ${username}`;
+      } else {
+        userSpan.textContent = `ステータス: 未参加`;
+      }
 
       textContainer.appendChild(emailSpan);
       textContainer.appendChild(userSpan);
@@ -1222,30 +1234,14 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       div.appendChild(avatar);
       div.appendChild(textContainer);
 
-      if (userData && userData.id) {
-        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, getDoc }) => {
-          getDoc(doc(db, `artifacts/${appId}/users/${userData.id}/profile`, "nicknameDoc")).then(snap => {
-            if (snap.exists()) {
-              const data = snap.data();
-              if (data.nickname) {
-                userSpan.textContent = `ユーザーネーム: ${data.nickname}`;
-              }
-              if (data.avatarUrl) {
-                avatar.innerHTML = `<img src="${data.avatarUrl}" class="w-full h-full object-cover" />`;
-              }
-            }
-          }).catch(e => console.error(e));
-        });
-      }
-
       if (isSelf) {
         const badge = document.createElement("span");
-        badge.className = "text-xs text-gray-400 flex-shrink-0 font-semibold";
+        badge.className = "text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 font-semibold";
         badge.textContent = "あなた";
         div.appendChild(badge);
       } else {
         const btn = document.createElement("button");
-        btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-100 transition-colors flex-shrink-0";
+        btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex-shrink-0";
         btn.innerHTML = `<i class="fas fa-times text-xs"></i>`;
         btn.addEventListener("click", onRemove);
         div.appendChild(btn);
@@ -1281,30 +1277,62 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       });
     }
 
+    async function fetchAllAdminData() {
+      window.__adminUsersByEmail = {};
+      try {
+        const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+        const promises = [];
+        uSnap.forEach(d => {
+          const u = d.data();
+          if (u.email) {
+            window.__adminUsersByEmail[u.email] = { ...u, id: d.id };
+            promises.push(
+              getDoc(doc(db, `artifacts/${appId}/users/${d.id}/profile`, "nicknameDoc")).then(pSnap => {
+                if (pSnap.exists()) {
+                  const pData = pSnap.data();
+                  if (pData.nickname) window.__adminUsersByEmail[u.email].displayName = pData.nickname;
+                  if (pData.avatarUrl) window.__adminUsersByEmail[u.email].photoURL = pData.avatarUrl;
+                }
+              }).catch(() => {})
+            );
+          }
+        });
+        await Promise.all(promises);
+      } catch(e){}
+    }
+
+    async function reloadAllowedEmailsList() {
+      try {
+        let q;
+        if (isAdmin) {
+          q = collection(db, `artifacts/${appId}/allowedEmails`);
+        } else {
+          const userAuthId = auth.currentUser ? auth.currentUser.uid : "";
+          q = query(collection(db, `artifacts/${appId}/allowedEmails`), where("addedBy", "==", userAuthId));
+        }
+        const allowedSnap = await getDocs(q);
+        const emails = [];
+        allowedSnap.forEach(d => emails.push(d.id));
+        renderAllowedEmails(emails);
+      } catch (e) {
+        console.error("Failed to load allowed emails:", e);
+      }
+    }
+
     async function loadAdminPanelData() {
       adminMessage.textContent = "読み込み中...";
       try {
-        // 全ユーザーデータを取得してメールアドレスキーでキャッシュ
-        window.__adminUsersByEmail = {};
-        
-          try {
-            const uSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
-            uSnap.forEach(d => { const u = d.data(); if (u.email) window.__adminUsersByEmail[u.email] = { ...u, id: d.id }; });
-          } catch(e){}
-        
-
         if (isAdmin) {
-          const [allowedSnap, adminSnap, listAdminSnap] = await Promise.all([
-            getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails")),
+          await fetchAllAdminData();
+          await reloadAllowedEmailsList();
+          const [adminSnap, listAdminSnap] = await Promise.all([
             getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
             getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
           ]);
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
           renderAdminEmails(adminSnap.exists() ? adminSnap.data().emails || [] : []);
           renderListAdminEmails(listAdminSnap.exists() ? listAdminSnap.data().emails || [] : []);
         } else if (isListAdmin) {
-          const allowedSnap = await getDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmails"));
-          renderAllowedEmails(allowedSnap.exists() ? allowedSnap.data().emails || [] : []);
+          await reloadAllowedEmailsList();
         }
         adminMessage.textContent = "";
       } catch (e) {
@@ -1461,14 +1489,20 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       if (!email) return;
       adminMessage.textContent = "追加中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
+        const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
         const snap = await getDoc(ref);
-        const emails = snap.exists() ? snap.data().emails || [] : [];
-        if (emails.includes(email)) { adminMessage.textContent = "すでに追加されています。"; return; }
-        emails.push(email);
-        await setDoc(ref, { emails }, { merge: true });
+        if (snap.exists()) { adminMessage.textContent = "すでに追加されています。"; return; }
+        
+        await setDoc(ref, { 
+          email: email, 
+          addedBy: auth.currentUser.uid, 
+          addedAt: serverTimestamp() 
+        });
+        
+        await setDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig"), { active: true }, { merge: true });
+        
         newAllowedEmailInput.value = "";
-        renderAllowedEmails(emails);
+        await reloadAllowedEmailsList();
         adminMessage.textContent = "追加しました。";
       } catch (e) {
         console.error(e);
@@ -1480,10 +1514,9 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
       adminMessage.textContent = "削除中...";
       try {
-        const ref = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
-        await updateDoc(ref, { emails: arrayRemove(email) });
-        const snap = await getDoc(ref);
-        renderAllowedEmails(snap.exists() ? snap.data().emails || [] : []);
+        const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
+        await deleteDoc(ref);
+        await reloadAllowedEmailsList();
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
