@@ -1,0 +1,537 @@
+    /* === サーバーリスト画面 === */
+    #serverListScreen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+      overflow-y: auto;
+    }
+
+    #serverListScreen.hidden {
+      display: none !important;
+    }
+
+    /* === アニメーション定義 === */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleInFade {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .anim-fade-in {
+      animation: fadeIn 0.18s ease both;
+    }
+
+    .anim-slide-up {
+      animation: slideUpFade 0.22s ease both;
+    }
+
+    .anim-scale-in {
+      animation: scaleInFade 0.22s ease both;
+    }
+
+    .anim-card {
+      animation: cardIn 0.28s ease both;
+      opacity: 0;
+    }
+
+    /* === サーバーリスト画面 === */
+    .server-list-header {
+      background: #1f2937;
+      color: white;
+      padding: 0.875rem 1.25rem;
+      padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .server-list-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .server-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .server-list-actions button:not(.server-list-user-btn) {
+      padding: 7px 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #joinServerBtn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    #joinServerBtn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    #createServerBtn {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+
+    #createServerBtn:hover {
+      background: #e5e7eb;
+    }
+
+    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
+    .server-list-user-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.12s;
+      flex-shrink: 0;
+    }
+
+    .server-list-user-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: scale(1.07);
+    }
+
+    .server-list-user-btn:active {
+      transform: scale(0.95);
+    }
+
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      padding: 1.25rem 1.25rem 0 1.25rem;
+    }
+
+    .server-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0 2px 2px;
+      border-bottom: 1px solid #f3f4f6;
+      margin-bottom: 2px;
+      margin-top: 4px;
+    }
+
+    .server-section-label:first-child {
+      margin-top: 0;
+    }
+
+    .admin-join-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid #f3f4f6;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .admin-join-item:hover {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+
+    .admin-join-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+
+    .admin-join-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .admin-join-meta {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+
+    .admin-join-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 3px 9px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .server-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+    }
+
+    .server-card:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card-icon {
+      width: 44px;
+      height: 44px;
+      background: #4f46e5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: translateY(-1px);
+      background: #4338ca;
+    }
+
+    .server-card-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+
+    .server-card-meta {
+      font-size: 0.73rem;
+      color: #6b7280;
+    }
+
+    .server-card-admin-badge {
+      display: inline-block;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.63rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid #d1d5db;
+    }
+
+    .server-list-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: #6b7280;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .server-list-empty i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+    /* === ルームリストアイテムアニメーション === */
+    @keyframes roomSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .room-list-anim {
+      animation: roomSlideIn 0.2s ease both;
+    }
+
+    /* === メンバーリストアイテムアニメーション === */
+    @keyframes memberFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .member-anim {
+      animation: memberFadeIn 0.18s ease both;
+    }
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
+    }
+
+    /* Mobile full-screen pages */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
+      z-index: 100;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+    }
+
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }

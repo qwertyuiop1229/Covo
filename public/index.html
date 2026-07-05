@@ -435,25 +435,25 @@
           </div>
 
           <!-- ログインフォーム -->
-          <div id="loginFormArea">
-            <input type="email" id="emailInput" placeholder="メールアドレス"
+          <form id="loginFormArea" onsubmit="event.preventDefault();">
+            <input type="email" id="emailInput" placeholder="メールアドレス" autocomplete="username"
               class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-            <input type="password" id="passwordInput" placeholder="パスワード"
+            <input type="password" id="passwordInput" placeholder="パスワード" autocomplete="current-password"
               class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none" />
             <button id="authButton"
               class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors duration-200 mb-4">ログイン</button>
-          </div>
+          </form>
 
           <!-- 新規登録フォーム -->
-          <div id="signupFormArea" class="hidden">
+          <form id="signupFormArea" class="hidden" onsubmit="event.preventDefault();">
             <p class="text-sm text-gray-600 mb-4 text-center">メールアドレスとパスワードでアカウントを作成します。</p>
-            <input type="email" id="signupEmailInput" placeholder="メールアドレス"
+            <input type="email" id="signupEmailInput" placeholder="メールアドレス" autocomplete="username"
               class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-            <input type="password" id="signupPasswordInput" placeholder="新規パスワードを設定"
+            <input type="password" id="signupPasswordInput" placeholder="新規パスワードを設定" autocomplete="new-password"
               class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none" />
             <button id="signupButton"
               class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors duration-200 mb-4">アカウント作成</button>
-          </div>
+          </form>
 
           <div id="authMessage" class="text-red-600 text-center mt-2"></div>
         </div>
@@ -840,18 +840,20 @@
           <h2 class="text-2xl font-bold mb-6 text-gray-800">
             新しいルームを作成
           </h2>
-          <input type="text" id="modalNewRoomNameInput" placeholder="ルーム名を入力"
-            class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-          <input type="password" id="newRoomPasswordInput" placeholder="パスワードを入力 (任意)"
-            class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-          <button id="confirmCreateRoomButton"
-            class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
-            ルームを作成
-          </button>
-          <button id="cancelCreateRoomButton"
-            class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md mt-2 transition-colors duration-200">
-            キャンセル
-          </button>
+          <form onsubmit="event.preventDefault();">
+            <input type="text" id="modalNewRoomNameInput" placeholder="ルーム名を入力"
+              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+            <input type="password" id="newRoomPasswordInput" placeholder="パスワードを入力 (任意)" autocomplete="new-password"
+              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+            <button id="confirmCreateRoomButton"
+              class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
+              ルームを作成
+            </button>
+            <button id="cancelCreateRoomButton" type="button"
+              class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md mt-2 transition-colors duration-200">
+              キャンセル
+            </button>
+          </form>
           <div id="createRoomPasswordMessage" class="text-red-600 text-center mt-4"></div>
         </div>
       </div>
@@ -861,16 +863,18 @@
           <h2 class="text-2xl font-bold mb-6 text-gray-800" id="joinRoomTitle">
             ルームに参加
           </h2>
-          <input type="password" id="joinRoomPasswordInput" placeholder="パスワードを入力"
-            class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-          <button id="confirmJoinRoomButton"
-            class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
-            参加
-          </button>
-          <button id="cancelJoinRoomButton"
-            class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md mt-2 transition-colors duration-200">
-            キャンセル
-          </button>
+          <form onsubmit="event.preventDefault();">
+            <input type="password" id="joinRoomPasswordInput" placeholder="パスワードを入力" autocomplete="current-password"
+              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+            <button id="confirmJoinRoomButton"
+              class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
+              参加
+            </button>
+            <button id="cancelJoinRoomButton" type="button"
+              class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md mt-2 transition-colors duration-200">
+              キャンセル
+            </button>
+          </form>
           <div id="joinRoomPasswordMessage" class="text-red-600 text-center mt-4"></div>
         </div>
       </div>
@@ -1047,35 +1051,37 @@
             <button id="joinTabPassword" class="ss-tab active">ID・パスワード</button>
             <button id="joinTabCode" class="ss-tab">招待コード</button>
           </div>
-          <!-- パスワード参加 -->
-          <div id="joinByPasswordSection" class="space-y-4">
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID</label>
-              <input type="text" id="joinServerId" placeholder="サーバーID"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+          <form onsubmit="event.preventDefault();">
+            <!-- パスワード参加 -->
+            <div id="joinByPasswordSection" class="space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID</label>
+                <input type="text" id="joinServerId" placeholder="サーバーID"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
+                <input type="password" id="joinServerPassword" placeholder="参加パスワード" autocomplete="current-password"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
             </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
-              <input type="password" id="joinServerPassword" placeholder="参加パスワード"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+            <!-- 招待コード参加 -->
+            <div id="joinByCodeSection" class="hidden space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">招待コード</label>
+                <input type="text" id="joinInviteCode" placeholder="招待コード（8文字）"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono text-center text-xl tracking-widest uppercase"
+                  maxlength="8" />
+              </div>
             </div>
-          </div>
-          <!-- 招待コード参加 -->
-          <div id="joinByCodeSection" class="hidden space-y-4">
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">招待コード</label>
-              <input type="text" id="joinInviteCode" placeholder="招待コード（8文字）"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono text-center text-xl tracking-widest uppercase"
-                maxlength="8" />
+            <p id="joinServerMessage" class="text-red-500 text-sm mt-3"></p>
+            <div class="flex gap-3 mt-6">
+              <button id="cancelJoinServerBtn" type="button"
+                class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
+              <button id="confirmJoinServerBtn"
+                class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">参加</button>
             </div>
-          </div>
-          <p id="joinServerMessage" class="text-red-500 text-sm mt-3"></p>
-          <div class="flex gap-3 mt-6">
-            <button id="cancelJoinServerBtn"
-              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
-            <button id="confirmJoinServerBtn"
-              class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">参加</button>
-          </div>
+          </form>
         </div>
       </div>
 

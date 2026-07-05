@@ -1,0 +1,785 @@
+    /* --- メンバーリスト用スタイル (Discord風) --- */
+    #membersSidebar {
+      width: 240px;
+      background-color: #f9fafb;
+      border-left: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .member-group-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      padding: 1rem 1rem 0.5rem 1rem;
+      letter-spacing: 0.05em;
+    }
+
+    .member-item {
+      display: flex;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      transition: background-color 0.1s;
+      border-radius: 0.25rem;
+      margin: 0 0.5rem;
+    }
+
+    .member-item:hover {
+      background-color: #e5e7eb;
+    }
+
+    .avatar-placeholder {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-right: 0.75rem;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .avatar-placeholder img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+
+    /* ステータスバッジ */
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      border: 2px solid #f9fafb;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .status-online {
+      background-color: #22c55e;
+    }
+
+    .status-away {
+      background-color: #facc15;
+    }
+
+    .status-offline {
+      background-color: #9ca3af;
+    }
+
+    /* ダークモード時の目に優しい上品な発光インジケーター */
+    body.dark-server-theme .status-indicator {
+      border-color: #1f2937;
+    }
+    body.dark-server-theme .status-online {
+      background-color: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+    }
+    body.dark-server-theme .status-away {
+      background-color: #fbbf24;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
+    }
+    body.dark-server-theme .status-offline {
+      background-color: #475569;
+    }
+
+    .member-info {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .member-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #1f2937;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .member-status-text {
+      font-size: 0.7rem;
+      color: #6b7280;
+    }
+
+    /* ユーザーパネル (Discord風マイページ) */
+    #userPanel {
+      background-color: #ebedef;
+      /* サイドバーより少し濃いグレー */
+      padding: 0.75rem;
+      display: flex;
+      align-items: center;
+      border-top: 1px solid #d1d5db;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    #userPanel:hover {
+      background-color: #e5e7eb;
+    }
+
+    .user-panel-info {
+      flex: 1;
+      overflow: hidden;
+      margin-right: 0.5rem;
+    }
+
+    .user-panel-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #1f2937;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-panel-id {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    /* スマホ対応CSS - LINE風UI */
+    @media (max-width: 767px) {
+      body {
+        padding: 0;
+      }
+
+      .container {
+        /* height: fixed + inset:0 で全画面固定済み。100dvh 上書きは不要 */
+        padding: 0;
+        border-radius: 0;
+        background-color: #f3f4f6;
+      }
+
+      .container>div {
+        flex-direction: column;
+      }
+
+      #appContainer {
+        flex-direction: column;
+        position: relative;
+      }
+
+      #sidebar {
+        width: 100% !important;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 10;
+        background: white;
+      }
+
+      #resizer, #resizerRight {
+        display: none;
+      }
+
+      #membersSidebar {
+        display: none;
+      }
+
+      /* サイドバーが非表示時はチャットエリアがフル表示 */
+      #sidebar.mobile-hidden {
+        display: none !important;
+      }
+
+      #roomList {
+        flex: 1;
+        overflow-y: auto;
+        border-bottom: none;
+      }
+
+      #messagesDisplay {
+        flex: 1;
+        min-height: 0;
+      }
+
+      .my-message,
+      .other-message {
+        max-width: 85%;
+      }
+
+      /* スマホではユーザーパネルを大きく */
+      #userPanel {
+        padding: 1rem;
+      }
+
+      /* スマホ用の戻るボタン */
+      #mobileBackButton {
+        display: flex !important;
+      }
+
+      /* スマホ入力欄:
+         - 区切り線・背景コントラスト除去
+         - 下余白も削除（ユーザー指示） */
+      #messageInputArea {
+        border-top: 0 none !important;
+        border-top-width: 0 !important;
+        border-bottom: 0 none !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0 !important;
+        background-color: #ffffff !important;
+        box-shadow: none !important;
+      }
+      /* 入力欄とボトムナビの境目に出る影・線を完全に除去 */
+      #messageInputArea::before,
+      #messageInputArea::after {
+        display: none !important;
+        box-shadow: none !important;
+      }
+      #mobileBottomNav {
+        box-shadow: none !important;
+        border-top: 0 none !important;
+        border: 0 none !important;
+      }
+      /* チャットエリア下端の影も念のため消す */
+      #chatArea {
+        box-shadow: none !important;
+      }
+      /* mobile: 入力フィールド・サイドボタンの影を消す */
+      #messageInputInner,
+      #messageInputInner:focus-within,
+      .input-side-btn,
+      .input-side-btn:hover,
+      .input-side-btn:active,
+      .input-side-btn:focus {
+        box-shadow: none !important;
+      }
+      /* mobile: 入力ボックスの枠線（黒っぽい線に見えていた1.5px border）を消し、
+         薄グレー背景で形を保つ。枠線が無いので影/線が一切出ない。
+         ファイル添付ボタンと高さ・縦位置を完全に揃えるため min-height を固定し中央寄せ。 */
+      #messageInputInner,
+      #messageInputInner:focus-within {
+        border: 0 none !important;
+        background: #f3f4f6 !important;
+        min-height: 42px;
+        align-items: center;
+      }
+      body.dark-server-theme #messageInputInner,
+      body.dark-server-theme #messageInputInner:focus-within {
+        background: #0f172a !important;
+      }
+      /* 入力欄が1行のときボタンと天地が揃うよう、行は中央揃えにする */
+      #messageInputArea .flex.items-end {
+        align-items: center !important;
+      }
+      /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー・同じ高さ」に統一。
+         送信ボタン(.send-btn)は主要アクションなので対象外。 */
+      #fileAttachButton, #stickerButton {
+        border: 0 none !important;
+        background: #f3f4f6 !important;
+        box-shadow: none !important;
+        color: #6b7280 !important;
+        height: 42px !important;
+      }
+      #fileAttachButton:disabled, #stickerButton:disabled {
+        background: #f3f4f6 !important;
+        color: #c4c8ce !important;
+      }
+      body.dark-server-theme #fileAttachButton, body.dark-server-theme #stickerButton {
+        background: #0f172a !important;
+        color: #94a3b8 !important;
+      }
+      body.dark-server-theme #fileAttachButton:disabled, body.dark-server-theme #stickerButton:disabled {
+        background: #0f172a !important;
+        color: #475569 !important;
+      }
+      /* ダークモード時はチャット背景の#1a202cに合わせる */
+      body.dark-server-theme #messageInputArea {
+        background-color: #1a202c !important;
+      }
+      /* mobile: userPanel上の境界線を消し、背景をsidebarと同色にして影感を消す */
+      #userPanel {
+        border-top: none !important;
+        background-color: #f3f4f6 !important;
+      }
+
+      /* iPhoneでの勝手なズーム拡大を防止 */
+      input,
+      textarea,
+      select {
+        font-size: 16px !important;
+      }
+
+      /* メンバー一覧のボトムシート対応 */
+      #bottomSheetOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 40;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      #bottomSheetOverlay.show {
+        display: block;
+        opacity: 1;
+      }
+
+      #membersSidebar {
+        display: flex !important;
+        /* Tailwindの hidden md:flex を上書き */
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 70vh;
+        background-color: white;
+        z-index: 50;
+        border-radius: 1rem 1rem 0 0;
+        /* box-shadow は閉じている時に上向きの影が画面下部(ナビ付近)へ漏れて
+           黒っぽいグラデに見える原因だったため、開いている時だけ付与する。 */
+        box-shadow: none;
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        flex-direction: column;
+        border-left: none;
+        /* PC用のボーダーを消す */
+      }
+
+      #membersSidebar.bottom-sheet-open {
+        transform: translateY(0);
+        box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      /* ボトムシートのドラッグハンドル */
+      #bottomSheetHandle {
+        display: flex;
+        justify-content: center;
+        padding: 12px 0;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      
+
+      #bottomSheetHandle::after {
+        content: "";
+        width: 40px;
+        height: 5px;
+        background-color: #d1d5db;
+        border-radius: 3px;
+      }
+    }
+
+    @media (min-width: 768px) {
+      #mobileBottomNav { display: none !important; }
+      #mobileBackButton {
+        display: none !important;
+      }
+
+      #bottomSheetOverlay {
+        display: none !important;
+      }
+
+      #bottomSheetHandle {
+        display: none !important;
+      }
+    }
+
+    /* 強制上書き */
+    html,
+    body {
+      height: 100% !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overscroll-behavior: none !important;
+    }
+
+    .container {
+      width: 100% !important;
+      max-width: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+
+    /* 旧 safe-area 計算の padding-bottom はユーザー指示で完全撤去（モバイルは @media 内で 0 固定）。
+       デスクトップは下行で 1rem に明示。 */
+    #messageInputArea {
+      padding-bottom: 1rem;
+    }
+    /* === Discord風UIモード専用スタイル === */
+    body.discord-ui-mode #serverListScreen {
+      display: none !important; /* 既存のカード群リストを完全遮断 */
+    }
+
+    body.discord-ui-mode #appContainer {
+      display: flex !important;
+      flex-direction: row !important;
+      width: 100% !important;
+      height: 100% !important;
+      flex: 1 1 0 !important;
+    }
+
+    body.discord-ui-mode #discordServerNav {
+      display: flex !important;
+    }
+
+    body.discord-ui-mode #backToServerListBtn {
+      display: none !important; /* Discord風ヘッダーのため不要 */
+    }
+
+    /* サーバーナビゲーション内の要素 */
+    .discord-server-item {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+
+    .discord-server-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .discord-server-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .discord-server-item:hover .discord-server-icon,
+    .discord-server-item.active .discord-server-icon {
+      border-radius: 16px; /* Discord調の美しいスクワークル変形 */
+    }
+
+    /* 左側のアクティブインジケーター（ピル）- Discord本家同等の真の左端密着＆リッチスライドイン */
+    .discord-server-pill {
+      position: absolute;
+      left: -12px; /* PCナビバー(w-[72px]に対しアイテムw-[48px])の真の左端に完全密着 */
+      width: 4px;
+      height: 8px; /* 未読時のドットの高さにしておく */
+      background: white;
+      border-radius: 0 4px 4px 0;
+      transform: translateX(-4px); /* 左外側に隠す */
+      opacity: 0;
+      /* スッと自然に出てきてフワッと止まる、AppleやDiscord等で採用される極上の流体イージング */
+      transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                  height 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                  opacity 0.2s ease-out;
+    }
+
+    /* ホバー時: 左からスライドインして20px高さ */
+    .discord-server-item:hover .discord-server-pill {
+      transform: translateX(0);
+      height: 20px;
+      opacity: 1;
+    }
+
+    /* アクティブ時: 左からスライドインして40px高さ */
+    .discord-server-item.active .discord-server-pill {
+      transform: translateX(0) !important;
+      height: 40px !important;
+      opacity: 1 !important;
+    }
+
+    /* 未読時: 左からスライドインして8px高さ（小さいドット表示） */
+    .discord-server-item.has-unread .discord-server-pill {
+      transform: translateX(0);
+      height: 8px;
+      opacity: 1;
+    }
+    /* 未読かつホバー時: 20px */
+    .discord-server-item.has-unread:hover .discord-server-pill {
+      transform: translateX(0);
+      height: 20px;
+      opacity: 1;
+    }
+
+    /* ホーム画面・サーバービュー切替ロジック (DiscordUIモード時) */
+    body.discord-ui-mode.discord-home-view #discordHomeView {
+      display: flex !important;
+    }
+    body.discord-ui-mode.discord-home-view #chatArea,
+    body.discord-ui-mode.discord-home-view #roomList,
+    body.discord-ui-mode.discord-home-view #serverHeader {
+      display: none !important;
+    }
+    body.discord-ui-mode.discord-home-view #discordHomeSidebar {
+      display: flex !important;
+    }
+
+    /* ダークモード＆ライトモードの配色定義 */
+    /* ダークモード (Covo極上ピュアダーク) */
+    body.dark-server-theme.discord-ui-mode #discordServerNav { background: #121316 !important; border-right: 1px solid #18191d !important; }
+    body.dark-server-theme.discord-ui-mode #sidebar { background: #1a1b1e !important; color: #dbdee1 !important; }
+    body.dark-server-theme.discord-ui-mode #discordHomeView { background: #212226 !important; color: #dbdee1 !important; }
+    body.dark-server-theme.discord-ui-mode #discordHomeView h1,
+    body.dark-server-theme.discord-ui-mode #discordHomeView h2 { color: #f2f3f5 !important; }
+    body.dark-server-theme.discord-ui-mode #mobileBottomNav { background: #121316 !important; }
+    
+    body.dark-server-theme.discord-ui-mode .discord-server-pill { background: white; }
+    body.dark-server-theme.discord-ui-mode .discord-server-icon { background-color: #212226; color: #dbdee1; }
+    body.dark-server-theme.discord-ui-mode .discord-server-item:hover .discord-server-icon:not(.custom-bg),
+    body.dark-server-theme.discord-ui-mode .discord-server-item.active .discord-server-icon:not(.custom-bg) {
+      background-color: #3b82f6 !important; /* Discord調の美しい鮮やかブルー */
+      color: white !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-nav-action-icon { background-color: #212226; color: #dbdee1; }
+    body.dark-server-theme.discord-ui-mode .discord-server-item:hover .discord-nav-action-icon { background-color: #3b82f6 !important; color: white !important; }
+    body.dark-server-theme.discord-ui-mode .discord-hero-banner { background: #1a1b1e; border: 1px solid #2d2f36; color: #ffffff; }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri { background: #3b82f6; color: #ffffff; border: 1px solid #2563eb; }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri:hover { background: #2563eb; }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec { background: #374151; color: #ffffff; border: 1px solid #4b5563; }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec:hover { background: #4b5563; }
+    body.dark-server-theme.discord-ui-mode .discord-server-card { background: #1a1b1e; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); color: #ffffff; }
+    body.dark-server-theme.discord-ui-mode .discord-server-card:hover { background: #25262b; }
+    body.dark-server-theme.discord-ui-mode .discord-card-icon { background: #2b2d31; color: #dbdee1; }
+    body.dark-server-theme.discord-ui-mode .discord-card-btn { background: #374151; color: #ffffff; border: 1px solid #4b5563; }
+    body.dark-server-theme.discord-ui-mode .discord-card-btn:hover { background: #4b5563; }
+
+    /* ライトモード (既存アプリの白＆ダークネイビー基調に完璧調和) */
+    body:not(.dark-server-theme).discord-ui-mode #discordServerNav { background: #e2e8f0 !important; border-right: 1px solid #cbd5e1 !important; }
+    body:not(.dark-server-theme).discord-ui-mode #sidebar { background: #f1f5f9 !important; color: #1e293b !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView { background: #f8fafc !important; color: #1e293b !important; }
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h1,
+    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h2 { color: #1e293b !important; }
+    body:not(.dark-server-theme).discord-ui-mode #mobileBottomNav { background: #ffffff !important; border-top: 1px solid #e2e8f0 !important; }
+    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab { color: #64748b !important; }
+    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab.active { color: #1e293b !important; }
+    
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-pill { background: #1e293b; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-icon { background-color: #ffffff; color: #1e293b; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-item:hover .discord-server-icon:not(.custom-bg),
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-item.active .discord-server-icon:not(.custom-bg) {
+      background-color: #1e293b !important; /* Covo美学: 極上のダークネイビー */
+      color: white !important;
+    }
+    body:not(.dark-server-theme).discord-ui-mode .discord-nav-action-icon { background-color: #ffffff; color: #1e293b; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-item:hover .discord-nav-action-icon { background-color: #1e293b !important; color: white !important; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-hero-banner { background: #1e293b; border: 1px solid #334155; color: #ffffff; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-pri { background: #0284c7; color: #ffffff; border: 1px solid #0369a1; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-pri:hover { background: #0369a1; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-sec { background: #334155; color: #ffffff; border: 1px solid #475569; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-sec:hover { background: #475569; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-card { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); color: #1e293b; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-server-card:hover { background: #f1f5f9; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-card-icon { background: #e2e8f0; color: #1e293b; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-card-btn { background: #1e293b; color: #ffffff; border: 1px solid #0f172a; }
+    body:not(.dark-server-theme).discord-ui-mode .discord-card-btn:hover { background: #0f172a; }
+
+    /* モバイルビューのDiscordレイアウト適応 */
+    @media (max-width: 768px) {
+      body.discord-ui-mode #appContainer {
+        flex-direction: row !important;
+        display: flex !important;
+        width: 100% !important;
+        height: 100% !important;
+        flex: 1 1 0 !important;
+      }
+      /* ★モバイル時：#discordServerNavと#serverHeaderの Safe Area を含む天井の高さをミリ単位で完全統一！ */
+      body.discord-ui-mode #discordServerNav {
+        width: 56px !important;
+        min-width: 56px !important;
+        padding-top: calc(0.7rem + env(safe-area-inset-top, 0px)) !important; /* 時計文字との重なりを美しい余白で完全回避 */
+        padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
+        z-index: 40;
+        overflow: hidden;
+      }
+      body.discord-ui-mode #serverHeader {
+        padding-top: calc(0.7rem + env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(54px + env(safe-area-inset-top, 0px)) !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        box-sizing: border-box;
+      }
+      /* サーバーアイコンも小さめに */
+      body.discord-ui-mode .discord-server-item {
+        width: 40px !important;
+        height: 40px !important;
+      }
+      body.discord-ui-mode .discord-server-icon {
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 1rem !important;
+      }
+      /* モバイル時のピル左端密着調整 (w-[56px]に対しアイテムw-[40px]の真の左端) */
+      body.discord-ui-mode .discord-server-pill {
+        left: -8px !important;
+      }
+      body.discord-ui-mode .discord-server-item.active .discord-server-pill {
+        height: 32px !important; /* モバイルアイコン40pxに完璧な美しさのバランス */
+      }
+      /* モバイル時：#sidebarのposition:absoluteを解除し、#discordServerNavとの激しい重なりを完全根絶！ */
+      body.discord-ui-mode #sidebar {
+        position: relative !important;
+        left: auto !important;
+        top: auto !important;
+        flex: 1 1 auto !important;
+        width: calc(100% - 56px) !important;
+        max-width: calc(100% - 56px) !important;
+        display: flex !important;
+        min-width: 0 !important;
+      }
+      /* ルームリスト全体の余白とアイテムデザインをプロフェッショナル仕様に極上化 */
+      body.discord-ui-mode #sidebar .overflow-y-auto {
+        padding: 12px 10px !important;
+      }
+      body.discord-ui-mode .room-item-animate {
+        border-radius: 10px !important;
+        padding: 11px 12px !important;
+        margin-bottom: 6px !important;
+        transition: all 0.15s ease !important;
+      }
+      body.discord-ui-mode #userPanel {
+        border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+        padding: 12px 14px !important;
+        background: rgba(248, 250, 252, 0.95) !important;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.02) !important;
+      }
+      body.discord-ui-mode.dark-server-theme #userPanel {
+        border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background: #162032 !important;
+      }
+      /* スマホ表示のホーム状態ではサイドバーを隠し、ディスカバリー画面をフル活用 */
+      body.discord-ui-mode.discord-home-view #sidebar {
+        display: none !important;
+      }
+      body.discord-ui-mode.discord-home-view #discordHomeView {
+        flex: 1 1 auto !important;
+        width: auto !important;
+        display: flex !important;
+        padding: 1rem !important;
+        min-width: 0 !important;
+        overflow-x: hidden !important;
+      }
+      /* チャット画面表示中：全画面表示 */
+      body.discord-ui-mode.in-chat-view #chatArea {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 50 !important;
+        display: flex !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示にし、右下に送信ボタンが浮き出る裏写りを100%根絶！ */
+      body.discord-ui-mode:not(.in-chat-view) #chatArea {
+        display: none !important;
+      }
+    }
+
+    /* サーバー追加モーダルの「参加」ボタン - ダークモード対応 */
+    .add-server-join-btn {
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+    .add-server-join-btn:hover {
+      background-color: #e2e8f0;
+    }
+    .add-server-join-icon {
+      background-color: #e2e8f0;
+      color: #475569;
+    }
+    .add-server-join-sub {
+      color: #64748b;
+    }
+    .add-server-join-arrow {
+      color: #94a3b8;
+    }
+    .add-server-join-btn:hover .add-server-join-arrow {
+      color: #475569;
+    }
+    body.dark-server-theme .add-server-join-btn {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .add-server-join-btn:hover {
+      background-color: #243040 !important;
+    }
+    body.dark-server-theme .add-server-join-icon {
+      background-color: #243040 !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .add-server-join-sub {
+      color: #64748b !important;
+    }
+    body.dark-server-theme .add-server-join-arrow {
+      color: #475569 !important;
+    }
+    body.dark-server-theme .add-server-join-btn:hover .add-server-join-arrow {
+      color: #94a3b8 !important;
+    }
+
+
+    /* --- Google Material Design Channel List UI --- */
+    body.discord-ui-mode .room-item-animate {
+      background: transparent !important;
+      color: #4b5563 !important;
+      transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease !important;
+      font-weight: 600 !important;
+      border-radius: 9999px !important; /* Material Pill Shape */
+      padding: 0.4rem 1rem !important; /* Slightly more padding for pill */
+      margin-left: 0.25rem !important;
+      margin-right: 0.25rem !important;
+      margin-bottom: 0.25rem !important;
+    }
+    body.discord-ui-mode .room-item-animate .room-hashtag {
+      color: #9ca3af !important;
+      margin-right: 0.5rem !important;
+    }
+    body.discord-ui-mode .room-item-animate:hover {
+      background: rgba(0, 0, 0, 0.08) !important;
+      color: #111827 !important;
+    }
+    body.discord-ui-mode .room-item-animate:hover .room-hashtag {
+      color: #6b7280 !important;
+    }
+    body.discord-ui-mode .room-item-animate.active {
+      background: rgba(0, 0, 0, 0.12) !important;
+      color: #111827 !important;
+    }
+    body.discord-ui-mode .room-item-animate.active .room-hashtag {
+      color: #374151 !important;
+    }
+
+    /* Dark Server Theme Overrides */
+    body.dark-server-theme.discord-ui-mode .room-item-animate {
+      color: #9ca3af !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate .room-hashtag {
+      color: #6b7280 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f3f4f6 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate:hover .room-hashtag {
+      color: #9ca3af !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate.active {
+      background: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+    }
+    body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
+      color: #e5e7eb !important;
+    }
+    /* ----------------------------------- */

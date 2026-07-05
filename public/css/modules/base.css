@@ -1,0 +1,243 @@
+/* PWAのホームバー余白やステータスバーを完全に背景と同化させる最強のベーススタイル */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      /* グラデーションのようにジワッと変わり違和感が出るのを100%防ぎ、0.0秒の瞬時切替にする神業 */
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* モーダルやボトムシート、画像プレビューが開いた際、Safe Areaの外側まで完全バックドロップを広げる神業 */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: -100px !important;
+      bottom: -100px !important;
+      left: -100px !important;
+      right: -100px !important;
+      padding-top: 100px !important;
+      padding-bottom: 100px !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
+    input, textarea, select, button {
+      font-size: 16px !important;
+    }
+    .stamp-jump-anim {
+      animation: stampWiggle 0.8s ease-in-out;
+    }
+    @keyframes stampWiggle {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px) rotate(-5deg); }
+      30% { transform: translateX(8px) rotate(3deg); }
+      45% { transform: translateX(-6px) rotate(-2deg); }
+      60% { transform: translateX(4px) rotate(1deg); }
+      75% { transform: translateX(-2px); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+    
+    .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }

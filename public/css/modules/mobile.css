@@ -1,0 +1,822 @@
+    /* === PWAインストールバナー === */
+    #pwaInstallBanner {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: white;
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0));
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+      animation: bannerSlideUp 0.4s ease-out;
+    }
+
+    #pwaInstallBanner.show {
+      display: flex;
+    }
+
+    @keyframes bannerSlideUp {
+      from {
+        transform: translateY(100%);
+      }
+
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    .pwa-banner-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    .pwa-banner-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pwa-banner-text strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+
+    .pwa-banner-text span {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    .pwa-banner-btn {
+      background: white;
+      color: #1e293b;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.2s;
+    }
+
+    .pwa-banner-btn:hover {
+      opacity: 0.85;
+    }
+
+    .pwa-banner-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    /* 過去メッセージ読み込みスピナー */
+    #topLoadingSpinner {
+      display: none;
+    }
+    .top-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #6b7280;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* =============================================
+       Mobile Bottom Navigation (作り直し v3:
+       - position:fixed をやめ、.container の最下子要素としてflexで配置
+       - iOS PWA の bottom:0 / safe-area の解釈ゆれを完全回避
+       - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
+    ============================================= */
+    :root {
+      /* アイコン行の高さ(元の38px)。アイコンは .mobile-nav-tab で下寄せにしているので、
+         この高さの中で自然に上側へ少し余白ができる。 */
+      --mnav-h: 38px;
+      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
+         （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
+      --mnav-safe: 0px;
+      /* ナビ全体の高さ = アイコン行 + 安全領域。画面側の余白計算にも使う */
+      --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
+    }
+    #mobileBottomNav {
+      display: none;
+      flex: 0 0 var(--mnav-total) !important;
+      width: 100%;
+      height: var(--mnav-total) !important;
+      padding: 0 0 var(--mnav-safe) 0 !important;
+      margin: 0 !important;
+      background: #1f2937;
+      flex-direction: row;
+      align-items: stretch;
+      border-top: none !important;
+      box-shadow: 0 -1px 3px rgba(0,0,0,0.05) !important;
+      box-sizing: border-box;
+      transition: background 0.2s ease;
+      z-index: 200 !important; /* ★大強化：いかなるビューにも隠されない絶対最前面配置！ */
+    }
+    .mobile-nav-tab {
+      flex: 1 1 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      cursor: pointer;
+      color: rgba(255,255,255,0.5);
+      border: none;
+      background: transparent;
+      padding: 0 0 2px 0;
+      margin: 0;
+      transition: color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      line-height: 1;
+    }
+    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
+    .mobile-nav-tab i {
+      font-size: 1.1rem;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+    .mobile-nav-tab span {
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+    .mobile-notif-dot {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 14px);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 1.5px solid #1f2937;
+    }
+
+    /* fixed全画面スクリーン (プロフィール・通知) はナビ上端までにとどめ、スクロール下部も美しく確保 */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      inset: 0 0 var(--mnav-total) 0 !important;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+      box-sizing: border-box;
+    }
+    body.has-mobile-nav #mobileProfileScreen,
+    body.has-mobile-nav #mobileNotifScreen {
+      inset: 0 0 var(--mnav-total) 0 !important;
+    /* =============================================
+       Server list-view toggle
+    ============================================= */
+    #viewToggleBtn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      border-radius: 7px;
+      color: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
+
+    /* List view overrides */
+    .server-grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 1rem 1rem 0 1rem;
+    }
+    .server-grid.list-view .server-section-label {
+      margin-top: 8px;
+    }
+    .server-grid.list-view .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .server-grid.list-view .server-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 13px;
+      padding: 11px 14px;
+    }
+    .server-grid.list-view .server-card-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-name {
+      font-size: 0.92rem;
+    }
+    .server-grid.list-view .server-card-meta {
+      font-size: 0.72rem;
+    }
+    .server-grid.list-view .server-card-admin-badge {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    /* =============================================
+       PC Discord-style Settings Modal (2-column)
+    ============================================= */
+    .settings-discord-layout {
+      display: flex;
+      height: 100%;
+    }
+    .settings-sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: #111827;
+      padding: 1.25rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+    .settings-sidebar-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px 14px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .settings-sidebar-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .settings-sidebar-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .settings-sidebar-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: white;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .settings-nav-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.35);
+      padding: 8px 8px 4px;
+    }
+    .settings-nav-item {
+      display: flex;
+      align-items: center !important;
+      gap: 8px !important;
+      padding: 7px 10px !important;
+      border-radius: 6px !important;
+      font-size: 0.85rem !important;
+      font-weight: 500 !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      transition: background 0.12s, color 0.12s !important;
+      border: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      text-align: left !important;
+      min-height: unset !important;
+      height: auto !important;
+      line-height: 1.4 !important;
+    }
+    .settings-nav-item:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(255,255,255,0.85) !important;
+    }
+    .settings-nav-item.active {
+      background: rgba(255,255,255,0.14) !important;
+      color: white !important;
+    }
+    #settingsModal #adminPanelContainer {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    #settingsModal #adminPanelContainer.hidden {
+      display: none;
+    }
+    .settings-nav-item.danger {
+      color: #f87171 !important;
+      margin-top: 0.5rem !important;
+      flex: 0 0 auto !important;
+    }
+    .settings-nav-item.danger:hover {
+      background: rgba(239,68,68,0.15) !important;
+      color: #f87171 !important;
+    }
+    .settings-nav-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 6px 0;
+    }
+    .settings-content {
+      flex: 1;
+      background: white;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding: 1.75rem 2rem;
+      position: relative;
+    }
+    .settings-content-section {
+      display: none;
+    }
+    .settings-content-section.active {
+      display: block;
+    }
+    .settings-section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .settings-close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: #f3f4f6;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      font-size: 0.9rem;
+      transition: background 0.12s;
+    }
+    .settings-close-btn:hover { background: #e5e7eb; }
+    @media (max-width: 640px) {
+      .settings-discord-layout {
+        flex-direction: column;
+      }
+      .settings-sidebar {
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        padding: 0.5rem !important;
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+        background: #111827;
+      }
+      /* Hide user profile block on mobile server settings to save vertical space */
+      .settings-sidebar .settings-sidebar-user {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-label {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-divider {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-item {
+        width: auto !important;
+        white-space: nowrap !important;
+        padding: 8px 12px !important;
+      }
+      .settings-content {
+        padding: 1rem !important;
+      }
+      .settings-close-btn {
+        top: 0.5rem !important;
+        right: 0.5rem !important;
+        background: #f3f4f6 !important;
+      }
+    }
+
+
+    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
+    @media (max-width: 768px) {
+      #settingsModal {
+        display: none !important;
+      }
+      #mobileBottomNav {
+        display: flex;
+      }
+      #serverListNotifBtn {
+        display: none !important;
+      }
+      /* iOS PWA: body/htmlの背景をボトムナビと完全一致させ、Safe Area(端末下部のバー周辺)に不格好な黒帯が出るのを100%根絶 */
+      html, body {
+        background-color: #1f2937 !important;
+      }
+      /* DiscordUIモード(ライト)時は白背景に統一し、Safe Areaの最底面までシームレスな美しさを実現 */
+      body:not(.dark-server-theme).discord-ui-mode,
+      html:has(body:not(.dark-server-theme).discord-ui-mode) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード（ホーム）: 同じナビ色 */
+      body.dark-server-theme,
+      html:has(body.dark-server-theme) {
+        background-color: #1f2937 !important;
+      }
+      /* チャット画面時はチャット背景(白)と揃える */
+      body.in-chat-view,
+      html:has(body.in-chat-view) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード+チャット時 */
+      body.in-chat-view.dark-server-theme,
+      html:has(body.in-chat-view.dark-server-theme) {
+        background-color: #1a202c !important;
+      }
+
+      /* ボトムナビゲーションのSafe Area動的パディング最適化 */
+      #mobileBottomNav {
+        height: calc(38px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+      }
+
+      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
+         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
+         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
+      body.in-chat-view #mobileBottomNav {
+        background: #ffffff !important;
+      }
+      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
+      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
+      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
+
+      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
+      body.in-chat-view.dark-server-theme #mobileBottomNav {
+        background: #1a202c !important;
+      }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
+      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
+
+      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
+      input[type="text"],
+      input[type="email"],
+      input[type="password"],
+      textarea {
+        font-size: max(16px, 1em) !important;
+      }
+      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
+
+      /* ローディング中の2層問題を解消:
+         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
+         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
+      body.dark-server-theme #mainContent,
+      body.dark-server-theme .container {
+        background-color: #1f2937 !important;
+      }
+
+      /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
+      .modal-overlay:not(.hidden) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
+      .modal-overlay:not(.hidden) > div:not(.modal-box) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
+      .modal-overlay:not(.hidden) .modal-box, 
+      #serverSettingsModal:not(.hidden) .modal-box, 
+      #createServerModal:not(.hidden) .modal-box, 
+      #joinServerModal:not(.hidden) .modal-box, 
+      #settingsModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #adminJoinModal:not(.hidden) .modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
+        overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
+        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
+        background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
+      }
+
+      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
+      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
+      #createServerModal:not(.hidden) .modal-box,
+      #joinServerModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #deleteRoomConfirmModal:not(.hidden) .modal-box {
+        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 90px 24px !important;
+        overflow-y: auto !important;
+        justify-content: center !important;
+      }
+
+      /* 確認・アラートダイアログ・サーバー追加選択は小型のままセンターに美しく表示（全画面不要） */
+      #customConfirmModal:not(.hidden) .modal-box,
+      #customAlertModal:not(.hidden) .modal-box,
+      #messagePreviewModal:not(.hidden) .modal-box,
+      #addServerSelectModal:not(.hidden) .modal-box {
+        max-width: 340px !important;
+        width: calc(100% - 48px) !important;
+        padding: 28px !important;
+        overflow-y: auto !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 1.75rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: 85vh !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: auto !important;
+      }
+
+      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 60 !important;
+        width: 100% !important;
+        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 20px 24px !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        box-sizing: border-box !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        background: rgba(30, 41, 59, 0.94) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
+        color: #ffffff !important;
+      }
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(100, 116, 139, 0.15) !important;
+        color: #64748b !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+      }
+      /* スタンプ管理画面のコンテンツエリア */
+      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
+        flex: 1 1 auto !important;
+        max-height: none !important;
+        padding: 20px 20px 90px 20px !important;
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      /* =======================================
+         ★スマホ設定画面の息をのむほど美しいパーツ群
+         ======================================= */
+      /* 1. Safe Areaを配慮し、ステータスバーを美しく包み込む重厚で透明感あふれる極上ネイティブヘッダー */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
+      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 40 !important;
+        width: 100% !important;
+        /* ★iPhone 17のステータスバーやノッチを完全に避け、美しいゆとりを持たせる神余白設定 */
+        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 20px 24px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        background: rgba(30, 41, 59, 0.94) !important; /* 透け感のある極上のダークスレート */
+        backdrop-filter: blur(16px) !important; /* スクロール時に後ろが美しく透けるすりガラス仕様 */
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      /* ヘッダー内部のテキストのプロフェッショナルな質感強化 */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:first-child {
+        font-size: 0.75rem !important;
+        letter-spacing: 0.1em !important;
+        color: rgba(255, 255, 255, 0.6) !important;
+        margin-bottom: 4px !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:last-child {
+        font-size: 1.35rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.02em !important;
+        color: #ffffff !important;
+      }
+
+      /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
+      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close {
+        /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
+        top: max(24px, env(safe-area-inset-top, 24px)) !important;
+        right: 22px !important;
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 50 !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
+      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+        transform: scale(0.95) !important;
+      }
+
+      /* 2. iOSのセグメントコントロール風！圧倒的な洗練度を誇るリッチなタブエリア */
+      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
+        background: inherit !important;
+        border-bottom: none !important;
+        padding: 16px 24px 12px 24px !important; /* 左右の余白とバランスを完璧に揃える */
+        display: flex !important;
+        gap: 8px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        overflow-x: auto !important;
+        flex-shrink: 0 !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        flex: 1 0 auto !important;
+        padding: 12px 18px !important;
+        border-radius: 1.25rem !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        color: #64748b !important;
+        background: rgba(100, 116, 139, 0.12) !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #334155 !important;
+        box-shadow: 0 4px 15px -3px rgba(51, 65, 85, 0.35) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        color: #94a3b8 !important;
+        background: rgba(255, 255, 255, 0.06) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #475569 !important;
+        box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.5) !important;
+      }
+
+      /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
+      .modal-overlay:not(.hidden) .modal-box .p-6.max-h-\[60vh\],
+      .modal-overlay:not(.hidden) .modal-box .p-6 {
+        flex: 1 1 auto !important;
+        max-height: none !important; /* 60vhの強制カットを消去！！！ */
+        padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
+      .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      .modal-overlay:not(.hidden) .modal-box select,
+      .modal-overlay:not(.hidden) .modal-box textarea {
+        border-radius: 0.85rem !important;
+        padding: 12px 16px !important;
+        font-size: 16px !important;
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
+        background: #1e293b !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #f1f5f9 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
+      }
+      
+      /* ボタン群のリッチで指に吸い付くようなデザイン */
+      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
+      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
+      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
+        border-radius: 0.85rem !important;
+        padding: 12px 20px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.15) !important;
+      }
+    }
+    @keyframes mobileFullscreenOpen {
+      0% { transform: translateY(100%); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes modalScaleUp {
+      0% { transform: scale(0.85); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @media (max-width: 640px) {
+      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
+      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
+      
+      #joinServerBtn, #createServerBtn {
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: white !important;
+        font-size: 0.82rem !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex-shrink: 0 !important;
+        min-width: unset !important;
+      }
+      #joinServerBtn:hover, #createServerBtn:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+      }

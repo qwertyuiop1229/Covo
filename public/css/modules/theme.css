@@ -1,0 +1,480 @@
+    /* ===== カスタムスクロールバー（全要素共通）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* モーダル背景 */
+    .modal-overlay {
+      background-color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* ドロップダウンコンテナのスタイル */
+    .dropdown-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: white;
+      min-width: 100px;
+      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      right: 0;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+
+    .dropdown-content button {
+      color: black;
+      padding: 8px 12px;
+      text-decoration: none;
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background-color: transparent;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* メッセージ内容と入力欄 */
+    .message-content {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+    }
+
+    textarea#messageInput {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-y: auto;
+      resize: none;
+      min-height: 0;
+      max-height: 200px;
+      background-color: transparent;
+      border: none;
+      font-size: 16px;
+      line-height: 1.5;
+
+      /* ★スクロールバーを非表示にする設定 */
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* ★Chrome, Safari, Opera用 */
+    textarea#messageInput::-webkit-scrollbar {
+      display: none;
+    }
+
+    textarea#messageInput:focus {
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 既読表示 */
+    .read-receipt {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 2px;
+      display: block;
+      text-align: right;
+    }
+
+    .other-message .read-receipt {
+      text-align: left;
+    }
+
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
+    /* カスタムコンテキストメニュー */
+    .custom-context-menu {
+      position: fixed;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      z-index: 100;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      padding: 4px 0;
+      overflow: hidden;
+    }
+
+    .custom-context-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: black;
+    }
+
+    .custom-context-menu button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* サイドバーリサイズ用ハンドル */
+    #resizer, #resizerRight {
+      width: 2px;
+      cursor: col-resize;
+      background-color: #e5e7eb;
+      transition: background-color 0.2s;
+      flex-shrink: 0;
+    }
+
+    #resizer:hover, #resizerRight:hover {
+      background-color: #d1d5db;
+    }
+
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
+    .reply-quote:hover {
+      opacity: 0.8;
+    }
+
+    .reply-quote-nickname {
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .reply-quote-text {
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+    }
+
+    .message-highlight {
+      transition: background-color 0.8s ease-out;
+      background-color: #bde4ff !important;
+    }
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032;
+      border-top-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #userPanel:hover { background-color: #1e2f42; }
+    body.dark-server-theme .user-panel-name { color: #e2e8f0; }
+    body.dark-server-theme .user-panel-id { color: #64748b; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #e2e8f0;
+      background: rgba(255,255,255,0.08);
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+    /* リプライの半透明背景を廃止し、完全に透明(transparent)にして美しく溶け込ませる */
+    body.dark-server-theme .reply-quote {
+      background: transparent !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme .reply-quote-nickname { color: #94a3b8; }
+    body.dark-server-theme .reply-quote-text { color: #cbd5e1; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu-inner {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
+    /* グレー系ボタン（キャンセル等）。濃色系ボタンはそのまま */
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
