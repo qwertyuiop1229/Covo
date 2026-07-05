@@ -841,7 +841,8 @@
             新しいルームを作成
           </h2>
           <form onsubmit="event.preventDefault();">
-            <input type="text" id="modalNewRoomNameInput" placeholder="ルーム名を入力"
+            <input type="text" autocomplete="username" style="display:none;" />
+            <input type="text" id="modalNewRoomNameInput" placeholder="ルーム名を入力" autocomplete="off"
               class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
             <input type="password" id="newRoomPasswordInput" placeholder="パスワードを入力 (任意)" autocomplete="new-password"
               class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
@@ -864,6 +865,7 @@
             ルームに参加
           </h2>
           <form onsubmit="event.preventDefault();">
+            <input type="text" autocomplete="username" style="display:none;" />
             <input type="password" id="joinRoomPasswordInput" placeholder="パスワードを入力" autocomplete="current-password"
               class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
             <button id="confirmJoinRoomButton"
@@ -908,16 +910,19 @@
           <p class="text-gray-600 mb-4" id="deletePasswordMessage">
             ルーム「<span id="roomToDeletePasswordName" class="font-bold"></span>」を削除するにはパスワードを入力してください。
           </p>
-          <input type="password" id="deleteRoomPasswordInput" placeholder="パスワードを入力"
-            class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-          <button id="confirmDeletePasswordButton"
-            class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200 mb-2">
-            削除
-          </button>
-          <button id="cancelDeletePasswordButton"
-            class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
-            キャンセル
-          </button>
+          <form onsubmit="event.preventDefault();">
+            <input type="text" autocomplete="username" style="display:none;" />
+            <input type="password" id="deleteRoomPasswordInput" placeholder="パスワードを入力" autocomplete="current-password"
+              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+            <button id="confirmDeletePasswordButton"
+              class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors duration-200 mb-2">
+              削除
+            </button>
+            <button id="cancelDeletePasswordButton" type="button"
+              class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 rounded-lg shadow-md transition-colors duration-200">
+              キャンセル
+            </button>
+          </form>
           <div id="deletePasswordErrorMessage" class="text-red-600 text-center mt-4"></div>
         </div>
       </div>
@@ -994,51 +999,54 @@
       <div id="createServerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md modal-box animate-pop-in">
           <h2 class="text-xl font-bold text-gray-800 mb-6"><i class="fas fa-plus-circle mr-2"></i>新しいサーバーを作成</h2>
-          <div class="space-y-4">
-            <div class="flex flex-col items-center justify-center mb-4">
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">サーバーアイコン (任意)</label>
-              <div id="newServerIconPreviewWrapper" onclick="openNewServerIconPicker()" class="relative group cursor-pointer w-24 h-24 rounded-full bg-slate-50 border-2 border-dashed border-slate-300 hover:border-slate-700 flex items-center justify-center transition-all duration-300 group-hover:rounded-3xl overflow-hidden shadow-md">
-                <div id="newServerIconPreviewContent" class="w-full h-full flex items-center justify-center text-slate-400 group-hover:text-slate-700 transition-colors">
-                  <i class="fas fa-camera text-3xl"></i>
+          <form onsubmit="event.preventDefault();">
+            <input type="text" autocomplete="username" style="display:none;" />
+            <div class="space-y-4">
+              <div class="flex flex-col items-center justify-center mb-4">
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-center">サーバーアイコン (任意)</label>
+                <div id="newServerIconPreviewWrapper" onclick="openNewServerIconPicker()" class="relative group cursor-pointer w-24 h-24 rounded-full bg-slate-50 border-2 border-dashed border-slate-300 hover:border-slate-700 flex items-center justify-center transition-all duration-300 group-hover:rounded-3xl overflow-hidden shadow-md">
+                  <div id="newServerIconPreviewContent" class="w-full h-full flex items-center justify-center text-slate-400 group-hover:text-slate-700 transition-colors">
+                    <i class="fas fa-camera text-3xl"></i>
+                  </div>
+                  <div class="absolute inset-0 bg-slate-900/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+                    <i class="fas fa-upload text-white text-lg mb-1"></i>
+                    <span class="text-[10px] text-white font-bold tracking-wider">アイコンを設定</span>
+                  </div>
                 </div>
-                <div class="absolute inset-0 bg-slate-900/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
-                  <i class="fas fa-upload text-white text-lg mb-1"></i>
-                  <span class="text-[10px] text-white font-bold tracking-wider">アイコンを設定</span>
-                </div>
+                <input type="file" id="newServerIconUploadInput" accept="image/*" class="hidden" />
+                <p class="text-[11px] text-gray-400 mt-2">クリックして画像を選択・拡大縮小調整</p>
               </div>
-              <input type="file" id="newServerIconUploadInput" accept="image/*" class="hidden" />
-              <p class="text-[11px] text-gray-400 mt-2">クリックして画像を選択・拡大縮小調整</p>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名</label>
+                <input type="text" id="newServerName" placeholder="例: 私のサーバー"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID <span
+                    class="text-gray-400 font-normal">(英数字・ハイフンのみ)</span></label>
+                <input type="text" id="newServerId" placeholder="例: my-server-01" autocomplete="username"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+                <p id="serverIdAvailability" class="text-xs mt-1 ml-1"></p>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
+                <input type="password" id="newServerPassword" placeholder="参加パスワード" autocomplete="new-password"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード（確認）</label>
+                <input type="password" id="newServerPasswordConfirm" placeholder="同じパスワードを再入力" autocomplete="new-password"
+                  class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+              </div>
             </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバー名</label>
-              <input type="text" id="newServerName" placeholder="例: 私のサーバー"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
+            <p id="createServerMessage" class="text-red-500 text-sm mt-3"></p>
+            <div class="flex gap-3 mt-6">
+              <button id="cancelCreateServerBtn" type="button"
+                class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
+              <button id="confirmCreateServerBtn"
+                class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">作成</button>
             </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID <span
-                  class="text-gray-400 font-normal">(英数字・ハイフンのみ)</span></label>
-              <input type="text" id="newServerId" placeholder="例: my-server-01"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
-              <p id="serverIdAvailability" class="text-xs mt-1 ml-1"></p>
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード</label>
-              <input type="password" id="newServerPassword" placeholder="参加パスワード"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">パスワード（確認）</label>
-              <input type="password" id="newServerPasswordConfirm" placeholder="同じパスワードを再入力"
-                class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300" />
-            </div>
-          </div>
-          <p id="createServerMessage" class="text-red-500 text-sm mt-3"></p>
-          <div class="flex gap-3 mt-6">
-            <button id="cancelCreateServerBtn"
-              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
-            <button id="confirmCreateServerBtn"
-              class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">作成</button>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -1056,7 +1064,7 @@
             <div id="joinByPasswordSection" class="space-y-4">
               <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">サーバーID</label>
-                <input type="text" id="joinServerId" placeholder="サーバーID"
+                <input type="text" id="joinServerId" placeholder="サーバーID" autocomplete="username"
                   class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
               </div>
               <div>
@@ -1244,12 +1252,13 @@
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">パスワードを変更</label>
-                  <div class="space-y-2">
-                    <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード"
+                  <form class="space-y-2" onsubmit="event.preventDefault();">
+                    <input type="text" autocomplete="username" style="display:none;" />
+                    <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード" autocomplete="new-password"
                       class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
                     <button id="changeServerPasswordBtn"
                       class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all">パスワード変更</button>
-                  </div>
+                  </form>
                 </div>
                 <div class="pt-6 border-t border-red-100 mt-6">
                   <button id="deleteServerBtn"

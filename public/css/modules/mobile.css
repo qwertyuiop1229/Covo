@@ -182,6 +182,7 @@
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
       inset: 0 0 var(--mnav-total) 0 !important;
+    }
     /* =============================================
        Server list-view toggle
     ============================================= */
@@ -820,3 +821,4 @@
       #joinServerBtn:hover, #createServerBtn:hover {
         background: rgba(255, 255, 255, 0.28) !important;
       }
+    }
