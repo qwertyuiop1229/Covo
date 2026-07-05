@@ -1,6 +1,7 @@
 import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial } from './utils.js';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 // === フィードバック機能 ===
     window.openFeedbackModal = function() {
       document.getElementById('feedbackContent').value = '';
@@ -908,56 +909,14 @@ import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_he
     }
 
     // 送信をブロックする危険な拡張子（クライアント側で事前チェック）
-    const BLOCKED_EXTENSIONS = new Set([
-      'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-      'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-      'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-      'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-      'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap'
-    ]);
-
+    // ==========================================
+    // File Uploader Wrappers
+    // ==========================================
     function checkFileAllowed(file) {
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      if (BLOCKED_EXTENSIONS.has(ext)) {
-        alertMessage(`この形式のファイル（.${ext}）は送信できません`, "error");
-        return false;
-      }
-      return true;
+      return _checkFileAllowed(file);
     }
-
-    // Cloudflare Worker(KV) へのアップロード。進捗対応(XHR)。
-    // uploadToCloudinary と同じ (file, onProgress, folder) で呼べるようにしている（folderは未使用）。
     function uploadToExternalService(file, onProgress, _folder) {
-      return new Promise(async (resolve, reject) => {
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('uploaderId', userId || '');
-        fd.append('idToken', idToken);
-        if (_folder) {
-          fd.append('folder', _folder);
-        }
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${WORKER_BASE_URL}/api/uploadFile`);
-        xhr.upload.addEventListener('progress', e => {
-          if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-        });
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            try {
-              const d = JSON.parse(xhr.responseText);
-              d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-            } catch (e) { reject(new Error('応答の解析に失敗')); }
-          } else {
-            let msg = `HTTP ${xhr.status}`;
-            try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-            reject(new Error(msg));
-          }
-        });
-        xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-        xhr.addEventListener('abort', () => reject(new Error('アップロードがキャンセルされました')));
-        xhr.send(fd);
-      });
+      return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder);
     }
 
     let app;
