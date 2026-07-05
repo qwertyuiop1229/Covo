@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "tauri": "tauri",
-    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y"
+    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
+    "test:web": "firebase serve --only hosting",
+    "test:win": "tauri dev"
   },
   "repository": {
     "type": "git",

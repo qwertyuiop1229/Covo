@@ -1,3 +1,6 @@
+import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial } from './utils.js';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
+import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 // === フィードバック機能 ===
     window.openFeedbackModal = function() {
       document.getElementById('feedbackContent').value = '';
@@ -209,28 +212,6 @@
     }
     const _td = new TextDecoder(), _te = new TextEncoder();
 
-    function _abToB64(buf) {
-      const bytes = new Uint8Array(buf);
-      let bin = "";
-      const CH = 0x8000;
-      for (let i = 0; i < bytes.length; i += CH) {
-        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-      }
-      return btoa(bin);
-    }
-    function _b64ToAb(b64) {
-      try {
-        if (typeof b64 !== "string") return new ArrayBuffer(0);
-        let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-        while (norm.length % 4 > 0) norm += "=";
-        const bin = atob(norm);
-        const out = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-        return out.buffer;
-      } catch (e) {
-        return new ArrayBuffer(0);
-      }
-    }
 
     // localStorage 安全アクセス（プライベートブラウズ等で例外でも落ちない）
     function _lsGet(key) {
@@ -1085,11 +1066,6 @@
     // ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
     let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
 
-    function getMsgTimestamp(msg) {
-      if (!msg || !msg.timestamp) return Date.now(); // pending local message
-      if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
-      return msg.timestamp;
-    }
 
     let isLoadingOlderMessages = false; // 二重ローディング防止
     let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
@@ -1233,28 +1209,6 @@
 
     // 安全なクリップボードコピー（async拒否を必ず飲み込む＋execCommandフォールバック）。
     // iOS PWAで clipboard.writeText が拒否されても unhandledrejection を出さない。
-    function safeCopy(txt) {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          // .catch を必ず付けて未捕捉Promiseにしない
-          navigator.clipboard.writeText(txt).catch(() => _execCopyFallback(txt));
-          return;
-        }
-      } catch (e) {}
-      _execCopyFallback(txt);
-    }
-    function _execCopyFallback(txt) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = txt;
-        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
-        ta.setAttribute('data-inspect-ignore', '1');
-        document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        document.execCommand('copy');
-        ta.remove();
-      } catch (e) {}
-    }
 
     // 検査モードのON/OFF（設定のトグル、または専用バーの終了ボタンから呼ばれる）
     window.setInspectMode = function(on) {
@@ -1516,27 +1470,6 @@
     // 一度描画した区切り線が既読更新で消えないよう、確定した境界メッセージIDを保持する。
     let unreadBoundaryMessageId = null;
     // Web Audio API による洗練された通知チャイム
-    function playNotificationSound() {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const now = ctx.currentTime;
-        const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6 の和音チャイム
-        notes.forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, now + i * 0.09);
-          gain.gain.setValueAtTime(0, now + i * 0.09);
-          gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + i * 0.09);
-          osc.stop(now + i * 0.09 + 0.5);
-        });
-        setTimeout(() => ctx.close(), 1500);
-      } catch (e) { }
-    }
     let selectedMessageForContext = null;
 
     // =========================================================================
@@ -1979,9 +1912,6 @@
       }
     };
 
-    function emailInitial(email) {
-      return (email || "?").charAt(0).toUpperCase();
-    }
 
     // リストアイテムのDOMを生成（ユーザーネーム＆アイコン対応版）
     function makeEmailListItem(email, isSelf, onRemove) {
@@ -2127,13 +2057,6 @@
 
     // 許可リスト追加
     // ストレージ統計
-    function formatBytes(bytes) {
-      if (!bytes || bytes === 0) return '0 B';
-      const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
 
     async function loadStorageStats() {
       const kvBar = document.getElementById('kvUsageBar');
@@ -3848,15 +3771,6 @@
     }
 
     // HTMLエスケープ（XSS対策: innerHTML に埋め込む全ての文字列に適用する）
-    function escapeHtml(s) {
-      if (s == null) return "";
-      return String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
 
     // PBKDF2 ハッシュ（SHA-256より総当たり耐性が大幅に高い）
     async function hashPassword(password, serverId) {
@@ -6760,27 +6674,6 @@
 
     // Twemoji を「生きているCDN(jsDelivr)」のSVGで描画する共通関数。
     // 旧デフォルトの maxcdn は閉鎖済みで画像が404→OS純正絵文字に戻ってしまうため base を明示する。
-    const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-    function getEmojiHtml(emoji, spanClass = 'sk-em') {
-      if (!emoji || typeof emoji !== 'string') return '';
-      if (emoji.startsWith('covo:')) {
-        const name = emoji.substring(5);
-        return `<img src="/covo-stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-      }
-      if (emoji.startsWith('covonew:')) {
-        const name = emoji.substring(8);
-        return `<img src="/assets/covo_stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-      }
-      if (emoji.startsWith('serverstamp:')) {
-        const url = emoji.substring(12);
-        return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-      }
-      return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-    }
-    function _twemojiParse(el) {
-      if (!window.twemoji || !el) return;
-      try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-    }
 
     function _skLoad(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; } }
     function _skSave(key, arr) { try { localStorage.setItem(key, JSON.stringify(arr.slice(0, 40))); } catch (e) {} }
@@ -7301,57 +7194,7 @@
       }
     });
 
-    function escapeHtmlAndLinkUrls(text) {
-      if (!text) return "";
-      
-      const codeBlocks = [];
-      let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
-        const id = `__CODE_BLOCK_${codeBlocks.length}__`;
-        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
-        return id;
-      });
 
-      const inlineCodes = [];
-      processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-        const id = `__INLINE_CODE_${inlineCodes.length}__`;
-        let escapedCode = p1.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
-        return id;
-      });
-
-      let escapedText = processedText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-      
-      escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-      escapedText = escapedText.replace(/\n/g, '<br>');
-
-      const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
-      escapedText = escapedText.replace(urlRegex, (safeUrl) => {
-        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${safeUrl}</a>`;
-      });
-
-      const mentionRegex = /@([^\s<&]+)/g;
-      escapedText = escapedText.replace(mentionRegex, (match, p1) => {
-        return `<span class="mention-text">@${p1}</span>`;
-      });
-
-      inlineCodes.forEach((html, index) => {
-        escapedText = escapedText.replace(`__INLINE_CODE_${index}__`, html);
-      });
-      codeBlocks.forEach((html, index) => {
-        escapedText = escapedText.replace(`__CODE_BLOCK_${index}__`, html);
-      });
-
-      return escapedText;
-    }
-
-    function openAvatarLightbox(url) {
-      const lb = document.getElementById("avatarLightbox");
-      document.getElementById("avatarLightboxImg").src = url;
-      lb.style.display = "flex";
-    }
 
     window.toggleReaction = async function(messageId, emoji) {
       if (!currentServerId || !currentRoomId || !userId) return;
@@ -8816,20 +8659,6 @@
         });
     }
 
-    function alertMessage(msg, type = "info") {
-      const stack = document.getElementById("notifStack");
-      const box = document.createElement("div");
-      let colorClass = "bg-gray-800 text-white";
-      if (type === "error") colorClass = "bg-red-600 text-white";
-      box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass}`;
-      box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-      box.textContent = msg;
-      stack.appendChild(box);
-      setTimeout(() => {
-        box.style.animation = "fadeIn 0.2s ease reverse forwards";
-        setTimeout(() => box.remove(), 200);
-      }, 2800);
-    }
 
     // =========================================================================
     // カスケード削除ユーティリティ
