@@ -23,6 +23,9 @@ export default {
     if (url.pathname === "/api/joinServer" && request.method === "POST") {
       return await handleJoinServer(request, env);
     }
+    if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
+      return await handleSyncRtdb(request, env);
+    }
     if (url.pathname === "/api/sendCallNotification" && request.method === "POST") {
       return await handleSendCallNotification(request, env);
     }
@@ -228,7 +231,7 @@ async function getFirestoreAdminToken(serviceAccountJsonStr) {
 // -------------------------------------------------------------
 async function handleJoinServer(request, env) {
   try {
-    const { serverId, password, inviteCode, userId, appId, idToken } = await request.json();
+    const { serverId, password, inviteCode, userId, appId, idToken, rtdbUrl } = await request.json();
     if (!serverId || !userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
     }
@@ -379,6 +382,78 @@ async function handleJoinServer(request, env) {
     if (updateData.error) {
        console.error("Firestore Update Error:", updateData.error);
        return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 200, headers: corsHeaders });
+    }
+
+    if (rtdbUrl) {
+      try {
+        const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+        const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
+        await fetch(rtdbTargetUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(true)
+        });
+      } catch (e) {
+        console.error("RTDB Update Error:", e);
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+  } catch (error) {
+    console.error(error);
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
+  }
+}
+
+// -------------------------------------------------------------
+// RTDB メンバーシップの同期処理 (Self-healing)
+// -------------------------------------------------------------
+async function handleSyncRtdb(request, env) {
+  try {
+    const { serverId, userId, appId, idToken, rtdbUrl } = await request.json();
+    if (!serverId || !userId || !appId || !idToken || !rtdbUrl) {
+      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
+    }
+
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || verifiedUser.uid !== userId) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 200, headers: corsHeaders });
+    }
+
+    const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    // Firestore で joinedUsers に含まれているか検証
+    const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+    const srvData = await srvRes.json();
+    
+    let isMember = false;
+    if (!srvData.error && srvData.fields && srvData.fields.joinedUsers && srvData.fields.joinedUsers.arrayValue && srvData.fields.joinedUsers.arrayValue.values) {
+      isMember = srvData.fields.joinedUsers.arrayValue.values.some(v => v.stringValue === userId);
+    }
+
+    if (!isMember) {
+      return new Response(JSON.stringify({ success: false, error: "Not a member" }), { status: 403, headers: corsHeaders });
+    }
+
+    // RTDB に同期
+    try {
+      const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+      const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
+      await fetch(rtdbTargetUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(true)
+      });
+    } catch (e) {
+      console.error("RTDB Sync Error:", e);
+      return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: corsHeaders });
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });

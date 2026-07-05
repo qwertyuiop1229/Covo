@@ -10,13 +10,18 @@
       "$appId": {
         "settings": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          ".write": "false"
         },
         "servers": {
           "$serverId": {
             ".read": "data.child('members').child(auth.uid).exists()",
-            ".write": "data.child('members').child(auth.uid).exists() || newData.child('members').child(auth.uid).exists()",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+              }
+            },
             "rooms": {
+              ".write": "auth != null && data.parent().child('members').child(auth.uid).exists()",
               "$roomId": {
                 "messages": {
                   ".indexOn": ["timestamp"]

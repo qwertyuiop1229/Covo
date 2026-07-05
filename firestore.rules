@@ -42,7 +42,7 @@ service cloud.firestore {
       // 1. 全体設定
       match /settings/{docId} {
         allow read: if isAuthenticated();
-        allow write: if !exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
       }
       // リスト管理者は allowedEmails のみ書き込み可
       match /settings/allowedEmails {

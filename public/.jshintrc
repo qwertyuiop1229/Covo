@@ -1,0 +1,24 @@
+{
+  "esversion": 11,
+  "browser": true,
+  "devel": true,
+  "undef": true,
+  "unused": false,
+  "globals": {
+    "firebase": false,
+    "db": false,
+    "auth": false,
+    "storage": false,
+    "Tailwind": false,
+    "$": false,
+    "moment": false,
+    "DOMPurify": false,
+    "marked": false,
+    "hljs": false,
+    "JSEncrypt": false,
+    "CryptoJS": false,
+    "RTCPeerConnection": false,
+    "RTCSessionDescription": false,
+    "RTCIceCandidate": false
+  }
+}
