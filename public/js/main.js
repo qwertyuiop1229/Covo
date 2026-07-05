@@ -2032,9 +2032,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             });
             console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
             
-            // 接続直後は強制的にオンラインを再送信する
+            // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
             _lastReportedStatusStr = null;
-            await updateUserStatus('online');
+            const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
+            await updateUserStatus(currentState);
+            if (currentState === 'away') startOfflineTimer();
           }
         });
       } catch (e) {
@@ -2472,6 +2474,21 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       }
     }
 
+    let offlineTimer = null;
+    function startOfflineTimer() {
+      if (offlineTimer) clearTimeout(offlineTimer);
+      offlineTimer = setTimeout(() => {
+        updateUserStatus('offline');
+        sendOfflineBeacon();
+      }, 15 * 60 * 1000);
+    }
+    function stopOfflineTimer() {
+      if (offlineTimer) {
+        clearTimeout(offlineTimer);
+        offlineTimer = null;
+      }
+    }
+
     let _heartbeatInterval = null;
 
     function startHeartbeat() {
@@ -2483,10 +2500,12 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     }
 
 
-    // ネット復帰: ステータスをリセットしてonlineに更新
+    // ネット復帰: ステータスをリセット（バックグラウンド復帰時は離席中）
     function _handleNetworkOnline() {
       _beaconSent = false;
-      updateUserStatus('online');
+      const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
+      updateUserStatus(currentState);
+      if (currentState === 'away') startOfflineTimer();
       refreshCachedIdToken();
     }
     // ネット切断: 即座にofflineビーコンを送る
@@ -2536,6 +2555,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
 
     const handleWindowFocus = () => {
       _beaconSent = false;
+      stopOfflineTimer();
       updateUserStatus('online');
       resetAwayTimer();
       if (typeof currentRoomId !== 'undefined' && currentRoomId) {
@@ -2558,9 +2578,9 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     };
 
     const handleWindowBlur = () => {
-      updateUserStatus('offline');
-      sendOfflineBeacon();
+      updateUserStatus('away');
       stopAwayTimer();
+      startOfflineTimer();
       if (isTauri && window.__TAURI__?.core?.invoke) {
         let globalCount = 0;
         try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch(e){}
@@ -2570,17 +2590,12 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        updateUserStatus('offline');
-        sendOfflineBeacon();
+        updateUserStatus('away');
         stopAwayTimer();
-        setTimeout(() => {
-          if (document.visibilityState === 'hidden') {
-            _beaconSent = false;
-            sendOfflineBeacon();
-          }
-        }, 30000);
+        startOfflineTimer();
       } else {
         _beaconSent = false;
+        stopOfflineTimer();
         updateUserStatus('online');
         resetAwayTimer();
         clearAppBadgeFull();
@@ -2693,26 +2708,34 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       _lastReportedStatusStr = currentStatusStr;
 
       try {
-        const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const { ref, set, serverTimestamp, onDisconnect: rtdbOnDisconnect } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
         const statusRef = ref(rtdb, `status/${userId}`);
         _rtdbStatusRef = statusRef;
+
+        const payload = {
+          state: state,
+          last_changed: serverTimestamp(),
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null
+        };
         if (state === 'online') {
-          await set(statusRef, {
-            state: 'online',
-            last_changed: serverTimestamp(),
-            currentRoomId: currentRoomId || null,
-            nickname: userNickname,
-            avatarUrl: userAvatarUrl || null
-          });
-        } else {
-          await set(statusRef, {
-            state: 'offline',
-            last_changed: serverTimestamp(),
-            nickname: userNickname,
-            avatarUrl: userAvatarUrl || null
-          });
+          payload.currentRoomId = currentRoomId || null;
         }
+        await set(statusRef, payload);
+
+        // onDisconnectペイロードの動的更新
+        if (_rtdbOnDisconnect) {
+          try { await _rtdbOnDisconnect.cancel(); } catch(e){}
+        }
+        _rtdbOnDisconnect = rtdbOnDisconnect(statusRef);
+        await _rtdbOnDisconnect.set({
+          state: state === 'online' ? 'offline' : state,
+          last_changed: serverTimestamp(),
+          nickname: userNickname,
+          avatarUrl: userAvatarUrl || null
+        });
+
       } catch (error) {
         console.error('[RTDB] Status update error:', error);
       }
@@ -2917,8 +2940,12 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           } else if (u.last_changed && u.last_changed.toDate) {
             timeDiff = Date.now() - u.last_changed.toDate().getTime(); // Firestore Timestamp
           }
-          if (timeDiff !== null && timeDiff > 35 * 60 * 1000) {
-            computedState = 'offline';
+          if (timeDiff !== null) {
+            if (computedState === 'away' && timeDiff > 15 * 60 * 1000) {
+              computedState = 'offline';
+            } else if (timeDiff > 35 * 60 * 1000) {
+              computedState = 'offline';
+            }
           }
         }
 

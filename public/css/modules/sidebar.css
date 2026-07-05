@@ -84,11 +84,9 @@
     }
     body.dark-server-theme .status-online {
       background-color: #10b981;
-      box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
     }
     body.dark-server-theme .status-away {
       background-color: #fbbf24;
-      box-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
     }
     body.dark-server-theme .status-offline {
       background-color: #475569;
