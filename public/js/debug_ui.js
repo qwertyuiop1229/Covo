@@ -130,14 +130,14 @@ export function _inspectPoint(x, y) {
       }
     }
 
-function _lineColor(line) {
+export function _lineColor(line) {
       if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]')) return '#f87171';
       if (line.includes('[warn]')) return '#fbbf24';
       if (line.includes('[E2EE]')) return '#34d399';
       return '#cbd5e1';
     }
 
-function _appendConsoleLine(line) {
+export function _appendConsoleLine(line) {
       const body = document.getElementById('devConsoleBody');
       if (!body) return;
       const div = document.createElement('div');
