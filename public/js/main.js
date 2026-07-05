@@ -2,7 +2,7 @@ import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFa
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, __lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
 // === フィードバック機能 ===
     window.openFeedbackModal = function() {
       document.getElementById('feedbackContent').value = '';
