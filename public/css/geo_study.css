@@ -1,0 +1,108 @@
+/* geo_study.css - 隠し機能用スタイル */
+
+#geoStudyContainer {
+  /* Tailwindのユーティリティでカバーしきれない部分を補完 */
+  font-family: 'Inter', sans-serif;
+}
+
+/* モジュール起動時のフェードインアニメーション */
+.gs-fade-in {
+  animation: gsFadeIn 0.4s ease-out forwards;
+}
+@keyframes gsFadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+#gs-minimap-container {
+  /* ホバー時やアクティブ時に少し広がるようなエフェクト */
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#gs-minimap-container:hover, #gs-minimap-container.active-map {
+  opacity: 1 !important;
+  transform: scale(1.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  border-color: #4f46e5; /* indigo-600 */
+}
+
+/* スマホ用により大きく展開するクラス */
+@media (max-width: 768px) {
+  #gs-minimap-container.active-map {
+    width: calc(100vw - 2rem) !important;
+    height: 50vh !important;
+    transform: scale(1) !important;
+    bottom: 1rem !important;
+    right: 1rem !important;
+    z-index: 500;
+  }
+}
+
+/* 読み込みスピナー用 */
+.gs-spinner {
+  border: 3px solid rgba(255,255,255,0.1);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border-left-color: #3b82f6; /* blue-500 */
+  animation: gs-spin 1s linear infinite;
+}
+@keyframes gs-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* 写真モード用の画像表示調整（見切れないようにcontainを使用） */
+#gs-photo-container {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: opacity 0.6s ease-in-out;
+  opacity: 1;
+}
+#gs-photo-container.loading {
+  opacity: 0.3;
+  filter: blur(5px);
+}
+
+/* スワップ時のアニメーション用 */
+.gs-swap-transition {
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+
+/* 写真がミニサイズになる状態 */
+#gs-photo-container.is-minimap {
+  width: 12rem !important;
+  height: 8rem !important;
+  bottom: 1rem !important;
+  right: 1rem !important;
+  top: auto !important;
+  left: auto !important;
+  z-index: 999 !important;
+  border-radius: 0.75rem !important;
+  border: 2px solid #4b5563 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
+  cursor: pointer;
+  background-size: cover !important;
+  background-color: #1f2937 !important;
+}
+@media (min-width: 768px) {
+  #gs-photo-container.is-minimap {
+    width: 20rem !important;
+    height: 16rem !important;
+  }
+}
+#gs-photo-container.is-minimap:hover {
+  transform: scale(1.05);
+  border-color: #4f46e5 !important;
+}
+
+/* 地図が全画面になる状態 */
+#gs-minimap-container.is-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  z-index: 0 !important;
+  transform: none !important;
+}
+
