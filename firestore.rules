@@ -12,7 +12,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
         (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
           ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
         );
     }
@@ -21,7 +21,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
         (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
           ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
         );
     }
