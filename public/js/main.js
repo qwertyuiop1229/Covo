@@ -1319,9 +1319,37 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           return;
         }
         const allowedSnap = await getDocs(q);
-        const emails = [];
-        allowedSnap.forEach(d => emails.push(d.id));
-        renderAllowedEmails(emails);
+        const emails = new Set();
+        allowedSnap.forEach(d => emails.add(d.id));
+        
+        // 旧ドキュメントからの移行処理 (全体管理者のみ)
+        if (isAdmin) {
+          try {
+            const oldRef = doc(db, `artifacts/${appId}/settings`, "allowedEmails");
+            const oldSnap = await getDoc(oldRef);
+            if (oldSnap.exists()) {
+              const data = oldSnap.data();
+              if (data.emails && Array.isArray(data.emails)) {
+                console.log("Migrating old allowedEmails to subcollection...");
+                const promises = data.emails.map(e => {
+                  const ref = doc(db, `artifacts/${appId}/allowedEmails`, e);
+                  return setDoc(ref, { email: e, addedBy: "system_migration", addedAt: serverTimestamp() }, { merge: true });
+                });
+                await Promise.all(promises);
+                await deleteDoc(oldRef); // 移行完了後に削除
+                console.log("Migration complete!");
+                
+                // 再読み込み
+                const newSnap = await getDocs(q);
+                newSnap.forEach(d => emails.add(d.id));
+              }
+            }
+          } catch(e) {
+            console.warn("Could not migrate old allowedEmails doc", e);
+          }
+        }
+        
+        renderAllowedEmails(Array.from(emails));
       } catch (e) {
         console.error("Failed to load allowed emails:", e);
       }

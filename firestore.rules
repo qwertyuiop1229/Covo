@@ -47,7 +47,7 @@ service cloud.firestore {
       // 1. 全体設定
       match /settings/{docId} {
         // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
-        allow read: if isAuthenticated() && docId != 'allowedEmails';
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
         allow write: if isGlobalAdmin(appId);
       }
       match /settings/allowedEmailsConfig {
