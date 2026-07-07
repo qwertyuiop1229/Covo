@@ -5,8 +5,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupHiddenTrigger() {
-  const target = document.getElementById('appInfoVersion');
-  if (!target) return;
+  const pcTarget = document.getElementById('appInfoVersion');
+  const mobileTarget = document.getElementById('mobileAppInfoVersion');
+  const targets = [];
+  if (pcTarget) targets.push(pcTarget);
+  if (mobileTarget) targets.push(mobileTarget);
+
+  if (targets.length === 0) return;
 
   let pressTimer = null;
   const triggerDuration = 3000; // 3 seconds
@@ -26,20 +31,22 @@ function setupHiddenTrigger() {
     }
   };
 
-  target.addEventListener('mousedown', startPress);
-  target.addEventListener('touchstart', startPress, {passive: true});
-  
-  target.addEventListener('mouseup', cancelPress);
-  target.addEventListener('mouseleave', cancelPress);
-  target.addEventListener('touchend', cancelPress);
-  target.addEventListener('touchcancel', cancelPress);
-  target.addEventListener('touchmove', cancelPress, {passive: true});
-  
-  // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
-  target.style.webkitUserSelect = 'none';
-  target.style.userSelect = 'none';
-  target.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
+  targets.forEach(target => {
+    target.addEventListener('mousedown', startPress);
+    target.addEventListener('touchstart', startPress, {passive: true});
+    
+    target.addEventListener('mouseup', cancelPress);
+    target.addEventListener('mouseleave', cancelPress);
+    target.addEventListener('touchend', cancelPress);
+    target.addEventListener('touchcancel', cancelPress);
+    target.addEventListener('touchmove', cancelPress, {passive: true});
+    
+    // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
+    target.style.webkitUserSelect = 'none';
+    target.style.userSelect = 'none';
+    target.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
   });
 }
 

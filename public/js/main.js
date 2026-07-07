@@ -807,8 +807,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
               // Firestoreの adminList から自身のメールアドレスがあるかチェック
               const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
               const adminSnap = await getDoc(adminDocRef);
-              if (adminSnap.exists() && adminSnap.data().emails) {
-                isAdmin = adminSnap.data().emails.includes(user.email);
+              if (adminSnap.exists()) {
+                const data = adminSnap.data();
+                const hasEmail = data.emails && data.emails.includes(user.email);
+                const hasUid = data.admins && data.admins.includes(user.uid);
+                isAdmin = hasEmail || hasUid;
               } else {
                 isAdmin = false;
               }
@@ -840,8 +843,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
               try {
                 const listAdminRef = doc(db, `artifacts/${appId}/settings`, "listAdminList");
                 const listAdminSnap = await getDoc(listAdminRef);
-                if (listAdminSnap.exists() && listAdminSnap.data().emails) {
-                  isListAdmin = listAdminSnap.data().emails.includes(user.email);
+                if (listAdminSnap.exists()) {
+                  const data = listAdminSnap.data();
+                  const hasEmail = data.emails && data.emails.includes(user.email);
+                  const hasUid = data.admins && data.admins.includes(user.uid);
+                  isListAdmin = hasEmail || hasUid;
                 } else {
                   isListAdmin = false;
                 }
@@ -1306,9 +1312,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         let q;
         if (isAdmin) {
           q = collection(db, `artifacts/${appId}/allowedEmails`);
-        } else {
+        } else if (isListAdmin) {
           const userAuthId = auth.currentUser ? auth.currentUser.uid : "";
           q = query(collection(db, `artifacts/${appId}/allowedEmails`), where("addedBy", "==", userAuthId));
+        } else {
+          return;
         }
         const allowedSnap = await getDocs(q);
         const emails = [];

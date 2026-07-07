@@ -11,14 +11,19 @@ service cloud.firestore {
     function isGlobalAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        ((request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-         (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins));
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
     }
 
     function isListAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails);
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
     }
 
     function isServerAdmin(appId, serverId) {
