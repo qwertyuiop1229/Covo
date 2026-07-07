@@ -15,9 +15,15 @@ function setupHiddenTrigger() {
 
   let pressTimer = null;
   const triggerDuration = 3000; // 3 seconds
+  let startX = 0;
+  let startY = 0;
 
   const startPress = (e) => {
     if (e.type === 'mousedown' && e.button !== 0) return;
+    if (e.touches && e.touches.length > 0) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }
     if (pressTimer) clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
       openGeoStudy();
@@ -31,6 +37,15 @@ function setupHiddenTrigger() {
     }
   };
 
+  const movePress = (e) => {
+    if (!pressTimer) return;
+    if (e.touches && e.touches.length > 0) {
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > 10 || dy > 10) cancelPress();
+    }
+  };
+
   targets.forEach(target => {
     target.addEventListener('mousedown', startPress);
     target.addEventListener('touchstart', startPress, {passive: true});
@@ -39,11 +54,12 @@ function setupHiddenTrigger() {
     target.addEventListener('mouseleave', cancelPress);
     target.addEventListener('touchend', cancelPress);
     target.addEventListener('touchcancel', cancelPress);
-    target.addEventListener('touchmove', cancelPress, {passive: true});
+    target.addEventListener('touchmove', movePress, {passive: true});
     
     // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
     target.style.webkitUserSelect = 'none';
     target.style.userSelect = 'none';
+    target.style.webkitTouchCallout = 'none';
     target.addEventListener('contextmenu', (e) => {
         e.preventDefault();
     });
