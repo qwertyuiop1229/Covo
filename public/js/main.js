@@ -6220,10 +6220,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     // Lightbox用のPanzoom初期化
     let lightboxPanzoom = null;
     if (window.Panzoom) {
+        
         lightboxPanzoom = Panzoom(lightboxImage, {
             maxScale: 20,       // 拡大倍率の限界を大幅に引き上げ
             minScale: 1,
-            step: 0.1,          // マウスホイールの刻みを細かくし、大手のような滑らかなズームにする
+            step: 0.2,          // マウスホイールの刻み
             contain: null
         });
         
@@ -6231,24 +6232,31 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
         
         // マウスホイールによるズーム操作
-        panzoomContainer.addEventListener('wheel', lightboxPanzoom.zoomWithWheel);
+        panzoomContainer.addEventListener('wheel', lightboxPanzoom.zoomWithWheel, { passive: false });
         
-        // ダブルクリック（ダブルタップ）でのズーム切り替え
+        // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
         let lastTap = 0;
-        lightboxImage.addEventListener('click', (e) => {
+        const handleDoubleTap = (e) => {
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTap;
-            if (tapLength < 300 && tapLength > 0) {
-                // ダブルクリック
+            if (tapLength < 350 && tapLength > 0) {
                 e.preventDefault();
                 const currentScale = lightboxPanzoom.getScale();
                 if (currentScale > 1.2) {
                     lightboxPanzoom.reset();
                 } else {
-                    lightboxPanzoom.zoom(2.5, { animate: true });
+                    lightboxPanzoom.zoom(2.5);
                 }
             }
             lastTap = currentTime;
+        };
+        
+        lightboxImage.addEventListener('touchend', (e) => {
+            if (e.touches && e.touches.length > 0) return;
+            handleDoubleTap(e);
+        });
+        lightboxImage.addEventListener('click', (e) => {
+            handleDoubleTap(e);
         });
     }
     

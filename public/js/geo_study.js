@@ -376,12 +376,12 @@ async function loadNewPhoto(roundId) {
       // ユーザーの要望により、軽量化パラメータを削除してWikipediaオリジナル高画質画像を使用する
       safeImgUrl = safeImgUrl.split("?")[0];
       
-      // Panzoomがまだ初期化されていなければ初期化する
       if (!window.geoStudyPanzoom && window.Panzoom) {
+          
           window.geoStudyPanzoom = Panzoom(panzoomEl, {
               maxScale: 20,       // 拡大限界を大幅に引き上げ
               minScale: 1,
-              step: 0.1,          // マウスホイールの刻みを細かくし、滑らかなズームにする
+              step: 0.2,          // マウスホイールの刻み
               contain: 'outside'
           });
           
@@ -389,24 +389,33 @@ async function loadNewPhoto(roundId) {
           panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
           
           // ホイールイベントの追加
-          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel);
+          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel, { passive: false });
           
-          // ダブルクリック（ダブルタップ）でのズーム切り替え
+          // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
           let lastTap = 0;
-          panzoomEl.addEventListener('click', (e) => {
+          const handleDoubleTap = (e) => {
               const currentTime = new Date().getTime();
               const tapLength = currentTime - lastTap;
-              if (tapLength < 300 && tapLength > 0) {
-                  // ダブルクリック
+              if (tapLength < 350 && tapLength > 0) {
                   e.preventDefault();
                   const currentScale = window.geoStudyPanzoom.getScale();
                   if (currentScale > 1.2) {
                       window.geoStudyPanzoom.reset();
                   } else {
-                      window.geoStudyPanzoom.zoom(2.5, { animate: true });
+                      window.geoStudyPanzoom.zoom(2.5);
                   }
               }
               lastTap = currentTime;
+          };
+          
+          panzoomEl.addEventListener('touchend', (e) => {
+              // ピンチズームなど複数の指の場合は無視
+              if (e.touches && e.touches.length > 0) return;
+              handleDoubleTap(e);
+          });
+          panzoomEl.addEventListener('click', (e) => {
+              // タッチデバイスでtouchendと重複発火するのを防ぐ簡単な制御を含める（同じ時間判定で吸収される）
+              handleDoubleTap(e);
           });
       }
       
