@@ -8,7 +8,7 @@
       z-index: 9998;
       background: linear-gradient(135deg, #1e293b, #334155);
       color: white;
-      padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0));
+      padding: 14px 16px max(24px, calc(14px + env(safe-area-inset-bottom, 0px)));
       align-items: center;
       gap: 12px;
       box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
@@ -176,7 +176,7 @@
     #mobileProfileScreen,
     #mobileNotifScreen {
       inset: 0 0 var(--mnav-total) 0 !important;
-      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+      padding-bottom: max(32px, calc(24px + env(safe-area-inset-bottom, 0px))) !important;
       box-sizing: border-box;
     }
     body.has-mobile-nav #mobileProfileScreen,
@@ -471,8 +471,8 @@
 
       /* ボトムナビゲーションのSafe Area動的パディング最適化 */
       #mobileBottomNav {
-        height: calc(38px + env(safe-area-inset-bottom, 0px)) !important;
-        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+        height: max(54px, calc(38px + env(safe-area-inset-bottom, 0px))) !important;
+        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
       }
 
       /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして

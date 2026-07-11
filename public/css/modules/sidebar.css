@@ -597,14 +597,14 @@
       body.discord-ui-mode #discordServerNav {
         width: 56px !important;
         min-width: 56px !important;
-        padding-top: calc(0.7rem + env(safe-area-inset-top, 0px)) !important; /* 時計文字との重なりを美しい余白で完全回避 */
-        padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
+        padding-top: max(24px, calc(0.7rem + env(safe-area-inset-top, 0px))) !important; /* 時計文字との重なりを美しい余白で完全回避 */
+        padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)); /* ホームインジケーター対策 */
         z-index: 40;
         overflow: hidden;
       }
       body.discord-ui-mode #serverHeader {
-        padding-top: calc(0.7rem + env(safe-area-inset-top, 0px)) !important;
-        min-height: calc(54px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: max(24px, calc(0.7rem + env(safe-area-inset-top, 0px))) !important;
+        min-height: max(54px, calc(54px + env(safe-area-inset-top, 0px))) !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
         border-bottom: 1px solid rgba(255,255,255,0.05);

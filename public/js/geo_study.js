@@ -70,6 +70,7 @@ let isGeoStudyInitialized = false;
 let leafletMap = null;
 let leafletMarker = null;
 let currentAnswerLatLng = null;
+let currentRoundId = 0;
 
 function openGeoStudy() {
   const container = document.getElementById('geoStudyContainer');
@@ -104,19 +105,28 @@ function closeGeoStudy() {
   if (container) {
     container.classList.add('hidden');
     container.style.display = 'none';
+    
+    // ウィンドウを閉じたときにリセットしておく
+    closeResultOverlay();
+    if (document.getElementById('gs-guess-btn')) {
+        startNewLocation();
+    }
   }
 }
 
 function buildGeoStudyUI(container) {
   container.innerHTML = `
     <div class="flex justify-between items-center p-4 bg-gray-900 border-b border-gray-800 shrink-0">
-      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>地理・景観推測システム</div>
+      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>げっさー</div>
       <button onclick="closeGeoStudy()" class="text-gray-400 hover:text-white p-2 transition"><i class="fas fa-times text-xl"></i></button>
     </div>
     
     <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
       <!-- 写真表示エリア -->
       <div id="gs-photo-container" class="absolute inset-0 z-0 gs-swap-transition" onclick="if(isMapFullscreen) toggleMapSwap()">
+        <!-- Panzoom適用要素 -->
+        <div id="gs-photo-panzoom" class="w-full h-full bg-cover bg-center bg-no-repeat" style="transition: opacity 0.3s ease;"></div>
+        
         <div id="gs-photo-overlay-icon" class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40 hidden cursor-pointer rounded-xl">
            <i class="fas fa-expand text-white text-3xl"></i>
         </div>
@@ -130,19 +140,18 @@ function buildGeoStudyUI(container) {
       <!-- コントロールパネル -->
       <div class="absolute top-4 right-4 z-[999] bg-gray-900/90 backdrop-blur rounded-xl p-3 border border-gray-700 shadow-xl w-48 flex flex-col gap-2">
         <div class="text-xs text-gray-400 font-bold">モード</div>
-        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="startNewLocation()">
-          <option value="photo">写真 (Wiki)</option>
-          <option value="mapillary" disabled>ストリートビュー (準備中)</option>
+        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="photo">写真から推測</option>
         </select>
         <div class="text-xs text-gray-400 font-bold mt-1">難易度</div>
-        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="startNewLocation()">
-          <option value="easy">初級 (有名スポット)</option>
-          <option value="normal">中級 (都市)</option>
-          <option value="hard">上級 (ランダム)</option>
+        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="easy">かんたん（首都など）</option>
+          <option value="normal" selected>ふつう（主要都市）</option>
+          <option value="hard">むずかしい（全地域）</option>
         </select>
         <div class="text-xs text-gray-400 mt-1">ヒント</div>
         <div id="gs-hint-text" class="text-xs text-gray-200 bg-gray-800 p-2 rounded border border-gray-700 max-h-20 overflow-y-auto break-words">読込中...</div>
-        <button onclick="startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
+        <button onclick="closeResultOverlay(); startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
       </div>
 
       <!-- ミニマップ -->
@@ -174,7 +183,7 @@ function buildGeoStudyUI(container) {
             
             <div class="flex gap-3">
               <button onclick="closeResultOverlay()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm">地図を見る</button>
-              <button onclick="startNewLocation(); closeResultOverlay();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm"><i class="fas fa-play mr-1"></i>次へ</button>
+              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm"><i class="fas fa-play mr-1"></i>次へ</button>
             </div>
          </div>
       </div>
@@ -277,7 +286,8 @@ function initMap() {
     if (leafletMarker) {
       leafletMap.removeLayer(leafletMarker);
     }
-    leafletMarker = L.marker(e.latlng).addTo(leafletMap);
+    const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
+    leafletMarker = L.marker(wrappedLatLng).addTo(leafletMap);
     
     const guessBtn = document.getElementById('gs-guess-btn');
     guessBtn.disabled = false;
@@ -290,6 +300,8 @@ function initMap() {
 }
 
 async function startNewLocation() {
+  currentRoundId++;
+  const thisRound = currentRoundId;
   showLoading(true);
   
   // マップのリセット
@@ -305,6 +317,11 @@ async function startNewLocation() {
     leafletMap.removeLayer(resultMarker);
     resultMarker = null;
   }
+  
+  if (isMapFullscreen) {
+      toggleMapSwap();
+  }
+  
   leafletMap.setView([20, 0], 2);
   document.getElementById('gs-guess-btn').disabled = true;
   document.getElementById('gs-status-text').textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
@@ -314,153 +331,135 @@ async function startNewLocation() {
   
   if (mode === 'photo') {
     document.getElementById('gs-photo-container').classList.add('loading');
-    await loadRandomWikipediaPhoto();
-    document.getElementById('gs-photo-container').classList.remove('loading');
+    await loadNewPhoto(thisRound);
   }
   
-  showLoading(false);
+  if (thisRound === currentRoundId) {
+      showLoading(false);
+  }
 }
 
-const EASY_LOCATIONS = [
-  { name: "エッフェル塔, パリ", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower" },
-  { name: "自由の女神, ニューヨーク", lat: 40.6892, lng: -74.0445, q: "Statue of Liberty" },
-  { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji" },
-  { name: "コロッセオ, ローマ", lat: 41.8902, lng: 12.4922, q: "Colosseum" },
-  { name: "オペラハウス, シドニー", lat: -33.8568, lng: 151.2153, q: "Sydney Opera House" },
-  { name: "タージ・マハル, インド", lat: 27.1751, lng: 78.0421, q: "Taj Mahal" },
-  { name: "ピラミッド, エジプト", lat: 29.9792, lng: 31.1342, q: "Great Pyramid of Giza" },
-  { name: "マチュピチュ, ペルー", lat: -13.1631, lng: -72.5450, q: "Machu Picchu" },
-  { name: "タイムズスクエア, NY", lat: 40.7580, lng: -73.9855, q: "Times Square" },
-  { name: "サグラダ・ファミリア, スペイン", lat: 41.4036, lng: 2.1744, q: "Sagrada Família" },
-  { name: "ナイアガラの滝, カナダ", lat: 43.0828, lng: -79.0742, q: "Niagara Falls" },
-  { name: "金閣寺, 京都", lat: 35.0394, lng: 135.7292, q: "Kinkaku-ji" },
-  { name: "サハラ砂漠", lat: 23.4162, lng: 25.6628, q: "Sahara" },
-  { name: "グランドキャニオン, 米国", lat: 36.1070, lng: -112.1130, q: "Grand Canyon" },
-  { name: "マウント・ラシュモア, 米国", lat: 43.8791, lng: -103.4591, q: "Mount Rushmore" }
-];
-
-const NORMAL_LOCATIONS = [
-  { name: "東京, 日本", lat: 35.6762, lng: 139.6503, q: "Tokyo" },
-  { name: "ロンドン, 英国", lat: 51.5074, lng: -0.1278, q: "London" },
-  { name: "ニューヨーク, 米国", lat: 40.7128, lng: -74.0060, q: "New York City" },
-  { name: "パリ, フランス", lat: 48.8566, lng: 2.3522, q: "Paris" },
-  { name: "北京, 中国", lat: 39.9042, lng: 116.4074, q: "Beijing" },
-  { name: "シドニー, 豪州", lat: -33.8688, lng: 151.2093, q: "Sydney" },
-  { name: "リオデジャネイロ, ブラジル", lat: -22.9068, lng: -43.1729, q: "Rio de Janeiro" },
-  { name: "ケープタウン, 南アフリカ", lat: -33.9249, lng: 18.4241, q: "Cape Town" },
-  { name: "モスクワ, ロシア", lat: 55.7558, lng: 37.6173, q: "Moscow" },
-  { name: "バンコク, タイ", lat: 13.7563, lng: 100.5018, q: "Bangkok" },
-  { name: "ベルリン, ドイツ", lat: 52.5200, lng: 13.4050, q: "Berlin" },
-  { name: "ソウル, 韓国", lat: 37.5665, lng: 126.9780, q: "Seoul" },
-  { name: "ローマ, イタリア", lat: 41.9028, lng: 12.4964, q: "Rome" },
-  { name: "ドバイ, UAE", lat: 25.2048, lng: 55.2708, q: "Dubai" },
-  { name: "イスタンブール, トルコ", lat: 41.0082, lng: 28.9784, q: "Istanbul" },
-  { name: "メキシコシティ, メキシコ", lat: 19.4326, lng: -99.1332, q: "Mexico City" },
-  { name: "ブエノスアイレス, アルゼンチン", lat: -34.6037, lng: -58.3816, q: "Buenos Aires" },
-  { name: "シンガポール", lat: 1.3521, lng: 103.8198, q: "Singapore" },
-  { name: "トロント, カナダ", lat: 43.6510, lng: -79.3470, q: "Toronto" },
-  { name: "ムンバイ, インド", lat: 19.0760, lng: 72.8777, q: "Mumbai" }
-];
-
-async function loadRandomWikipediaPhoto() {
+async function loadNewPhoto(roundId) {
   try {
     const difficulty = document.getElementById('gs-difficulty-select') ? document.getElementById('gs-difficulty-select').value : 'easy';
     let loc = null;
     let imgUrl = "";
     
-    if (difficulty === 'hard') {
-        // 上級: WikipediaAPIからランダムな記事（画像＋座標あり）を取得
-        document.getElementById('gs-hint-text').textContent = "ランダムな場所を検索中...";
-        for (let i = 0; i < 5; i++) { // 最大5回トライ
-           const randRes = await fetch(`https://ja.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=10&format=json&origin=*`);
-           const randData = await randRes.json();
-           const randomPages = randData.query.random;
-           
-           for (let rPage of randomPages) {
-               // その記事が座標と画像を持っているかチェック
-               const detailRes = await fetch(`https://ja.wikipedia.org/w/api.php?action=query&prop=coordinates|pageimages&pageids=${rPage.id}&format=json&pithumbsize=1000&origin=*`);
-               const detailData = await detailRes.json();
-               const pageDetail = detailData.query.pages[rPage.id];
-               
-               if (pageDetail.coordinates && pageDetail.coordinates.length > 0 && pageDetail.thumbnail) {
-                   loc = {
-                       name: rPage.title,
-                       lat: pageDetail.coordinates[0].lat,
-                       lng: pageDetail.coordinates[0].lon,
-                       q: rPage.title
-                   };
-                   imgUrl = pageDetail.thumbnail.source;
-                   break;
-               }
-           }
-           if (loc) break;
-        }
-        if (!loc) {
-            // 見つからなかった場合のフォールバック（中級から選ぶ）
-            loc = NORMAL_LOCATIONS[Math.floor(Math.random() * NORMAL_LOCATIONS.length)];
-        }
-    } else {
-        const pool = difficulty === 'normal' ? NORMAL_LOCATIONS : EASY_LOCATIONS;
-        loc = pool[Math.floor(Math.random() * pool.length)];
-    }
-
+    // Auto-generated JS からデータを取得
+    let pool = window.EASY_LOCATIONS || [];
+    if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
+    if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
     
+    // フォールバック（スクリプトがロードされていない場合）
+    if (!pool || pool.length === 0) {
+        pool = [
+            { name: "エッフェル塔, パリ", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
+            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" }
+        ];
+    }
+    
+    loc = pool[Math.floor(Math.random() * pool.length)];
     currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
+    imgUrl = loc.imgUrl;
+    
+    if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
+    
     document.getElementById('gs-result-answer').textContent = `正解: ${loc.name}`;
     
-    if (!imgUrl) {
-        // 画像URLがまだない（Easy/Normalモードの場合）
-        const res = await fetch(`https://ja.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(loc.name.split(',')[0])}&prop=pageimages&format=json&pithumbsize=1000&origin=*`);
-        const data = await res.json();
-        
-        const pages = data.query.pages;
-        for (let pageId in pages) {
-          if (pages[pageId].thumbnail) {
-            imgUrl = pages[pageId].thumbnail.source;
-          }
-        }
-        
-        if (!imgUrl) {
-           const resEn = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(loc.q)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`);
-           const dataEn = await resEn.json();
-           const pagesEn = dataEn.query.pages;
-           for (let pageId in pagesEn) {
-             if (pagesEn[pageId].thumbnail) {
-               imgUrl = pagesEn[pageId].thumbnail.source;
-             }
-           }
-        }
-    }
-
     if (imgUrl) {
-      // 一瞬見えない状態にしてから画像をセットし、クロスフェードさせる
       const photoEl = document.getElementById('gs-photo-container');
+      const panzoomEl = document.getElementById('gs-photo-panzoom');
       photoEl.style.opacity = 0;
+      let safeImgUrl = imgUrl.replace(/'/g, "%27").replace(/"/g, "%22");
+      if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
+      
+      // ユーザーの要望により、軽量化パラメータを削除してWikipediaオリジナル高画質画像を使用する
+      safeImgUrl = safeImgUrl.split("?")[0];
+      
+      // Panzoomがまだ初期化されていなければ初期化する
+      if (!window.geoStudyPanzoom && window.Panzoom) {
+          window.geoStudyPanzoom = Panzoom(panzoomEl, {
+              maxScale: 20,       // 拡大限界を大幅に引き上げ
+              minScale: 1,
+              step: 0.1,          // マウスホイールの刻みを細かくし、滑らかなズームにする
+              contain: 'outside'
+          });
+          
+          const panzoomContainer = panzoomEl.parentElement;
+          panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
+          
+          // ホイールイベントの追加
+          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel);
+          
+          // ダブルクリック（ダブルタップ）でのズーム切り替え
+          let lastTap = 0;
+          panzoomEl.addEventListener('click', (e) => {
+              const currentTime = new Date().getTime();
+              const tapLength = currentTime - lastTap;
+              if (tapLength < 300 && tapLength > 0) {
+                  // ダブルクリック
+                  e.preventDefault();
+                  const currentScale = window.geoStudyPanzoom.getScale();
+                  if (currentScale > 1.2) {
+                      window.geoStudyPanzoom.reset();
+                  } else {
+                      window.geoStudyPanzoom.zoom(2.5, { animate: true });
+                  }
+              }
+              lastTap = currentTime;
+          });
+      }
+      
       setTimeout(() => {
-          photoEl.style.backgroundImage = `url('${imgUrl}')`;
+          if (roundId !== currentRoundId) return;
+          panzoomEl.style.backgroundImage = `url('${safeImgUrl}')`;
           photoEl.style.opacity = 1;
+          photoEl.classList.remove('loading');
+          
+          if (window.geoStudyPanzoom) {
+              window.geoStudyPanzoom.reset(); // 新しい写真になったらズームをリセット
+          }
       }, 50);
       document.getElementById('gs-hint-text').textContent = "この風景・建造物がある場所を地図から推測してください。";
     } else {
-      // 念のためのフォールバック（無限ループ防止）
       document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
     }
   } catch (e) {
     console.error(e);
-    document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+    if (roundId === currentRoundId) {
+        document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+    }
   }
 }
 
 function submitGuess() {
   if (!leafletMarker || !currentAnswerLatLng) return;
   
-  const guessLatLng = leafletMarker.getLatLng();
+  const guessLatLng = leafletMarker.getLatLng().wrap();
+  
+  // 地球一周のバグを防ぐため、経度を補正したコピーを作成する
+  // (例: guessが170度、answerが-170度の場合、最短距離は20度だが、線が340度引かれるのを防ぐ)
+  const drawAnswerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng);
+  let lngDiff = drawAnswerLatLng.lng - guessLatLng.lng;
+  if (lngDiff > 180) {
+      drawAnswerLatLng.lng -= 360;
+  } else if (lngDiff < -180) {
+      drawAnswerLatLng.lng += 360;
+  }
   
   // 距離の計算 (haversine)
-  const distanceKm = Math.round(leafletMap.distance(guessLatLng, currentAnswerLatLng) / 1000);
+  // 地球一周バグ等の影響を受けないように、自前で最短距離を計算
+  const R = 6371; // km
+  const dLat = (drawAnswerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
+  const dLng = (drawAnswerLatLng.lng - guessLatLng.lng) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(drawAnswerLatLng.lat * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distanceKm = Math.round(R * c);
   
   // 正解マーカーと線の描画
-  resultMarker = L.marker(currentAnswerLatLng, {
+  resultMarker = L.marker(drawAnswerLatLng, {
     icon: L.icon({
       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -471,7 +470,7 @@ function submitGuess() {
     })
   }).addTo(leafletMap);
   
-  resultLine = L.polyline([guessLatLng, currentAnswerLatLng], {
+  resultLine = L.polyline([guessLatLng, drawAnswerLatLng], {
     color: '#ef4444',
     weight: 3,
     opacity: 0.8,
@@ -479,7 +478,7 @@ function submitGuess() {
   }).addTo(leafletMap);
   
   // 地図のズーム調整
-  leafletMap.fitBounds(L.latLngBounds(guessLatLng, currentAnswerLatLng).pad(0.2));
+  leafletMap.fitBounds(L.latLngBounds(guessLatLng, drawAnswerLatLng).pad(0.2));
   
   // 結果オーバーレイ表示
   // 数値のアニメーション

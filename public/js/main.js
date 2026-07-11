@@ -1,5 +1,5 @@
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI } from './crypto_helpers.js';
-import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial } from './utils.js';
+import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
@@ -760,7 +760,22 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
               isTokenAutoRefreshEnabled: true
             });
             console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
-          } catch(e) { console.error("AppCheck init error", e); }
+          } catch(e) { 
+            console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカーの可能性)", e); 
+            setTimeout(() => {
+                const toast = document.createElement('div');
+                toast.className = 'fixed bottom-4 right-4 bg-red-600/90 text-white px-4 py-3 rounded-lg shadow-2xl z-[9999] text-sm max-w-sm flex flex-col gap-2 backdrop-blur animate-fade-in-up';
+                toast.innerHTML = `
+                    <div class="flex items-center gap-2 font-bold"><i class="fas fa-exclamation-triangle"></i> 通信セキュリティ確認に失敗しました</div>
+                    <div class="text-xs text-red-100 leading-relaxed">
+                        VPN、広告ブロッカー、またはブラウザのトラッキング防止機能（プライベートリレー等）により、通信の一部が制限されている可能性があります。<br>
+                        一部の機能が使えない場合は、それらを一時的にオフにして再読み込みをお試しください。
+                    </div>
+                    <button class="bg-white/20 hover:bg-white/30 rounded py-1.5 mt-1 font-bold text-xs transition" onclick="this.parentElement.remove()">閉じる</button>
+                `;
+                document.body.appendChild(toast);
+            }, 3000);
+          }
           try {
             db = initializeFirestore(app, {
               localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
@@ -3046,12 +3061,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           name.textContent = member.nickname || "不明なユーザー";
           info.appendChild(name);
 
-          if (member.computedState === 'away') {
-            const statusText = document.createElement("div");
-            statusText.className = "member-status-text";
-            statusText.textContent = "離席中";
-            info.appendChild(statusText);
-          } else if (member.computedState === 'offline') {
+          if (member.computedState === 'away' || member.computedState === 'offline') {
             const statusText = document.createElement("div");
             statusText.className = "member-status-text";
             statusText.textContent = formatTimeAgo(member.last_changed);
@@ -6206,10 +6216,49 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
 
     const imageLightbox = document.getElementById('imageLightbox');
     const lightboxImage = document.getElementById('lightboxImage');
+    
+    // Lightbox用のPanzoom初期化
+    let lightboxPanzoom = null;
+    if (window.Panzoom) {
+        lightboxPanzoom = Panzoom(lightboxImage, {
+            maxScale: 20,       // 拡大倍率の限界を大幅に引き上げ
+            minScale: 1,
+            step: 0.1,          // マウスホイールの刻みを細かくし、大手のような滑らかなズームにする
+            contain: null
+        });
+        
+        const panzoomContainer = lightboxImage.parentElement;
+        panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
+        
+        // マウスホイールによるズーム操作
+        panzoomContainer.addEventListener('wheel', lightboxPanzoom.zoomWithWheel);
+        
+        // ダブルクリック（ダブルタップ）でのズーム切り替え
+        let lastTap = 0;
+        lightboxImage.addEventListener('click', (e) => {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < 300 && tapLength > 0) {
+                // ダブルクリック
+                e.preventDefault();
+                const currentScale = lightboxPanzoom.getScale();
+                if (currentScale > 1.2) {
+                    lightboxPanzoom.reset();
+                } else {
+                    lightboxPanzoom.zoom(2.5, { animate: true });
+                }
+            }
+            lastTap = currentTime;
+        });
+    }
+    
     function closeLightbox() {
       imageLightbox.style.display = 'none';
       lightboxImage.src = '';
       lightboxCurrentFile = null;
+      if (lightboxPanzoom) {
+          lightboxPanzoom.reset();
+      }
     }
     imageLightbox.addEventListener('click', (e) => { if (e.target === imageLightbox) closeLightbox(); });
     document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
@@ -6305,11 +6354,13 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       }
     });
 
-    messageInput.addEventListener("paste", (e) => {
+    messageInput.addEventListener("paste", async (e) => {
       const items = (e.clipboardData || e.originalEvent.clipboardData).items;
       for (let i = 0; i < items.length; i++) {
         if (items[i].kind === 'file') {
-          const f = items[i].getAsFile();
+          let f = items[i].getAsFile();
+          if (!f) return;
+          f = await processHeicFile(f);
           if (!checkFileAllowed(f)) return;
           const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
           if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは10MBまでです", "error"); return; }
@@ -6323,11 +6374,27 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     function updateFilePreview() {
       const progressBar = document.getElementById("uploadProgressBar");
       const progressFill = document.getElementById("uploadProgressFill");
+      const filePreviewImage = document.getElementById("filePreviewImage");
+      
+      if (filePreviewImage) {
+        filePreviewImage.classList.add("hidden");
+        if (filePreviewImage.src && filePreviewImage.src.startsWith("blob:")) {
+          URL.revokeObjectURL(filePreviewImage.src);
+        }
+        filePreviewImage.src = "";
+      }
+
       if (attachedFile) {
         const sizeStr = attachedFile.size >= 1024 * 1024
           ? `${(attachedFile.size / (1024 * 1024)).toFixed(1)} MB`
           : `${(attachedFile.size / 1024).toFixed(1)} KB`;
         filePreviewName.textContent = `${attachedFile.name} (${sizeStr})`;
+        
+        if (filePreviewImage && attachedFile.type && attachedFile.type.startsWith("image/")) {
+          filePreviewImage.src = URL.createObjectURL(attachedFile.file);
+          filePreviewImage.classList.remove("hidden");
+        }
+        
         filePreviewContainer.classList.remove("hidden");
         progressBar.classList.add("hidden");
         progressFill.style.width = "0%";
@@ -6363,9 +6430,15 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     });
 
     fileAttachInput.addEventListener("change", async (e) => {
-      const f = e.target.files[0];
+      let f = e.target.files[0];
       if (!f) return;
       fileAttachInput.value = "";
+      
+      const btnIcon = fileAttachButton.querySelector("i");
+      if (btnIcon) btnIcon.className = "fas fa-spinner fa-spin";
+      f = await processHeicFile(f);
+      if (btnIcon) btnIcon.className = "fas fa-plus";
+
       if (!checkFileAllowed(f)) return;
       // 画像・その他ファイルとも共通: ここではアップロードせず添付予約だけ。
       // 実際のCloudflare(KV)へのアップロードは「送信ボタンを押した時」に行う。
@@ -6392,8 +6465,9 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       e.preventDefault(); dragCounter = 0;
       dropOverlay.classList.remove("active");
       if (!currentRoomId) return;
-      const f = e.dataTransfer.files[0];
+      let f = e.dataTransfer.files[0];
       if (!f) return;
+      f = await processHeicFile(f);
       if (!checkFileAllowed(f)) return;
       const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
       if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
@@ -8846,7 +8920,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             } catch (tokenErr) {
               console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
             }
+          } else {
+            console.log('📱 [通知] 通知権限が許可されていないため、プッシュ通知の登録をスキップしました (現在の状態: ' + permission + ')');
           }
+        } else {
+          console.log('📱 [通知] 通知設定がオフ、またはお使いのブラウザが通知に対応していません');
         }
 
         // フォアグラウンドメッセージ受信
