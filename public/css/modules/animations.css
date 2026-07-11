@@ -80,7 +80,7 @@
       background: #1f2937;
       color: white;
       padding: 0.875rem 1.25rem;
-      padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+      padding-top: calc(0.875rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px))));
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -382,7 +382,7 @@
     .mobile-profile-header {
       background: #1f2937;
       padding: 1.25rem;
-      padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+      padding-top: calc(1.25rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px))));
       display: flex;
       align-items: center;
       gap: 14px;
@@ -507,7 +507,7 @@
       align-items: center;
       gap: 12px;
       padding: 0.875rem 1rem;
-      padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+      padding-top: calc(0.875rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px))));
       flex-shrink: 0;
     }
     .mobile-detail-back {

@@ -107,21 +107,22 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* アイコン行の高さ(元の38px)。アイコンは .mobile-nav-tab で下寄せにしているので、
-         この高さの中で自然に上側へ少し余白ができる。 */
-      --mnav-h: 38px;
-      /* ホームインジケータ（端末下部の棒）用の下余白。0にしてアイコンを最下端へ寄せる。
-         （診断で gapBelowNav=0 を確認済み。これ以上削れる余白はこのクリアランスのみ） */
-      --mnav-safe: 0px;
-      /* ナビ全体の高さ = アイコン行 + 安全領域。画面側の余白計算にも使う */
-      --mnav-total: calc(var(--mnav-h) + var(--mnav-safe));
+      /* すべてのiPhone (SEから17まで) をサポートする堅牢なSafe Area変数 */
+      --safe-top: max(24px, env(safe-area-inset-top, 0px));
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+
+      /* ボトムナビゲーションの高さ計算 */
+      --mnav-base-h: 56px; /* タッチしやすい標準的な高さ */
+      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
     }
     #mobileBottomNav {
       display: none;
       flex: 0 0 var(--mnav-total) !important;
       width: 100%;
       height: var(--mnav-total) !important;
-      padding: 0 0 var(--mnav-safe) 0 !important;
+      padding: 0 0 var(--safe-bottom) 0 !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
@@ -137,7 +138,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: center; /* アイコンを中央に配置し、下部余白のバグを防ぐ */
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
@@ -176,7 +177,7 @@
     #mobileProfileScreen,
     #mobileNotifScreen {
       inset: 0 0 var(--mnav-total) 0 !important;
-      padding-bottom: max(32px, calc(24px + env(safe-area-inset-bottom, 0px))) !important;
+      padding-bottom: 24px !important;
       box-sizing: border-box;
     }
     body.has-mobile-nav #mobileProfileScreen,
@@ -469,11 +470,7 @@
         background-color: #1a202c !important;
       }
 
-      /* ボトムナビゲーションのSafe Area動的パディング最適化 */
-      #mobileBottomNav {
-        height: max(54px, calc(38px + env(safe-area-inset-bottom, 0px))) !important;
-        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
-      }
+      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
 
       /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
          「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
@@ -566,7 +563,7 @@
       #joinServerModal:not(.hidden) .modal-box,
       #joinRoomPasswordModal:not(.hidden) .modal-box,
       #deleteRoomConfirmModal:not(.hidden) .modal-box {
-        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 90px 24px !important;
+        padding: var(--safe-top) 24px 90px 24px !important;
         overflow-y: auto !important;
         justify-content: center !important;
       }
@@ -601,7 +598,7 @@
         top: 0 !important;
         z-index: 60 !important;
         width: 100% !important;
-        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 20px 24px !important;
+        padding: var(--safe-top) 24px 20px 24px !important;
         background: rgba(255, 255, 255, 0.94) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
@@ -655,7 +652,7 @@
         z-index: 40 !important;
         width: 100% !important;
         /* ★iPhone 17のステータスバーやノッチを完全に避け、美しいゆとりを持たせる神余白設定 */
-        padding: max(26px, env(safe-area-inset-top, 26px)) 24px 20px 24px !important;
+        padding: calc(var(--safe-top) + 8px) 24px 20px 24px !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
@@ -682,10 +679,10 @@
 
       /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
       .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
-      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4,
+      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\\.5.right-4,
       .modal-overlay:not(.hidden) .modal-box button.modal-close {
         /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
-        top: max(24px, env(safe-area-inset-top, 24px)) !important;
+        top: calc(var(--safe-top) + 4px) !important;
         right: 22px !important;
         width: 38px !important;
         height: 38px !important;

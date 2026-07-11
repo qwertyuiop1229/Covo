@@ -1282,7 +1282,7 @@
       <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
       <!-- Discord風 左側サーバーナビゲーションバー -->
         <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
-          style="padding-top: max(26px, calc(12px + env(safe-area-inset-top, 0px))); padding-bottom: max(16px, calc(8px + env(safe-area-inset-bottom, 0px)));">
+          style="padding-top: calc(12px + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))); padding-bottom: max(16px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));">
           <!-- ダイレクトメッセージ等/ホームアイコン (Discord風) -->
           <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="サーバー一覧 / ホーム">
             <div class="discord-server-pill" id="discordHomePill"></div>
@@ -1379,7 +1379,7 @@
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
           <div id="currentRoomHeader"
             class="bg-gray-200 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center"
-            style="padding: max(24px, calc(0.75rem + env(safe-area-inset-top, 0px))) 0.75rem 0.75rem 0.75rem;">
+            style="padding: calc(0.75rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))) 0.75rem 0.75rem 0.75rem;">
             <button id="mobileBackButton"
               class="text-gray-600 hover:text-gray-800 hidden items-center p-3 -ml-3 mr-1 rounded-full"
               style="display:none;"><i class="fas fa-arrow-left"></i></button>
@@ -1728,7 +1728,7 @@
   <!-- PDFライトボックス -->
   <div id="pdfLightbox" class="fixed inset-0 z-[9998] flex-col bg-black/90" style="display:none; flex-direction:column;">
     <div class="flex items-center justify-between px-3 bg-gray-900 flex-shrink-0"
-      style="padding-top: max(24px, calc(0.75rem + env(safe-area-inset-top, 0px))); padding-bottom: 0.75rem;">
+      style="padding-top: calc(0.75rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))); padding-bottom: 0.75rem;">
       <button id="pdfLightboxClose"
         class="text-gray-400 hover:text-white w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 flex-shrink-0">
         <i class="fas fa-arrow-left text-lg"></i>
@@ -1798,7 +1798,7 @@
   </div>
 
   <!-- 検査モード中の常設バー（どの画面でも終了できる） -->
-  <div id="inspectModeBar" data-inspect-ignore="1" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:max(24px, calc(16px + env(safe-area-inset-bottom,0px)));z-index:100001;align-items:center;gap:10px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:8px 10px 8px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);">
+  <div id="inspectModeBar" data-inspect-ignore="1" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:max(24px, calc(16px + var(--safe-bottom, env(safe-area-inset-bottom,0px))));z-index:100001;align-items:center;gap:10px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:8px 10px 8px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);">
     <span style="color:#93c5fd;font-size:0.78rem;font-weight:700;display:flex;align-items:center;gap:6px;"><i class="fas fa-crosshairs"></i>検査モード</span>
     <button class="" data-inspect-ignore="1" onclick="setInspectMode(false)" style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:999px;font-size:0.78rem;font-weight:700;">終了</button>
   </div>
@@ -1886,7 +1886,7 @@
 
   <!-- アプリ内通知スタック -->
   <div id="notifStack" class="fixed bottom-5 right-5 z-[9997] flex flex-col gap-2 items-end"
-    style="pointer-events:none; bottom: max(32px, calc(12px + env(safe-area-inset-bottom, 12px)));"></div>
+    style="pointer-events:none; bottom: max(32px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 12px))));"></div>
 
   <!-- サーバーカードコンテキストメニュー -->
   <div id="serverContextMenu" class="hidden fixed bg-white rounded-xl border border-gray-100 py-1.5 z-[9999] min-w-44 modal-box animate-pop-in"
@@ -2035,7 +2035,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailProfile')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">プロフィール編集</span>
     </div>
-    <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + env(safe-area-inset-bottom, 0px)))">
+    <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:1.5rem">
         <div id="avatarUploadTriggerMobile" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#374151,#111827);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:700;color:white;position:relative;cursor:pointer;flex-shrink:0">
           <span id="mobileAvatarText"></span>
@@ -2061,7 +2061,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailNotif')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">通知設定</span>
     </div>
-    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + env(safe-area-inset-bottom, 0px)))">
+    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-volume-up"></i></div>
@@ -2083,7 +2083,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAppInfo')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">アプリ情報</span>
     </div>
-    <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + env(safe-area-inset-bottom, 0px)))">
+    <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:1.5rem 0 1.75rem;">
         <img src="img/icon-192x192.png" alt="Covo" style="width:72px;height:72px;border-radius:18px;box-shadow:0 2px 12px rgba(0,0,0,0.12);" onerror="this.style.display='none'">
         <div style="text-align:center;">
@@ -2126,7 +2126,7 @@
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdminTools')"><i class="fas fa-chevron-left"></i></div>
       <span class="mobile-detail-title">管理者ツール</span>
     </div>
-    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + env(safe-area-inset-bottom, 0px)))">
+    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
       <div class="mobile-settings-group">
         <div class="mobile-settings-row">
           <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-crosshairs"></i></div>
@@ -2167,7 +2167,7 @@
 
   <!-- ===== Mobile Notifications Screen ===== -->
   <div id="mobileNotifScreen">
-    <div class="mobile-detail-header" style="padding-top:max(24px, calc(0.875rem + env(safe-area-inset-top,0px)))">
+    <div class="mobile-detail-header" style="padding-top:calc(0.875rem + var(--safe-top, max(24px, env(safe-area-inset-top,0px))))">
       <span class="mobile-detail-title" style="font-size:1rem">通知</span>
     </div>
     <div style="padding:1rem">
