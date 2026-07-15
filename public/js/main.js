@@ -170,12 +170,17 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
        ---------------------------------------------------------------------
        アプリのJSが正常に実行開始されたことをTauriに知らせ、誤ったリカバリーポップアップを防ぐ
        ===================================================================== */
-    setTimeout(() => {
+    let _tauriNotifyRetryCount = 0;
+    const _sendEarlyNotify = () => {
       const invoke = window.__TAURI__?.core?.invoke;
       if (invoke) {
         invoke('notify_app_loaded').catch(e => console.warn("Failed early notify_app_loaded:", e));
+      } else if (_tauriNotifyRetryCount < 20) {
+        _tauriNotifyRetryCount++;
+        setTimeout(_sendEarlyNotify, 500);
       }
-    }, 1000);
+    };
+    setTimeout(_sendEarlyNotify, 500);
 
     /* =====================================================================
        E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
@@ -778,7 +783,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           }
           try {
             db = initializeFirestore(app, {
-              localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+              localCache: persistentLocalCache()
             });
           } catch (e) {
             console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
@@ -818,56 +823,47 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
             await user.getIdToken();
 
-            try {
-              // Firestoreの adminList から自身のメールアドレスがあるかチェック
-              const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
-              const adminSnap = await getDoc(adminDocRef);
-              if (adminSnap.exists()) {
-                const data = adminSnap.data();
-                const hasEmail = data.emails && data.emails.includes(user.email);
-                const hasUid = data.admins && data.admins.includes(user.uid);
-                isAdmin = hasEmail || hasUid;
-              } else {
-                isAdmin = false;
-              }
-            } catch (adminError) {
-              console.error("Admin check error:", adminError);
-              isAdmin = false;
+            // 直列処理による遅延を防ぐため、初期化に必要なデータを一斉取得
+            const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
+            const configRef = doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig");
+            const listAdminRef = doc(db, `artifacts/${appId}/settings`, "listAdminList");
+            const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+
+            const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await Promise.all([
+              getDoc(adminDocRef).catch(e => { console.error("Admin check error:", e); return null; }),
+              getDoc(configRef).catch(e => { console.error("allowedEmails check error:", e); return null; }),
+              getDoc(listAdminRef).catch(e => { console.error("list admin check error:", e); return null; }),
+              getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
+            ]);
+
+            isAdmin = false;
+            if (adminSnap && adminSnap.exists()) {
+              const data = adminSnap.data();
+              const hasEmail = data.emails && data.emails.includes(user.email);
+              const hasUid = data.admins && data.admins.includes(user.uid);
+              isAdmin = hasEmail || hasUid;
             }
 
             // 非管理者は allowedEmails を確認してアクセス制御
+            isListAdmin = false;
             if (!isAdmin) {
-              try {
-                const configRef = doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig");
-                const configSnap = await getDoc(configRef);
-                if (configSnap.exists() && configSnap.data().active) {
-                  const allowedRef = doc(db, `artifacts/${appId}/allowedEmails`, user.email);
-                  const allowedSnap = await getDoc(allowedRef);
-                  if (!allowedSnap.exists()) {
-                    await signOut(auth);
-                    authMessage.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
-                    loadingOverlay.classList.add("hidden");
-                    return;
-                  }
+              if (configSnap && configSnap.exists() && configSnap.data().active) {
+                const allowedRef = doc(db, `artifacts/${appId}/allowedEmails`, user.email);
+                const allowedSnap = await getDoc(allowedRef).catch(e => null);
+                if (!allowedSnap || !allowedSnap.exists()) {
+                  await signOut(auth);
+                  authMessage.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
+                  loadingOverlay.classList.add("hidden");
+                  return;
                 }
-              } catch (e) {
-                console.error("allowedEmails check error:", e);
               }
 
               // リスト管理者チェック
-              try {
-                const listAdminRef = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-                const listAdminSnap = await getDoc(listAdminRef);
-                if (listAdminSnap.exists()) {
-                  const data = listAdminSnap.data();
-                  const hasEmail = data.emails && data.emails.includes(user.email);
-                  const hasUid = data.admins && data.admins.includes(user.uid);
-                  isListAdmin = hasEmail || hasUid;
-                } else {
-                  isListAdmin = false;
-                }
-              } catch (e) {
-                isListAdmin = false;
+              if (listAdminSnap && listAdminSnap.exists()) {
+                const data = listAdminSnap.data();
+                const hasEmail = data.emails && data.emails.includes(user.email);
+                const hasUid = data.admins && data.admins.includes(user.uid);
+                isListAdmin = hasEmail || hasUid;
               }
             }
 
@@ -899,10 +895,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
               else adminToolsSec.classList.add("hidden");
             }
 
-            const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-            const userProfileSnap = await getDoc(userProfileRef);
-
-            if (userProfileSnap.exists() && userProfileSnap.data().nickname) {
+            if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
               userNickname = userProfileSnap.data().nickname;
               userAvatarUrl = userProfileSnap.data().avatarUrl || null;
 

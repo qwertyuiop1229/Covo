@@ -868,17 +868,17 @@ pub fn run() {
 
             let _ = app.global_shortcut().register(ctrl_shift_s);
 
-            // 正常起動の非同期監視タスク (15秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
+            // 正常起動の非同期監視タスク (30秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
             let monitor_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
                 let loaded = {
                     let state = monitor_handle.state::<NotificationState>();
                     let val = *state.app_loaded.lock().unwrap();
                     val
                 };
                 if !loaded {
-                    log::warn!("App loaded signal not received within 15 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
+                    log::warn!("App loaded signal not received within 30 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
                     if let Some(main_win) = monitor_handle.get_webview_window("main") {
                         let _ = main_win.hide();
                     }

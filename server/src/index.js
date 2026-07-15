@@ -248,6 +248,34 @@ async function handleJoinServer(request, env) {
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
     const projectId = env.FIREBASE_PROJECT_ID;
 
+    // 既に参加済みかチェックし、参加済みならそのまま成功とする
+    const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+    const srvData = await srvRes.json();
+    let alreadyJoined = false;
+    if (!srvData.error && srvData.fields && srvData.fields.joinedUsers && srvData.fields.joinedUsers.arrayValue && srvData.fields.joinedUsers.arrayValue.values) {
+      alreadyJoined = srvData.fields.joinedUsers.arrayValue.values.some(v => v.stringValue === userId);
+    }
+    
+    if (alreadyJoined) {
+      // 既にサーバーに参加済みなので、RTDBのみ同期して終了
+      if (rtdbUrl) {
+        try {
+          const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+          const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
+          await fetch(rtdbTargetUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(true)
+          });
+        } catch (e) {
+          console.error("RTDB Update Error:", e);
+        }
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    }
+
     // パスワードまたは招待コードの検証
     let valid = false;
 

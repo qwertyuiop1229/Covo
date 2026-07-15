@@ -89,7 +89,7 @@ service cloud.firestore {
         allow get: if isAuthenticated();
         allow create: if isServerAdmin(appId, request.resource.data.serverId);
         allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
 
       // 2. ユーザー情報

@@ -209,13 +209,13 @@
       }
     });
 
-    // 8秒間のウォッチドッグタイマー：タイムアウト時に強制的にリカバリーパネルを展開
+    // 15秒間のウォッチドッグタイマー：タイムアウト時に強制的にリカバリーパネルを展開
     setTimeout(function() {
       if (!window.__app_fully_loaded__) {
-        console.warn('[Watchdog Timer] 8秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
+        console.warn('[Watchdog Timer] 15秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
         showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（フリーズまたは通信遮断の可能性）', null);
       }
-    }, 8000);
+    }, 15000);
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
