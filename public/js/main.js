@@ -101,6 +101,7 @@ console.error = function(...args) { _pushLog('ERR', args); _orgErr.apply(console
       getFirestore,
       initializeFirestore,
       persistentLocalCache,
+      persistentSingleTabManager,
       persistentMultipleTabManager,
       memoryLocalCache,
       doc,
@@ -805,7 +806,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           }
           try {
             db = initializeFirestore(app, {
-              localCache: persistentLocalCache()
+              localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({ forceOwnership: true }) })
             });
           } catch (e) {
             console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
@@ -8224,6 +8225,8 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     // ===== アプリ内通知スタック =====
         
     async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
+      if (document.hasFocus() && roomId === currentRoomId) return;
+      
       // 1. 本文が暗号化されている場合は、非同期で確実に復号を実行
       if (typeof isEncrypted === 'function' && isEncrypted(text)) {
         try {
@@ -8941,8 +8944,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         // 通知権限の取得（ブラウザ通知トグルが有効な場合のみ）
         const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
         if (browserEnabled && 'Notification' in window) {
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
+          if (Notification.permission === 'default') {
+             console.log('📱 [通知] ブラウザ通知権限が未設定です。ユーザーアクションによる設定を待機します。');
+             return; // Safari等でジェスチャー無しでリクエストするとブロックされるため、ここではリクエストしない
+          }
+          if (Notification.permission === 'granted') {
             try {
               // iOS 18+対策: SW が完全に有効化されるまで待つ
               const swReg = await navigator.serviceWorker.ready;
@@ -9030,6 +9036,9 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     async function setBrowserPushEnabled(enabled) {
       if (isTauri) return;
       if (enabled) {
+        if ('Notification' in window && Notification.permission === 'default') {
+            await Notification.requestPermission();
+        }
         // 再度トークンを取得して Firestore に登録
         fcmInitialized = false;
         await initializeFCM();
