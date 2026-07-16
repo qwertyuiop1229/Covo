@@ -4,6 +4,26 @@ import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from '
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
+// === コンソールログの自動収集 ===
+window._covoLogs = [];
+const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
+const _pushLog = (type, args) => {
+  try {
+    const msg = Array.from(args).map(a => {
+        if (a instanceof Error) return a.stack || a.message;
+        if (typeof a === 'object') {
+            try { return JSON.stringify(a); } catch(err) { return String(a); }
+        }
+        return String(a);
+    }).join(' ');
+    window._covoLogs.push(`[${type}] ${msg}`);
+    if (window._covoLogs.length > 50) window._covoLogs.shift();
+  } catch(e){}
+};
+console.log = function(...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
+console.warn = function(...args) { _pushLog('WARN', args); _orgWarn.apply(console, args); };
+console.error = function(...args) { _pushLog('ERR', args); _orgErr.apply(console, args); };
+
 // === フィードバック機能 ===
     window.openFeedbackModal = function() {
       document.getElementById('feedbackContent').value = '';
@@ -34,7 +54,9 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
           email: auth.currentUser?.email || '不明',
           createdAt: serverTimestamp(),
           status: 'open',
-          userAgent: navigator.userAgent
+          userAgent: navigator.userAgent,
+          screenSize: `${window.innerWidth}x${window.innerHeight}`,
+          consoleLogs: window._covoLogs.join('\n')
         });
         window.closeFeedbackModal();
         alertMessage("ご報告ありがとうございました。運営チームに送信されました。", "success");
@@ -1143,39 +1165,66 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           const fb = d.data();
           fb.id = d.id;
           const item = document.createElement("div");
-          item.className = "p-3 bg-white border border-gray-200 rounded-xl shadow-sm text-sm flex flex-col gap-2 relative group";
+          item.className = "p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm text-sm flex flex-col gap-2 relative group";
           
           const dt = fb.createdAt && typeof fb.createdAt.toDate === 'function' ? fb.createdAt.toDate().toLocaleString() : "不明";
           
           let catLabel = fb.category;
-          let catColor = "text-gray-500 bg-gray-100";
-          if (fb.category === 'bug') { catLabel = "バグ"; catColor = "text-red-600 bg-red-100"; }
-          if (fb.category === 'feature') { catLabel = "要望"; catColor = "text-blue-600 bg-blue-100"; }
+          let catColor = "text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-300";
+          if (fb.category === 'bug') { catLabel = "バグ"; catColor = "text-red-600 bg-red-100 dark:bg-red-900/40 dark:text-red-400"; }
+          if (fb.category === 'feature') { catLabel = "要望"; catColor = "text-blue-600 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-400"; }
           
           const isClosed = fb.status === 'closed';
           const titleEsc = escapeHtml(fb.content.substring(0, 50).replace(/\n/g, ' '));
           
-          item.innerHTML = `
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${catLabel}</span>
-                <span class="text-xs text-gray-400">${dt}</span>
-                ${isClosed ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-green-600 bg-green-100">対応済</span>' : ''}
-              </div>
-              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button class="fb-issue-btn text-xs px-2 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 transition" title="GitHub Issueを作成"><i class="fab fa-github"></i></button>
-                <button class="fb-close-btn text-xs px-2 py-1 ${isClosed ? 'bg-gray-300 text-gray-600' : 'bg-green-500 text-white'} rounded hover:opacity-80 transition">${isClosed ? '未対応に戻す' : '対応済にする'}</button>
-                <button class="fb-del-btn text-xs px-2 py-1 bg-red-50 text-red-500 rounded hover:bg-red-100 transition"><i class="fas fa-trash"></i></button>
-              </div>
+          const detailsHtml = `
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400 border-t dark:border-gray-700 pt-2 hidden fb-details-area">
+              <p><strong>Screen:</strong> ${escapeHtml(fb.screenSize || '不明')}</p>
+              <p><strong>UserAgent:</strong> ${escapeHtml(fb.userAgent || '不明')}</p>
+              <div class="mt-2 bg-gray-900 text-green-400 p-2 rounded-lg max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] break-all">${escapeHtml(fb.consoleLogs || 'ログなし')}</div>
             </div>
-            <p class="text-gray-700 whitespace-pre-wrap break-words mt-1 text-[13px] bg-gray-50 p-2 rounded">${escapeHtml(fb.content)}</p>
-            <div class="text-[10px] text-gray-400">By: ${escapeHtml(fb.email || fb.createdBy || '不明')}</div>
           `;
           
+          item.innerHTML = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 cursor-pointer fb-toggle-details">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${catLabel}</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500">${dt}</span>
+                ${isClosed ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/40 dark:text-green-400">対応済</span>' : ''}
+              </div>
+              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button class="fb-copy-btn text-xs px-2 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 transition" title="Markdown形式でコピー"><i class="fas fa-copy"></i></button>
+                <button class="fb-issue-btn text-xs px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 transition" title="GitHub Issueを作成"><i class="fab fa-github"></i></button>
+                <button class="fb-close-btn text-xs px-2 py-1 ${isClosed ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300' : 'bg-green-500 text-white'} rounded hover:opacity-80 transition">${isClosed ? '未対応に戻す' : '対応済にする'}</button>
+                <button class="fb-del-btn text-xs px-2 py-1 bg-red-50 dark:bg-red-900/30 text-red-500 rounded hover:bg-red-100 dark:hover:bg-red-900/60 transition"><i class="fas fa-trash"></i></button>
+              </div>
+            </div>
+            <p class="text-gray-700 dark:text-gray-200 whitespace-pre-wrap break-words mt-1 text-[13px] bg-gray-50 dark:bg-gray-900 p-2 rounded cursor-pointer fb-toggle-details">${escapeHtml(fb.content)}</p>
+            <div class="text-[10px] text-gray-400 mt-1">By: ${escapeHtml(fb.email || fb.createdBy || '不明')}</div>
+            ${detailsHtml}
+          `;
+          
+          const markdownBody = `**投稿者**: ${fb.email || fb.createdBy}\n**日時**: ${dt}\n\n**内容**:\n${fb.content}\n\n---\n**環境情報**\n- Screen: ${fb.screenSize || '不明'}\n- UserAgent: ${fb.userAgent || '不明'}\n\n**Console Logs**\n\`\`\`text\n${fb.consoleLogs || 'ログなし'}\n\`\`\``;
+          
+          item.querySelectorAll(".fb-toggle-details").forEach(el => {
+              el.addEventListener("click", () => {
+                  const area = item.querySelector(".fb-details-area");
+                  area.classList.toggle("hidden");
+              });
+          });
+
+          item.querySelector(".fb-copy-btn").addEventListener("click", () => {
+             navigator.clipboard.writeText(markdownBody).then(() => {
+                 alertMessage("Markdown形式でコピーしました", "success");
+             }).catch(err => {
+                 console.error("Copy failed", err);
+                 alertMessage("コピーに失敗しました", "error");
+             });
+          });
+
           item.querySelector(".fb-issue-btn").addEventListener("click", () => {
-             const issueBody = `**投稿者**: ${fb.email || fb.createdBy}\n**日時**: ${dt}\n\n**内容**:\n${fb.content}`;
              const issueTitle = `[${catLabel}] ${titleEsc}...`;
-             const url = `https://github.com/qwertyuiop1229/Covo/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(issueBody)}`;
+             const url = `https://github.com/qwertyuiop1229/Covo/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(markdownBody)}`;
              window.open(url, '_blank');
           });
           
@@ -5219,13 +5268,19 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
       const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
       const serverData = serverSnap.data();
-      const members = serverData.joinedUsers || [];
+      const rawMembers = serverData.joinedUsers || [];
+      const members = [...new Set(rawMembers)];
       const admins = serverData.serverAdmins || [];
 
       listEl.innerHTML = "";
-      for (const uid of members) {
-        const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/profiles`, uid));
-        const profile = profileSnap.exists() ? profileSnap.data() : { nickname: uid.substring(0, 8) };
+      
+      const profileSnaps = await Promise.all(
+        members.map(uid => getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/profiles`, uid)).catch(() => null))
+      );
+
+      members.forEach((uid, index) => {
+        const profileSnap = profileSnaps[index];
+        const profile = (profileSnap && profileSnap.exists()) ? profileSnap.data() : { nickname: uid.substring(0, 8) };
         const isAdmin_ = admins.includes(uid);
         const item = document.createElement("div");
         item.className = "flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg mb-2";
@@ -5251,7 +5306,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           if (kb) { kb.dataset.uid = uid; }
         }
         listEl.appendChild(item);
-      }
+      });
 
       // イベント
       listEl.querySelectorAll(".toggle-admin-btn").forEach(btn => {
@@ -6236,16 +6291,24 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
                 e.preventDefault();
                 const currentScale = lightboxPanzoom.getScale();
                 if (currentScale > 1.2) {
-                    lightboxPanzoom.reset();
+                    lightboxPanzoom.reset({ animate: true });
                 } else {
-                    lightboxPanzoom.zoom(2.5);
+                    let clientX, clientY;
+                    if (e.changedTouches && e.changedTouches.length > 0) {
+                        clientX = e.changedTouches[0].clientX;
+                        clientY = e.changedTouches[0].clientY;
+                    } else {
+                        clientX = e.clientX;
+                        clientY = e.clientY;
+                    }
+                    lightboxPanzoom.zoomToPoint(2.5, { clientX, clientY }, { animate: true });
                 }
             }
             lastTap = currentTime;
         };
         
         lightboxImage.addEventListener('touchend', (e) => {
-            if (e.touches && e.touches.length > 0) return;
+            if (e.touches && e.touches.length > 0) return; // ピンチ中は無視
             handleDoubleTap(e);
         });
         lightboxImage.addEventListener('click', (e) => {
