@@ -45,21 +45,29 @@ export function openAvatarLightbox(url) {
 export function playNotificationSound() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = ctx.currentTime;
-    const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6 の和音チャイム
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + i * 0.09);
-      gain.gain.setValueAtTime(0, now + i * 0.09);
-      gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + i * 0.09);
-      osc.stop(now + i * 0.09 + 0.5);
-    });
-    setTimeout(() => ctx.close(), 1500);
+    // ブラウザのオートプレイポリシー対応: suspend状態のContextを再開してから使用する
+    const play = () => {
+      const now = ctx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6 の和音チャイム
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.5);
+      });
+      setTimeout(() => ctx.close(), 1500);
+    };
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
   } catch (e) { }
 }

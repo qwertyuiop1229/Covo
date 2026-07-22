@@ -911,16 +911,19 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
               }
             }
 
-            // 管理者ツール（開発者向け診断）は「全体管理者(isAdmin)」のみ表示。リスト管理者には出さない。
-            const adminToolsSec = document.getElementById("mobileAdminToolsSection");
-            if (adminToolsSec) {
-              if (isAdmin) adminToolsSec.classList.remove("hidden");
-              else adminToolsSec.classList.add("hidden");
-            }
+
 
             if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
               userNickname = userProfileSnap.data().nickname;
               userAvatarUrl = userProfileSnap.data().avatarUrl || null;
+              
+              // ★ 既存ユーザーのマイグレーション：ログイン時に必ずemailをルートに保存
+              const userRef = doc(db, `artifacts/${appId}/users`, userId);
+              setDoc(userRef, { 
+                email: user.email, 
+                nickname: userNickname, 
+                avatarUrl: userAvatarUrl 
+              }, { merge: true }).catch(console.error);
 
               headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
               updateUserPanelUI();
@@ -1122,8 +1125,6 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         { id: "adminTabAllowedBtn", content: "adminTabAllowedContent", key: "allowed" },
         { id: "adminTabAdminsBtn", content: "adminTabAdminsContent", key: "admins" },
         { id: "adminTabListAdminsBtn", content: "adminTabListAdminsContent", key: "listAdmins" },
-        { id: "adminTabStorageBtn", content: "adminTabStorageContent", key: "storage" },
-        { id: "adminTabFeedbacksBtn", content: "adminTabFeedbacksContent", key: "feedbacks" },
       ];
       tabs.forEach(t => {
         const btn = document.getElementById(t.id);
@@ -1132,21 +1133,22 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         if (t.key === tab) {
           btn.classList.replace("border-transparent", "border-gray-900");
           btn.classList.replace("text-gray-400", "text-gray-900");
+          // also support dark mode replacements
+          btn.classList.replace("dark:border-transparent", "dark:border-gray-300");
+          btn.classList.replace("dark:text-gray-400", "dark:text-gray-200");
           cnt.classList.remove("hidden");
         } else {
           btn.classList.replace("border-gray-900", "border-transparent");
           btn.classList.replace("text-gray-900", "text-gray-400");
+          btn.classList.replace("dark:border-gray-300", "dark:border-transparent");
+          btn.classList.replace("dark:text-gray-200", "dark:text-gray-400");
           cnt.classList.add("hidden");
         }
       });
-      if (tab === "storage") loadStorageStats();
-      if (tab === "feedbacks") loadAdminFeedbacks();
     }
     document.getElementById("adminTabAllowedBtn").addEventListener("click", () => switchAdminTab("allowed"));
     document.getElementById("adminTabAdminsBtn").addEventListener("click", () => switchAdminTab("admins"));
     document.getElementById("adminTabListAdminsBtn").addEventListener("click", () => switchAdminTab("listAdmins"));
-    document.getElementById("adminTabStorageBtn").addEventListener("click", () => switchAdminTab("storage"));
-    document.getElementById("adminTabFeedbacksBtn").addEventListener("click", () => switchAdminTab("feedbacks"));
 
     // メールアドレスのアバター頭文字取得
     window.loadAdminFeedbacks = async function() {
@@ -1259,8 +1261,10 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50 transition-colors";
 
       const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
-      let username = userData?.username ? userData.username : (userData?.displayName ? userData.displayName : (userData ? "未設定" : "未参加"));
-      let iconUrl = userData?.iconUrl ? userData.iconUrl : (userData?.photoURL ? userData.photoURL : null);
+      // username: username → nickname → displayName の優先順で取得
+      let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? "未設定" : "未参加");
+      // iconUrl: iconUrl → avatarUrl → photoURL の優先順で取得
+      let iconUrl = userData?.iconUrl || userData?.avatarUrl || userData?.photoURL || null;
 
       const avatar = document.createElement("div");
       avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors";
@@ -1349,21 +1353,33 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         uSnap.forEach(d => {
           const u = d.data();
           if (u.email) {
-            window.__adminUsersByEmail[u.email] = { ...u, id: d.id };
-            promises.push(
-              getDoc(doc(db, `artifacts/${appId}/users/${d.id}/profile`, "nicknameDoc")).then(pSnap => {
-                if (pSnap.exists()) {
-                  const pData = pSnap.data();
-                  if (pData.nickname) window.__adminUsersByEmail[u.email].displayName = pData.nickname;
-                  if (pData.avatarUrl) window.__adminUsersByEmail[u.email].photoURL = pData.avatarUrl;
-                }
-              }).catch(() => {})
-            );
+            // ルートのusersドキュメントに書いたnicknameとavatarUrlを優先的に使う
+            const entry = { ...u, id: d.id };
+            // nickname/avatarUrlが直接ある場合はusername/iconUrlにコピー
+            if (u.nickname) entry.username = u.nickname;
+            if (u.avatarUrl) entry.iconUrl = u.avatarUrl;
+            window.__adminUsersByEmail[u.email] = entry;
+            // profile/nicknameDocにしかデータがない古いユーザーへのフォールバック
+            if (!u.nickname) {
+              promises.push(
+                getDoc(doc(db, `artifacts/${appId}/users/${d.id}/profile`, "nicknameDoc")).then(pSnap => {
+                  if (pSnap.exists()) {
+                    const pData = pSnap.data();
+                    if (pData.nickname) window.__adminUsersByEmail[u.email].username = pData.nickname;
+                    if (pData.avatarUrl) window.__adminUsersByEmail[u.email].iconUrl = pData.avatarUrl;
+                  }
+                }).catch(() => {})
+              );
+            }
           }
         });
         await Promise.all(promises);
-      } catch(e){}
+      } catch(e){ console.error('fetchAllAdminData error:', e); }
     }
+
+    let unsubAllowedEmails = null;
+    let unsubAdminList = null;
+    let unsubListAdmin = null;
 
     async function reloadAllowedEmailsList() {
       try {
@@ -1376,9 +1392,6 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         } else {
           return;
         }
-        const allowedSnap = await getDocs(q);
-        const emails = new Set();
-        allowedSnap.forEach(d => emails.add(d.id));
         
         // 旧ドキュメントからの移行処理 (全体管理者のみ)
         if (isAdmin) {
@@ -1396,10 +1409,6 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
                 await Promise.all(promises);
                 await deleteDoc(oldRef); // 移行完了後に削除
                 console.log("Migration complete!");
-                
-                // 再読み込み
-                const newSnap = await getDocs(q);
-                newSnap.forEach(d => emails.add(d.id));
               }
             }
           } catch(e) {
@@ -1407,7 +1416,13 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           }
         }
         
-        renderAllowedEmails(Array.from(emails));
+        if (unsubAllowedEmails) unsubAllowedEmails();
+        unsubAllowedEmails = onSnapshot(q, async (snap) => {
+          const emails = new Set();
+          snap.forEach(d => emails.add(d.id));
+          await fetchAllAdminData();
+          renderAllowedEmails(Array.from(emails));
+        });
       } catch (e) {
         console.error("Failed to load allowed emails:", e);
       }
@@ -1419,12 +1434,16 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         if (isAdmin) {
           await fetchAllAdminData();
           await reloadAllowedEmailsList();
-          const [adminSnap, listAdminSnap] = await Promise.all([
-            getDoc(doc(db, `artifacts/${appId}/settings`, "adminList")),
-            getDoc(doc(db, `artifacts/${appId}/settings`, "listAdminList")),
-          ]);
-          renderAdminEmails(adminSnap.exists() ? adminSnap.data().emails || [] : []);
-          renderListAdminEmails(listAdminSnap.exists() ? listAdminSnap.data().emails || [] : []);
+          
+          if (unsubAdminList) unsubAdminList();
+          unsubAdminList = onSnapshot(doc(db, `artifacts/${appId}/settings`, "adminList"), (snap) => {
+            renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+          });
+          
+          if (unsubListAdmin) unsubListAdmin();
+          unsubListAdmin = onSnapshot(doc(db, `artifacts/${appId}/settings`, "listAdminList"), (snap) => {
+            renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+          });
         } else if (isListAdmin) {
           await reloadAllowedEmailsList();
         }
@@ -1596,7 +1615,6 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         await setDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig"), { active: true }, { merge: true });
         
         newAllowedEmailInput.value = "";
-        await reloadAllowedEmailsList();
         adminMessage.textContent = "追加しました。";
       } catch (e) {
         console.error(e);
@@ -1610,7 +1628,6 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       try {
         const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
         await deleteDoc(ref);
-        await reloadAllowedEmailsList();
         adminMessage.textContent = "削除しました。";
       } catch (e) {
         console.error(e);
@@ -1728,7 +1745,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       const nb = document.getElementById(navBtnId);
       if (nb) nb.classList.add('active');
       
-      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', appinfo:'appinfoSection', admintools:'admintoolsSection' };
+      const smap = { profile:'profileSection', settings:'settingsSection', admin:'adminNavSection', storage:'storageSection', reports:'reportsSection', appinfo:'appinfoSection', admintools:'admintoolsSection' };
       if (tab === 'appinfo') {
         const verEl = document.getElementById('appInfoVersion');
         if (verEl) {
@@ -1756,6 +1773,24 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
            container.appendChild(shared);
            shared.classList.remove('hidden');
          }
+      }
+      if (tab === 'storage') {
+         const container = document.getElementById('pcStorageContainer');
+         const shared = document.getElementById('storageSharedContent');
+         if (container && shared) {
+           container.appendChild(shared);
+           shared.classList.remove('hidden');
+         }
+         if (typeof loadStorageStats === 'function') loadStorageStats();
+      }
+      if (tab === 'reports') {
+         const container = document.getElementById('pcReportsContainer');
+         const shared = document.getElementById('reportsSharedContent');
+         if (container && shared) {
+           container.appendChild(shared);
+           shared.classList.remove('hidden');
+         }
+         if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
       }
     };
 
@@ -1989,7 +2024,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     };
 
     window.openMobileDetail = function(type) {
-      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin', appinfo:'mobileDetailAppInfo', admintools:'mobileDetailAdminTools' };
+      const m = { profile:'mobileDetailProfile', notif:'mobileDetailNotif', admin:'mobileDetailAdmin', storage:'mobileDetailStorage', reports:'mobileDetailReports', appinfo:'mobileDetailAppInfo', admintools:'mobileDetailAdminTools' };
       const el = document.getElementById(m[type]);
       if (el) {
         if (type === 'admin') {
@@ -1999,6 +2034,24 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
              container.appendChild(shared);
              shared.classList.remove('hidden');
            }
+        }
+        if (type === 'storage') {
+           const container = document.getElementById('mobileStorageContainer');
+           const shared = document.getElementById('storageSharedContent');
+           if (container && shared) {
+             container.appendChild(shared);
+             shared.classList.remove('hidden');
+           }
+            if (typeof loadStorageStats === 'function') loadStorageStats();
+        }
+        if (type === 'reports') {
+           const container = document.getElementById('mobileReportsContainer');
+           const shared = document.getElementById('reportsSharedContent');
+           if (container && shared) {
+             container.appendChild(shared);
+             shared.classList.remove('hidden');
+           }
+            if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
         }
         if (type === 'appinfo') {
           const verEl = document.getElementById('mobileAppInfoVersion');
@@ -2442,6 +2495,9 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await updateDoc(userProfileRef, { avatarUrl: null });
+        // ★ ルートのusersにも同期
+        const userRef = doc(db, `artifacts/${appId}/users`, userId);
+        await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
         userAvatarUrl = null;
         pendingAvatarUrl = null;
         settingsAvatarPreview.classList.add("hidden");
@@ -2485,6 +2541,15 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         const updateData = { nickname: newName, createdAt: serverTimestamp() };
         if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
         await setDoc(userProfileRef, updateData, { merge: true });
+        
+        // ★ ユーザー一覧・管理者画面用にルートのusersにも同期
+        const userRef = doc(db, `artifacts/${appId}/users`, userId);
+        await setDoc(userRef, { 
+            email: userAuthEmail, 
+            nickname: newName, 
+            avatarUrl: pendingAvatarUrl || userAvatarUrl || null 
+        }, { merge: true }).catch(console.error);
+
         userNickname = newName;
         if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
 
@@ -2532,6 +2597,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       try {
         const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
         await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
+        
+        // ★ ユーザー一覧・管理者画面用にルートのusersにも同期
+        const userRef = doc(db, `artifacts/${appId}/users`, userId);
+        await setDoc(userRef, { email: userAuthEmail, nickname: nickname }, { merge: true }).catch(console.error);
+
         userNickname = nickname;
 
         // ★ヘッダータイトルの更新
@@ -6050,51 +6120,76 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         ...['✅','❌','⭕','❓','❗','‼️','⁉️','💤','🆗','🆖','🆕','🆒','🔝','🎶','〽️','⚠️','🚫','💮','💢','♨️','🈵','🉐','㊗️','㊙️','🈳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟥','🟦','✔️','➕','➖']
       ] }
     ];
-    let currentServerStampsData = [];
+    let currentServerStampsUnsub = null;
+    let currentServerStampGroupsUnsub = null;
     
     async function loadCurrentServerStamps() {
       if (!currentServerId) return;
       try {
-        const [snapStamps, snapGroups] = await Promise.all([
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`)).catch(err => { console.error(err); return { docs: [], empty: true, forEach: ()=>{} }; }),
-          getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`)).catch(err => { console.error(err); return { docs: [], empty: true, forEach: ()=>{} }; })
-        ]);
+        if (currentServerStampsUnsub) currentServerStampsUnsub();
+        if (currentServerStampGroupsUnsub) currentServerStampGroupsUnsub();
         
-        for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
-          if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
-            STICKER_CATEGORIES.splice(i, 1);
-          }
-        }
+        let stampsCache = [];
+        let groupsCache = [];
         
-        let customCategories = [];
-        
-        const processDocs = (snap) => {
-          snap.forEach(d => {
-            const s = d.data();
-            if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
-              customCategories.push({
-                id: 'server_group_' + d.id,
-                icon: `serverstamp:${s.thumbnailUrl}`,
-                label: s.name,
-                emojis: s.stamps.map(st => `serverstamp:${st.url}`)
-              });
-            } else {
-              customCategories.push({
-                id: 'server_group_' + d.id,
-                icon: `serverstamp:${s.url}`,
-                label: s.name,
-                emojis: [`serverstamp:${s.url}`]
-              });
+        const renderStamps = () => {
+          for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
+            if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
+              STICKER_CATEGORIES.splice(i, 1);
             }
-          });
+          }
+          
+          let customCategories = [];
+          
+          const processDocs = (docs) => {
+            docs.forEach(d => {
+              const s = d.data;
+              if (s.isGroup || (s.stamps && s.stamps.length > 0)) {
+                customCategories.push({
+                  id: 'server_group_' + d.id,
+                  icon: `serverstamp:${s.thumbnailUrl}`,
+                  label: s.name,
+                  emojis: s.stamps.map(st => `serverstamp:${st.url}`)
+                });
+              } else {
+                customCategories.push({
+                  id: 'server_group_' + d.id,
+                  icon: `serverstamp:${s.url}`,
+                  label: s.name,
+                  emojis: [`serverstamp:${s.url}`]
+                });
+              }
+            });
+          };
+          
+          processDocs(stampsCache);
+          processDocs(groupsCache);
+          
+          if (customCategories.length > 0) {
+            STICKER_CATEGORIES.splice(2, 0, ...customCategories);
+          }
+          
+          if (_skTabsBound) {
+             _skRenderTabs();
+             if (_stickerActiveCat === 'server_custom' || _stickerActiveCat.startsWith('server_group_')) {
+                 _skRenderGrid(_stickerActiveCat);
+             }
+          }
         };
-        
-        if (!snapStamps.empty) processDocs(snapStamps);
-        if (!snapGroups.empty) processDocs(snapGroups);
-        
-        if (customCategories.length > 0) {
-          STICKER_CATEGORIES.splice(2, 0, ...customCategories);
-        }
+
+        const stampsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`);
+        const groupsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`);
+
+        currentServerStampsUnsub = onSnapshot(stampsRef, (snap) => {
+          stampsCache = snap.docs.map(d => ({id: d.id, data: d.data()}));
+          renderStamps();
+        });
+
+        currentServerStampGroupsUnsub = onSnapshot(groupsRef, (snap) => {
+          groupsCache = snap.docs.map(d => ({id: d.id, data: d.data()}));
+          renderStamps();
+        });
+
       } catch (e) {
         console.error("Failed to load server stamps", e);
       }
@@ -6269,52 +6364,74 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     // Lightbox用のPanzoom初期化
     let lightboxPanzoom = null;
     if (window.Panzoom) {
+        imageLightbox.style.touchAction = 'none';
         
+        // duration/easingをPanzoom自身のオプションで管理することでアニメーションを確実に動作させる
         lightboxPanzoom = Panzoom(lightboxImage, {
-            maxScale: 20,       // 拡大倍率の限界を大幅に引き上げ
+            maxScale: 20,
             minScale: 1,
-            step: 0.2,          // マウスホイールの刻み
-            contain: null
+            step: 0.3,
+            contain: null,
+            duration: 300,
+            easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
         });
         
         const panzoomContainer = lightboxImage.parentElement;
-        panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
         
         // マウスホイールによるズーム操作
         panzoomContainer.addEventListener('wheel', lightboxPanzoom.zoomWithWheel, { passive: false });
         
-        // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
-        let lastTap = 0;
-        const handleDoubleTap = (e) => {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTap;
-            if (tapLength < 350 && tapLength > 0) {
-                e.preventDefault();
-                const currentScale = lightboxPanzoom.getScale();
-                if (currentScale > 1.2) {
-                    lightboxPanzoom.reset({ animate: true });
-                } else {
-                    let clientX, clientY;
-                    if (e.changedTouches && e.changedTouches.length > 0) {
-                        clientX = e.changedTouches[0].clientX;
-                        clientY = e.changedTouches[0].clientY;
-                    } else {
-                        clientX = e.clientX;
-                        clientY = e.clientY;
-                    }
-                    lightboxPanzoom.zoomToPoint(2.5, { clientX, clientY }, { animate: true });
-                }
+        // pointerdown位置を記録して、ドラッグとタップを区別する
+        let pointerDownX = 0;
+        let pointerDownY = 0;
+        lightboxImage.addEventListener('pointerdown', (e) => {
+            pointerDownX = e.clientX;
+            pointerDownY = e.clientY;
+        }, { passive: true });
+        
+        // 1タップ/1クリックでのズーム切り替え
+        const handleTap = (e) => {
+            // clickイベントのclientX/Yを使用 (touchからのsynthesized clickでも正しく動く)
+            const clientX = e.clientX;
+            const clientY = e.clientY;
+            
+            // ドラッグとタップの区別: 10px以上動いていたら無視
+            const dx = clientX - pointerDownX;
+            const dy = clientY - pointerDownY;
+            if (Math.sqrt(dx * dx + dy * dy) > 10) return;
+
+            const currentScale = lightboxPanzoom.getScale();
+            
+            if (currentScale > 1.2) {
+                // 拡大時: アニメーション付きでリセット
+                lightboxPanzoom.reset({ animate: true });
+            } else {
+                // 通常時: クリックした座標を中心にアニメーション付きでズームイン
+                // Panzoomのzoomを使わず、自前でpan+scaleを計算して正確な座標制御を行う
+                const scale = 3;
+                const pan = lightboxPanzoom.getPan();
+                const rect = lightboxImage.getBoundingClientRect();
+                
+                // 現在のレンダリング済み中心点 (ビューポート座標)
+                const elCenterX = rect.left + rect.width / 2;
+                const elCenterY = rect.top + rect.height / 2;
+                
+                // クリック点と中心点の差分
+                const relX = clientX - elCenterX;
+                const relY = clientY - elCenterY;
+                
+                // ズーム倍率変化に合わせてpanを調整
+                const scaleDelta = scale / currentScale;
+                const newPanX = pan.x - relX * (scaleDelta - 1);
+                const newPanY = pan.y - relY * (scaleDelta - 1);
+                
+                // animate:true を使って Panzoom 本来のアニメーションで適用
+                lightboxPanzoom.zoom(scale, { animate: true });
+                lightboxPanzoom.pan(newPanX, newPanY, { animate: true });
             }
-            lastTap = currentTime;
         };
         
-        lightboxImage.addEventListener('touchend', (e) => {
-            if (e.touches && e.touches.length > 0) return; // ピンチ中は無視
-            handleDoubleTap(e);
-        });
-        lightboxImage.addEventListener('click', (e) => {
-            handleDoubleTap(e);
-        });
+        lightboxImage.addEventListener('click', handleTap);
     }
     
     function closeLightbox() {
@@ -6325,7 +6442,11 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           lightboxPanzoom.reset();
       }
     }
-    imageLightbox.addEventListener('click', (e) => { if (e.target === imageLightbox) closeLightbox(); });
+    imageLightbox.addEventListener('click', (e) => {
+        if (!e.target.closest('#lightboxImage') && !e.target.closest('#lightboxDownload') && !e.target.closest('#lightboxClose')) {
+            closeLightbox();
+        }
+    });
     document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
     document.getElementById('lightboxDownload').addEventListener('click', () => {
       if (lightboxCurrentFile) downloadFile(lightboxCurrentFile.data, lightboxCurrentFile.name, lightboxCurrentFile.type);
@@ -6820,6 +6941,50 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       openModal(modal);
     };
 
+    window.renderPdfCanvas = async function(url, canvas, hintW, hintH) {
+      if (!window.pdfjsLib || !canvas) return;
+      try {
+        const container = canvas.parentElement;
+        const containerW = (container && container.clientWidth > 0) ? container.clientWidth : (hintW || 128);
+        const containerH = (container && container.clientHeight > 0) ? container.clientHeight : (hintH || 160);
+
+        const loadingTask = window.pdfjsLib.getDocument({ url, withCredentials: false });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+
+        // コンテナに収まるようにスケールを計算（contain挙動）
+        const rawViewport = page.getViewport({ scale: 1 });
+        const scaleW = containerW / rawViewport.width;
+        const scaleH = containerH / rawViewport.height;
+        const dpr = window.devicePixelRatio || 1;
+        const scale = Math.min(scaleW, scaleH) * dpr;
+        const viewport = page.getViewport({ scale });
+
+        // canvasの実ピクセルサイズを設定（高DPI対応）
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+
+        const renderContext = {
+          canvasContext: canvas.getContext('2d'),
+          viewport: viewport
+        };
+        await page.render(renderContext).promise;
+
+        // レンダリング成功後、デフォルトのPDFアイコンを非表示にしてcanvasをフェードイン
+        if (container) {
+          const icon = container.querySelector('.default-pdf-icon');
+          if (icon) icon.style.display = 'none';
+        }
+        canvas.style.opacity = '1';
+      } catch(e) {
+        console.warn("PDF thumbnail render error:", e.message || e);
+        // エラー時はcanvasを非表示（デフォルトアイコンがそのまま見える）
+        if (canvas) canvas.style.display = 'none';
+      }
+    };
+
     function createMessageElement(message, messageId, readByCount = 0) {
       if (message.isGap) {
         const gapRow = document.createElement("div");
@@ -6914,6 +7079,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             if (message._decryptedFileUrl) {
               if (propName) element[propName] = message._decryptedFileUrl;
               if (element.tagName === 'IMG') element.style.opacity = '1';
+              if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
             } else {
               if (element.tagName === 'IMG') element.style.opacity = '0.3';
               (async () => {
@@ -6928,6 +7094,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
                   message._decryptedFileUrl = URL.createObjectURL(blob);
                   if (propName) element[propName] = message._decryptedFileUrl;
                   if (element.tagName === 'IMG') element.style.opacity = '1';
+                  if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
                 } catch(e) {
                   if (element.tagName === 'IMG') element.alt = "復号化エラー";
                 }
@@ -6935,6 +7102,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
             }
           } else {
             if (propName) element[propName] = url || message.fileData;
+            if (element.tagName === 'CANVAS') window.renderPdfCanvas(url || message.fileData, element);
           }
         };
 
@@ -6961,50 +7129,90 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
           video.style.maxHeight = '250px';
           setMediaSrc(video, 'src');
           messageElement.appendChild(video);
-        } else if (message.fileType === 'application/pdf' && message.fileData.startsWith('http')) {
+        } else if (message.fileType === 'application/pdf') {
+          // Teams風PDFカードを作成
           const pdfWrapper = document.createElement('div');
           pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
-          const isRawPdf = !message.fileData.includes('/image/upload/');
+
+          const thumbContainer = document.createElement('div');
+          thumbContainer.className = 'relative w-32 h-40 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center overflow-hidden shadow-sm';
+          thumbContainer.style.flexShrink = '0';
+
+          // PDFバッジ（右上）
+          const badge = document.createElement('div');
+          badge.className = 'absolute top-1 right-1 bg-red-500 text-white rounded shadow-sm z-20 flex items-center gap-0.5 pointer-events-none';
+          badge.style.cssText = 'font-size:10px;font-weight:700;padding:2px 5px;';
+          badge.innerHTML = '<i class="fas fa-file-pdf"></i> PDF';
+          thumbContainer.appendChild(badge);
+
+          // デフォルトアイコン（canvas読み込み成功時に非表示）
+          const iconDiv = document.createElement('div');
+          iconDiv.className = 'absolute inset-0 flex flex-col items-center justify-center gap-1 z-10 default-pdf-icon pointer-events-none';
+          iconDiv.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-3xl opacity-40"></i>';
+          thumbContainer.appendChild(iconDiv);
+
+          // サムネイルcanvas
+          const thumbCanvas = document.createElement('canvas');
+          thumbCanvas.className = 'absolute inset-0 z-0 pdf-thumb-canvas';
+          thumbCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.3s;';
+          thumbContainer.appendChild(thumbCanvas);
+
+          pdfWrapper.appendChild(thumbContainer);
+
+          // ファイル名ラベル
           const pdfLabel = document.createElement('div');
           pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
+          const labelIcon = document.createElement('i');
+          labelIcon.className = 'fas fa-file-pdf text-red-500 flex-shrink-0';
           const safeName = document.createElement('span');
           safeName.className = 'truncate';
-          safeName.style.maxWidth = '160px';
+          safeName.style.maxWidth = '128px';
           safeName.textContent = message.fileName;
-          pdfLabel.innerHTML = '<i class="fas fa-file-pdf text-red-500"></i> ';
+          pdfLabel.appendChild(labelIcon);
           pdfLabel.appendChild(safeName);
-          
-          if (!isRawPdf && !message.isFileEncrypted) {
-            const thumbUrl = message.fileData.replace('/upload/', '/upload/pg_1,w_240,h_320,c_fit,f_jpg/');
-            const thumbImg = document.createElement('img');
-            thumbImg.alt = message.fileName;
-            thumbImg.className = 'rounded-lg border border-gray-200 block';
-            thumbImg.style.maxWidth = '160px';
-            thumbImg.loading = 'lazy';
-            thumbImg.onerror = () => {
-              thumbImg.style.display = 'none';
-              const fallback = document.createElement('div');
-              fallback.className = 'w-20 h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-1';
-              fallback.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-2xl"></i><span class="text-xs text-gray-400">PDF</span>';
-              pdfWrapper.insertBefore(fallback, thumbImg);
-            };
-            thumbImg.src = thumbUrl;
-            pdfWrapper.appendChild(thumbImg);
-          } else {
-            // 復号化待ちのプレースホルダ処理も兼ねてアイコン表示
-            const icon = document.createElement('div');
-            icon.className = 'w-20 h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-1';
-            icon.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-2xl"></i><span class="text-xs text-gray-400">PDF</span>';
-            pdfWrapper.appendChild(icon);
-            // ダウンロード＆復号をトリガー
-            setMediaSrc(icon, null);
-          }
           pdfWrapper.appendChild(pdfLabel);
+
+          // クリックでPDFプレビュー
           pdfWrapper.addEventListener('click', () => {
             const url = message._decryptedFileUrl || message.fileData;
             openPdfLightbox(url, message.fileName);
           });
+
           messageElement.appendChild(pdfWrapper);
+
+          // DOMに追加されてからサムネイルを描画（clientWidth/Height が確定するのを待つ）
+          const renderThumb = () => {
+            // 暗号化ファイルの場合はまず復号する
+            if (message.isFileEncrypted) {
+              if (message._decryptedFileUrl) {
+                window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+              } else {
+                (async () => {
+                  try {
+                    const members = (currentServerData && currentServerData.joinedUsers) || [];
+                    const roomKey = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                    if (!roomKey) return;
+                    const res = await fetch(message.fileData);
+                    const buf = await res.arrayBuffer();
+                    const dec = await decryptFileE2EE(buf, roomKey, currentServerId, currentRoomId);
+                    const blob = new Blob([dec], { type: 'application/pdf' });
+                    message._decryptedFileUrl = URL.createObjectURL(blob);
+                    window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+                  } catch(e) {
+                    console.error('PDF decrypt error for thumb:', e);
+                  }
+                })();
+              }
+            } else if (message.fileData && message.fileData.startsWith('http')) {
+              // 非暗号化の場合、Cloudinaryのimage/uploadは直接URL、rawはCORSが厳しいので試みる
+              window.renderPdfCanvas(message.fileData, thumbCanvas, 128, 160);
+            }
+          };
+
+          // requestAnimationFrameでDOMレイアウト確定後に実行
+          requestAnimationFrame(() => requestAnimationFrame(renderThumb));
+          // (新しいPDFレンダリングはrequestAnimationFrame上で実行済み)
+
         } else {
           const fileAttachmentDiv = document.createElement("div");
           fileAttachmentDiv.className = `mt-2 p-2 rounded-lg border border-gray-300 ${isMyMessage ? "bg-gray-200" : "bg-gray-100"} flex items-center space-x-2 cursor-pointer`;
@@ -7968,7 +8176,13 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
 
     function doJumpHighlight(el) {
        // 同一画面内のジャンプは、カクつきを完全排除し、初手からsmoothスクロールのみで極めて滑らかに移動する
-       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+       const container = document.getElementById('messagesContainer');
+       if (container) {
+           const containerRect = container.getBoundingClientRect();
+           const elRect = el.getBoundingClientRect();
+           const targetScroll = container.scrollTop + (elRect.top - containerRect.top) - (containerRect.height / 2) + (elRect.height / 2);
+           container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+       }
        
        const isStamp = el.querySelector('img[alt^="stamp_"]');
        if (isStamp) {
@@ -7983,11 +8197,12 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
     // iOS/Safari 判定
     const _isIOSSafari = (() => {
       const ua = navigator.userAgent;
-      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
-      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
-      // iPad on iOS 13+ reports as "Macintosh" but has touch
-      const isIPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-      return isIOS || isIPadOS || isSafari;
+      // iPhone/iPod の判定
+      const isIPhone = /iPhone|iPod/.test(ua) && !window.MSStream;
+      // iPad は iOS13+ から「Macintosh」として UA を返すためタッチポイント数で判定
+      const isIPad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      // iOS/iPadOS デバイスのみを対象とする（デスクトップ Safari は除外）
+      return isIPhone || isIPad;
     })();
 
     function downloadFile(fileData, fileName, mimeType) {
@@ -8130,10 +8345,7 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
       contentArea.appendChild(errorMsg);
 
       const isRaw = url.includes('/raw/upload/');
-      // 常にWorkerプロキシ経由（raw/image両方）
-      // Cloudinaryは直接アクセスも401になる場合があるためWorker経由で統一
-      const previewSrc = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}&preview=1`;
-
+      
       dlBtn.onclick = () => downloadFile(url, fileName, 'application/pdf');
 
       let timeoutId = null;
@@ -8142,6 +8354,20 @@ function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
         errorMsg.remove();
         closePdfLightbox();
       };
+
+      if (url.startsWith('blob:')) {
+        console.info(`[PDF] blob URL detected. Loading directly.`);
+        iframe.onload = () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          iframe.style.opacity = '1';
+        };
+        iframe.src = url;
+        return;
+      }
+
+      // 常にWorkerプロキシ経由（raw/image両方）
+      // Cloudinaryは直接アクセスも401になる場合があるためWorker経由で統一
+      const previewSrc = `${WORKER_BASE_URL}/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}&preview=1`;
 
       // 両タイプともWorkerプロキシ経由でfetch事前チェック
       // → iframe.onloadは401でも発火するため直接iframeに渡すと失敗を検知できない

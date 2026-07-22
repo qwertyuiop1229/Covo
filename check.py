@@ -1,0 +1,1 @@
+import json, sys; sys.stdout.reconfigure(encoding='utf-8'); [print(f'STEP {json.loads(line).get(\"step_index\")}: ' + json.loads(line).get('content').replace('\n', ' ')) for line in open(r'C:\Users\qwert\.gemini\antigravity\brain\113a457f-4371-42cc-bd5d-6223ddb6b12a\.system_generated\logs\transcript_full.jsonl', encoding='utf-8') if json.loads(line).get('type') == 'USER_INPUT']

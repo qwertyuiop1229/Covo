@@ -501,14 +501,20 @@
               <button class="settings-nav-item" id="snav-appinfo" onclick="switchDiscordSettingsTab('appinfo')">
                 <i class="fas fa-info-circle fa-fw"></i>アプリ情報
               </button>
+              <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
+                <i class="fas fa-screwdriver-wrench fa-fw"></i>ツール
+              </button>
               <div class="settings-nav-divider"></div>
               <div id="adminPanelContainer" class="hidden">
                 <div class="settings-nav-label">管理</div>
                 <button class="settings-nav-item" id="openAdminModalButton">
-                  <i class="fas fa-shield-alt fa-fw"></i>管理者パネル
+                  <i class="fas fa-users-cog fa-fw"></i>ユーザー管理
                 </button>
-                <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
-                  <i class="fas fa-screwdriver-wrench fa-fw"></i>管理者ツール
+                <button class="settings-nav-item" id="snav-storage" onclick="switchDiscordSettingsTab('storage')">
+                  <i class="fas fa-database fa-fw"></i>ストレージ
+                </button>
+                <button class="settings-nav-item" id="snav-reports" onclick="switchDiscordSettingsTab('reports')">
+                  <i class="fas fa-bug fa-fw"></i>システムレポート
                 </button>
               </div>
               <button class="settings-nav-item danger" id="logoutButtonInModal">
@@ -559,15 +565,27 @@
 
               <!-- 管理者セクション -->
               <div id="adminNavSection" class="settings-content-section space-y-3">
-                <div class="settings-section-title">管理者パネル</div>
+                <div class="settings-section-title">ユーザー管理</div>
                 <div id="pcAdminContainer">
                   <!-- 共有コンテンツはここに挿入される -->
                 </div>
               </div>
               
-              <!-- 管理者ツールセクション -->
+              <!-- ストレージセクション -->
+              <div id="storageSection" class="settings-content-section space-y-3 hidden">
+                <div class="settings-section-title">ストレージ</div>
+                <div id="pcStorageContainer"></div>
+              </div>
+
+              <!-- システムレポートセクション -->
+              <div id="reportsSection" class="settings-content-section space-y-3 hidden">
+                <div class="settings-section-title">システムレポート</div>
+                <div id="pcReportsContainer"></div>
+              </div>
+
+              <!-- ツールセクション -->
               <div id="admintoolsSection" class="settings-content-section space-y-6">
-                <div class="settings-section-title">管理者ツール</div>
+                <div class="settings-section-title">ツール</div>
                 <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
                   <!-- RTDB Toggle removed, now permanently enabled -->
                   <div class="flex justify-between items-center">
@@ -578,16 +596,8 @@
                     <label class="toggle-switch"><input type="checkbox" id="pcToggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
                   </div>
                   <div class="flex justify-between items-center">
-                    <span class="text-sm font-bold text-gray-800">レイアウト診断</span>
-                    <button class="" onclick="showLayoutDiagnostics()" style="padding:7px 16px;background:#4f46e5;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">診断を実行</button>
-                  </div>
-                  <div class="flex justify-between items-center">
                     <span class="text-sm font-bold text-gray-800">コンソール</span>
                     <button class="" onclick="toggleDevConsole()" style="padding:7px 16px;background:#111827;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">開く</button>
-                  </div>
-                  <div class="flex justify-between items-center">
-                    <span class="text-sm font-bold text-gray-800">診断情報をまとめてコピー</span>
-                    <button class="" onclick="copyDiagnosticsBundle()" style="padding:7px 16px;background:#16a34a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">コピー</button>
                   </div>
                 </div>
               </div>
@@ -748,91 +758,92 @@
       
   <!-- 共有管理者コンテンツ -->
   <div id="adminPanelSharedContent" class="hidden">
-    <div class="flex border-b border-gray-100 mb-4 flex-wrap gap-y-1">
-      <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 text-gray-900 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
-      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
-      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
-      <button id="adminTabStorageBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors mr-2"><i class="fas fa-database mr-1.5 text-xs"></i>ストレージ</button>
-      <button id="adminTabFeedbacksBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors"><i class="fas fa-bug mr-1.5 text-xs"></i>報告一覧</button>
+    <div class="flex border-b border-gray-100 dark:border-gray-800 mb-4 flex-wrap gap-y-1">
+      <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-gray-200 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
+      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
+      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
     </div>
     
     <div class="pr-2">
       <div id="adminTabAllowedContent" class="space-y-4">
         <p class="text-xs text-gray-400 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
-          <button id="addAllowedEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
+          <button id="addAllowedEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
         </div>
         <div id="allowedEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-400 leading-relaxed">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
-          <button id="addAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
+          <button id="addAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
         </div>
         <div id="adminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabListAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-400 leading-relaxed">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
         <div class="flex gap-2">
-          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400" />
-          <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
+          <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
       </div>
 
-      <!-- ストレージタブ (管理者専用) -->
-      <div id="adminTabStorageContent" class="space-y-4 hidden">
-        <div class="flex items-center justify-between">
-          <p class="text-xs text-gray-400 leading-relaxed">添付ファイルのストレージ使用状況</p>
-          <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold rounded-lg transition-colors">
-            <i class="fas fa-sync-alt text-xs"></i>更新
-          </button>
-        </div>
 
-        <!-- Cloudflare Workers KV -->
-        <div style="background:#1e293b;" class="rounded-2xl p-4">
-          <div class="flex items-center gap-2 mb-3">
-            <i class="fas fa-server text-white text-sm"></i>
-            <span class="text-white text-sm font-bold">Cloudflare Workers KV</span>
-            <span class="ml-auto text-white/40 text-xs">上限 1 GB</span>
-          </div>
-          <div style="background:rgba(255,255,255,0.12);" class="rounded-full h-2.5 overflow-hidden mb-2">
-            <div id="kvUsageBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:rgba(255,255,255,0.85);"></div>
-          </div>
-          <div class="flex justify-between items-center">
-            <span id="kvUsageText" class="text-white/70 text-xs">読み込み中...</span>
-            <span id="kvFileCount" class="text-white/40 text-xs"></span>
-          </div>
-        </div>
-
-        <!-- 一括削除 -->
-        <div class="pt-2 border-t border-gray-100 flex flex-col gap-2">
-          <button id="bulkDeleteMessagesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.9);">
-            <i class="fas fa-file-image"></i> 添付ファイルのみを一括削除
-          </button>
-          <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 mt-2" style="background:#4b111b;color:rgba(255,255,255,0.8);">
-            <i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)
-          </button>
-          <p class="text-xs text-gray-400 mt-2 text-center">ストレージの管理を行えます</p>
-        </div>
-      </div>
-      <!-- フィードバックタブ -->
-      <div id="adminTabFeedbacksContent" class="space-y-4 hidden">
-        <div class="flex items-center justify-between mb-2">
-          <p class="text-xs text-gray-400 leading-relaxed">ユーザーから寄せられたバグ報告や要望の一覧です。</p>
-          <button onclick="loadAdminFeedbacks()" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold rounded-lg transition-colors"><i class="fas fa-sync-alt mr-1"></i>更新</button>
-        </div>
-        <div id="adminFeedbacksList" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1"></div>
-      </div>
 
     </div>
     
-    <div class="mt-2 pt-2 border-t border-gray-100 flex-shrink-0">
+    <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
       <div id="adminMessage" class="text-center text-sm text-gray-500 mb-1 min-h-[1.2rem]"></div>
       <div class="admin-only-section hidden">
       </div>
+    </div>
+  </div>
+
+  <!-- 共有ストレージコンテンツ -->
+  <div id="storageSharedContent" class="hidden">
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-400 leading-relaxed">添付ファイルのストレージ使用状況</p>
+        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors">
+          <i class="fas fa-sync-alt text-xs"></i>更新
+        </button>
+      </div>
+      <div style="background:#1e293b;" class="rounded-2xl p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="fas fa-server text-white text-sm"></i>
+          <span class="text-white text-sm font-bold">Cloudflare Workers KV</span>
+          <span class="ml-auto text-white/40 text-xs">上限 1 GB</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.12);" class="rounded-full h-2.5 overflow-hidden mb-2">
+          <div id="kvUsageBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:rgba(255,255,255,0.85);"></div>
+        </div>
+        <div class="flex justify-between items-center">
+          <span id="kvUsageText" class="text-white/70 text-xs">読み込み中...</span>
+          <span id="kvFileCount" class="text-white/40 text-xs"></span>
+        </div>
+      </div>
+      <div class="pt-2 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
+        <button id="bulkDeleteMessagesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.9);">
+          <i class="fas fa-file-image"></i> 添付ファイルのみを一括削除
+        </button>
+        <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 mt-2" style="background:#4b111b;color:rgba(255,255,255,0.8);">
+          <i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)
+        </button>
+        <p class="text-xs text-gray-400 mt-2 text-center">ストレージの管理を行えます</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 共有レポートコンテンツ -->
+  <div id="reportsSharedContent" class="hidden">
+    <div class="space-y-4">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-xs text-gray-400 leading-relaxed">ユーザーから寄せられたバグ報告や要望の一覧です。</p>
+        <button onclick="loadAdminFeedbacks()" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors"><i class="fas fa-sync-alt mr-1"></i>更新</button>
+      </div>
+      <div id="adminFeedbacksList" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1"></div>
     </div>
   </div>
 
@@ -1698,21 +1709,23 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
   <script type="module" src="js/main.js"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
-    <div class="relative flex flex-col items-center p-4" onclick="event.stopPropagation()">
-      <img id="lightboxImage" src="" alt="" class="max-w-[90vw] max-h-[80vh] object-contain rounded-lg shadow-2xl">
-      <div class="flex gap-3 mt-4">
-        <button id="lightboxDownload"
-          class="px-4 py-2 bg-white text-gray-800 rounded-lg font-semibold text-sm shadow hover:bg-gray-100 flex items-center gap-2">
-          <i class="fas fa-download"></i> ダウンロード
-        </button>
-        <button id="lightboxClose"
-          class="px-4 py-2 bg-white/20 text-white rounded-lg font-semibold text-sm hover:bg-white/30">
-          閉じる
-        </button>
-      </div>
+    <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
+      <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
+        <i class="fas fa-download"></i>
+      </button>
+      <button id="lightboxClose" class="text-white text-3xl opacity-80 hover:opacity-100 p-2">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="relative flex flex-col items-center p-4 w-full h-full justify-center">
+      <img id="lightboxImage" src="" alt="" class="max-w-[90vw] max-h-[80vh] w-auto h-auto rounded-lg shadow-2xl">
     </div>
   </div>
 
@@ -1726,7 +1739,7 @@
   <!-- PDFライトボックス -->
   <div id="pdfLightbox" class="fixed inset-0 z-[9998] flex-col bg-black/90" style="display:none; flex-direction:column;">
     <div class="flex items-center justify-between px-3 bg-gray-900 flex-shrink-0"
-      style="padding-top: calc(0.75rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))); padding-bottom: 0.75rem;">
+      style="padding-top: max(0.6rem, env(safe-area-inset-top, 0px)); padding-bottom: 0.6rem; min-height: 3rem;">
       <button id="pdfLightboxClose"
         class="text-gray-400 hover:text-white w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 flex-shrink-0">
         <i class="fas fa-arrow-left text-lg"></i>
@@ -1979,6 +1992,11 @@
           <span class="mobile-settings-row-text">アプリ情報</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('admintools')">
+          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-screwdriver-wrench"></i></div>
+          <span class="mobile-settings-row-text">ツール</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
       </div>
     </div>
     <div class="mobile-settings-section">
@@ -2000,19 +2018,18 @@
       <div class="mobile-settings-label">管理</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="document.getElementById('openAdminModalButton').click()">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-shield-alt"></i></div>
-          <span class="mobile-settings-row-text">管理者パネル</span>
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-users-cog"></i></div>
+          <span class="mobile-settings-row-text">ユーザー管理</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
-      </div>
-    </div>
-    <!-- 管理者ツール（全体管理者のみ表示）。タップで詳細画面を開く -->
-    <div class="mobile-settings-section hidden" id="mobileAdminToolsSection">
-      <div class="mobile-settings-label">管理者ツール</div>
-      <div class="mobile-settings-group">
-        <div class="mobile-settings-row" onclick="openMobileDetail('admintools')">
-          <div class="mobile-settings-row-icon" style="background:#dbeafe;color:#2563eb"><i class="fas fa-screwdriver-wrench"></i></div>
-          <span class="mobile-settings-row-text">管理者ツール</span>
+        <div class="mobile-settings-row" onclick="openMobileDetail('storage')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-database"></i></div>
+          <span class="mobile-settings-row-text">ストレージ</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('reports')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bug"></i></div>
+          <span class="mobile-settings-row-text">システムレポート</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
@@ -2118,11 +2135,11 @@
     </div>
   </div>
 
-  <!-- Mobile Detail: 管理者ツール（開発者向け診断ツール群。全体管理者のみ） -->
+  <!-- Mobile Detail: ツール -->
   <div class="mobile-settings-detail" id="mobileDetailAdminTools">
     <div class="mobile-detail-header">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdminTools')"><i class="fas fa-chevron-left"></i></div>
-      <span class="mobile-detail-title">管理者ツール</span>
+      <span class="mobile-detail-title">ツール</span>
     </div>
     <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
       <div class="mobile-settings-group">
@@ -2131,19 +2148,9 @@
           <span class="mobile-settings-row-text">要素を検査<span style="display:block;font-size:0.7rem;color:#9ca3af;font-weight:400;margin-top:1px">タップした場所の要素を調べる</span></span>
           <label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" id="toggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
         </div>
-        <div class="mobile-settings-row" onclick="showLayoutDiagnostics()">
-          <div class="mobile-settings-row-icon" style="background:#e0e7ff;color:#4f46e5"><i class="fas fa-ruler-combined"></i></div>
-          <span class="mobile-settings-row-text">レイアウト診断</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
         <div class="mobile-settings-row" onclick="toggleDevConsole()">
           <div class="mobile-settings-row-icon" style="background:#111827;color:#34d399"><i class="fas fa-terminal"></i></div>
           <span class="mobile-settings-row-text">コンソール</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
-        </div>
-        <div class="mobile-settings-row" onclick="copyDiagnosticsBundle()">
-          <div class="mobile-settings-row-icon" style="background:#dcfce7;color:#16a34a"><i class="fas fa-clipboard-list"></i></div>
-          <span class="mobile-settings-row-text">診断情報をまとめてコピー</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
       </div>
@@ -2154,13 +2161,31 @@
   <div class="mobile-settings-detail" id="mobileDetailAdmin">
     <div class="mobile-detail-header flex-shrink-0">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAdmin')"><i class="fas fa-chevron-left"></i></div>
-      <span class="mobile-detail-title">管理者パネル</span>
+      <span class="mobile-detail-title">ユーザー管理</span>
     </div>
     <div id="mobileAdminContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
     </div>
   </div>
 
+  <!-- Mobile Detail: Storage -->
+  <div class="mobile-settings-detail" id="mobileDetailStorage">
+    <div class="mobile-detail-header flex-shrink-0">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailStorage')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">ストレージ</span>
+    </div>
+    <div id="mobileStorageContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
+    </div>
+  </div>
 
+  <!-- Mobile Detail: Reports -->
+  <div class="mobile-settings-detail" id="mobileDetailReports">
+    <div class="mobile-detail-header flex-shrink-0">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailReports')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">システムレポート</span>
+    </div>
+    <div id="mobileReportsContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
+    </div>
+  </div>
 
 
   <!-- ===== Mobile Notifications Screen ===== -->

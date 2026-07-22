@@ -77,6 +77,8 @@ export function _updateLayoutDebugUI() {
       });
     }
 
+let _inspectHL = null;
+
 export function __clearInspectHighlight() {
       if (_inspectHL) { _inspectHL.style.display = 'none'; }
     }
