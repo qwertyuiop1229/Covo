@@ -158,7 +158,7 @@
       object-fit: contain;
     }
     
-    .reply-quote {
+   .reply-quote {
       position: relative;
       display: flex;
       align-items: center;
@@ -194,6 +194,7 @@
       border-top-right-radius: 6px;
       border-top-left-radius: 0;
     }
+
     .reaction-badge {
       display: inline-flex;
       align-items: center;

@@ -1,0 +1,23 @@
+# 1. 特定のファイルをピンポイントで除外
+**/geoguessr_locations.js
+
+# 2. 不要なディレクトリを丸ごと除外
+assets/
+covo-stamps/
+webfonts/
+tests/
+server/
+src-tauri/
+
+# 3. 拡張子でまとめて除外（画像やフォントなど）
+*.png
+*.jpg
+*.jpeg
+*.ico
+*.woff2
+*.ttf
+
+# 4. ビルドファイルや一時ファイル
+dist/
+build/
+.wrangler/

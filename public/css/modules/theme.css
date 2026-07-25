@@ -192,7 +192,9 @@
 
     /* リプライ機能用CSS (Discord風L字ライン) - merged above */
     .reply-quote:hover {
-      opacity: 0.8;
+      text-decoration: underline;
+      text-decoration-color: #94a3b8;
+      text-underline-offset: 2px;
     }
 
     .reply-quote-nickname {
@@ -283,13 +285,8 @@
     }
     body.dark-server-theme .message-content { color: #e2e8f0; }
     body.dark-server-theme .read-receipt { color: #4b5563; }
-    /* リプライの半透明背景を廃止し、完全に透明(transparent)にして美しく溶け込ませる */
-    body.dark-server-theme .reply-quote {
-      background: transparent !important;
-      border-left-color: #4b6280 !important;
-    }
-    body.dark-server-theme .reply-quote-nickname { color: #94a3b8; }
-    body.dark-server-theme .reply-quote-text { color: #cbd5e1; }
+   /* ダークモード時のリプライのL字矢印の色調整 */
+    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
     body.dark-server-theme .message-highlight {
       background-color: rgba(96,165,250,0.25) !important;
     }
