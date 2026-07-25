@@ -395,7 +395,7 @@
     #serverHeader {
       background: #111827;
       color: white;
-      padding: 0.6rem 1rem;
+      padding: calc(0.6rem + var(--safe-top, env(safe-area-inset-top, 0px))) 1rem 0.6rem 1rem;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -498,7 +498,7 @@
       background: #374151;
       color: white;
       padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + env(safe-area-inset-top, 0px));
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
       font-size: 0.8rem;
       font-weight: 600;
       letter-spacing: 0.01em;

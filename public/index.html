@@ -1293,7 +1293,7 @@
       <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
       <!-- Discord風 左側サーバーナビゲーションバー -->
         <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
-          style="padding-top: calc(12px + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))); padding-bottom: max(16px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));">
+          style="padding-top: calc(0.75rem + var(--safe-top, env(safe-area-inset-top, 0px))); padding-bottom: max(12px, var(--safe-bottom, env(safe-area-inset-bottom, 0px)));">
           <!-- ダイレクトメッセージ等/ホームアイコン (Discord風) -->
           <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="サーバー一覧 / ホーム">
             <div class="discord-server-pill" id="discordHomePill"></div>
@@ -1390,7 +1390,7 @@
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
           <div id="currentRoomHeader"
             class="bg-gray-200 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center"
-            style="padding: calc(0.75rem + var(--safe-top, max(24px, env(safe-area-inset-top, 0px)))) 0.75rem 0.75rem 0.75rem;">
+            style="padding: calc(0.75rem + var(--safe-top, env(safe-area-inset-top, 0px))) 0.75rem 0.75rem 0.75rem;">
             <button id="mobileBackButton"
               class="text-gray-600 hover:text-gray-800 hidden items-center p-3 -ml-3 mr-1 rounded-full"
               style="display:none;"><i class="fas fa-arrow-left"></i></button>

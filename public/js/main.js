@@ -4315,6 +4315,7 @@ function selectRoom(roomId, roomName) {
     const bottomNav = document.getElementById("mobileBottomNav");
     if (bottomNav) bottomNav.style.display = "none";
     document.body.classList.add('in-chat-view');
+    if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
   }
 
   if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
@@ -8794,6 +8795,7 @@ mobileBackButton.addEventListener("click", () => {
   const bottomNav = document.getElementById("mobileBottomNav");
   if (bottomNav) bottomNav.style.display = "flex";
   document.body.classList.remove('in-chat-view');
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 
   // ルーム退出処理（開いている判定を解除する）
   currentRoomId = null;

@@ -107,14 +107,14 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* すべてのiPhone (SEから17まで) をサポートする堅牢なSafe Area変数 */
-      --safe-top: max(24px, env(safe-area-inset-top, 0px));
+      /* すべてのiPhone / iPad / Android / PWA をサポートする堅牢なSafe Area変数 */
+      --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-left: env(safe-area-inset-left, 0px);
       --safe-right: env(safe-area-inset-right, 0px);
 
       /* ボトムナビゲーションの高さ計算 */
-      --mnav-base-h: 56px; /* タッチしやすい標準的な高さ */
+      --mnav-base-h: 52px; /* タッチしやすい標準的な高さ */
       --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
     }
     #mobileBottomNav {
@@ -177,7 +177,7 @@
     #mobileProfileScreen,
     #mobileNotifScreen {
       inset: 0 0 var(--mnav-total) 0 !important;
-      padding-bottom: 24px !important;
+      padding-bottom: 0 !important;
       box-sizing: border-box;
     }
     body.has-mobile-nav #mobileProfileScreen,
@@ -679,7 +679,6 @@
 
       /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
       .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
-      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\\.5.right-4,
       .modal-overlay:not(.hidden) .modal-box button.modal-close {
         /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
         top: calc(var(--safe-top) + 4px) !important;
@@ -697,7 +696,7 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
       }
       .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
-      .modal-overlay:not(.hidden) .modal-box button.absolute.top-3\.5.right-4:hover {
+      .modal-overlay:not(.hidden) .modal-box button.modal-close:hover {
         background: rgba(255, 255, 255, 0.28) !important;
         transform: scale(0.95) !important;
       }
@@ -743,7 +742,6 @@
       }
 
       /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
-      .modal-overlay:not(.hidden) .modal-box .p-6.max-h-\[60vh\],
       .modal-overlay:not(.hidden) .modal-box .p-6 {
         flex: 1 1 auto !important;
         max-height: none !important; /* 60vhの強制カットを消去！！！ */
