@@ -479,9 +479,9 @@
         </div>
       </div>
 
-      <!-- 設定モーダル (PC: Discord風2カラム) -->
-      <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
+      <!-- 設定モーダル (PC: Discord風2カラム・大画面/WQHDレスポンシブ拡張) -->
+      <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden modal-box animate-pop-in" style="height:min(850px,calc(100dvh - 2.5rem)); width:min(1100px,calc(100vw - 2rem));">
           <div class="settings-discord-layout">
             <!-- 左サイドバー -->
             <div class="settings-sidebar">
@@ -692,13 +692,23 @@
                   </div>
                 </div>
                 <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">外観</h3>
-                  <div class="bg-gray-50 rounded-2xl p-4 space-y-1">
-                    <div class="setting-row">
-                      <div class="setting-label"><i class="fas fa-moon"></i> ダークモード</div>
-                      <label class="toggle-switch"><input type="checkbox" id="toggleDarkServer" onchange="setDarkServerTheme(this.checked)"><span class="toggle-slider"></span></label>
+                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">外観テーマ</h3>
+                  <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
+                    <div>
+                      <div class="text-xs font-bold text-gray-500 mb-2">テーマを選択</div>
+                      <div class="grid grid-cols-3 gap-2">
+                        <button type="button" id="themeBtnLight" onclick="setAppTheme('light')" class="px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all bg-white text-gray-800 border-gray-300 shadow-sm">
+                          <i class="fas fa-sun text-yellow-500"></i> ライト
+                        </button>
+                        <button type="button" id="themeBtnDarkNavy" onclick="setAppTheme('dark-navy')" class="px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all bg-[#0f172a] text-gray-200 border-transparent">
+                          <i class="fas fa-moon text-blue-400"></i> ネイビー
+                        </button>
+                        <button type="button" id="themeBtnDiscordDark" onclick="setAppTheme('discord-dark')" class="px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all bg-[#1e1f22] text-[#dbdee1] border-transparent">
+                          <i class="fab fa-discord text-indigo-400"></i> Discord
+                        </button>
+                      </div>
                     </div>
-                    <div class="setting-row">
+                    <div class="setting-row pt-2 border-t border-gray-200 dark:border-gray-700">
                       <div class="setting-label"><i class="fas fa-layer-group"></i> モダンUIモード</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleDiscordUI" onchange="setDiscordUIMode(this.checked)"><span class="toggle-slider"></span></label>
                     </div>
@@ -713,15 +723,17 @@
                     </div>
                     <div class="setting-row">
                       <div class="setting-label"><i class="fas fa-times-circle"></i> ウィンドウを閉じる動作</div>
-                      <div class="relative min-w-[180px]">
-                        <select id="closeBehaviorSelect" class="w-full py-2 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
-                          <option value="minimize">タスクバーに最小化 (推奨)</option>
-                          <option value="hide">タスクトレイに格納</option>
-                          <option value="quit">完全に終了する</option>
-                        </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                          <i class="fas fa-chevron-down text-xs"></i>
+                      <div class="covo-custom-select" id="closeBehaviorDropdown">
+                        <div class="covo-select-trigger" onclick="toggleCustomDropdown('closeBehaviorDropdown')">
+                          <span id="closeBehaviorSelectedLabel">タスクバーに最小化 (推奨)</span>
+                          <i class="fas fa-chevron-down text-xs opacity-60"></i>
                         </div>
+                        <div class="covo-select-options">
+                          <div class="covo-select-option selected" data-value="minimize" onclick="selectCloseBehaviorOption('minimize', 'タスクバーに最小化 (推奨)')">タスクバーに最小化 (推奨)</div>
+                          <div class="covo-select-option" data-value="hide" onclick="selectCloseBehaviorOption('hide', 'タスクトレイに格納')">タスクトレイに格納</div>
+                          <div class="covo-select-option" data-value="quit" onclick="selectCloseBehaviorOption('quit', '完全に終了する')">完全に終了する</div>
+                        </div>
+                        <input type="hidden" id="closeBehaviorSelect" value="minimize" />
                       </div>
                     </div>
                   </div>
@@ -837,13 +849,108 @@
   </div>
 
   <!-- 共有レポートコンテンツ -->
-  <div id="reportsSharedContent" class="hidden">
-    <div class="space-y-4">
-      <div class="flex items-center justify-between mb-2">
+  <div id="reportsSharedContent" class="hidden h-full flex flex-col">
+    <div class="space-y-4 flex-1 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
         <p class="text-xs text-gray-400 leading-relaxed">ユーザーから寄せられたバグ報告や要望の一覧です。</p>
         <button onclick="loadAdminFeedbacks()" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors"><i class="fas fa-sync-alt mr-1"></i>更新</button>
       </div>
-      <div id="adminFeedbacksList" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1"></div>
+      <div id="adminFeedbacksList" class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[350px]"></div>
+    </div>
+  </div>
+
+  <!-- Windows版ダウンロード モーダル (Web版用 - 極上デザイン) -->
+  <div id="windowsDownloadModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-8 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
+      <button onclick="document.getElementById('windowsDownloadModal').classList.add('hidden')" class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+        <i class="fas fa-times text-base"></i>
+      </button>
+
+      <div class="text-center space-y-5">
+        <!-- ロゴ -->
+        <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-lg shadow-blue-500/25">
+          <i class="fab fa-windows"></i>
+        </div>
+
+        <div>
+          <h3 class="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Windows版 Covo</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 leading-relaxed max-w-sm mx-auto">
+            PCの性能をフル活用するネイティブデスクトップアプリ。ブラウザを開かずにいつでも仲間と繋がれます。
+          </p>
+        </div>
+
+        <!-- 特長カード3点 -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+          <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-2xl border border-gray-100 dark:border-white/5 space-y-1">
+            <div class="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-bolt"></i>
+            </div>
+            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 pt-1">タスクトレイ常駐</div>
+            <div class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">最小化でバックグラウンド待機</div>
+          </div>
+
+          <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-2xl border border-gray-100 dark:border-white/5 space-y-1">
+            <div class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-bell"></i>
+            </div>
+            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 pt-1">ネイティブ通知</div>
+            <div class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">着信やメッセージを逃さない</div>
+          </div>
+
+          <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-2xl border border-gray-100 dark:border-white/5 space-y-1">
+            <div class="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-keyboard"></i>
+            </div>
+            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 pt-1">ショートカット</div>
+            <div class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">Ctrl+Shift+S で瞬時に表示</div>
+          </div>
+        </div>
+
+        <!-- ダウンロードボタン -->
+        <div class="pt-2 space-y-2">
+          <button id="modalDownloadExeBtn" onclick="downloadLatestWindowsApp(this)" class="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 active:scale-98 text-white font-bold text-sm rounded-2xl shadow-xl shadow-indigo-500/25 transition-all flex items-center justify-center gap-2.5">
+            <i class="fas fa-download text-base"></i> 最新版インストーラーをダウンロード (.exe)
+          </button>
+          <p class="text-[10px] text-gray-400 dark:text-gray-500">
+            GitHub Releases 公式リポジトリより安全にダウンロードされます
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- インアプリブラウザ モーダル (Windows版/iOS PWA用) -->
+  <div id="inAppBrowserModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-2 sm:p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden modal-box animate-pop-in border border-gray-200 dark:border-[#202225]">
+      <!-- ブラウザヘッダーバー -->
+      <div class="bg-gray-100 dark:bg-[#2b2d31] border-b border-gray-200 dark:border-[#202225] px-4 py-2.5 flex items-center justify-between gap-3 flex-shrink-0 select-none">
+        <div class="flex items-center gap-2">
+          <button onclick="reloadInAppBrowser()" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-white/5 transition-colors" title="再読み込み">
+            <i class="fas fa-rotate-right text-xs"></i>
+          </button>
+        </div>
+        <!-- URL表示バー -->
+        <div class="flex-1 max-w-xl bg-white dark:bg-[#1e1f22] px-3 py-1.5 rounded-xl border border-gray-200 dark:border-[#202225] flex items-center gap-2 shadow-inner">
+          <i class="fas fa-lock text-emerald-500 text-xs flex-shrink-0"></i>
+          <span id="inAppBrowserUrlDisplay" class="text-xs text-gray-700 dark:text-gray-300 font-mono truncate select-all flex-1">https://...</span>
+        </div>
+        <!-- アクションボタン -->
+        <div class="flex items-center gap-1.5">
+          <button onclick="copyInAppBrowserUrl()" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-white/5 text-xs font-semibold flex items-center gap-1.5 transition-colors" title="リンクをコピー">
+            <i class="fas fa-link text-xs"></i><span class="hidden sm:inline">コピー</span>
+          </button>
+          <button onclick="openInAppBrowserInExternal()" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-white/5 text-xs font-semibold flex items-center gap-1.5 transition-colors" title="ブラウザで開く">
+            <i class="fas fa-external-link-alt text-xs"></i><span class="hidden sm:inline">ブラウザで開く</span>
+          </button>
+          <button onclick="closeInAppBrowser()" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-white/5 transition-colors ml-1" title="閉じる">
+            <i class="fas fa-times text-sm"></i>
+          </button>
+        </div>
+      </div>
+      <!-- iframe コンテンツ表示 -->
+      <div class="flex-1 bg-white relative">
+        <iframe id="inAppBrowserIframe" class="w-full h-full border-0" sandbox="allow-scripts allow-popups allow-forms" src="about:blank"></iframe>
+      </div>
     </div>
   </div>
 
@@ -1288,52 +1395,144 @@
         </div>
       </div>
       
-      <!-- チャットアプリ本体 -->
-      <!-- チャットアプリ本体 -->
-      <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full">
-      <!-- Discord風 左側サーバーナビゲーションバー -->
+  <!-- iOS Safari用 ホーム画面追加ガイド モーダル -->
+  <div id="iosPwaGuideModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-3xl shadow-2xl w-full max-w-sm p-6 modal-box animate-pop-in border border-gray-100 dark:border-[#202225] relative text-center">
+      <button onclick="document.getElementById('iosPwaGuideModal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-2 rounded-lg transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+      <div class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-lg mb-4">
+        <i class="fas fa-mobile-alt"></i>
+      </div>
+      <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-1">ホーム画面に追加</h3>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">Safariからアプリとしてインストールすると、全画面で快適に利用できます。</p>
+      
+      <!-- ステップ説明 -->
+      <div class="space-y-4 text-left bg-gray-50 dark:bg-[#2b2d31] p-4 rounded-2xl border border-gray-100 dark:border-[#202225] mb-6">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs flex-shrink-0">1</div>
+          <div class="text-xs text-gray-700 dark:text-gray-200">画面下の <i class="fas fa-arrow-up-from-bracket text-indigo-500 mx-1"></i>（共有ボタン）をタップ</div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs flex-shrink-0">2</div>
+          <div class="text-xs text-gray-700 dark:text-gray-200">メニューをスクロールして <span class="font-bold">「ホーム画面に追加」</span> を選択</div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs flex-shrink-0">3</div>
+          <div class="text-xs text-gray-700 dark:text-gray-200">右上の <span class="font-bold text-indigo-500">「追加」</span> をタップして完了</div>
+        </div>
+      </div>
+
+      <button onclick="document.getElementById('iosPwaGuideModal').classList.add('hidden')" class="w-full py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-bold text-sm rounded-xl transition-all">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- Windows版専用: Discord風 カスタムタイトルバー (Tauri環境のみ表示) -->
+  <div id="discordTitleBar" class="w-full h-[28px] bg-white dark:bg-[#1e1f22] border-b border-gray-200 dark:border-[#1e1f22] select-none flex items-center justify-between z-50 flex-shrink-0" style="display: none;" data-tauri-drag-region>
+    <!-- 左側: ナビゲーション & ロゴ -->
+    <div class="flex items-center h-full px-2 gap-1 pointer-events-none" data-tauri-drag-region>
+      <span class="text-[11px] font-bold text-gray-400 dark:text-gray-400 px-2 tracking-wider">Covo</span>
+    </div>
+    <!-- 右側: ウィンドウコントロール (最小化 / 最大化 / 閉じる) -->
+    <div class="flex items-center h-full flex-shrink-0">
+      <button onclick="window.minimizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最小化">
+        <i class="fas fa-minus text-[10px]"></i>
+      </button>
+      <button onclick="window.toggleMaximizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最大化">
+        <i class="far fa-square text-[10px]"></i>
+      </button>
+      <button onclick="window.closeWindow()" class="h-full w-11 flex items-center justify-center text-gray-500 hover:text-white dark:text-gray-400 dark:hover:text-white hover:bg-red-500 transition-colors" title="閉じる">
+        <i class="fas fa-times text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- チャットアプリ本体 -->
+  <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full min-h-0">
+        <!-- Discord風 左側サーバーナビゲーションバー -->
         <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
           style="padding-top: calc(0.75rem + var(--safe-top, env(safe-area-inset-top, 0px))); padding-bottom: max(12px, var(--safe-bottom, env(safe-area-inset-bottom, 0px)));">
-          <!-- ダイレクトメッセージ等/ホームアイコン (Discord風) -->
-          <div class="discord-server-item discord-home-btn group" onclick="leaveServerView()" title="サーバー一覧 / ホーム">
+          <!-- DM/フレンドホームアイコン（吹き出しマーク）-->
+          <div class="discord-server-item discord-home-btn group active" id="discordHomeBtn" onclick="openDmHomeView()" title="ダイレクトメッセージ / フレンド">
             <div class="discord-server-pill" id="discordHomePill"></div>
             <div class="discord-server-icon">
-              <i class="fas fa-compass text-xl"></i>
+              <i class="fas fa-comments text-xl"></i>
             </div>
           </div>
-          <div class="w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] my-2 rounded"></div>
-          <!-- サーバーアイコン一覧 -->
+          <div class="w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] my-2 rounded flex-shrink-0"></div>
+          
+          <!-- サーバーアイコン一覧 (スクロール可能) -->
           <div id="discordServerNavList" class="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto hide-scrollbar"></div>
-          <!-- サーバー追加ボタン -->
-          <div class="discord-server-item group mt-2" onclick="document.getElementById('addServerSelectModal').classList.remove('hidden')" title="サーバー追加">
+          
+          <!-- サーバーリスト下の仕切り線 -->
+          <div class="w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] my-2 rounded flex-shrink-0"></div>
+          
+          <!-- 探索・発見 (コンパスマーク) -->
+          <div class="discord-server-item group" id="discordDiscoverBtn" onclick="openDiscoverView()" title="サーバーを発見・探索">
+            <div class="discord-server-pill" id="discordDiscoverPill"></div>
+            <div class="discord-server-icon discord-nav-action-icon">
+              <i class="fas fa-compass text-lg"></i>
+            </div>
+          </div>
+
+          <!-- サーバー追加ボタン (+) -->
+          <div class="discord-server-item group mt-1" id="discordAddServerBtn" onclick="document.getElementById('addServerSelectModal').classList.remove('hidden')" title="サーバー追加">
             <div class="discord-server-pill"></div>
             <div class="discord-server-icon discord-nav-action-icon">
               <i class="fas fa-plus text-lg"></i>
             </div>
           </div>
+
+          <!-- Web版専用: Windowsアプリ ダウンロードボタン (↓) -->
+          <div class="discord-server-item group mt-1" id="discordDownloadAppBtn" onclick="openWindowsDownloadModal()" title="Windowsアプリをダウンロード" style="display: none;">
+            <div class="discord-server-pill"></div>
+            <div class="discord-server-icon discord-nav-action-icon text-emerald-500 hover:text-white hover:bg-emerald-500">
+              <i class="fas fa-download text-lg"></i>
+            </div>
+          </div>
         </div>
+
         <!-- ルームリストサイドバー -->
         <div id="sidebar" class="bg-gray-100 flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー -->
-          <div id="serverHeader">
-            <button class="" id="backToServerListBtn" title="サーバー一覧に戻る"><i class="fas fa-arrow-left"></i></button>
-            <span id="serverNameDisplay">サーバー</span>
-            <button id="serverSettingsBtn" title="サーバー設定" class="hidden"><i class="fas fa-cog"></i></button>
+          <!-- サーバーヘッダー (Discord風) -->
+          <div id="serverHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onclick="openServerSettings()">
+            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
+              <span id="serverNameDisplay" class="font-bold truncate text-sm">サーバー</span>
+              <i class="fas fa-chevron-down text-xs text-gray-400"></i>
+            </div>
+            <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog"></i></button>
           </div>
-          <!-- Discord風ホームサイドバー (サーバー未選択時に表示) -->
-          <div id="discordHomeSidebar" class="hidden flex-col p-3 text-sm flex-1 space-y-1">
-            <div class="px-2 py-1.5 rounded-lg bg-gray-200/60 dark:bg-white/10 font-bold text-gray-800 dark:text-white flex items-center gap-3 cursor-pointer">
-              <i class="fas fa-compass text-lg text-slate-400"></i> 探索 / ホーム
+          <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->
+          <div id="discordHomeSidebar" class="hidden flex-col text-sm flex-1 overflow-y-auto">
+            <!-- Discord風 検索バー風ボタン -->
+            <div class="p-2.5 border-b border-gray-200 dark:border-[#202225] flex-shrink-0">
+              <button class="w-full py-1.5 px-3 bg-gray-200/70 dark:bg-[#1e1f22] text-gray-500 dark:text-gray-400 rounded-lg text-xs font-medium flex items-center justify-between hover:bg-gray-200 dark:hover:bg-[#1e1f22]/80 transition-colors shadow-inner" onclick="openNotifModal()">
+                <span>会話を探すか始める</span>
+                <kbd class="text-[10px] bg-gray-300/60 dark:bg-gray-800 px-1.5 py-0.5 rounded text-gray-500 dark:text-gray-400 font-mono">Ctrl+K</kbd>
+              </button>
             </div>
-            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="document.getElementById('joinServerBtn').click()">
-              <i class="fas fa-sign-in-alt text-lg text-slate-400"></i> サーバーに参加
+            <!-- フレンドボタン -->
+            <div class="p-2">
+              <div class="px-3 py-2.5 rounded-xl bg-gray-200/70 dark:bg-white/10 font-bold text-gray-800 dark:text-white flex items-center gap-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-white/15 transition-colors" onclick="openDmHomeView()">
+                <i class="fas fa-user-friends text-base text-indigo-500 w-5 text-center"></i>
+                <span class="flex-1">フレンド</span>
+              </div>
             </div>
-            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="document.getElementById('createServerBtn').click()">
-              <i class="fas fa-plus text-lg text-slate-400"></i> 新規サーバー作成
+            
+            <div class="pt-3 px-3 pb-1 flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+              <span>ダイレクトメッセージ</span>
+              <button class="text-gray-400 hover:text-gray-200 transition-colors text-xs" title="DMを作成"><i class="fas fa-plus"></i></button>
             </div>
-            <div class="pt-4 px-2 text-[11px] font-bold text-gray-400 uppercase tracking-wider">ヘルプ＆サポート</div>
-            <div class="px-2 py-1.5 rounded-lg hover:bg-gray-200/40 dark:hover:bg-white/5 font-medium text-gray-600 dark:text-gray-300 flex items-center gap-3 cursor-pointer" onclick="openNotifModal()">
-              <i class="fas fa-bell text-lg text-slate-400 text-center w-5"></i> 通知履歴
+            
+            <!-- 個別チャットプレースホルダー / 一覧 -->
+            <div class="px-2 py-1 space-y-1">
+              <div class="p-4 text-center text-xs text-gray-400 dark:text-gray-500 bg-gray-50/50 dark:bg-[#1e1f22]/50 rounded-xl border border-gray-200/50 dark:border-gray-800/50 m-1">
+                <i class="fas fa-comments text-2xl text-gray-300 dark:text-gray-600 mb-2 block"></i>
+                <span>ダイレクトメッセージは<br>現在準備中です</span>
+              </div>
             </div>
           </div>
           <!-- ルームリスト -->
@@ -1361,49 +1560,167 @@
         <!-- リサイズハンドル -->
         <div id="resizer"></div>
 
-        <!-- Discord風探索ビュー (サーバー未選択時にチャットエリアの代わりに表示) -->
-        <div id="discordHomeView" class="flex-1 hidden flex-col overflow-y-auto p-4 sm:p-8 select-none relative">
-          <!-- 美しいヒーローバナー -->
-          <div class="w-full discord-hero-banner rounded-2xl p-5 sm:p-8 shadow-xl mb-6 relative overflow-hidden flex flex-col justify-center">
-            <div class="relative z-10 max-w-xl">
-              <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-2">Covoへようこそ</h1>
-              <p class="text-xs sm:text-sm leading-relaxed mb-5 opacity-90">身内だけのセキュアな空間へようこそ。Discordさながらの高品質なレイアウトで、快適なコミュニケーションをお楽しみください。</p>
-              <div class="flex flex-wrap gap-3">
-                <button onclick="document.getElementById('joinServerBtn').click()" class="discord-hero-btn-pri font-bold px-6 py-2.5 rounded-xl shadow transition-all text-sm">サーバーに参加</button>
-                <button onclick="document.getElementById('createServerBtn').click()" class="discord-hero-btn-sec font-bold px-6 py-2.5 rounded-xl transition-all text-sm">新規作成</button>
+        <!-- Discord風 DM/フレンドメインビュー (吹き出しマーク押下時に表示) -->
+        <div id="discordDmHomeView" class="flex-1 hidden md:flex flex-col overflow-hidden select-none relative min-w-0">
+          <!-- フレンド上部ヘッダーバー (Discord完全準拠・ツールバー統合) -->
+          <div id="discordDmHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none" style="padding-top: var(--safe-top, 0px);">
+            <div class="flex-1 min-w-0 flex items-center gap-3 overflow-x-auto hide-scrollbar py-1">
+              <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-2 md:hidden flex-shrink-0" onclick="leaveServerView()"><i class="fas fa-arrow-left"></i></button>
+              <div class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-100 flex-shrink-0">
+                <i class="fas fa-user-friends text-gray-500 dark:text-gray-400"></i>
+                <span>フレンド</span>
+              </div>
+              <div class="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1 flex-shrink-0"></div>
+              <!-- タブ一覧 -->
+              <div class="flex items-center gap-1 flex-shrink-0 text-xs font-semibold">
+                <button class="px-2.5 py-1 rounded-md bg-gray-200/80 dark:bg-white/10 text-gray-900 dark:text-white font-bold transition-colors whitespace-nowrap">オンライン</button>
+                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">全員</button>
+                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">待機中</button>
+                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">ブロック中</button>
+                <button class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap">
+                  <i class="fas fa-user-plus text-[10px]"></i> <span>フレンド追加</span>
+                </button>
               </div>
             </div>
-            <div class="absolute right-6 top-1/2 -translate-y-1/2 opacity-10 pointer-events-none hidden lg:block">
-              <i class="fas fa-layer-group text-[140px]"></i>
+            <!-- 右側アイコンツール (Discord共通トップバー) -->
+            <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
+              <button class="topbar-btn" id="dmCallButton" title="音声通話" onclick="openCallPicker()">
+                <i class="fas fa-phone"></i>
+              </button>
+              <button class="topbar-btn" id="dmFileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()">
+                <i class="fas fa-share-from-square"></i>
+              </button>
+              <!-- 受信ボックス (通知履歴) -->
+              <button onclick="openNotifModal()" class="topbar-btn relative" title="受信ボックス / 通知履歴">
+                <i class="fas fa-inbox text-base"></i>
+                <span class="header-notif-badge hidden"></span>
+              </button>
+              <button onclick="window.openFeedbackModal && window.openFeedbackModal()" class="topbar-btn" title="ヘルプ / フィードバック">
+                <i class="fas fa-circle-question"></i>
+              </button>
             </div>
           </div>
-          <!-- サーバー探索一覧 -->
-          <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-bold tracking-tight">マイ サーバー</h2>
+
+          <!-- フレンド・個チャメインコンテンツ (準備中プレースホルダー) -->
+          <div class="flex-1 overflow-y-auto p-6 sm:p-12 flex flex-col items-center justify-center text-center">
+            <div class="max-w-md w-full flex flex-col items-center">
+              <div class="w-24 h-24 rounded-3xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 flex items-center justify-center text-4xl mb-6 shadow-inner border border-indigo-100 dark:border-indigo-800/40">
+                <i class="fas fa-comments"></i>
+              </div>
+              <span class="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-full text-xs font-bold mb-3 tracking-wider">COMING SOON</span>
+              <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">個別チャット & フレンド機能</h2>
+              <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+                1対1のダイレクトメッセージやフレンドの追加・オンライン状況確認機能は現在準備中です。身内同士でさらに快適に繋がれる機能が近日登場します！
+              </p>
+              <div class="p-4 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200 dark:border-[#202225] text-left w-full space-y-2.5 shadow-sm">
+                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                  <i class="fas fa-check text-emerald-500"></i> エンドツーエンド暗号化 (E2EE) 個別チャット
+                </div>
+                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                  <i class="fas fa-check text-emerald-500"></i> フレンド同士の1タップ通話・ファイル共有
+                </div>
+                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                  <i class="fas fa-check text-emerald-500"></i> リアルタイムステータス表示
+                </div>
+              </div>
+            </div>
           </div>
-          <div id="discordHomeServerGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div class="text-gray-400 font-medium col-span-full">サーバーがありません。上のボタンから参加しましょう。</div>
+        </div>
+
+        <!-- Discord風探索ビュー (コンパスマーク押下時に表示) -->
+        <div id="discordDiscoverView" class="flex-1 hidden md:flex flex-col overflow-hidden select-none relative min-w-0">
+          <!-- 探索上部ヘッダーバー (Discord完全準拠・ツールバー統合) -->
+          <div id="discordDiscoverHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none" style="padding-top: var(--safe-top, 0px);">
+            <div class="flex-1 min-w-0 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-100">
+              <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-2 md:hidden flex-shrink-0" onclick="leaveServerView()"><i class="fas fa-arrow-left"></i></button>
+              <i class="fas fa-compass text-indigo-500 mr-1 text-base flex-shrink-0"></i>
+              <span class="truncate">サーバーを探す</span>
+              <div class="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-2 hidden sm:block flex-shrink-0"></div>
+              <span class="text-xs text-gray-400 font-normal hidden sm:inline truncate">Covoのコミュニティを発見して参加しよう</span>
+            </div>
+            <!-- 右側アイコンツール (Discord共通トップバー) -->
+            <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
+              <button onclick="document.getElementById('createServerBtn').click()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-sm flex items-center gap-1.5" title="新規サーバー作成">
+                <i class="fas fa-plus text-xs"></i> <span>新規作成</span>
+              </button>
+              <!-- 受信ボックス (通知履歴) -->
+              <button onclick="openNotifModal()" class="topbar-btn relative" title="受信ボックス / 通知履歴">
+                <i class="fas fa-inbox text-base"></i>
+                <span class="header-notif-badge hidden"></span>
+              </button>
+            </div>
           </div>
+
+          <!-- メインコンテンツ (スクロールエリア) -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-8">
+            <!-- 美しいヒーローバナー (文言洗練・ダーク調和) -->
+            <div class="w-full discord-hero-banner rounded-2xl p-5 sm:p-8 shadow-xl mb-6 relative overflow-hidden flex flex-col justify-center">
+              <div class="relative z-10 max-w-xl">
+                <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-2">Covoへようこそ</h1>
+                <p class="text-xs sm:text-sm leading-relaxed mb-5 opacity-90">身内だけのセキュアな空間へようこそ。高品質なレイアウトで、快適なコミュニケーションをお楽しみください。</p>
+                <div class="flex flex-wrap gap-3">
+                  <button onclick="document.getElementById('joinServerBtn').click()" class="discord-hero-btn-pri font-bold px-6 py-2.5 rounded-xl shadow transition-all text-sm">サーバーに参加</button>
+                  <button onclick="document.getElementById('createServerBtn').click()" class="discord-hero-btn-sec font-bold px-6 py-2.5 rounded-xl transition-all text-sm">新規作成</button>
+                </div>
+              </div>
+              <div class="absolute right-6 top-1/2 -translate-y-1/2 opacity-10 pointer-events-none hidden lg:block">
+                <i class="fas fa-compass text-[140px]"></i>
+              </div>
+            </div>
+            <!-- サーバー探索一覧 -->
+            <div class="flex justify-between items-center mb-6">
+              <h2 class="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">参加中のサーバー</h2>
+            </div>
+            <div id="discordHomeServerGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="text-gray-400 font-medium col-span-full">サーバーがありません。上のボタンから参加しましょう。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discord風探索画面: 全体メンバーリスト (右側サイドバー) -->
+        <div id="discordHomeMembers" class="w-[240px] bg-gray-50 dark:bg-[#2b2d31] border-l border-gray-200 dark:border-[#202225] hidden lg:flex flex-col flex-shrink-0 select-none overflow-y-auto">
+          <div class="p-3 text-xs font-bold text-gray-400 uppercase tracking-wider">オンライン</div>
+          <div id="discordHomeOnlineList" class="space-y-1 px-2 pb-3"></div>
+          <div class="p-3 text-xs font-bold text-gray-400 uppercase tracking-wider">オフライン</div>
+          <div id="discordHomeOfflineList" class="space-y-1 px-2 pb-6"></div>
         </div>
 
         <!-- チャットエリア -->
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
+          <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
-            class="bg-gray-200 border-b border-gray-300 text-center font-semibold text-gray-800 text-lg hidden flex-shrink-0 flex justify-between items-center"
-            style="padding: calc(0.75rem + var(--safe-top, env(safe-area-inset-top, 0px))) 0.75rem 0.75rem 0.75rem;">
-            <button id="mobileBackButton"
-              class="text-gray-600 hover:text-gray-800 hidden items-center p-3 -ml-3 mr-1 rounded-full"
-              style="display:none;"><i class="fas fa-arrow-left"></i></button>
-            <button id="toggleLeftSidebarBtn" class="text-gray-500 hover:text-gray-800 mr-2 hidden md:block" title="左サイドバーの表示/非表示"><i class="fas fa-bars"></i></button>
-            <span id="currentRoomTitleText" class="flex-1"></span>
-            <button class="text-gray-500 hover:text-gray-800 ml-3" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
-              <i class="fas fa-phone"></i>
-            </button>
-            <button class="text-gray-500 hover:text-gray-800 ml-3" id="fileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()" disabled>
-              <i class="fas fa-share-from-square"></i>
-            </button>
-            <button id="toggleSearchButton" class="text-gray-500 hover:text-gray-800 ml-3"><i class="fas fa-search"></i></button>
-            <button id="toggleMembersSidebarBtn" class="text-gray-500 hover:text-gray-800 ml-3 hidden md:block" title="メンバーリストの表示/非表示"><i class="fas fa-user-friends"></i></button>
+            class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden"
+            style="padding-top: var(--safe-top, 0px);">
+            <!-- 左側: 戻る/サイドバートグル + サーバー名/チャンネル名 -->
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <button id="mobileBackButton"
+                class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
+                style="display:none;"><i class="fas fa-arrow-left"></i></button>
+              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex" title="左サイドバーの表示/非表示"><i class="fas fa-bars"></i></button>
+              <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
+                <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
+                <span id="currentRoomTitleText" class="truncate"></span>
+              </div>
+            </div>
+
+            <!-- 中央〜右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス、メンバー) -->
+            <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
+              <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
+                <i class="fas fa-phone"></i>
+              </button>
+              <button class="topbar-btn" id="fileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()" disabled>
+                <i class="fas fa-share-from-square"></i>
+              </button>
+              <button id="toggleSearchButton" class="topbar-btn" title="検索"><i class="fas fa-search"></i></button>
+              
+              <!-- 受信ボックス (通知履歴) -->
+              <button onclick="openNotifModal()" class="topbar-btn relative" title="受信ボックス / 通知履歴">
+                <i class="fas fa-inbox text-base"></i>
+                <span class="header-notif-badge hidden"></span>
+              </button>
+
+              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバーリスト"><i class="fas fa-user-friends"></i></button>
+            </div>
           </div>
           <div id="searchContainer" class="hidden flex-shrink-0 flex items-center">
             <input type="text" id="searchInput" placeholder="メッセージを検索..."

@@ -1,12 +1,10 @@
 /**
  * ユーティリティ関数群 (utils.js)
- * ここには特定の状態 (db, authなど) に依存しない、汎用的で純粋な便利関数のみをまとめています。
- * これらはUIやシステム全体で使われる共通の道具であり、バグが発生しにくい最も安全な層です。
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
  */
 
 /**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換します。
- * 暗号化されたデータの保存や通信などで利用されます。
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
  * @param {ArrayBuffer} buf - 変換元のバイナリデータ
  * @returns {string} Base64文字列
  */
@@ -21,8 +19,7 @@ export function _abToB64(buf) {
 }
 
 /**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元します。
- * データの復号時などに利用されます。
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
  * @param {string} b64 - 変換元のBase64文字列
  * @returns {ArrayBuffer} 復元されたバイナリデータ
  */
@@ -42,11 +39,10 @@ export function _b64ToAb(b64) {
 }
 
 /**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換します。
- * ファイルアップロード時のサイズ表示などに利用されます。
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
  * @param {number} bytes - バイト数
  * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列 (例: "1.50 MB")
+ * @returns {string} フォーマットされた文字列
  */
 export function formatBytes(bytes, decimals = 2) {
   if (bytes === 0) return '0 Bytes';
@@ -58,8 +54,7 @@ export function formatBytes(bytes, decimals = 2) {
 }
 
 /**
- * メッセージオブジェクトから正確なタイムスタンプを取得します。
- * サーバーの時間がまだ反映されていない場合(ローカル投稿直後)のフォールバックも行います。
+ * メッセージオブジェクトから正確なタイムスタンプを取得
  * @param {Object} msg - メッセージオブジェクト
  * @returns {number} タイムスタンプ(ミリ秒)
  */
@@ -71,24 +66,26 @@ export function getMsgTimestamp(msg) {
     return msg.createdAt;
   }
   if (msg.timestamp) {
-    return msg.timestamp;
+    return typeof msg.timestamp === 'number' ? msg.timestamp : (msg.timestamp.toMillis ? msg.timestamp.toMillis() : Date.now());
   }
   return Date.now();
 }
 
 /**
- * テキストをクリップボードに安全にコピーします。
- * 現代の Clipboard API と古いブラウザ用のフォールバックの両方をサポートしています。
+ * テキストをクリップボードに安全にコピー
  * @param {string} txt - コピーするテキスト
  */
-export function safeCopy(txt) {
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(txt).catch(err => {
-      console.warn("Clipboard API failed, fallback to execCommand", err);
-      _execCopyFallback(txt);
-    });
-  } else {
-    _execCopyFallback(txt);
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
   }
 }
 
@@ -97,26 +94,27 @@ export function safeCopy(txt) {
  * @param {string} txt - コピーするテキスト
  */
 export function _execCopyFallback(txt) {
-  const ta = document.createElement('textarea');
-  ta.value = txt;
-  ta.style.position = 'fixed';
-  ta.style.top = '0';
-  ta.style.left = '0';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
   try {
-    document.execCommand('copy');
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
   } catch (err) {
     console.error('Fallback copy error', err);
+    return false;
   }
-  document.body.removeChild(ta);
 }
 
 /**
- * メールアドレスの最初の1文字を取得します。
- * アイコンの代わりのイニシャル画像生成などで利用されます。
+ * メールアドレスの最初の1文字を取得
  * @param {string} email - メールアドレス
  * @returns {string} 最初の1文字(大文字) または '?'
  */
@@ -126,8 +124,7 @@ export function emailInitial(email) {
 }
 
 /**
- * HEICファイルをJPEGに変換します。
- * HEICでない場合や変換失敗時は元のファイルをそのまま返します。
+ * HEICファイルをJPEGに変換
  * @param {File} file - 処理対象のファイル
  * @returns {Promise<File>} 処理後のファイル
  */
@@ -153,4 +150,16 @@ export async function processHeicFile(file) {
     }
   }
   return file;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
 }

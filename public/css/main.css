@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @import url('./modules/base.css');
 @import url('./modules/layout.css');
 @import url('./modules/sidebar.css');
@@ -6,3 +10,4 @@
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
+

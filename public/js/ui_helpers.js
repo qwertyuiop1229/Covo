@@ -1,13 +1,12 @@
 /**
  * UI補助機能 (ui_helpers.js)
- * アラートの表示、画像拡大表示、通知音など、画面描画・UIに特化した純粋な機能群です。
- * データベースや複雑なアプリ状態には依存していません。
+ * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
  */
 
 /**
- * 画面上にトースト（通知ポップアップ）を表示します。
+ * 画面上にトースト（通知ポップアップ）を表示
  * @param {string} msg - 表示するメッセージ
- * @param {string} type - "info" または "error" (赤背景になる)
+ * @param {string} type - "info", "success", "error"
  */
 export function alertMessage(msg, type = "info") {
   const stack = document.getElementById("notifStack");
@@ -15,9 +14,16 @@ export function alertMessage(msg, type = "info") {
   const box = document.createElement("div");
   let colorClass = "bg-gray-800 text-white";
   if (type === "error") colorClass = "bg-red-600 text-white";
-  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass}`;
+  else if (type === "success") colorClass = "bg-emerald-600 text-white";
+  
+  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
   box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  box.textContent = msg;
+  
+  let icon = '<i class="fas fa-info-circle"></i>';
+  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
+  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
+  
+  box.innerHTML = `${icon}<span>${msg}</span>`;
   stack.appendChild(box);
   setTimeout(() => {
     box.style.animation = "fadeIn 0.2s ease reverse forwards";
@@ -26,7 +32,7 @@ export function alertMessage(msg, type = "info") {
 }
 
 /**
- * アバターや画像を全画面表示（ライトボックス表示）します。
+ * アバターや画像を拡大表示（ライトボックス）
  * @param {string} url - 拡大表示する画像のURL
  */
 export function openAvatarLightbox(url) {
@@ -39,35 +45,42 @@ export function openAvatarLightbox(url) {
 }
 
 /**
- * 新着メッセージやメンションがあった際の通知音を再生します。
- * Web Audio API による洗練された和音チャイムを鳴らします。
+ * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
  */
+let audioCtx = null;
 export function playNotificationSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // ブラウザのオートプレイポリシー対応: suspend状態のContextを再開してから使用する
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
     const play = () => {
-      const now = ctx.currentTime;
-      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6 の和音チャイム
+      const now = audioCtx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
       notes.forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + i * 0.09);
         gain.gain.setValueAtTime(0, now + i * 0.09);
         gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
         gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
         osc.start(now + i * 0.09);
         osc.stop(now + i * 0.09 + 0.5);
       });
-      setTimeout(() => ctx.close(), 1500);
     };
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(play).catch(() => {});
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
     } else {
       play();
     }
   } catch (e) { }
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.alertMessage = alertMessage;
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.playNotificationSound = playNotificationSound;
 }

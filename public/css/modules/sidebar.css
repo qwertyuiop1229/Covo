@@ -1,4 +1,4 @@
-    /* --- メンバーリスト用スタイル (Discord風) --- */
+/* --- メンバーリスト用スタイル (Discord風) --- */
     #membersSidebar {
       width: 240px;
       background-color: #f9fafb;
@@ -469,120 +469,443 @@
       border-radius: 16px; /* Discord調の美しいスクワークル変形 */
     }
 
-    /* 左側のアクティブインジケーター（ピル）- Discord本家同等の真の左端密着＆リッチスライドイン */
+    /* 左側のアクティブインジケーター（ピル）- Discord本家同等の滑らかで優雅なアニメーション */
     .discord-server-pill {
       position: absolute;
-      left: -12px; /* PCナビバー(w-[72px]に対しアイテムw-[48px])の真の左端に完全密着 */
+      left: -12px;
       width: 4px;
-      height: 8px; /* 未読時のドットの高さにしておく */
+      height: 8px;
       background: white;
       border-radius: 0 4px 4px 0;
-      transform: translateX(-4px); /* 左外側に隠す */
+      transform: translateX(-4px);
       opacity: 0;
-      /* スッと自然に出てきてフワッと止まる、AppleやDiscord等で採用される極上の流体イージング */
-      transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                  height 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+      pointer-events: none;
+      /* 滑らかに緩やかに伸びるリッチな流体イージング */
+      transition: height 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
+                  transform 0.22s cubic-bezier(0.25, 1, 0.5, 1),
                   opacity 0.2s ease-out;
+      will-change: height, transform, opacity;
     }
 
     /* ホバー時: 左からスライドインして20px高さ */
-    .discord-server-item:hover .discord-server-pill {
-      transform: translateX(0);
-      height: 20px;
-      opacity: 1;
+    @media (hover: hover) and (pointer: fine) {
+      .discord-server-item:hover .discord-server-pill {
+        transform: translateX(0);
+        height: 20px;
+        opacity: 1;
+      }
     }
 
-    /* アクティブ時: 左からスライドインして40px高さ */
+    /* アクティブ時: スーッと滑らかに40pxまで伸びる */
     .discord-server-item.active .discord-server-pill {
       transform: translateX(0) !important;
       height: 40px !important;
       opacity: 1 !important;
     }
 
-    /* 未読時: 左からスライドインして8px高さ（小さいドット表示） */
+    /* 未読時: 8px（ドット表示） */
     .discord-server-item.has-unread .discord-server-pill {
       transform: translateX(0);
       height: 8px;
       opacity: 1;
     }
-    /* 未読かつホバー時: 20px */
-    .discord-server-item.has-unread:hover .discord-server-pill {
-      transform: translateX(0);
-      height: 20px;
-      opacity: 1;
+    @media (hover: hover) and (pointer: fine) {
+      .discord-server-item.has-unread:hover .discord-server-pill {
+        transform: translateX(0);
+        height: 20px;
+        opacity: 1;
+      }
     }
 
-    /* ホーム画面・サーバービュー切替ロジック (DiscordUIモード時) */
-    body.discord-ui-mode.discord-home-view #discordHomeView {
-      display: flex !important;
-    }
+    /* ホーム画面・DM・探索ビュー切替ロジック (DiscordUIモード時) */
     body.discord-ui-mode.discord-home-view #chatArea,
+    body.discord-ui-mode.discord-home-view #membersSidebar,
     body.discord-ui-mode.discord-home-view #roomList,
     body.discord-ui-mode.discord-home-view #serverHeader {
       display: none !important;
     }
-    body.discord-ui-mode.discord-home-view #discordHomeSidebar {
+    body.discord-ui-mode.discord-home-view #discordHomeMembers {
       display: flex !important;
     }
 
-    /* ダークモード＆ライトモードの配色定義 */
-    /* ダークモード (Covo極上ピュアダーク) */
-    body.dark-server-theme.discord-ui-mode #discordServerNav { background: #121316 !important; border-right: 1px solid #18191d !important; }
-    body.dark-server-theme.discord-ui-mode #sidebar { background: #1a1b1e !important; color: #dbdee1 !important; }
-    body.dark-server-theme.discord-ui-mode #discordHomeView { background: #212226 !important; color: #dbdee1 !important; }
-    body.dark-server-theme.discord-ui-mode #discordHomeView h1,
-    body.dark-server-theme.discord-ui-mode #discordHomeView h2 { color: #f2f3f5 !important; }
-    body.dark-server-theme.discord-ui-mode #mobileBottomNav { background: #121316 !important; }
-    
-    body.dark-server-theme.discord-ui-mode .discord-server-pill { background: white; }
-    body.dark-server-theme.discord-ui-mode .discord-server-icon { background-color: #212226; color: #dbdee1; }
+    /* 1. DM/フレンドビュー (吹き出しマーク) */
+    body.discord-ui-mode.discord-dm-view #discordDmHomeView {
+      display: flex !important;
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+    }
+    body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
+      display: flex !important;
+    }
+    body.discord-ui-mode.discord-dm-view #discordDiscoverView {
+      display: none !important;
+    }
+
+    /* 2. 探索/サーバービュー (コンパスマーク) */
+    body.discord-ui-mode.discord-discover-view #discordDiscoverView {
+      display: flex !important;
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+    }
+    body.discord-ui-mode.discord-discover-view #discordDmHomeView,
+    body.discord-ui-mode.discord-discover-view #discordHomeSidebar,
+    body.discord-ui-mode.discord-discover-view #sidebar {
+      display: none !important;
+    }
+
+    /* サーバー内（チャット表示時）の非表示制御 */
+    body.discord-ui-mode:not(.discord-home-view) #discordDmHomeView,
+    body.discord-ui-mode:not(.discord-home-view) #discordDiscoverView,
+    body.discord-ui-mode:not(.discord-home-view) #discordHomeSidebar,
+    body.discord-ui-mode:not(.discord-home-view) #discordHomeMembers {
+      display: none !important;
+    }
+    body.discord-ui-mode:not(.discord-home-view) #sidebar,
+    body.discord-ui-mode:not(.discord-home-view) #chatArea {
+      display: flex !important;
+    }
+    body.discord-ui-mode:not(.discord-home-view) #roomList {
+      display: block !important;
+    }
+    body.discord-ui-mode:not(.discord-home-view) #serverHeader {
+      display: flex !important;
+    }
+
+    /* =========================================================================
+       Discord UI Mode: 共通コンポーネント & テーマ別完全配色定義
+       ========================================================================= */
+
+    /* スクロールバー非表示ユーティリティ */
+    .hide-scrollbar, .no-scrollbar {
+      -ms-overflow-style: none !important;
+      scrollbar-width: none !important;
+    }
+    .hide-scrollbar::-webkit-scrollbar, .no-scrollbar::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+
+    /* ヘッダー内アイコンボタンスタイル */
+    .topbar-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .topbar-btn:hover:not(:disabled) {
+      color: #0f172a;
+      background: rgba(0, 0, 0, 0.06);
+    }
+    .topbar-btn:active:not(:disabled) {
+      transform: scale(0.92);
+    }
+    .topbar-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* 受信ボックス等の赤丸バッジ */
+    .header-notif-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 1.5px solid #ffffff;
+      pointer-events: none;
+    }
+
+    /* --- 1. ダークネイビー (Covoピュアネイビー: body.dark-server-theme) --- */
+    body.dark-server-theme.discord-ui-mode #discordServerNav {
+      background: #0b0f19 !important;
+      border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme.discord-ui-mode #sidebar {
+      background: #111827 !important;
+      color: #cbd5e1 !important;
+      border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme.discord-ui-mode #serverHeader,
+    body.dark-server-theme.discord-ui-mode #currentRoomHeader,
+    body.dark-server-theme.discord-ui-mode #discordDmHeader,
+    body.dark-server-theme.discord-ui-mode #discordDiscoverHeader {
+      background: #111827 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme.discord-ui-mode #discordDmHomeView,
+    body.dark-server-theme.discord-ui-mode #discordDiscoverView,
+    body.dark-server-theme.discord-ui-mode #chatArea {
+      background: #0f172a !important;
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme.discord-ui-mode #discordDiscoverView h1,
+    body.dark-server-theme.discord-ui-mode #discordDiscoverView h2,
+    body.dark-server-theme.discord-ui-mode #discordDmHomeView h1,
+    body.dark-server-theme.discord-ui-mode #discordDmHomeView h2 {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme.discord-ui-mode #discordHomeMembers {
+      background: #111827 !important;
+      border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme.discord-ui-mode #mobileBottomNav {
+      background: #0b0f19 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .topbar-btn {
+      color: #94a3b8;
+    }
+    body.dark-server-theme.discord-ui-mode .topbar-btn:hover:not(:disabled) {
+      color: #f8fafc;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    body.dark-server-theme.discord-ui-mode .header-notif-badge {
+      border-color: #111827;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-server-pill {
+      background: white;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-server-icon {
+      background-color: #1e293b;
+      color: #cbd5e1;
+    }
     body.dark-server-theme.discord-ui-mode .discord-server-item:hover .discord-server-icon:not(.custom-bg),
     body.dark-server-theme.discord-ui-mode .discord-server-item.active .discord-server-icon:not(.custom-bg) {
-      background-color: #3b82f6 !important; /* Discord調の美しい鮮やかブルー */
+      background-color: #3b82f6 !important;
       color: white !important;
     }
-    body.dark-server-theme.discord-ui-mode .discord-nav-action-icon { background-color: #212226; color: #dbdee1; }
-    body.dark-server-theme.discord-ui-mode .discord-server-item:hover .discord-nav-action-icon { background-color: #3b82f6 !important; color: white !important; }
-    body.dark-server-theme.discord-ui-mode .discord-hero-banner { background: #1a1b1e; border: 1px solid #2d2f36; color: #ffffff; }
-    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri { background: #3b82f6; color: #ffffff; border: 1px solid #2563eb; }
-    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri:hover { background: #2563eb; }
-    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec { background: #374151; color: #ffffff; border: 1px solid #4b5563; }
-    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec:hover { background: #4b5563; }
-    body.dark-server-theme.discord-ui-mode .discord-server-card { background: #1a1b1e; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); color: #ffffff; }
-    body.dark-server-theme.discord-ui-mode .discord-server-card:hover { background: #25262b; }
-    body.dark-server-theme.discord-ui-mode .discord-card-icon { background: #2b2d31; color: #dbdee1; }
-    body.dark-server-theme.discord-ui-mode .discord-card-btn { background: #374151; color: #ffffff; border: 1px solid #4b5563; }
-    body.dark-server-theme.discord-ui-mode .discord-card-btn:hover { background: #4b5563; }
+    body.dark-server-theme.discord-ui-mode .discord-nav-action-icon {
+      background-color: #1e293b;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-server-item:hover .discord-nav-action-icon {
+      background-color: #3b82f6 !important;
+      color: white !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-hero-banner {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+      border: 1px solid #334155 !important;
+      color: #ffffff !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri {
+      background: #3b82f6;
+      color: #ffffff;
+      border: 1px solid #2563eb;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-pri:hover {
+      background: #2563eb;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec {
+      background: #334155;
+      color: #ffffff;
+      border: 1px solid #475569;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-hero-btn-sec:hover {
+      background: #475569;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-server-card {
+      background: #1e293b !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      color: #ffffff !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-server-card:hover {
+      background: #243248 !important;
+      border-color: #475569 !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-card-icon {
+      background: #334155 !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-card-btn {
+      background: #3b82f6 !important;
+      color: #ffffff !important;
+      border: 1px solid #2563eb !important;
+    }
+    body.dark-server-theme.discord-ui-mode .discord-card-btn:hover {
+      background: #2563eb !important;
+    }
 
-    /* ライトモード (既存アプリの白＆ダークネイビー基調に完璧調和) */
-    body:not(.dark-server-theme).discord-ui-mode #discordServerNav { background: #e2e8f0 !important; border-right: 1px solid #cbd5e1 !important; }
-    body:not(.dark-server-theme).discord-ui-mode #sidebar { background: #f1f5f9 !important; color: #1e293b !important; }
-    body:not(.dark-server-theme).discord-ui-mode #discordHomeView { background: #f8fafc !important; color: #1e293b !important; }
-    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h1,
-    body:not(.dark-server-theme).discord-ui-mode #discordHomeView h2 { color: #1e293b !important; }
-    body:not(.dark-server-theme).discord-ui-mode #mobileBottomNav { background: #ffffff !important; border-top: 1px solid #e2e8f0 !important; }
-    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab { color: #64748b !important; }
-    body:not(.dark-server-theme).discord-ui-mode .mobile-nav-tab.active { color: #1e293b !important; }
-    
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-pill { background: #1e293b; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-icon { background-color: #ffffff; color: #1e293b; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-item:hover .discord-server-icon:not(.custom-bg),
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-item.active .discord-server-icon:not(.custom-bg) {
+    /* --- 2. Discordダーク (body.discord-dark-theme) --- */
+    body.discord-dark-theme.discord-ui-mode #discordServerNav {
+      background: #1e1f22 !important;
+      border-right: 1px solid #1f2023 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode #sidebar {
+      background: #2b2d31 !important;
+      color: #dbdee1 !important;
+      border-right: 1px solid #1f2023 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode #serverHeader,
+    body.discord-dark-theme.discord-ui-mode #currentRoomHeader,
+    body.discord-dark-theme.discord-ui-mode #discordDmHeader,
+    body.discord-dark-theme.discord-ui-mode #discordDiscoverHeader {
+      background: #313338 !important;
+      border-bottom: 1px solid #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode #discordDmHomeView,
+    body.discord-dark-theme.discord-ui-mode #discordDiscoverView,
+    body.discord-dark-theme.discord-ui-mode #chatArea {
+      background: #313338 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode #discordHomeMembers {
+      background: #2b2d31 !important;
+      border-left: 1px solid #1f2023 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode #mobileBottomNav {
+      background: #1e1f22 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode .topbar-btn {
+      color: #b5bac1;
+    }
+    body.discord-dark-theme.discord-ui-mode .topbar-btn:hover:not(:disabled) {
+      color: #f2f3f5;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    body.discord-dark-theme.discord-ui-mode .header-notif-badge {
+      border-color: #313338;
+    }
+    body.discord-dark-theme.discord-ui-mode .discord-hero-banner {
+      background: linear-gradient(135deg, #2b2d31 0%, #1e1f22 100%) !important;
+      border: 1px solid #3f4248 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme.discord-ui-mode .discord-server-card {
+      background: #2b2d31 !important;
+      border: 1px solid #383a40 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode .discord-server-card:hover {
+      background: #35373c !important;
+    }
+    body.discord-dark-theme.discord-ui-mode .discord-card-icon {
+      background: #383a40 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme.discord-ui-mode .discord-card-btn {
+      background: #5865f2 !important;
+      color: #ffffff !important;
+      border: 1px solid #4752c4 !important;
+    }
+
+    /* --- 3. ライトモード (body:not(.dark-server-theme):not(.discord-dark-theme)) --- */
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordServerNav {
+      background: #e2e8f0 !important;
+      border-right: 1px solid #cbd5e1 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #sidebar {
+      background: #f1f5f9 !important;
+      color: #1e293b !important;
+      border-right: 1px solid #e2e8f0 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #serverHeader,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #currentRoomHeader,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHeader,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverHeader {
+      background: #ffffff !important;
+      border-bottom: 1px solid #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHomeView,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverView,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #chatArea {
+      background: #f8fafc !important;
+      color: #1e293b !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeMembers {
+      background: #f1f5f9 !important;
+      border-left: 1px solid #e2e8f0 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #mobileBottomNav {
+      background: #ffffff !important;
+      border-top: 1px solid #e2e8f0 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .mobile-nav-tab {
+      color: #64748b !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .mobile-nav-tab.active {
+      color: #1e293b !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-pill {
+      background: #1e293b;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-icon {
+      background-color: #ffffff;
+      color: #1e293b;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-item:hover .discord-server-icon:not(.custom-bg),
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-item.active .discord-server-icon:not(.custom-bg) {
       background-color: #1e293b !important; /* Covo美学: 極上のダークネイビー */
       color: white !important;
     }
-    body:not(.dark-server-theme).discord-ui-mode .discord-nav-action-icon { background-color: #ffffff; color: #1e293b; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-item:hover .discord-nav-action-icon { background-color: #1e293b !important; color: white !important; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-hero-banner { background: #1e293b; border: 1px solid #334155; color: #ffffff; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-pri { background: #0284c7; color: #ffffff; border: 1px solid #0369a1; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-pri:hover { background: #0369a1; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-sec { background: #334155; color: #ffffff; border: 1px solid #475569; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-hero-btn-sec:hover { background: #475569; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-card { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); color: #1e293b; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-server-card:hover { background: #f1f5f9; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-card-icon { background: #e2e8f0; color: #1e293b; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-card-btn { background: #1e293b; color: #ffffff; border: 1px solid #0f172a; }
-    body:not(.dark-server-theme).discord-ui-mode .discord-card-btn:hover { background: #0f172a; }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-nav-action-icon {
+      background-color: #ffffff;
+      color: #1e293b;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-item:hover .discord-nav-action-icon {
+      background-color: #1e293b !important;
+      color: white !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-hero-banner {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
+      border: 1px solid #334155;
+      color: #ffffff !important;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-hero-btn-pri {
+      background: #0284c7;
+      color: #ffffff;
+      border: 1px solid #0369a1;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-hero-btn-pri:hover {
+      background: #0369a1;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-hero-btn-sec {
+      background: #334155;
+      color: #ffffff;
+      border: 1px solid #475569;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-hero-btn-sec:hover {
+      background: #475569;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-card {
+      background: #ffffff !important;
+      border: 1px solid #e2e8f0 !important;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      color: #1e293b !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-card:hover {
+      background: #f1f5f9 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-card-icon {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-card-btn {
+      background: #1e293b;
+      color: #ffffff;
+      border: 1px solid #0f172a;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-card-btn:hover {
+      background: #0f172a;
+    }
 
     /* モバイルビューのDiscordレイアウト適応 */
     @media (max-width: 768px) {
@@ -658,17 +981,24 @@
         border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
         background: #162032 !important;
       }
-      /* スマホ表示のホーム状態ではサイドバーを隠し、ディスカバリー画面をフル活用 */
-      body.discord-ui-mode.discord-home-view #sidebar {
+      /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応 */
+      body.discord-ui-mode.discord-discover-view #sidebar {
         display: none !important;
       }
-      body.discord-ui-mode.discord-home-view #discordHomeView {
+      body.discord-ui-mode.discord-discover-view #discordDiscoverView {
         flex: 1 1 auto !important;
         width: auto !important;
         display: flex !important;
         padding: 1rem !important;
         min-width: 0 !important;
         overflow-x: hidden !important;
+      }
+      body.discord-ui-mode.discord-dm-view #discordDmHomeView {
+        display: none !important;
+      }
+      body.discord-ui-mode.discord-dm-view #sidebar,
+      body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
+        display: flex !important;
       }
       /* チャット画面表示中：全画面表示 */
       body.discord-ui-mode.in-chat-view #chatArea {
@@ -778,6 +1108,19 @@
       color: #ffffff !important;
     }
     body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: #e5e7eb !important;
+      color: white !important;
+    }
+
+    /* 未ログイン時の完全表示制御（モダンUIモードがオンでもログイン前はログイン画面のみを中央表示） */
+    body:not(.logged-in) #appContainer,
+    body:not(.logged-in) #serverListScreen,
+    body:not(.logged-in) #globalAppHeader,
+    body:not(.logged-in) #nicknameContainer {
+      display: none !important;
+    }
+    body:not(.logged-in) #authContainer {
+      display: flex !important;
+      width: 100% !important;
+      min-height: 100vh !important;
     }
     /* ----------------------------------- */

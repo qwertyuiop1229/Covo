@@ -1,92 +1,7 @@
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI } from './crypto_helpers.js';
-import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
-import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
-// === コンソールログの自動収集 ===
-window._covoLogs = [];
-const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
-const _pushLog = (type, args) => {
-  try {
-    const msg = Array.from(args).map(a => {
-      if (a instanceof Error) return a.stack || a.message;
-      if (typeof a === 'object') {
-        try { return JSON.stringify(a); } catch (err) { return String(a); }
-      }
-      return String(a);
-    }).join(' ');
-    window._covoLogs.push(`[${type}] ${msg}`);
-    if (window._covoLogs.length > 50) window._covoLogs.shift();
-  } catch (e) { }
-};
-console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
-console.warn = function (...args) { _pushLog('WARN', args); _orgWarn.apply(console, args); };
-console.error = function (...args) { _pushLog('ERR', args); _orgErr.apply(console, args); };
-
-// === フィードバック機能 ===
-window.openFeedbackModal = function () {
-  document.getElementById('feedbackContent').value = '';
-  document.getElementById('feedbackCategory').value = 'bug';
-  document.getElementById('feedbackModal').classList.remove('hidden');
-};
-
-window.closeFeedbackModal = function () {
-  document.getElementById('feedbackModal').classList.add('hidden');
-};
-
-window.submitFeedback = async function () {
-  const btn = document.getElementById('feedbackSubmitBtn');
-  const contentVal = document.getElementById('feedbackContent').value.trim();
-  const categoryVal = document.getElementById('feedbackCategory').value;
-  if (!contentVal) {
-    alertMessage("内容を入力してください", "error");
-    return;
-  }
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
-  try {
-    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    await addDoc(collection(db, `artifacts/${appId}/feedbacks`), {
-      content: contentVal,
-      category: categoryVal,
-      createdBy: userId,
-      email: auth.currentUser?.email || '不明',
-      createdAt: serverTimestamp(),
-      status: 'open',
-      userAgent: navigator.userAgent,
-      screenSize: `${window.innerWidth}x${window.innerHeight}`,
-      consoleLogs: window._covoLogs.join('\n')
-    });
-    window.closeFeedbackModal();
-    alertMessage("ご報告ありがとうございました。運営チームに送信されました。", "success");
-  } catch (e) {
-    console.error("Feedback submit error:", e);
-    alertMessage("送信に失敗しました", "error");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "送信";
-  }
-};
-
-// ========= Cloudflare Worker ベースURL =========
-const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
-
-// D1 API の認証付きfetchヘルパー（GET/POSTどちらも使用可）
-// 認証されていない場合はトークンなしでリクエストするが、サーバー側で401を返す
-
-
-// ========= バージョン管理 =========
-// 唯一のバージョン管理ファイル: public/version.json
-// 手動変更時は version.json だけ編集すればよい（他のファイルは不要）
-// deploy.ps1 も version.json だけ更新する
-// バージョンはソースコード(version.json)から直接 fetch して使用する
-// localStorage には保存しない
-let _appVersion = null;
-fetch('/version.json', { cache: 'default' })
-  .then(r => r.json())
-  .then(d => { _appVersion = d.version || null; })
-  .catch(() => { _appVersion = null; });
+/**
+ * Covo Integrated Main Script (main.js)
+ * 100% Fully Resolved Scope & All Discord Modern UI Enhancements
+ */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
@@ -95,7 +10,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  onIdTokenChanged
+  onIdTokenChanged,
+  createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore,
@@ -106,7 +22,6 @@ import {
   memoryLocalCache,
   doc,
   getDoc,
-  addDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -135,6 +50,44 @@ import {
   deleteToken
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI } from './crypto_helpers.js';
+import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
+import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
+
+
+// === コンソールログの自動収集 ===
+window._covoLogs = [];
+const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
+const _pushLog = (type, args) => {
+  try {
+    const msg = Array.from(args).map(a => {
+      if (a instanceof Error) return a.stack || a.message;
+      if (typeof a === 'object') {
+        try { return JSON.stringify(a); } catch (err) { return String(a); }
+      }
+      return String(a);
+    }).join(' ');
+    window._covoLogs.push(`[${type}] ${msg}`);
+    if (window._covoLogs.length > 50) window._covoLogs.shift();
+  } catch (e) { }
+};
+console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
+console.warn = function (...args) { _pushLog('WARN', args); _orgWarn.apply(console, args); };
+console.error = function (...args) { _pushLog('ERR', args); _orgErr.apply(console, args); };
+
+// ========= Cloudflare Worker ベースURL =========
+const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+
+// ========= バージョン管理 =========
+let _appVersion = null;
+fetch('/version.json', { cache: 'default' })
+  .then(r => r.json())
+  .then(d => { _appVersion = d.version || null; })
+  .catch(() => { _appVersion = null; });
+
 // Firebase設定
 const firebaseConfig = {
   apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
@@ -148,77 +101,7 @@ const firebaseConfig = {
 };
 
 const appId = "simplechat-65a0d";
-
-/* ===== 開発者ツール: コンソールログを画面で見られるよう保持＆オンスクリーン表示 =====
-   iPhone PWA には開発者コンソールが無いので、console.* を配列にも記録しておき、
-   設定>開発者ツールから表示・コピーできるようにする。 */
 window._devConsoleLog = [];
-(function hookConsole() {
-  const MAX = 300; // 直近300件だけ保持（メモリ保護）
-  const fmt = (args) => {
-    try {
-      return Array.from(args).map(a => {
-        if (typeof a === 'string') return a;
-        if (a instanceof Error) return a.message;
-        try { return JSON.stringify(a); } catch (e) { return String(a); }
-      }).join(' ');
-    } catch (e) { return '[log整形エラー]'; }
-  };
-  const stamp = () => {
-    const d = new Date();
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-  };
-  ['log', 'warn', 'error', 'info'].forEach(level => {
-    const orig = console[level] ? console[level].bind(console) : function () { };
-    console[level] = function (...args) {
-      try {
-        window._devConsoleLog.push(`[${stamp()}][${level}] ${fmt(args)}`);
-        if (window._devConsoleLog.length > MAX) window._devConsoleLog.shift();
-        if (window._devConsolePanelAppend) window._devConsolePanelAppend(level, fmt(args));
-      } catch (e) { }
-      return orig(...args);
-    };
-  });
-  // 未捕捉エラーも記録（バグ調査に重要）
-  window.addEventListener('error', (e) => {
-    try { window._devConsoleLog.push(`[${stamp()}][uncaught] ${e.message} @${(e.filename || '').split('/').pop()}:${e.lineno}`); } catch (_) { }
-  });
-  window.addEventListener('unhandledrejection', (e) => {
-    try { window._devConsoleLog.push(`[${stamp()}][promise] ${e.reason && (e.reason.message || e.reason)}`); } catch (_) { }
-  });
-})();
-
-/* =====================================================================
-   Tauri ロード完了シグナル (早期送信)
-   ---------------------------------------------------------------------
-   アプリのJSが正常に実行開始されたことをTauriに知らせ、誤ったリカバリーポップアップを防ぐ
-   ===================================================================== */
-let _tauriNotifyRetryCount = 0;
-const _sendEarlyNotify = () => {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (invoke) {
-    invoke('notify_app_loaded').catch(e => console.warn("Failed early notify_app_loaded:", e));
-  } else if (_tauriNotifyRetryCount < 20) {
-    _tauriNotifyRetryCount++;
-    setTimeout(_sendEarlyNotify, 500);
-  }
-};
-setTimeout(_sendEarlyNotify, 500);
-
-/* =====================================================================
-   E2EE（エンドツーエンド暗号化）モジュール  —  完全自動・無入力
-   ---------------------------------------------------------------------
-   設計方針（最重要：壊れてもアプリを止めない）
-   - 暗号化は「最善努力」。鍵が用意できない/失敗したら必ず平文で送る
-     （= 送れない・固まる、を絶対に起こさない）。
-   - 復号は常に安全。平文(プレフィックス無し)はそのまま表示。暗号文で
-     復号失敗した時だけプレースホルダを返す。チャットは決して白画面に
-     しない。
-   - 鍵は localStorage(JWK) に保存。プライベートブラウズ等で書き込み
-     禁止でも try-catch でメモリ(_e2ee.mem)に保持して動作継続。
-   - Firestore に秘密鍵(本人のみ)・公開鍵・ルーム鍵をバックアップし、
-     キャッシュ消去後も自動復元する。
-   ===================================================================== */
 
 initCryptoContext({
   getDb: () => (typeof db !== 'undefined' ? db : null),
@@ -226,6 +109,7 @@ initCryptoContext({
   getAppId: () => (typeof appId !== 'undefined' ? appId : null),
   getAuth: () => (typeof auth !== 'undefined' ? auth : null)
 });
+
 window._lsGet = function (...args) { return __lsGet(...args); };
 function _lsGet(...args) { return __lsGet(...args); }
 window._lsSet = function (...args) { return __lsSet(...args); };
@@ -277,63 +161,37 @@ function decryptFileE2EE(...args) { return _decryptFileE2EE(...args); }
 window.updateE2EEStatusUI = function (...args) { return _updateE2EEStatusUI(...args); };
 function updateE2EEStatusUI(...args) { return _updateE2EEStatusUI(...args); }
 
+// デバッグUI ラッパー関数
+window.updateLayoutDebugUI = function (...args) { if (typeof _updateLayoutDebugUI === 'function') return _updateLayoutDebugUI(...args); };
+function updateLayoutDebugUI(...args) { if (typeof _updateLayoutDebugUI === 'function') return _updateLayoutDebugUI(...args); }
+window.runShadowHunter = function (...args) { if (typeof _runShadowHunter === 'function') return _runShadowHunter(...args); };
+function runShadowHunter(...args) { if (typeof _runShadowHunter === 'function') return _runShadowHunter(...args); }
+window.inspectPoint = function (...args) { if (typeof _inspectPoint === 'function') return _inspectPoint(...args); };
+function inspectPoint(...args) { if (typeof _inspectPoint === 'function') return _inspectPoint(...args); }
+window.clearInspectHighlight = function (...args) { if (typeof __clearInspectHighlight === 'function') return __clearInspectHighlight(...args); };
+function clearInspectHighlight(...args) { if (typeof __clearInspectHighlight === 'function') return __clearInspectHighlight(...args); }
+window.showInspectHighlight = function (...args) { if (typeof __showInspectHighlight === 'function') return __showInspectHighlight(...args); };
+function showInspectHighlight(...args) { if (typeof __showInspectHighlight === 'function') return __showInspectHighlight(...args); }
 
-// 影ハンター本体: 入力欄とナビの境目付近を走査し、影/境界/グラデの容疑者テキストを返す純粋関数。
-function runShadowHunter() { return _runShadowHunter(); }
-
-// アプリ情報の診断行を更新（タップでコピー）。
-function updateLayoutDebugUI() { return _updateLayoutDebugUI(); }
-
-// 診断テキストをクリップボードにコピー（失敗時はフォールバック）。コピー後は一時的に「コピーしました」表示。
-async function copyDebugText(txt, el) {
-  const original = el.textContent;
-  let ok = false;
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(txt);
-      ok = true;
-    }
-  } catch (e) { /* 下のフォールバックへ */ }
-  if (!ok) {
-    // HTTPS以外や古い環境向けのフォールバック
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = txt;
-      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
-      document.body.appendChild(ta);
-      ta.focus(); ta.select();
-      ok = document.execCommand('copy');
-      ta.remove();
-    } catch (e) { }
-  }
-  el.textContent = ok ? 'コピーしました ✓' : 'コピー失敗（長押しで選択してね）';
-  el.style.color = ok ? '#16a34a' : '#dc2626';
-  setTimeout(() => { el.textContent = original; el.style.color = '#6b7280'; }, 1500);
-}
-
-// 送信をブロックする危険な拡張子（クライアント側で事前チェック）
-// ==========================================
-// File Uploader Wrappers
-// ==========================================
-function checkFileAllowed(file) {
-  return _checkFileAllowed(file);
-}
+// ファイルアップローダー
+function checkFileAllowed(file) { return _checkFileAllowed(file); }
 function uploadToExternalService(file, onProgress, _folder) {
   return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder);
 }
 
+// === グローバル状態変数 ===
 let app;
 let db;
 let auth;
 let messaging;
 let currentFcmToken = null;
 const roomNames = {};
-// 通知位置はすべて Rust 側 saved_position で管理（localStorage は使わない）
 let userId = null;
 let userNickname = null;
 let isAdmin = false;
 let isListAdmin = false;
 const isTauri = window.__TAURI__ !== undefined;
+window.isTauri = isTauri;
 
 let currentRoomId = null;
 let unsubscribeMessages = null;
@@ -345,7 +203,7 @@ let pendingRoomDelete = null;
 
 let lastMessagesData = [];
 let attachedFile = null;
-let attachedKvFile = null; // KV アップロード済みファイル { url, name, type, size }
+let attachedKvFile = null;
 let replyingToMessage = null;
 let currentPdfUrl = "";
 let currentPdfName = "";
@@ -358,17 +216,24 @@ let messagesIndexMap = {};
 let unreadCounts = {};
 let unreadListeners = {};
 
-// サーバー管理用
+// サーバー管理
 let currentServerId = null;
 let currentServerData = null;
 let serverListUnsubscribe = null;
 let currentServerNickname = null;
 let allServersCache = [];
+let currentHomeViewMode = 'dm'; // 'dm' or 'discover'
+
+// 検索・未読・コンテキスト状態
+let unreadBoundaryAt = 0;
+let unreadBoundaryMessageId = null;
+let searchQuery = "";
+let selectedMessageForContext = null;
 
 let awayTimer = null;
 const AWAY_TIMEOUT = 5 * 60 * 1000;
 
-// ★ メンバーリストのキャッシュと更新用インターバル
+// メンバーリストのキャッシュと更新用インターバル
 let cachedUsers = [];
 let memberListRefreshInterval = null;
 let userAvatarUrl = null;
@@ -389,392 +254,39 @@ let _iceDisconnectTimer = null;
 let _iceRestartTimer = null;
 let _lastIceRestartAt = null;
 let _usingTurnRelay = false;
-let _iceRestartAttempts = 0; // ICE failed時の再試行回数カウンター
+let _iceRestartAttempts = 0;
 const CALL_TIMEOUT_MS = 30000;
-const STUN_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.relay.metered.ca:80' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-        'turns:openrelay.metered.ca:443',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
-  iceCandidatePoolSize: 10,
-  bundlePolicy: 'max-bundle',
-};
-// ファイル共有専用: STUNのみ（TURN中継なし）。
-// ファイル本体は大容量になり得るので、TURN(無料の中継サーバー)を経由させると
-// 帯域制限にすぐ達する。そのため「P2P直結できる時だけ送れる／できなければ繋がらない」
-// という方針にし、TURNは一切使わない（＝制限を食わない）。STUNはIPを教え合うだけで無通信に近い。
-const STUN_ONLY_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-  iceCandidatePoolSize: 4,
-  bundlePolicy: 'max-bundle',
-};
+
 let messageLimit = 20;
 let rtdbMessagesLimit = 20;
 let allowPagination = false;
-// ページネーション用: 全ロード済みメッセージ（onSnapshotの最新20件 + 追加読み込み分）
-let allLoadedMessages = []; // { ...msgData, id } の配列（古い順）
+let isInitialMessageLoad = false;
+let allLoadedMessages = [];
+let isLoadingOlderMessages = false;
+let hasMoreOlderMessages = true;
 
-
-let isLoadingOlderMessages = false; // 二重ローディング防止
-let hasMoreOlderMessages = true;    // これ以上古いメッセージがないフラグ
-
-// --- リアルタイム維持＆極省リード・ジャンプ用管理変数 ---
-let isJumpView = false;             // 過去の周辺ログを部分表示している状態
-let realTimeMessagesCache = [];     // onSnapshotが常に最新を更新し続けるタイムライン
-let jumpViewMessages = [];          // ジャンプ周辺ログ（上下スクロールで部分的に増える）
+let isJumpView = false;
+let realTimeMessagesCache = [];
+let jumpViewMessages = [];
 let hasMoreJumpOlder = true;
 let hasMoreJumpNewer = true;
 let isLoadingJumpOlder = false;
 let isLoadingJumpNewer = false;
 let unsubscribePinnedMessages = null;
 let currentPinnedMessages = [];
-// onAuthStateChanged の再入防止
 let _authHandlerBusy = false;
-let _lastAuthUserId = null; // 同一ユーザーの重複初期化防止
+let _lastAuthUserId = null;
+let _cachedIdToken = null;
 
-// DOM Elements
-const loadingOverlay = document.getElementById("loadingOverlay");
-const authContainer = document.getElementById("authContainer");
-
-const tabLogin = document.getElementById("tabLogin");
-const tabSignup = document.getElementById("tabSignup");
-const loginFormArea = document.getElementById("loginFormArea");
-const signupFormArea = document.getElementById("signupFormArea");
-
-const emailInput = document.getElementById("emailInput");
-const passwordInput = document.getElementById("passwordInput");
-const authButton = document.getElementById("authButton");
-
-const signupEmailInput = document.getElementById("signupEmailInput");
-const signupPasswordInput = document.getElementById("signupPasswordInput");
-const signupButton = document.getElementById("signupButton");
-
-const authMessage = document.getElementById("authMessage");
-
-const nicknameContainer = document.getElementById("nicknameContainer");
-const nicknameInput = document.getElementById("nicknameInput");
-const setNicknameButton = document.getElementById("setNicknameButton");
-const nicknameMessage = document.getElementById("nicknameMessage");
-
-// Header Title
-const headerTitle = document.getElementById("headerTitle");
-
-// Settings Modal
-const settingsModal = document.getElementById("settingsModal");
-const closeSettingsButton = document.getElementById("closeSettingsButton");
-const settingsNicknameInput = document.getElementById("settingsNicknameInput");
-const saveSettingsButton = document.getElementById("saveSettingsButton");
-const logoutButtonInModal = document.getElementById("logoutButtonInModal");
-const settingsMessage = document.getElementById("settingsMessage");
-const settingsAvatarText = document.getElementById("settingsAvatarText");
-const adminPanelContainer = document.getElementById("adminPanelContainer");
-const openAdminModalButton = document.getElementById("openAdminModalButton");
-
-// Admin Modal
-const newAllowedEmailInput = document.getElementById("newAllowedEmailInput");
-const addAllowedEmailButton = document.getElementById("addAllowedEmailButton");
-const allowedEmailsList = document.getElementById("allowedEmailsList");
-const newAdminEmailInput = document.getElementById("newAdminEmailInput");
-const addAdminEmailButton = document.getElementById("addAdminEmailButton");
-const adminEmailsList = document.getElementById("adminEmailsList");
-const newListAdminEmailInput = document.getElementById("newListAdminEmailInput");
-const addListAdminEmailButton = document.getElementById("addListAdminEmailButton");
-const listAdminEmailsList = document.getElementById("listAdminEmailsList");
-const adminMessage = document.getElementById("adminMessage");
-
-// User Panel
-const userPanel = document.getElementById("userPanel");
-const userPanelAvatar = document.getElementById("userPanelAvatar");
-const userPanelName = document.getElementById("userPanelName");
-const userPanelId = document.getElementById("userPanelId");
-
-const createRoomPasswordModal = document.getElementById("createRoomPasswordModal");
-const newRoomPasswordInput = document.getElementById("newRoomPasswordInput");
-const confirmCreateRoomButton = document.getElementById("confirmCreateRoomButton");
-const cancelCreateRoomButton = document.getElementById("cancelCreateRoomButton");
-const createRoomPasswordMessage = document.getElementById("createRoomPasswordMessage");
-
-const joinRoomPasswordModal = document.getElementById("joinRoomPasswordModal");
-const joinRoomTitle = document.getElementById("joinRoomTitle");
-const joinRoomPasswordInput = document.getElementById("joinRoomPasswordInput");
-const confirmJoinRoomButton = document.getElementById("confirmJoinRoomButton");
-const cancelJoinRoomButton = document.getElementById("cancelJoinRoomButton");
-const joinRoomPasswordMessage = document.getElementById("joinRoomPasswordMessage");
-
-const deleteRoomConfirmModal = document.getElementById("deleteRoomConfirmModal");
-const roomToDeleteNameSpan = document.getElementById("roomToDeleteName");
-const confirmDeleteButton = document.getElementById("confirmDeleteButton");
-const cancelDeleteButton = document.getElementById("cancelDeleteButton");
-const deleteConfirmErrorMessage = document.getElementById("deleteConfirmErrorMessage");
-
-const deleteRoomPasswordModal = document.getElementById("deleteRoomPasswordModal");
-const roomToDeletePasswordNameSpan = document.getElementById("roomToDeletePasswordName");
-const deleteRoomPasswordInput = document.getElementById("deleteRoomPasswordInput");
-const confirmDeletePasswordButton = document.getElementById("confirmDeletePasswordButton");
-const cancelDeletePasswordButton = document.getElementById("cancelDeletePasswordButton");
-const deletePasswordErrorMessage = document.getElementById("deletePasswordErrorMessage");
-
-const appContainer = document.getElementById("appContainer");
-const roomList = document.getElementById("roomList");
-
-const membersSidebar = document.getElementById("membersSidebar");
-const membersList = document.getElementById("membersList");
-const bottomSheetOverlay = document.getElementById("bottomSheetOverlay");
-const bottomSheetHandle = document.getElementById("bottomSheetHandle");
-
-const currentRoomHeader = document.getElementById("currentRoomHeader");
-const messagesDisplay = document.getElementById("messagesDisplay");
+// DOM クリーンアップ関数
 function clearMessagesDOM() {
-  const spinner = document.getElementById('topLoadingSpinner');
-  messagesDisplay.innerHTML = '';
-
+  const messagesDisplay = document.getElementById("messagesDisplay");
+  if (messagesDisplay) messagesDisplay.innerHTML = '';
 }
-const messageInput = document.getElementById("messageInput");
+window.clearMessagesDOM = clearMessagesDOM;
 
-const filePreviewContainer = document.getElementById("filePreviewContainer");
-const filePreviewName = document.getElementById("filePreviewName");
-const clearFileButton = document.getElementById("clearFileButton");
-
-const replyingToContainer = document.getElementById("replyingToContainer");
-const replyingToNickname = document.getElementById("replyingToNickname");
-const replyingToText = document.getElementById("replyingToText");
-const cancelReplyButton = document.getElementById("cancelReplyButton");
-
-const messageContextMenu = document.getElementById("messageContextMenu");
-const replyMessageButton = document.getElementById("replyMessageButton");
-const copyMessageButton = document.getElementById("copyMessageButton");
-const downloadMessageButton = document.getElementById("downloadMessageButton");
-const deleteMessageButton = document.getElementById("deleteMessageButton");
-const toggleSearchButton = document.getElementById("toggleSearchButton");
-const searchContainer = document.getElementById("searchContainer");
-const searchInput = document.getElementById("searchInput");
-const closeSearchBtn = document.getElementById("closeSearchBtn");
-const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
-const currentRoomTitleText = document.getElementById("currentRoomTitleText");
-// ===== 開発者ツール（設定 > 開発者ツール から操作）=====
-// iPhone PWA には開発者ツールが無いので、その代わりの簡易インスペクタ＆オンスクリーンコンソール。
-let _inspectMode = false;
-
-// 安全なクリップボードコピー（async拒否を必ず飲み込む＋execCommandフォールバック）。
-// iOS PWAで clipboard.writeText が拒否されても unhandledrejection を出さない。
-
-// 検査モードのON/OFF（設定のトグル、または専用バーの終了ボタンから呼ばれる）
-window.setInspectMode = function (on) {
-  _inspectMode = !!on;
-  const bar = document.getElementById('inspectModeBar');
-  const cb = document.getElementById('toggleInspectMode');
-  if (cb) cb.checked = _inspectMode;
-  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
-  if (!_inspectMode) _clearInspectHighlight();
-  if (_inspectMode) {
-    try { alertMessage('🔍 検査モードON\n通常の操作はそのまま使えます。調べたい場所を「長押し」すると、その要素を検査してコピーします。', 'info'); } catch (e) { }
-  }
-};
-
-// ハイライト用オーバーレイ要素（タップした要素の範囲を枠で示す）
-let _inspectHL = null;
-function _clearInspectHighlight() { return __clearInspectHighlight(); }
-function _showInspectHighlight(rect) { return __showInspectHighlight(rect); }
-
-// 検査モード中は「長押し(0.5秒)」で検査する。通常のタップ・スクロール・画面遷移は普通に動く。
-// → 検査モードONのままでもアプリを普通に操作でき、調べたい時だけ長押しすればよい。
-(function attachInspectorLongPress() {
-  let timer = null, sx = 0, sy = 0, fired = false;
-
-  const ignore = (target) => target && target.closest && target.closest('[data-inspect-ignore], #inspectModeBar, #devConsolePanel, #customAlertModal, #customConfirmModal');
-
-  const doInspect = (x, y) => {
-    fired = true;
-    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) { } } // 触覚フィードバック
-    try {
-      const top = (document.elementsFromPoint(x, y) || []).find(e => !ignore(e));
-      if (top) _showInspectHighlight(top.getBoundingClientRect());
-    } catch (e) { }
-    const txt = inspectPoint(x, y);
-    safeCopy(txt);
-    try { alertMessage('🔍 検査結果（コピー済み）@' + x + ',' + y + ':\n' + txt, 'info'); } catch (e) { alert(txt); }
-  };
-
-  const start = (ev) => {
-    if (!_inspectMode) return;
-    if (ignore(ev.target)) return; // 検査UI上では通常動作
-    const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
-    sx = t.clientX; sy = t.clientY; fired = false;
-    timer = setTimeout(() => doInspect(Math.round(sx), Math.round(sy)), 500);
-  };
-  const move = (ev) => {
-    if (!timer) return;
-    const t = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
-    // 指が10px以上動いたらスクロール扱いで検査キャンセル
-    if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) { clearTimeout(timer); timer = null; }
-  };
-  const end = (ev) => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    // 長押しが発火していたら、その後の click（通常タップ動作）を1回だけ抑止
-    if (fired) {
-      fired = false;
-      const kill = (e) => { e.preventDefault(); e.stopPropagation(); document.removeEventListener('click', kill, true); };
-      document.addEventListener('click', kill, { capture: true, once: true });
-    }
-  };
-  document.addEventListener('touchstart', start, { capture: true, passive: true });
-  document.addEventListener('touchmove', move, { capture: true, passive: true });
-  document.addEventListener('touchend', end, { capture: true });
-  // マウス（PC）でも使えるように
-  document.addEventListener('mousedown', start, { capture: true });
-  document.addEventListener('mousemove', move, { capture: true });
-  document.addEventListener('mouseup', end, { capture: true });
-})();
-
-// レイアウト診断（safe-area・ナビ位置など）をダイアログ表示＋コピー
-window.showLayoutDiagnostics = function () {
-  let txt = '';
-  try {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;';
-    document.body.appendChild(probe);
-    const safeBottom = Math.round(probe.getBoundingClientRect().height);
-    probe.remove();
-    const nav = document.getElementById('mobileBottomNav');
-    const r = nav ? nav.getBoundingClientRect() : null;
-    const docH = document.documentElement.clientHeight;
-    const cs = getComputedStyle(document.documentElement);
-    const cont = document.querySelector('.container');
-    const cr = cont ? cont.getBoundingClientRect() : null;
-    const bodyCS = getComputedStyle(document.body);
-    // ナビ下端のすぐ下(余白部分)に何の要素があるかを実測
-    let belowNavInfo = '-';
-    if (r) {
-      const x = Math.round(r.left + r.width / 2);
-      const probes = [];
-      for (const dy of [1, 5, 12, 20]) {
-        const y = Math.round(r.bottom + dy);
-        const el = document.elementFromPoint(x, y);
-        probes.push(`+${dy}:${el ? (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')) : 'null'}`);
-      }
-      belowNavInfo = probes.join(' ');
-    }
-    // ★画面下半分にある box-shadow / gradient を持つ要素を全部洗い出す（黒いグラデの犯人探し）
-    let shadowScan = [];
-    try {
-      const half = window.innerHeight * 0.6;
-      document.querySelectorAll('body *').forEach(el => {
-        if (el.closest('[data-inspect-ignore], #devConsolePanel, #inspectModeBar, .mobile-settings-detail, #mobileProfileScreen')) return;
-        const rc = el.getBoundingClientRect();
-        if (rc.bottom < half || rc.height === 0 || rc.width === 0) return; // 画面下60%以下のみ
-        if (rc.top > window.innerHeight) return; // 画面外は除外
-        const s = getComputedStyle(el);
-        if (s.display === 'none' || s.visibility === 'hidden') return;
-        const tags = [];
-        if (s.boxShadow && s.boxShadow !== 'none') tags.push('SH:' + s.boxShadow.replace(/rgba?\([^)]*\)/g, 'C').slice(0, 30));
-        if (s.backgroundImage && s.backgroundImage.includes('gradient')) tags.push('GRAD');
-        if (s.filter && s.filter !== 'none') tags.push('FIL:' + s.filter.slice(0, 16));
-        if (tags.length) {
-          const nm = el.tagName.toLowerCase() + (el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : ''));
-          shadowScan.push(nm + ' y' + Math.round(rc.top) + '-' + Math.round(rc.bottom) + ' ' + tags.join(','));
-        }
-      });
-    } catch (e) { shadowScan = ['scanErr:' + e.message]; }
-    txt = [
-      'safe-area-bottom=' + safeBottom,
-      'nav: ' + (r ? `h=${Math.round(r.height)} top=${Math.round(r.top)} bottom=${Math.round(r.bottom)}` : 'なし'),
-      'navParent=' + (nav && nav.parentElement ? (nav.parentElement.tagName.toLowerCase() + (nav.parentElement.id ? '#' + nav.parentElement.id : '.' + nav.parentElement.className.split(' ')[0])) : '-'),
-      'container: ' + (cr ? `h=${Math.round(cr.height)} bottom=${Math.round(cr.bottom)}` : 'なし'),
-      'body bg=' + bodyCS.backgroundColor,
-      'in-chat-view=' + document.body.classList.contains('in-chat-view'),
-      'navPadB=' + (nav ? getComputedStyle(nav).paddingBottom : '-'),
-      '--mnav-total=' + cs.getPropertyValue('--mnav-total').trim(),
-      'winH=' + window.innerHeight + ' docH=' + docH,
-      'gapBelowNav=' + (r ? Math.round(docH - r.bottom) : '-'),
-      'belowNav要素=' + belowNavInfo,
-      '影スキャン(下半分):\n' + (shadowScan.length ? shadowScan.join('\n') : '(影/グラデなし)'),
-      'shadowHunter:\n' + (typeof runShadowHunter === 'function' ? runShadowHunter() : '-')
-    ].join('\n');
-  } catch (e) { txt = 'err:' + (e && e.message); }
-  safeCopy(txt);
-  try { alertMessage('📐 レイアウト診断（コピー済み）:\n' + txt, 'info'); } catch (e) { alert(txt); }
-};
-
-// オンスクリーン・コンソールの表示/非表示
-window.toggleDevConsole = function () {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel) return;
-  const showing = panel.style.display !== 'none';
-  if (showing) { panel.style.display = 'none'; return; }
-  // 開く時は既存ログを流し込む
-  const body = document.getElementById('devConsoleBody');
-  if (body) {
-    body.innerHTML = '';
-    (window._devConsoleLog || []).forEach(line => _appendConsoleLine(line));
-    body.scrollTop = body.scrollHeight;
-  }
-  panel.style.display = 'flex';
-};
-function _lineColor(line) { return __lineColor(line); }
-function _appendConsoleLine(line) { return __appendConsoleLine(line); }
-// console フックから新規ログが来たらライブ追記する
-window._devConsolePanelAppend = function (level, msg) {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel || panel.style.display === 'none') return;
-  const body = document.getElementById('devConsoleBody');
-  if (!body) return;
-  const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 20;
-  const d = new Date();
-  const stamp = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-  _appendConsoleLine(`[${stamp}][${level}] ${msg}`);
-  if (atBottom) body.scrollTop = body.scrollHeight;
-};
-window.clearDevConsole = function () {
-  window._devConsoleLog = [];
-  const body = document.getElementById('devConsoleBody');
-  if (body) body.innerHTML = '';
-};
-window.copyDevConsole = function () {
-  const txt = (window._devConsoleLog || []).join('\n') || '(ログなし)';
-  safeCopy(txt);
-  try { alertMessage('📋 コンソールログをコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件）', 'success'); } catch (e) { alert(txt); }
-};
-
-// コンソールログ＋診断をまとめてコピー
-window.copyDiagnosticsBundle = function () {
-  const logs = (window._devConsoleLog || []).join('\n');
-  const txt = '=== Covo診断バンドル ===\nversion: ' + (_appVersion || '?') + '\nUA: ' + navigator.userAgent + '\n\n=== コンソールログ(最新' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件) ===\n' + (logs || '(なし)');
-  safeCopy(txt);
-  try { alertMessage('📋 診断情報をコピーしました（' + (window._devConsoleLog ? window._devConsoleLog.length : 0) + '件のログ）。貼り付けて共有してください。', 'success'); } catch (e) { alert(txt); }
-};
-
-// Cloudinary移行関数は廃止
-
-// 指定座標の要素スタックを上から調べ、影/境界/背景を持つものを列挙して返す。
-function inspectPoint(x, y) { return _inspectPoint(x, y); }
-const pinMessageButton = document.getElementById("pinMessageButton");
-const mobileBackButton = document.getElementById("mobileBackButton");
-const sidebar = document.getElementById("sidebar");
-
-let searchQuery = "";
-let isInitialMessageLoad = true;
-// 未読の境界線用: 入室時点での最終既読時刻(ms)。これより新しい最初のメッセージの上に線を出す。
-// 0 のときは線を表示しない（全既読 or 履歴なし）。
-let unreadBoundaryAt = 0;
-// 一度描画した区切り線が既読更新で消えないよう、確定した境界メッセージIDを保持する。
-let unreadBoundaryMessageId = null;
-// Web Audio API による洗練された通知チャイム
-let selectedMessageForContext = null;
-
+// ================= MODULE: auth_admin.js ================
+// ================= AUTH & ADMIN MODULE ================
 // =========================================================================
 // Initialization & Auth
 // =========================================================================
@@ -932,11 +444,23 @@ function initializeFirebase() {
             headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
             updateUserPanelUI();
 
+            document.body.classList.add("logged-in");
             authContainer.classList.add("hidden");
             nicknameContainer.classList.add("hidden");
-            appContainer.classList.add("hidden");
-            document.getElementById("serverListScreen").classList.remove("hidden");
+            
+            const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+            if (isDiscordMode) {
+              const sls = document.getElementById("serverListScreen");
+              if (sls) sls.classList.add("hidden");
+              appContainer.classList.remove("hidden");
+              setDiscordUIMode(true);
+            } else {
+              appContainer.classList.add("hidden");
+              const sls = document.getElementById("serverListScreen");
+              if (sls) sls.classList.remove("hidden");
+            }
             showServerList();
+
             startPresenceSystem();
             initializeFCM();
             // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
@@ -974,23 +498,34 @@ function initializeFirebase() {
           _lastAuthUserId = null;
           userId = null; userNickname = null; isAdmin = false; isListAdmin = false; isAuthReady = false;
           currentRoomId = null; currentServerId = null; currentServerData = null;
-          headerTitle.textContent = "";
-          currentRoomHeader.classList.add("hidden");
+          document.body.classList.remove("logged-in");
+          const headerTitle = document.getElementById("headerTitle");
+          if (headerTitle) headerTitle.textContent = "";
+          const currentRoomHeader = document.getElementById("currentRoomHeader");
+          if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
           clearMessagesDOM();
-          messageInput.disabled = true;
-          sendMessageButton.disabled = true;
-          document.getElementById('callButton').disabled = true;
-          stopPrewarmPC();
-          if (_callId) endCall(false);
+          const messageInput = document.getElementById("messageInput");
+          if (messageInput) messageInput.disabled = true;
+          const sendMessageButton = document.getElementById("sendMessageButton");
+          if (sendMessageButton) sendMessageButton.disabled = true;
+          const callBtn = document.getElementById('callButton');
+          if (callBtn) callBtn.disabled = true;
+          if (typeof stopPrewarmPC === 'function') stopPrewarmPC();
+          if (_callId && typeof endCall === 'function') endCall(false);
           if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
-          stopPresenceSystem();
+          if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
           if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
-          authContainer.classList.remove("hidden");
-          appContainer.classList.add("hidden");
-          document.getElementById("serverListScreen").classList.add("hidden");
-          nicknameContainer.classList.add("hidden");
-          membersSidebar.classList.add("hidden");
+          const authContainer = document.getElementById("authContainer");
+          const appContainer = document.getElementById("appContainer");
+          const serverListScreen = document.getElementById("serverListScreen");
+          const nicknameContainer = document.getElementById("nicknameContainer");
+          const membersSidebar = document.getElementById("membersSidebar");
+          if (authContainer) authContainer.classList.remove("hidden");
+          if (appContainer) appContainer.classList.add("hidden");
+          if (serverListScreen) serverListScreen.classList.add("hidden");
+          if (nicknameContainer) nicknameContainer.classList.add("hidden");
+          if (membersSidebar) membersSidebar.classList.add("hidden");
         }
       } catch (authErr) {
         console.error('[Auth] onAuthStateChanged handler error:', authErr);
@@ -1053,7 +588,7 @@ tabSignup.addEventListener("click", () => {
 });
 
 authButton.addEventListener("click", async () => {
-  const email = emailInput.value;
+  const email = (emailInput.value || "").trim();
   const password = passwordInput.value;
   authMessage.textContent = "";
   loadingOverlay.classList.remove("hidden");
@@ -1084,7 +619,7 @@ authButton.addEventListener("click", async () => {
 // サインアップ処理（誰でも登録可能）
 signupButton.addEventListener("click", async () => {
   const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-  const email = signupEmailInput.value;
+  const email = (signupEmailInput.value || "").trim();
   const password = signupPasswordInput.value;
   authMessage.textContent = "";
 
@@ -1988,6 +1523,8 @@ function renderNotifList(items) {
   }
   const badge = document.getElementById('globalUnreadBadge');
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+  const headerBadges = document.querySelectorAll('.header-notif-badge');
+  headerBadges.forEach(b => { b.style.display = count > 0 ? 'block' : 'none'; });
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
     document.title = 'Covo';
@@ -2592,7 +2129,7 @@ logoutButtonInModal.addEventListener("click", async () => {
 
 
 setNicknameButton.addEventListener("click", async () => {
-  const nickname = nicknameInput.value.trim();
+  const nickname = (nicknameInput.value || "").trim();
   if (nickname.length < 1 || nickname.length > 20) {
     nicknameMessage.textContent = "1〜20文字で入力してください。";
     return;
@@ -2624,6 +2161,8 @@ setNicknameButton.addEventListener("click", async () => {
   }
 });
 
+// ================= MODULE: presence.js ================
+// ================= PRESENCE MODULE ================
 // =========================================================================
 // Presence System (Online/Offline Status)
 // =========================================================================
@@ -2788,7 +2327,7 @@ const handlePageClose = (e) => {
 // ビーコン送信済みフラグ（visibilitychange:hidden → pagehide/freeze の重複送信防止）
 let _beaconSent = false;
 // Worker認証用: Firebase IDトークンをキャッシュ（sendBeaconは同期のため事前取得が必要）
-let _cachedIdToken = null;
+_cachedIdToken = null;
 let _idTokenRefreshTimer = null;
 
 async function refreshCachedIdToken() {
@@ -3219,7 +2758,8 @@ function formatTimeAgo(timestamp) {
   return `${diffInDays}日前`;
 }
 
-
+// ================= MODULE: servers.js ================
+// ================= SERVERS MODULE ================
 // =========================================================================
 // =========================================================================
 // Server Features
@@ -3462,7 +3002,7 @@ async function enterServer(serverId, serverData) {
   appContainer.classList.remove("hidden");
   appContainer.style.animation = "fadeIn 0.2s ease both";
   if (document.body.classList.contains("discord-ui-mode")) {
-    document.body.classList.remove("discord-home-view");
+    document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-discover-view");
   }
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 
@@ -3506,12 +3046,13 @@ async function enterServer(serverId, serverData) {
   subscribeToUserStatus();
 }
 
-// サーバーを出てリストに戻る
-window.leaveServerView = function () {
+// DM / フレンド画面を開く
+window.openDmHomeView = function () {
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
   currentServerNickname = null;
+  currentHomeViewMode = 'dm';
   try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
 
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
@@ -3523,33 +3064,93 @@ window.leaveServerView = function () {
   Object.values(unreadListeners).forEach(u => u());
   unreadListeners = {}; unreadCounts = {};
 
-  roomList.innerHTML = "";
+  const roomList = document.getElementById("roomList");
+  if (roomList) roomList.innerHTML = "";
   clearMessagesDOM();
-  currentRoomHeader.classList.add("hidden");
-  messageInput.disabled = true;
-  sendMessageButton.disabled = true;
-  membersSidebar.classList.add("hidden");
+  const currentRoomHeader = document.getElementById("currentRoomHeader");
+  if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
+  const messageInput = document.getElementById("messageInput");
+  if (messageInput) messageInput.disabled = true;
+  const sendMessageButton = document.getElementById("sendMessageButton");
+  if (sendMessageButton) sendMessageButton.disabled = true;
+  const membersSidebar = document.getElementById("membersSidebar");
+  if (membersSidebar) membersSidebar.classList.add("hidden");
 
-  // モバイルビューの全クラス・表示状態を徹底的にリセット
-  document.body.classList.remove("in-chat-view");
+  // モバイルビュー・DiscordUIクラスのリセット
+  document.body.classList.remove("in-chat-view", "discord-discover-view");
+  document.body.classList.add("discord-home-view", "discord-dm-view");
+
   const sidebar = document.getElementById("sidebar");
   if (sidebar) sidebar.classList.remove("mobile-hidden");
   const mobileBottomNav = document.getElementById("mobileBottomNav");
   if (mobileBottomNav) mobileBottomNav.style.display = "flex";
 
-  if (document.body.classList.contains("discord-ui-mode")) {
-    document.body.classList.add("discord-home-view");
-    appContainer.classList.remove("hidden");
-  } else {
-    appContainer.classList.add("hidden");
-    document.getElementById("serverListScreen").classList.remove("hidden");
-  }
+  const appContainer = document.getElementById("appContainer");
+  if (appContainer) appContainer.classList.remove("hidden");
+  const serverListScreen = document.getElementById("serverListScreen");
+  if (serverListScreen) serverListScreen.classList.add("hidden");
 
-  // ニックネームヘッダーを非表示
   document.getElementById("globalAppHeader")?.classList.remove("server-mode");
   if (window.renderServerList) window.renderServerList();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
-}
+};
+
+// 探索・発見画面を開く
+window.openDiscoverView = function () {
+  currentServerId = null;
+  currentServerData = null;
+  currentRoomId = null;
+  currentServerNickname = null;
+  currentHomeViewMode = 'discover';
+  try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
+
+  if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+  if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+  if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
+
+  Object.values(unreadListeners).forEach(u => u());
+  unreadListeners = {}; unreadCounts = {};
+
+  const roomList = document.getElementById("roomList");
+  if (roomList) roomList.innerHTML = "";
+  clearMessagesDOM();
+  const currentRoomHeader = document.getElementById("currentRoomHeader");
+  if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
+  const messageInput = document.getElementById("messageInput");
+  if (messageInput) messageInput.disabled = true;
+  const sendMessageButton = document.getElementById("sendMessageButton");
+  if (sendMessageButton) sendMessageButton.disabled = true;
+  const membersSidebar = document.getElementById("membersSidebar");
+  if (membersSidebar) membersSidebar.classList.add("hidden");
+
+  document.body.classList.remove("in-chat-view", "discord-dm-view");
+  document.body.classList.add("discord-home-view", "discord-discover-view");
+
+  const sidebar = document.getElementById("sidebar");
+  if (sidebar) sidebar.classList.remove("mobile-hidden");
+  const mobileBottomNav = document.getElementById("mobileBottomNav");
+  if (mobileBottomNav) mobileBottomNav.style.display = "flex";
+
+  const appContainer = document.getElementById("appContainer");
+  if (appContainer) appContainer.classList.remove("hidden");
+  const serverListScreen = document.getElementById("serverListScreen");
+  if (serverListScreen) serverListScreen.classList.add("hidden");
+
+  document.getElementById("globalAppHeader")?.classList.remove("server-mode");
+  if (window.renderServerList) window.renderServerList();
+  if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+};
+
+// サーバーを出てリストに戻る
+window.leaveServerView = function (mode) {
+  if (mode === 'discover' || currentHomeViewMode === 'discover') {
+    window.openDiscoverView();
+  } else {
+    window.openDmHomeView();
+  }
+};
 
 // サーバー存在確認
 async function checkServerIdAvailable(serverId) {
@@ -3754,954 +3355,6 @@ function openAdminJoinModal() {
 }
 
 // =========================================================================
-// Room Features (Server-based)
-// =========================================================================
-function loadServerRooms(serverId, _retry = 0) {
-  if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
-
-  const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
-
-  let hasLoaded = false;
-
-  function renderRooms(snapshot) {
-    hasLoaded = true;
-    roomList.innerHTML = "";
-    const currentRoomIds = new Set();
-    const roomDocs = [];
-    snapshot.forEach(docSnap => roomDocs.push(docSnap));
-    roomDocs.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
-
-    let categories = currentServerData?.categories || [];
-    if (!Array.isArray(categories)) categories = Object.values(categories);
-    categories.sort((a, b) => a.order - b.order);
-
-    const renderSingleRoom = (docSnap) => {
-      currentRoomIds.add(docSnap.id);
-      const room = docSnap.data();
-      roomNames[docSnap.id] = room.name;
-      const div = document.createElement("div");
-      // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
-      div.className = "flex items-center justify-between py-1 px-2 mb-0.5 text-sm cursor-pointer group room-item-animate";
-      div.id = `room-item-${docSnap.id}`;
-      if (docSnap.id === currentRoomId) div.classList.add("active");
-      div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
-
-      const nameDiv = document.createElement("div");
-      nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-      nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
-
-      const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      const lastRead = rm[docSnap.id] || 0;
-      const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
-      const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
-      const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
-
-      if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
-        try {
-          // Ensure the read timestamp is strictly greater than the message timestamp to prevent clock skew issues
-          const newRead = Math.max(Date.now(), lastMsgAt) + 10000;
-          rm[docSnap.id] = newRead;
-          localStorage.setItem('covo_last_read', JSON.stringify(rm));
-        } catch (e) { }
-      }
-
-      const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
-      unreadCounts[docSnap.id] = isUnread ? 1 : 0;
-
-      const rightContainer = document.createElement("div");
-      rightContainer.className = "flex items-center gap-1";
-
-      const badgeSpan = document.createElement("span");
-      badgeSpan.className = "unread-badge mr-1";
-      badgeSpan.id = `unread-badge-${docSnap.id}`;
-      badgeSpan.style.display = isUnread ? "block" : "none";
-      rightContainer.appendChild(badgeSpan);
-
-      div.appendChild(nameDiv);
-      div.appendChild(rightContainer);
-      return div;
-    };
-
-    // 1. Categories and their rooms
-    categories.forEach(cat => {
-      const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
-
-      const catDiv = document.createElement("div");
-      catDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group";
-      catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
-      roomList.appendChild(catDiv);
-
-      if (catRooms.length > 0) {
-        const roomContainer = document.createElement("div");
-        catRooms.forEach(d => {
-          roomContainer.appendChild(renderSingleRoom(d));
-        });
-        roomList.appendChild(roomContainer);
-      } else {
-        // Empty category placeholder? (Optional: could hide or show something else)
-      }
-    });
-
-    // 2. Uncategorized rooms
-    const uncatRooms = roomDocs.filter(d => !d.data().categoryId);
-    if (uncatRooms.length > 0) {
-      if (categories.length > 0) {
-        const uncatDiv = document.createElement("div");
-        uncatDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
-        uncatDiv.innerHTML = `<i class="fas fa-minus mr-1.5 text-[9px]"></i>その他`;
-        roomList.appendChild(uncatDiv);
-      }
-      const roomContainer = document.createElement("div");
-      uncatRooms.forEach(d => {
-        roomContainer.appendChild(renderSingleRoom(d));
-      });
-      roomList.appendChild(roomContainer);
-    }
-
-    // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
-    // ここでの boolean 保存(covo_server_unread)は廃止しました。
-  }
-
-  window.changeRoomOrder = async function (roomId, direction, currentOrder) {
-    if (!currentServerId || !roomId) return;
-    const newOrder = currentOrder + direction;
-    try {
-
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
-
-    } catch (e) { console.error(e); }
-  };
-
-  let isRoomsFirst = true;
-  function onRoomsChanged(snapshot) {
-    renderRooms(snapshot);
-    if (!isRoomsFirst) {
-      snapshot.docChanges().forEach(change => {
-        if (change.type === "modified") {
-          const room = change.doc.data();
-          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
-          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-          const lastRead = rm[change.doc.id] || 0;
-          const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
-          if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
-            updateGlobalNotifUI();
-            const serverName = currentServerData?.name || 'Covo';
-            const roomName = room.name || 'room';
-            let text = room.lastMessageText || '新着メッセージ';
-
-            (async () => {
-              try {
-                if (typeof isEncrypted === 'function' && isEncrypted(text)) {
-                  const _members = (currentServerData && currentServerData.joinedUsers) || [];
-                  text = await decryptText(text, currentServerId, change.doc.id, _members);
-                }
-              } catch (e) { text = '（暗号化されたメッセージ）'; }
-              if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
-
-              const isMentioned = text && typeof text === "string" && (text.includes(`@${userNickname}`) || text.includes('@all'));
-              if (isMentioned && !document.hasFocus()) {
-                // Fallback mention toast when not focused is handled by showNotification title
-              }
-
-              const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
-
-              // In-app Notification
-              if (typeof showInAppNotification === 'function') {
-                showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
-              }
-              // Push Notification
-              if (!document.hasFocus()) {
-                if (isTauri) {
-                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
-                } else if (!currentFcmToken) {
-                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
-                }
-              }
-            })();
-          }
-        }
-      });
-    }
-    isRoomsFirst = false;
-  }
-
-  loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
-    console.error("loadServerRooms error:", error);
-    if (_retry < 3 && currentServerId === serverId) {
-      try { await auth.currentUser?.getIdToken(true); } catch (_) { }
-      setTimeout(() => loadServerRooms(serverId, _retry + 1), 1200 * (_retry + 1));
-    }
-  });
-
-  // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
-  getDocs(roomsQuery).then(snap => {
-    if (currentServerId === serverId && snap.size > 0 && roomList.children.length === 0) {
-      renderRooms(snap);
-    }
-  }).catch(e => console.error("loadServerRooms kickstart error:", e));
-
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".dropdown-container")) {
-      document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
-    }
-    if (!e.target.closest("#pcNotifModal") && !e.target.closest("#serverListNotifBtn")) {
-      const pm = document.getElementById('pcNotifModal');
-      if (pm) pm.style.display = 'none';
-    }
-  });
-}
-
-function updateUnreadBadge(roomId) {
-  const badge = document.getElementById(`unread-badge-${roomId}`);
-  if (!badge) return;
-  const count = unreadCounts[roomId] || 0;
-  badge.style.display = (count > 0 && roomId !== currentRoomId) ? "block" : "none";
-}
-
-function updateServerCardDots() {
-  try {
-    const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
-    document.querySelectorAll('.server-card[data-server-id]').forEach(card => {
-      const sid = card.dataset.serverId;
-      let dot = card.querySelector('.server-card-unread-dot');
-      if (sid !== currentServerId && items.some(it => it.serverId === sid)) {
-        if (!dot) { dot = document.createElement('span'); dot.className = 'server-card-unread-dot'; card.appendChild(dot); }
-        dot.style.display = 'block';
-      } else if (dot) {
-        dot.style.display = 'none';
-      }
-    });
-  } catch (e) { }
-}
-
-async function loadOlderMessages() {
-  if (!hasMoreOlderMessages || isLoadingOlderMessages) return;
-  if (allLoadedMessages.length === 0) return;
-  isLoadingOlderMessages = true;
-  const spinner = document.getElementById('topLoadingSpinner');
-  const spinnerText = document.getElementById('topLoadingSpinnerText');
-  if (spinnerText) spinnerText.textContent = "読み込み中...";
-  if (spinner) spinner.style.display = 'flex';
-
-  try {
-    if (window.globalUseRtdb) {
-      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      // Oldest message is at the end of the array (since we sort descending)
-      const oldestMessage = allLoadedMessages[0];
-      const rtdbTime = getMsgTimestamp(oldestMessage);
-
-      const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(rtdbTime, oldestMessage.id), limitToLast(21));
-      const snapshot = await get(q);
-
-      if (snapshot.exists()) {
-
-        const data = snapshot.val();
-        let docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
-        docs.sort((a, b) => getMsgTimestamp(b) - getMsgTimestamp(a)); // descending
-
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => { });
-
-        // endAt(..., id) に合致する基準メッセージ自体を除外
-        docs = docs.filter(d => d.id !== oldestMessage.id);
-
-        if (docs.length > 0) {
-          allLoadedMessages = [...allLoadedMessages, ...docs];
-          const seen = new Set();
-          allLoadedMessages = allLoadedMessages.filter(m => {
-            if (seen.has(m.id)) return false;
-            seen.add(m.id);
-            return true;
-          });
-          allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-          lastMessagesData = [...allLoadedMessages];
-          messagesIndexMap = {};
-          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-          renderMessagesWithReadReceipts();
-
-          rtdbMessagesLimit += docs.length; // keep limit expanded
-        }
-        if (docs.length < 20) {
-          hasMoreOlderMessages = false;
-        }
-      } else {
-        hasMoreOlderMessages = false;
-      }
-
-    } else {
-      const oldestMessage = allLoadedMessages[0];
-      if (!oldestMessage) throw new Error("No oldest message");
-      const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, oldestMessage.id);
-      const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) {
-        hasMoreOlderMessages = false;
-        throw new Error("Doc not found");
-      }
-
-      messageLimit += 20;
-      const q = query(
-        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-        orderBy("timestamp", "desc"),
-        startAfter(docSnap),
-        limit(20)
-      );
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.empty) {
-        hasMoreOlderMessages = false;
-      } else {
-        const olderDocs = [];
-        querySnapshot.forEach(d => {
-          const data = d.data(); data.id = d.id;
-          olderDocs.push(data);
-        });
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        await decryptMessagesInPlace(olderDocs, currentServerId, currentRoomId, _members).catch(() => { });
-
-        allLoadedMessages = [...allLoadedMessages, ...olderDocs];
-        const seen = new Set();
-        allLoadedMessages = allLoadedMessages.filter(m => {
-          if (seen.has(m.id)) return false;
-          seen.add(m.id);
-          return true;
-        });
-        allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-        lastMessagesData = [...allLoadedMessages];
-        renderMessagesWithReadReceipts();
-
-        if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-        if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
-        const newQ = query(
-          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-          orderBy("timestamp", "desc"),
-          limit(messageLimit)
-        );
-        unsubscribeMessages = onSnapshot(newQ, async (snap) => {
-          // Reduced for brevity in script, rely on main subscriber update
-        });
-      }
-    }
-  } catch (e) {
-    console.error("Older messages load error", e);
-  }
-
-  isLoadingOlderMessages = false;
-  if (spinner) spinner.style.display = 'none';
-  allowPagination = true;
-}
-
-function subscribeToMessages() {
-  if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-  if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
-
-  allLoadedMessages = [];
-  hasMoreOlderMessages = true;
-  isLoadingOlderMessages = false;
-  rtdbMessagesLimit = 20;
-  const spinner = document.getElementById('topLoadingSpinner');
-  if (spinner) spinner.style.display = 'none';
-
-  subscribeToMessagesRTDB();
-}
-
-async function subscribeToMessagesRTDB() {
-  const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, orderByChild, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-  const rtdb = await _getOrInitRTDB();
-  const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-  const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
-
-  let initialLoadTimeout = null;
-  let buffer = [];
-  let isInitialPhase = true;
-
-  const processBuffer = async () => {
-    if (buffer.length === 0) return;
-    const docsToProcess = [...buffer];
-    buffer = [];
-
-    const _members = (currentServerData && currentServerData.joinedUsers) || [];
-    await decryptMessagesInPlace(docsToProcess, currentServerId, currentRoomId, _members).catch(() => { });
-
-    docsToProcess.forEach(msg => {
-      const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
-      if (idx >= 0) allLoadedMessages[idx] = msg;
-      else allLoadedMessages.push(msg);
-    });
-
-    // Sort descending (newest first) to match Firestore reversed array
-    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-    lastMessagesData = [...allLoadedMessages];
-    messagesIndexMap = {};
-    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-    renderPinnedMessages();
-    renderMessagesWithReadReceipts();
-    updateReadReceiptForCurrentUser();
-  };
-
-  const handleAdded = async (snapshot) => {
-    const data = snapshot.val();
-    data.id = snapshot.key;
-
-    // Notification logic
-    if (!isInitialPhase && data.senderId !== userId) {
-      let bodyText = data.text;
-      try {
-        if (isEncrypted(bodyText)) {
-          const _members = (currentServerData && currentServerData.joinedUsers) || [];
-          bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
-        }
-      } catch (e) { }
-      const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
-      if (isMentioned && document.hasFocus()) {
-        showMentionToast(data.senderNickname || "ユーザー");
-      }
-    }
-
-    buffer.push(data);
-    if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
-    initialLoadTimeout = setTimeout(() => {
-      if (isInitialPhase) {
-        isInitialPhase = false;
-        isInitialMessageLoad = true;
-        processBuffer().then(() => {
-          messagesDisplay.scrollTop = 0;
-          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
-          isInitialMessageLoad = false;
-          setTimeout(() => {
-            allowPagination = true;
-            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
-              loadOlderMessages();
-            }
-          }, 500);
-        });
-      } else {
-        const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
-        processBuffer().then(() => {
-          if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
-        });
-      }
-    }, 100);
-  };
-
-  const handleChanged = async (snapshot) => {
-    const data = snapshot.val();
-    data.id = snapshot.key;
-    buffer.push(data);
-    processBuffer();
-  };
-
-  const handleRemoved = (snapshot) => {
-    allLoadedMessages = allLoadedMessages.filter(m => m.id !== snapshot.key);
-    lastMessagesData = [...allLoadedMessages];
-    renderMessagesWithReadReceipts();
-  };
-
-  onChildAdded(q, handleAdded);
-  onChildChanged(q, handleChanged);
-  onChildRemoved(q, handleRemoved);
-
-  const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
-  if (window.typingUnsubscribe) { window.typingUnsubscribe(); }
-  const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-  const onTyping = onValue(typingRef, (snap) => {
-    const now = Date.now();
-    const others = [];
-    snap.forEach((child) => {
-      if (child.key !== userId) {
-        const data = child.val();
-        if (data && data.t && (now - data.t) < 10000) {
-          others.push(data.n);
-        }
-      }
-    });
-    const indicator = document.getElementById('typingIndicator');
-    if (others.length > 0) {
-      indicator.textContent = others.join(', ') + ' が入力中...';
-      indicator.classList.remove('hidden');
-    } else {
-      indicator.classList.add('hidden');
-    }
-  });
-  window.typingUnsubscribe = () => off(typingRef, 'value', onTyping);
-
-  const rrRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
-  if (window.readReceiptsUnsubscribe) { window.readReceiptsUnsubscribe(); }
-  const onRR = onValue(rrRef, (snap) => {
-    roomReadReceipts = {};
-    snap.forEach((child) => {
-      roomReadReceipts[child.key] = child.val();
-    });
-    renderMessagesWithReadReceipts();
-  });
-  window.readReceiptsUnsubscribe = () => off(rrRef, 'value', onRR);
-
-  window.rtdbMessagesUnsub = () => {
-    off(q);
-    if (window.typingUnsubscribe) window.typingUnsubscribe();
-    if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
-  };
-
-  membersSidebar.classList.remove("hidden");
-}
-
-// subscribeToMessagesFirestore removed (permanently using RTDB)
-function selectRoom(roomId, roomName) {
-  // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
-  if (window.innerWidth < 768 && currentRoomId === roomId) {
-    sidebar.classList.add("mobile-hidden");
-    currentRoomHeader.classList.remove("hidden");
-    return;
-  }
-
-  if (currentRoomId === roomId) return;
-  currentRoomId = roomId;
-  // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
-  unreadBoundaryAt = 0;
-  unreadBoundaryMessageId = null;
-  try {
-    const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-    // covo_last_read には「+60000/+10000」した先読み値が入るので、その分を引いて実際の既読時刻に戻す
-    const prevRead = rm[roomId];
-    if (typeof prevRead === 'number' && prevRead > 0) {
-      unreadBoundaryAt = prevRead - 60000;
-    }
-    if (typeof updateLocalAndRemoteReadState === 'function') {
-      updateLocalAndRemoteReadState(roomId, Date.now() + 60000);
-    } else {
-      rm[roomId] = Date.now() + 60000;
-      localStorage.setItem('covo_last_read', JSON.stringify(rm));
-    }
-    const badge = document.getElementById('unread-badge-' + roomId);
-    if (badge) badge.style.display = 'none';
-  } catch (e) { }
-  updateUserStatus('online'); // Sync room selection for notifications
-  document.querySelectorAll('.room-item-animate').forEach(el => el.classList.remove('active'));
-  const activeItem = document.getElementById('room-item-' + roomId);
-  if (activeItem) activeItem.classList.add('active');
-  currentRoomTitleText.textContent = roomName;
-  currentRoomHeader.classList.remove("hidden");
-  clearMessagesDOM();
-  lastMessagesData = [];
-  messageInput.disabled = false;
-  fileAttachButton.disabled = false;
-  { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
-  { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = false; }
-  document.getElementById('callButton').disabled = false;
-  { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
-  prewarmPeerConnection();
-  sendMessageButton.disabled = false;
-  messageLimit = 20; // ルームに入り直したらリミットをリセット
-  clearAttachedFile();
-  cancelReply();
-
-  // 未読バッジを確実かつ即座にクリア
-  unreadCounts[roomId] = 0;
-  const badgeElem = document.getElementById(`unread-badge-${roomId}`);
-  if (badgeElem) badgeElem.style.display = 'none';
-  updateGlobalNotifUI();
-  updateUnreadBadge(roomId);
-  if (isTauri && window.__TAURI__?.core?.invoke) {
-    let globalCount = 0;
-    try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch (e) { }
-    window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(() => { });
-  }
-
-  // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
-  if (window.innerWidth < 768) {
-    sidebar.classList.add("mobile-hidden");
-    const bottomNav = document.getElementById("mobileBottomNav");
-    if (bottomNav) bottomNav.style.display = "none";
-    document.body.classList.add('in-chat-view');
-    if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
-  }
-
-  if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
-  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
-  clearTimeout(typingTimeout);
-  isCurrentlyTyping = false;
-  setTypingStatus(false);
-
-  isInitialMessageLoad = true;
-  allLoadedMessages = [];
-  hasMoreOlderMessages = true;
-  isLoadingOlderMessages = false;
-
-  subscribeToMessages();
-
-
-  // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
-  (async () => {
-    try {
-      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
-      const members = (currentServerData && currentServerData.joinedUsers) || [];
-      const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
-      if (key) {
-        await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
-        // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
-
-        const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/rescueRequests`));
-        if (!resSnap.empty) {
-          const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
-          for (const resDoc of resSnap.docs) {
-            const reqUserId = resDoc.id;
-            await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [reqUserId], key.latestVersion);
-            await deleteDoc(resDoc.ref);
-          }
-        }
-
-      } else {
-        // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
-        let retryCount = 0;
-        const checkTimer = setInterval(async () => {
-          retryCount++;
-          if (retryCount > 15 || _e2ee.roomKeyCache[currentRoomId]) { clearInterval(checkTimer); return; }
-          const arrived = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
-          if (arrived) {
-            clearInterval(checkTimer);
-            if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
-          }
-        }, 2000);
-      }
-    } catch (e) { }
-  })();
-
-  const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
-  readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
-    roomReadReceipts = {};
-    snap.forEach(d => roomReadReceipts[d.id] = d.data());
-    renderMessagesWithReadReceipts();
-  });
-
-  const typingColRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
-  typingUnsubscribe = onSnapshot(typingColRef, (snap) => {
-    const now = Date.now();
-    const others = snap.docs
-      .filter(d => d.id !== userId)
-      .filter(d => {
-        const t = d.data().t;
-        if (!t || !t.toDate) return true;
-        return (now - t.toDate().getTime()) < 10000;
-      })
-      .map(d => d.data().n)
-      .filter(Boolean);
-    const indicator = document.getElementById('typingIndicator');
-    if (others.length > 0) {
-      indicator.textContent = others.join(', ') + ' が入力中...';
-      indicator.classList.remove('hidden');
-    } else {
-      indicator.classList.add('hidden');
-    }
-  });
-
-  membersSidebar.classList.remove("hidden");
-}
-
-let floatingDateTimer = null;
-messagesDisplay.addEventListener("scroll", async () => {
-  if (!allowPagination) return;
-
-  const floatingContainer = document.getElementById('floatingDateContainer');
-  const floatingBadge = document.getElementById('floatingDateBadge');
-  if (floatingContainer && floatingBadge) {
-    const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
-    const dividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
-
-    // 1. チャット内ディバイダーは一切いじらない（そのまま残す）
-    dividers.forEach(div => {
-      const inner = div.querySelector('.date-divider-inner');
-      if (inner) inner.style.opacity = '1';
-    });
-
-    // 2. viewTop（画面最上部）の直下に存在する「現在の日付」と、衝突しつつある「押し出し日付」を特定する
-    // DOMツリー上は上が最新(offsetTop小)、下が過去(offsetTop大)。
-    // viewTop以下のうち最もoffsetTopが大きいもの（画面最上部に位置するもの）が activeDivider となる
-    let activeDivider = null;
-    let pushingDivider = null;
-
-    for (let i = 0; i < dividers.length; i++) {
-      const top = dividers[i].offsetTop;
-      if (top <= viewTop) {
-        if (!activeDivider || top > activeDivider.offsetTop) {
-          activeDivider = dividers[i];
-        }
-      }
-    }
-
-    // 次に、activeDivider の1つ新しい側（offsetTopが小さい側＝下から昇ってくる側）のディバイダーが、
-    // viewTopから下方向へ 38px 以内（バッジの高さ付近）にめり込んでいるかを判定する
-    if (activeDivider) {
-      for (let j = 0; j < dividers.length; j++) {
-        const top = dividers[j].offsetTop;
-        if (top < activeDivider.offsetTop && top > viewTop - 38) {
-          pushingDivider = dividers[j];
-          break;
-        }
-      }
-    }
-
-    if (activeDivider && messagesDisplay.scrollTop > 50) {
-      const text = activeDivider.textContent.trim();
-      if (text) {
-        if (floatingBadge.textContent !== text) {
-          floatingBadge.textContent = text;
-        }
-
-        // ★PC・スマホ両方でチャット内の日付バッジとミリ単位で座標を完全一致させる神業
-        const activeInner = activeDivider.querySelector('.date-divider-inner');
-        if (activeInner) {
-          const rect = activeInner.getBoundingClientRect();
-          const containerRect = floatingContainer.getBoundingClientRect();
-          const offsetLeft = rect.left - containerRect.left;
-          floatingBadge.style.position = 'absolute';
-          floatingBadge.style.left = `${offsetLeft}px`;
-          floatingBadge.style.width = `${rect.width}px`;
-        }
-
-        // 押し出しアニメーション（Sticky Pushing Replacement Effect）の計算
-        if (pushingDivider) {
-          const diff = viewTop - pushingDivider.offsetTop; // 0px 〜 38px
-          const translateY = -(diff); // ぶつかり始め(0px)から上に押し出されていく(-38px)
-          floatingContainer.style.transform = `translateY(${translateY}px)`;
-        } else {
-          floatingContainer.style.transform = `translateY(0px)`;
-        }
-
-        floatingContainer.classList.remove('opacity-0');
-        floatingContainer.classList.add('opacity-100');
-
-        if (floatingDateTimer) clearTimeout(floatingDateTimer);
-        floatingDateTimer = setTimeout(() => {
-          floatingContainer.classList.add('opacity-0');
-          floatingContainer.classList.remove('opacity-100');
-          setTimeout(() => { floatingContainer.style.transform = `translateY(0px)`; }, 300);
-        }, 1400);
-      } else {
-        floatingContainer.classList.add('opacity-0');
-        floatingContainer.classList.remove('opacity-100');
-      }
-    } else {
-      floatingContainer.classList.add('opacity-0');
-      floatingContainer.classList.remove('opacity-100');
-    }
-  }
-
-  const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
-  if (messagesDisplay.scrollTop <= 20) {
-    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
-    jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
-
-    // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
-    if (isJumpView && !hasMoreJumpNewer) {
-      window.exitJumpMode();
-    }
-  } else if (isJumpView || messagesDisplay.scrollTop > 300) {
-    jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
-    jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
-  }
-
-  const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
-
-  // 過去への読み込み (scrollTop大 = 上スクロール)
-  if (scrollDistanceToTop < 300) {
-    if (!isJumpView && !isLoadingOlderMessages && hasMoreOlderMessages) {
-      await loadOlderMessages();
-    } else if (isJumpView && !isLoadingJumpOlder && hasMoreJumpOlder) {
-      await loadJumpOlderMessages();
-    }
-  }
-
-  // ジャンプ中のみ、未来への読み込み (scrollTop小 = 下スクロール)
-  if (isJumpView && messagesDisplay.scrollTop < 300 && !isLoadingJumpNewer && hasMoreJumpNewer) {
-    await loadJumpNewerMessages();
-  }
-});
-
-async function loadJumpOlderMessages() {
-  if (isLoadingJumpOlder || !hasMoreJumpOlder || !jumpViewMessages.length) return;
-  isLoadingJumpOlder = true;
-  try {
-    const oldestMsg = jumpViewMessages[0];
-    if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
-    const q = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "desc"),
-      startAfter(oldestMsg.timestamp),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
-    if (!snap.empty) {
-      const fetched = [];
-      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
-      fetched.reverse();
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
-
-      jumpViewMessages = [...fetched, ...jumpViewMessages];
-      allLoadedMessages = [...jumpViewMessages];
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-      renderMessagesWithReadReceipts();
-    }
-  } catch (e) { console.error("loadJumpOlderMessages error:", e); }
-  finally { isLoadingJumpOlder = false; }
-}
-
-async function loadJumpNewerMessages() {
-  if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
-  isLoadingJumpNewer = true;
-  try {
-    const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
-    if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
-    const q = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "asc"),
-      startAfter(newestMsg.timestamp),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
-    if (!snap.empty) {
-      const fetched = [];
-      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
-
-      const oldScrollHeight = messagesDisplay.scrollHeight;
-      const oldScrollTop = messagesDisplay.scrollTop;
-
-      jumpViewMessages = [...jumpViewMessages, ...fetched];
-      allLoadedMessages = [...jumpViewMessages];
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-      renderMessagesWithReadReceipts();
-
-      messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
-    }
-  } catch (e) { console.error("loadJumpNewerMessages error:", e); }
-  finally { isLoadingJumpNewer = false; }
-}
-
-window.exitJumpMode = function () {
-  const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
-  jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
-  jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
-
-  if (isJumpView) {
-    isJumpView = false;
-    if (window.globalUseRtdb) {
-      allLoadedMessages = [];
-      lastMessagesData = [];
-      messagesIndexMap = {};
-      messagesDisplay.innerHTML = '';
-      if (typeof subscribeToMessagesRTDB === 'function') {
-        if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
-        subscribeToMessagesRTDB();
-      }
-    } else {
-      // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
-      allLoadedMessages = [...realTimeMessagesCache];
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-      renderMessagesWithReadReceipts();
-      messagesDisplay.scrollTop = 0;
-    }
-  } else {
-    messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-};
-
-// PCでのマウスホイールによるスクロール方向逆転の修正
-messagesDisplay.addEventListener("wheel", (e) => {
-  // flipped (scaleY(-1)) されているため、デフォルトのスクロール方向が逆になる。
-  // これをキャンセルし、自力で正しい方向にスクロール位置を加算・減算する。
-  e.preventDefault();
-  messagesDisplay.scrollTop -= e.deltaY;
-}, { passive: false });
-
-// 旧ルーム作成ボタンは無効化（サーバー設定から管理）
-
-function handleDeleteRoomClick(id, name) {
-  pendingRoomDelete = { roomId: id, roomName: name };
-  deleteRoomConfirmModal.classList.remove("hidden");
-  roomToDeleteNameSpan.textContent = name;
-}
-confirmDeleteButton.addEventListener("click", async () => {
-  deleteRoomConfirmModal.classList.add("hidden");
-  await deleteRoomAndMessages(pendingRoomDelete.roomId);
-});
-cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
-
-async function deleteRoomAndMessages(roomId) {
-  if (!currentServerId) return;
-  if (currentRoomId === roomId) {
-    currentRoomId = null;
-    updateUserStatus('online');
-    currentRoomHeader.classList.add("hidden");
-    clearMessagesDOM();
-    messageInput.disabled = true;
-    sendMessageButton.disabled = true;
-    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-    if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
-    if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
-    if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
-  }
-
-  try {
-    const batch = writeBatch(db);
-
-    // 1. messages サブコレクションの全削除
-    const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
-    const messagesSnap = await getDocs(messagesRef);
-    messagesSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 2. readReceipts サブコレクションの全削除
-    const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
-    const readReceiptsSnap = await getDocs(readReceiptsRef);
-    readReceiptsSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 3. ルーム本体の削除
-    const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
-    batch.delete(roomRef);
-
-    await batch.commit();
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
-    } catch (err) { console.error("RTDB Room Delete Failed", err); }
-    console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
-  } catch (error) {
-    console.error("Error during room deletion process:", error);
-    throw error;
-  }
-}
-const executeDeleteRoom = async () => {
-  if (!pendingRoomDelete) return;
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await deleteRoomAndMessages(pendingRoomDelete.roomId);
-    alertMessage(`ルーム「${pendingRoomDelete.roomName}」を削除しました。`, "success");
-  } catch (error) {
-    alertMessage("ルームの削除に失敗しました。", "error");
-  } finally {
-    loadingOverlay.classList.add("hidden");
-    pendingRoomDelete = null;
-  }
-};
-
-// =========================================================================
 // Server UI イベントハンドラー
 // =========================================================================
 
@@ -4880,6 +3533,8 @@ window.switchSsTab = function (tab) {
 }
 
 
+window.openServerSettings = openServerSettings;
+window.openServerSettings = openServerSettings;
 async function openServerSettings() {
   if (!currentServerId) return;
   document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
@@ -5892,213 +4547,1709 @@ document.getElementById("deleteServerBtn").addEventListener("click", async () =>
 });
 
 let isSendingMessage = false;
-async function sendMessage() {
-  // Allow concurrent text sends (LINE style), but block if actively uploading a file to prevent overlapping logic.
-  if (isSendingMessage && (attachedFile || attachedKvFile)) return;
-  const text = messageInput.value.trim();
-  if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
+// ===== サーバーカードコンテキストメニュー =====
+let serverCtxData = null;
 
-  // Optimistic input clearing (LINE style)
-  messageInput.value = "";
-  messageInput.style.height = "auto";
-  if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+function showServerContextMenu(server, x, y) {
+  serverCtxData = server;
+  const menu = document.getElementById("serverContextMenu");
+  const isSvAdmin = server.serverAdmins && server.serverAdmins.includes(userId);
+  const isOwner = server.createdBy === userId;
+  const isJoined = server.joinedUsers && server.joinedUsers.includes(userId);
+  // 権限ごとに表示切り替え
+  document.getElementById("serverCtxSettings").style.display = (isAdmin || isSvAdmin) ? "" : "none";
+  document.getElementById("serverCtxLeave").style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
+  document.getElementById("serverCtxDeleteSep").style.display = (isAdmin || isOwner) ? "" : "none";
+  document.getElementById("serverCtxDelete").style.display = (isAdmin || isOwner) ? "" : "none";
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) menu.style.left = `${x - r.width}px`;
+    if (r.bottom > window.innerHeight - 8) menu.style.top = `${y - r.height}px`;
+  });
+}
 
-  // 共通のUI要素を取得 (finallyブロックでの参照エラー防止)
-  const progressBar = document.getElementById("uploadProgressBar");
-  const progressFill = document.getElementById("uploadProgressFill");
-  const progressText = document.getElementById("uploadProgressText");
+document.getElementById("serverCtxEnter").addEventListener("click", () => {
+  if (serverCtxData) enterServer(serverCtxData.id, serverCtxData);
+  document.getElementById("serverContextMenu").classList.add("hidden");
+});
 
-  // Only lock UI fully if a file is attached
-  if (attachedFile || attachedKvFile) {
-    isSendingMessage = true;
-    messageInput.disabled = true;
-    sendMessageButton.disabled = true;
-    progressBar.classList.remove("hidden");
+document.getElementById("serverCtxSettings").addEventListener("click", async () => {
+  const sv = serverCtxData;
+  document.getElementById("serverContextMenu").classList.add("hidden");
+  if (!sv) return;
+  await enterServer(sv.id, sv);
+  setTimeout(() => openServerSettings(), 600);
+});
+
+document.getElementById("serverCtxLeave").addEventListener("click", async () => {
+  const sv = serverCtxData;
+  document.getElementById("serverContextMenu").classList.add("hidden");
+  if (!sv) return;
+  if (!await showCustomConfirm(`「${sv.name || sv.id}」を退出しますか？`, "退出する", "キャンセル")) return;
+  loadingOverlay.classList.remove("hidden");
+  try {
+    await updateDoc(doc(db, `artifacts/${appId}/servers`, sv.id), {
+      joinedUsers: arrayRemove(userId),
+      serverAdmins: arrayRemove(userId),
+      memberCount: increment(-1)
+    });
+    try {
+      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
+    } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
+    alertMessage("サーバーを退出しました", "success");
+  } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
+  finally { loadingOverlay.classList.add("hidden"); }
+});
+
+document.getElementById("serverCtxDelete").addEventListener("click", async () => {
+  const sv = serverCtxData;
+  document.getElementById("serverContextMenu").classList.add("hidden");
+  if (!sv) return;
+  if (!await showCustomConfirm(`「${sv.name || sv.id}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
+  loadingOverlay.classList.remove("hidden");
+  try {
+    await deleteServerCascade(sv.id);
+    alertMessage("サーバーを削除しました", "success");
+  } catch (e) { alertMessage("削除に失敗しました: " + e.message, "error"); }
+  finally { loadingOverlay.classList.add("hidden"); }
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#serverContextMenu")) {
+    document.getElementById("serverContextMenu").classList.add("hidden");
+  }
+});
+
+// 他サーバーのメッセージを監視するグローバルリスナー
+let globalNotifListeners = {};
+
+async function setupGlobalNotificationListeners() {
+  Object.values(globalNotifListeners).forEach(unsub => unsub());
+  globalNotifListeners = {};
+  if (!isTauri && currentFcmToken) {
+    console.log('🔔 [通知] FCM(プッシュ通知)が有効なため、バックグラウンド監視を最適化しました');
+    return;
   }
 
+  try {
+    const serversSnap = await getDocs(
+      query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+    );
+    for (const serverDoc of serversSnap.docs) {
+      const svId = serverDoc.id;
+      const svData = serverDoc.data();
+      if (svId === currentServerId) continue;
+
+      const roomsQuery = collection(db, `artifacts/${appId}/servers/${svId}/rooms`);
+      let isFirst = true;
+      let roomLastNotifTs = {};
+
+      window.__globalRoomsCache = window.__globalRoomsCache || {};
+      window.__globalRoomsCache[svId] = window.__globalRoomsCache[svId] || {};
+
+      const unsub = onSnapshot(roomsQuery, snapshot => {
+        if (isFirst) {
+          isFirst = false;
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            window.__globalRoomsCache[svId][doc.id] = d;
+            roomLastNotifTs[doc.id] = typeof d.lastMessageAt === 'number' ? d.lastMessageAt : (d.lastMessageAt?.toMillis?.() || (d.lastMessageAt?.seconds ? d.lastMessageAt.seconds * 1000 : 0));
+          });
+          return;
+        }
+        let hasNewMessage = false;
+        let newItemsToNotif = [];
+        snapshot.docChanges().forEach(change => {
+          if (change.type === "modified" || change.type === "added") {
+            const roomData = change.doc.data();
+            const rmId = change.doc.id;
+            window.__globalRoomsCache[svId][rmId] = roomData;
+            const rmName = roomData.name || rmId;
+            const ts = typeof roomData.lastMessageAt === 'number' ? roomData.lastMessageAt : (roomData.lastMessageAt?.toMillis?.() || (roomData.lastMessageAt?.seconds ? roomData.lastMessageAt.seconds * 1000 : 0));
+            const prevTs = roomLastNotifTs[rmId] || 0;
+
+            if (ts > prevTs) {
+              roomLastNotifTs[rmId] = ts;
+              hasNewMessage = true;
+              if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
+                newItemsToNotif.push({ serverId: svId, serverName: svData.name || svId, roomId: rmId, roomName: rmName, lastAt: ts });
+                (async () => {
+                  let body = roomData.lastMessageText || '新着メッセージ';
+                  try {
+                    if (typeof isEncrypted === 'function' && isEncrypted(body)) {
+                      const _members = (svData && svData.joinedUsers) || [];
+                      body = await decryptText(body, svId, rmId, _members);
+                    }
+                  } catch (e) { body = '（暗号化されたメッセージ）'; }
+                  if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
+                  showInAppNotification(
+                    svData.name || svId, rmName,
+                    'メンバー',
+                    body,
+                    svId, svData, rmId, rmName
+                  );
+                  // Push Notification for other servers
+                  if (!document.hasFocus()) {
+                    if (isTauri) {
+                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                    } else if (!currentFcmToken) {
+                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
+                    }
+                  }
+                })();
+              }
+            }
+          }
+        });
+        // バッジ更新のために即座に更新するか、未読再スキャンをトリガー
+        if (hasNewMessage) {
+          if (newItemsToNotif.length > 0) {
+            try {
+              let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+              newItemsToNotif.forEach(ni => {
+                const idx = items.findIndex(it => it.serverId === ni.serverId && it.roomId === ni.roomId);
+                if (idx > -1) items[idx].lastAt = ni.lastAt;
+                else items.push(ni);
+              });
+              items.sort((a, b) => b.lastAt - a.lastAt);
+              localStorage.setItem('covo_global_items', JSON.stringify(items));
+              if (typeof renderNotifList === 'function') renderNotifList(items);
+              if (isTauri && window.__TAURI__?.core?.invoke) {
+                window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => { });
+              }
+            } catch (e) { console.error(e); }
+          } else if (typeof scanAllUnreadAndRender === 'function') {
+            scanAllUnreadAndRender();
+          }
+        }
+      });
+      globalNotifListeners[svId] = unsub;
+    }
+  } catch (e) { console.error("globalNotifListeners error:", e); }
+}
+
+function showMentionToast(fromNickname) {
+  const box = document.createElement("div");
+  box.className = "fixed top-4 right-4 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium mention-toast";
+  box.style.cssText += "animation: slideUpFade 0.22s ease both;";
+  box.innerHTML = `<span class="mention-toast-badge">@メンション</span><span>${escapeHtml(fromNickname)}さんにメンションされました</span>`;
+  document.body.appendChild(box);
+  setTimeout(() => {
+    box.style.animation = "fadeIn 0.2s ease reverse forwards";
+    setTimeout(() => box.remove(), 200);
+  }, 3500);
+}
+
+function showCustomConfirm(message, okText = "確認", cancelText = "キャンセル", subMessage = "") {
+  return new Promise(resolve => {
+    const modal = document.getElementById("customConfirmModal");
+    document.getElementById("customConfirmMessage").textContent = message;
+    document.getElementById("customConfirmOk").textContent = okText;
+    document.getElementById("customConfirmCancel").textContent = cancelText;
+    const subEl = document.getElementById("customConfirmSub");
+    if (subMessage) { subEl.textContent = subMessage; subEl.classList.remove("hidden"); }
+    else { subEl.classList.add("hidden"); }
+
+    openModal(modal);
+
+    const okBtn = document.getElementById("customConfirmOk");
+    const cancelBtn = document.getElementById("customConfirmCancel");
+
+    function onOk() { cleanup(); resolve(true); }
+    function onCancel() { cleanup(); resolve(false); }
+    function cleanup() {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+    }
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+  });
+}
+
+function showCustomAlert(message) {
+  return new Promise(resolve => {
+    const modal = document.getElementById("customAlertModal");
+    const msgEl = document.getElementById("customAlertMessage");
+    if (msgEl) msgEl.textContent = message;
+    if (modal) modal.classList.remove("hidden");
+    const okBtn = document.getElementById("customAlertOk");
+    function onOk() {
+      if (modal) modal.classList.add("hidden");
+      if (okBtn) okBtn.removeEventListener("click", onOk);
+      resolve();
+    }
+    if (okBtn) okBtn.addEventListener("click", onOk);
+    else resolve();
+  });
+}
+
+// === Discord風UIモード制御JSロジック ===
+window.setDiscordUIMode = function (enabled) {
+  localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
+  document.body.classList.toggle('discord-ui-mode', enabled);
+  const pcToggle = document.getElementById('toggleDiscordUI');
+  const mobileToggle = document.getElementById('toggleDiscordUIMobile');
+  if (pcToggle) pcToggle.checked = enabled;
+  if (mobileToggle) mobileToggle.checked = enabled;
+
+  if (enabled) {
+    if (!currentServerId) {
+      if (currentHomeViewMode === 'discover') {
+        document.body.classList.add("discord-home-view", "discord-discover-view");
+        document.body.classList.remove("discord-dm-view");
+      } else {
+        document.body.classList.add("discord-home-view", "discord-dm-view");
+        document.body.classList.remove("discord-discover-view");
+      }
+      const appCont = document.getElementById("appContainer");
+      if (appCont && userId) appCont.classList.remove("hidden");
+    } else {
+      document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-discover-view");
+    }
+    renderDiscordServerNav();
+  } else {
+    document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-discover-view");
+    if (!currentServerId) {
+      const appCont = document.getElementById("appContainer");
+      if (appCont) appCont.classList.add("hidden");
+      const sls = document.getElementById("serverListScreen");
+      if (sls && userId) sls.classList.remove("hidden");
+    }
+  }
+};
+
+window.renderDiscordServerNav = function () {
+  const navList = document.getElementById("discordServerNavList");
+  const homeGrid = document.getElementById("discordHomeServerGrid");
+  const homeBtn = document.getElementById("discordHomeBtn") || document.querySelector(".discord-home-btn");
+  const discoverBtn = document.getElementById("discordDiscoverBtn");
+  if (!navList) return;
+  navList.innerHTML = "";
+  if (homeGrid) homeGrid.innerHTML = "";
+
+  if (!currentServerId) {
+    if (currentHomeViewMode === 'discover') {
+      if (homeBtn) homeBtn.classList.remove("active");
+      if (discoverBtn) discoverBtn.classList.add("active");
+    } else {
+      if (homeBtn) homeBtn.classList.add("active");
+      if (discoverBtn) discoverBtn.classList.remove("active");
+    }
+  } else {
+    if (homeBtn) homeBtn.classList.remove("active");
+    if (discoverBtn) discoverBtn.classList.remove("active");
+  }
+
+  if (typeof allServersCache !== 'undefined' && allServersCache) {
+    const servers = [...allServersCache];
+    // 順序を一定に固定するため、過去のアクセス順ソート処理を完全排除
+
+    // 未読情報の取得
+    let globalItems = [];
+    try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch (e) { }
+
+    const joinedServers = servers.filter(server => {
+      if (!isAdmin) return (server.joinedUsers || []).includes(userId);
+      return (server.joinedUsers || []).includes(userId);
+    });
+    const unjoinedServers = isAdmin ? servers.filter(server => !(server.joinedUsers || []).includes(userId)) : [];
+
+    const renderServer = (server) => {
+      const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
+      const hasUnread = globalItems.some(it => it.serverId === server.id);
+      const isActive = currentServerId === server.id;
+
+      // 1. 左側サーバーナビゲーションへの追加
+      const item = document.createElement("div");
+      item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
+      item.title = server.name || server.id;
+
+      const pill = document.createElement("div");
+      pill.className = "discord-server-pill";
+      item.appendChild(pill);
+
+      const icon = document.createElement("div");
+      icon.className = "discord-server-icon";
+      if (server.iconUrl) {
+        icon.className += " custom-bg";
+        icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+      } else {
+        icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+      }
+      item.appendChild(icon);
+
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (currentServerId !== server.id) {
+          enterServer(server.id, server);
+        }
+      });
+      navList.appendChild(item);
+
+      // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
+      if (homeGrid) {
+        const card = document.createElement("div");
+        card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
+
+        const cardIcon = document.createElement("div");
+        cardIcon.className = "discord-card-icon w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden transition-all duration-300 group-hover:rounded-2xl";
+        if (server.iconUrl) {
+          cardIcon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+        } else {
+          cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+        }
+        card.appendChild(cardIcon);
+
+        const cardInfo = document.createElement("div");
+        cardInfo.className = "flex-1 min-w-0";
+        cardInfo.innerHTML = `
+              <div class="font-bold text-base truncate mb-1">${escapeHtml(server.name || server.id)}</div>
+              <div class="text-xs text-gray-400 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                <span>${(server.joinedUsers || []).length} 名のメンバー</span>
+              </div>
+            `;
+        card.appendChild(cardInfo);
+
+        const enterBtn = document.createElement("button");
+        enterBtn.className = "discord-card-btn font-bold px-5 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
+        enterBtn.textContent = "開く";
+        card.appendChild(enterBtn);
+
+        card.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (currentServerId !== server.id) {
+            enterServer(server.id, server);
+          }
+        });
+        homeGrid.appendChild(card);
+      }
+    };
+
+    joinedServers.forEach(server => renderServer(server));
+
+    if (isAdmin && unjoinedServers.length > 0) {
+      // nav separator
+      const navSep = document.createElement("div");
+      navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
+      navList.appendChild(navSep);
+
+      // home grid separator
+      if (homeGrid) {
+        const homeSep = document.createElement("div");
+        homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
+        homeSep.innerHTML = `<span class="bg-gray-50 dark:bg-gray-900 px-4 text-xs font-bold text-gray-400 -mt-2">未参加のサーバー</span>`;
+        homeGrid.appendChild(homeSep);
+      }
+      unjoinedServers.forEach(server => renderServer(server));
+    }
+
+    if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
+      homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
+    }
+
+    // ホーム画面右側の全体メンバーリスト描画 (画像完全準拠)
+    const homeMembersSidebar = document.getElementById("discordHomeMembers");
+    if (homeMembersSidebar && typeof cachedUsers !== 'undefined' && cachedUsers && cachedUsers.length > 0) {
+      const onlines = cachedUsers.filter(u => u.status === 'online' || u.status === 'away');
+      const offlines = cachedUsers.filter(u => !u.status || u.status === 'offline');
+      
+      const formatLastSeen = (u) => {
+        if (u.status === 'online') return 'オンライン';
+        if (u.status === 'away') return '離席中';
+        if (u.lastSeen) {
+          try {
+            const diff = Date.now() - (u.lastSeen.toDate ? u.lastSeen.toDate().getTime() : u.lastSeen);
+            const m = Math.floor(diff / 60000);
+            const h = Math.floor(diff / 3600000);
+            const d = Math.floor(diff / 86400000);
+            if (d > 0) return `${d}日前`;
+            if (h > 0) return `${h}時間前`;
+            if (m > 0) return `${m}分前`;
+            return 'たった今';
+          } catch(e) {}
+        }
+        return 'オフライン';
+      };
+
+      const createMemberEl = (u) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-gray-200/50 dark:hover:bg-white/5 cursor-pointer transition-colors';
+        const av = document.createElement('div');
+        av.className = 'avatar-placeholder relative w-8 h-8 rounded-full flex-shrink-0';
+        __setAvatarImg(av, u.avatarUrl, u.nickname || u.email || 'User');
+        const stat = document.createElement('div');
+        stat.className = `status-indicator ${u.status === 'away' ? 'status-away' : (u.status === 'online' ? 'status-online' : 'status-offline')}`;
+        av.appendChild(stat);
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'flex-1 min-w-0 leading-tight';
+        nameDiv.innerHTML = `
+          <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(u.nickname || u.email || 'User')}</div>
+          <div class="text-[10px] text-gray-400 font-medium mt-0.5">${formatLastSeen(u)}</div>
+        `;
+        row.appendChild(av);
+        row.appendChild(nameDiv);
+        return row;
+      };
+
+      homeMembersSidebar.innerHTML = `
+        <div class="p-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">ONLINE — ${onlines.length}</div>
+        <div id="discordHomeOnlineList" class="space-y-0.5 px-2 pb-3"></div>
+        <div class="p-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">OFFLINE — ${offlines.length}</div>
+        <div id="discordHomeOfflineList" class="space-y-0.5 px-2 pb-6"></div>
+      `;
+
+      const onlineList = document.getElementById("discordHomeOnlineList");
+      const offlineList = document.getElementById("discordHomeOfflineList");
+      if (onlineList) onlines.forEach(u => onlineList.appendChild(createMemberEl(u)));
+      if (offlineList) offlines.forEach(u => offlineList.appendChild(createMemberEl(u)));
+    }
+  }
+};
+
+// 既存のrenderServerList実行時に連動させるためのフックを強化
+const _origRenderServerList = window.renderServerList;
+window.renderServerList = function () {
+  if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
+  if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+};
+
+// サーバーアイコン変更用JS (Moved from global scope)
+// サーバーアイコン変更用JSロジック
+const serverIconUploadInput = document.getElementById("serverIconUploadInput");
+const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
+const serverIconCropModal = document.getElementById("serverIconCropModal");
+const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
+const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
+let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
+let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
+let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
+let isNewServerIconCrop = false;
+window.pendingNewServerIconBlob = null;
+const SICON_SIZE = 240;
+
+if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
+  document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => {
+    if (document.getElementById("serverIconSettingsWrapper").dataset.canEdit === "false") return;
+    isNewServerIconCrop = false;
+    serverIconUploadInput.click();
+  });
+}
+window.openNewServerIconPicker = function () {
+  const newFileInput = document.getElementById("newServerIconUploadInput");
+  if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
+};
+
+function handleSIconFileChange(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const objectUrl = URL.createObjectURL(file);
+  sIconImage = new Image();
+  sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
+  sIconImage.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    const scaleX = SICON_SIZE / sIconImage.naturalWidth;
+    const scaleY = SICON_SIZE / sIconImage.naturalHeight;
+    sIconMinScale = Math.max(scaleX, scaleY);
+    sIconScale = sIconMinScale;
+    serverIconZoomSlider.min = sIconMinScale;
+    serverIconZoomSlider.max = sIconMinScale * 4;
+    serverIconZoomSlider.value = sIconScale;
+    sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
+    sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
+    document.getElementById('serverIconUploadProgress').classList.add('hidden');
+    serverIconCropModal.classList.remove('hidden');
+    drawSIconPreview();
+  };
+  e.target.value = '';
+  if (sIconImage) sIconImage.src = objectUrl;
+}
+
+if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
+if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
+
+function clampSIconOffset() {
+  if (!sIconImage) return;
+  const maxW = sIconImage.naturalWidth * sIconScale;
+  const maxH = sIconImage.naturalHeight * sIconScale;
+  if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
+  else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
+  if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
+  else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
+}
+
+function drawSIconPreview() {
+  if (!sIconImage) return;
+  const ctx = serverIconCropCanvas.getContext('2d');
+  ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
+  ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
+}
+
+serverIconCropCanvas.addEventListener('mousedown', (e) => {
+  e.preventDefault(); sIconIsDragging = true;
+  sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
+  sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
+  serverIconCropCanvas.style.cursor = 'grabbing';
+});
+document.addEventListener('mousemove', (e) => {
+  if (!sIconIsDragging || !sIconImage) return;
+  sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
+  sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
+  clampSIconOffset(); drawSIconPreview();
+});
+document.addEventListener('mouseup', () => {
+  if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+});
+
+// タッチドラッグ対応（スマホ・タブレット）
+serverIconCropCanvas.addEventListener('touchstart', (e) => {
+  e.preventDefault(); // スクロール防止
+  if (e.touches.length !== 1) return;
+  sIconIsDragging = true;
+  sIconDragStartX = e.touches[0].clientX;
+  sIconDragStartY = e.touches[0].clientY;
+  sIconDragStartOffsetX = sIconOffsetX;
+  sIconDragStartOffsetY = sIconOffsetY;
+}, { passive: false });
+document.addEventListener('touchmove', (e) => {
+  if (!sIconIsDragging || !sIconImage) return;
+  if (e.touches.length !== 1) return;
+  e.preventDefault(); // スクロール防止
+  sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
+  sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
+  clampSIconOffset(); drawSIconPreview();
+}, { passive: false });
+document.addEventListener('touchend', () => {
+  if (sIconIsDragging) { sIconIsDragging = false; }
+}, { passive: true });
+
+serverIconZoomSlider.addEventListener('input', () => {
+  if (!sIconImage) return;
+  const newScale = parseFloat(serverIconZoomSlider.value);
+  const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
+  sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
+  sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
+  sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
+});
+
+document.getElementById('serverIconCropCancel').addEventListener('click', () => {
+  serverIconCropModal.classList.add('hidden'); sIconImage = null;
+  if (serverIconUploadInput) serverIconUploadInput.value = '';
+  const newFileInput = document.getElementById("newServerIconUploadInput");
+  if (newFileInput) newFileInput.value = '';
+});
+
+document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
+  if (!sIconImage) return;
+  if (!isNewServerIconCrop && !currentServerId) return;
+
+  // 元画像サイズを考慮した最適な出力解像度（最大1024px）
+  const maxOutputSize = 1024;
+  const OUTPUT = Math.min(maxOutputSize, Math.max(
+    sIconImage.naturalWidth * sIconScale,
+    sIconImage.naturalHeight * sIconScale,
+    640 // 最低限640px
+  ));
+  const offscreen = document.createElement('canvas');
+  offscreen.width = OUTPUT; offscreen.height = OUTPUT;
+  const offCtx = offscreen.getContext('2d');
+  offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
+  const sf = OUTPUT / SICON_SIZE;
+  offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
+
+  // WebP対応確認（非対応の場合はJPEGにフォールバック）
+  const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
+  const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+  const quality = 0.95;
+  const ext = supportsWebp ? 'webp' : 'jpg';
+
+  offscreen.toBlob(async (blob) => {
+    if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
+
+    if (isNewServerIconCrop) {
+      window.pendingNewServerIconBlob = blob;
+      const previewContent = document.getElementById("newServerIconPreviewContent");
+      const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
+      if (previewContent && previewWrapper) {
+        const tempUrl = URL.createObjectURL(blob);
+        previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
+        previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
+      }
+      serverIconCropModal.classList.add('hidden');
+      sIconImage = null;
+      alertMessage("サーバーアイコンのプレビューを設定しました", "success");
+      return;
+    }
+
+    const progressDiv = document.getElementById('serverIconUploadProgress');
+    const progressFill = document.getElementById('serverIconUploadProgressFill');
+    const progressText = document.getElementById('serverIconUploadProgressText');
+    const confirmBtn = document.getElementById('serverIconCropConfirm');
+    const cancelBtn = document.getElementById('serverIconCropCancel');
+    progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
+    confirmBtn.disabled = true; cancelBtn.disabled = true;
+    try {
+      const fileUrl = await uploadToExternalService(
+        new File([blob], `server_icon.${ext}`, { type: mimeType }),
+        (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
+        'simplechat/servericons'
+      );
+
+      await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+
+      if (currentServerData) currentServerData.iconUrl = fileUrl;
+      if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
+        window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
+      }
+      const iconPreview = document.getElementById("serverIconSettingsPreview");
+      if (iconPreview) {
+        iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
+        iconPreview.style.backgroundColor = "transparent";
+      }
+      if (typeof renderServerList === 'function') renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      serverIconCropModal.classList.add('hidden');
+      sIconImage = null;
+      alertMessage("サーバーアイコンを更新しました", "success");
+    } catch (err) {
+      console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
+    } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
+  }, mimeType, quality);
+});
+
+// ================= MODULE: rooms.js ================
+// ================= ROOMS MODULE ================
+// =========================================================================
+// Room Features (Server-based)
+// =========================================================================
+function loadServerRooms(serverId, _retry = 0) {
+  if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
+
+  const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
+
+  let hasLoaded = false;
+
+  function renderRooms(snapshot) {
+    hasLoaded = true;
+    roomList.innerHTML = "";
+    const currentRoomIds = new Set();
+    const roomDocs = [];
+    snapshot.forEach(docSnap => roomDocs.push(docSnap));
+    roomDocs.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+
+    let categories = currentServerData?.categories || [];
+    if (!Array.isArray(categories)) categories = Object.values(categories);
+    categories.sort((a, b) => a.order - b.order);
+
+    const renderSingleRoom = (docSnap) => {
+      currentRoomIds.add(docSnap.id);
+      const room = docSnap.data();
+      roomNames[docSnap.id] = room.name;
+      const div = document.createElement("div");
+      // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
+      div.className = "flex items-center justify-between py-1 px-2 mb-0.5 text-sm cursor-pointer group room-item-animate";
+      div.id = `room-item-${docSnap.id}`;
+      if (docSnap.id === currentRoomId) div.classList.add("active");
+      div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
+
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
+      nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+
+      const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+      const lastRead = rm[docSnap.id] || 0;
+      const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+      const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
+      const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
+
+      if (!isNotCurrentOrHidden && lastMsgAt > lastRead && !bySelf) {
+        try {
+          // Ensure the read timestamp is strictly greater than the message timestamp to prevent clock skew issues
+          const newRead = Math.max(Date.now(), lastMsgAt) + 10000;
+          rm[docSnap.id] = newRead;
+          localStorage.setItem('covo_last_read', JSON.stringify(rm));
+        } catch (e) { }
+      }
+
+      const isUnread = (lastMsgAt > lastRead) && isNotCurrentOrHidden && !bySelf;
+      unreadCounts[docSnap.id] = isUnread ? 1 : 0;
+
+      const rightContainer = document.createElement("div");
+      rightContainer.className = "flex items-center gap-1";
+
+      const badgeSpan = document.createElement("span");
+      badgeSpan.className = "unread-badge mr-1";
+      badgeSpan.id = `unread-badge-${docSnap.id}`;
+      badgeSpan.style.display = isUnread ? "block" : "none";
+      rightContainer.appendChild(badgeSpan);
+
+      div.appendChild(nameDiv);
+      div.appendChild(rightContainer);
+      return div;
+    };
+
+    // 1. Categories and their rooms
+    categories.forEach(cat => {
+      const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
+
+      const catDiv = document.createElement("div");
+      catDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group";
+      catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
+      roomList.appendChild(catDiv);
+
+      if (catRooms.length > 0) {
+        const roomContainer = document.createElement("div");
+        catRooms.forEach(d => {
+          roomContainer.appendChild(renderSingleRoom(d));
+        });
+        roomList.appendChild(roomContainer);
+      } else {
+        // Empty category placeholder? (Optional: could hide or show something else)
+      }
+    });
+
+    // 2. Uncategorized rooms
+    const uncatRooms = roomDocs.filter(d => !d.data().categoryId);
+    if (uncatRooms.length > 0) {
+      if (categories.length > 0) {
+        const uncatDiv = document.createElement("div");
+        uncatDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
+        uncatDiv.innerHTML = `<i class="fas fa-minus mr-1.5 text-[9px]"></i>その他`;
+        roomList.appendChild(uncatDiv);
+      }
+      const roomContainer = document.createElement("div");
+      uncatRooms.forEach(d => {
+        roomContainer.appendChild(renderSingleRoom(d));
+      });
+      roomList.appendChild(roomContainer);
+    }
+
+    // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
+    // ここでの boolean 保存(covo_server_unread)は廃止しました。
+  }
+
+  window.changeRoomOrder = async function (roomId, direction, currentOrder) {
+    if (!currentServerId || !roomId) return;
+    const newOrder = currentOrder + direction;
+    try {
+
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`), { order: newOrder });
+
+    } catch (e) { console.error(e); }
+  };
+
+  let isRoomsFirst = true;
+  function onRoomsChanged(snapshot) {
+    renderRooms(snapshot);
+    if (!isRoomsFirst) {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === "modified") {
+          const room = change.doc.data();
+          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+          const lastRead = rm[change.doc.id] || 0;
+          const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
+          if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
+            updateGlobalNotifUI();
+            const serverName = currentServerData?.name || 'Covo';
+            const roomName = room.name || 'room';
+            let text = room.lastMessageText || '新着メッセージ';
+
+            (async () => {
+              try {
+                if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+                  const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                  text = await decryptText(text, currentServerId, change.doc.id, _members);
+                }
+              } catch (e) { text = '（暗号化されたメッセージ）'; }
+              if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
+
+              const isMentioned = text && typeof text === "string" && (text.includes(`@${userNickname}`) || text.includes('@all'));
+              if (isMentioned && !document.hasFocus()) {
+                // Fallback mention toast when not focused is handled by showNotification title
+              }
+
+              const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
+
+              // In-app Notification
+              if (typeof showInAppNotification === 'function') {
+                showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
+              }
+              // Push Notification
+              if (!document.hasFocus()) {
+                if (isTauri) {
+                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                } else if (!currentFcmToken) {
+                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
+                }
+              }
+            })();
+          }
+        }
+      });
+    }
+    isRoomsFirst = false;
+  }
+
+  loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
+    console.error("loadServerRooms error:", error);
+    if (_retry < 3 && currentServerId === serverId) {
+      try { await auth.currentUser?.getIdToken(true); } catch (_) { }
+      setTimeout(() => loadServerRooms(serverId, _retry + 1), 1200 * (_retry + 1));
+    }
+  });
+
+  // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
+  getDocs(roomsQuery).then(snap => {
+    if (currentServerId === serverId && snap.size > 0 && roomList.children.length === 0) {
+      renderRooms(snap);
+    }
+  }).catch(e => console.error("loadServerRooms kickstart error:", e));
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".dropdown-container")) {
+      document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
+    }
+    if (!e.target.closest("#pcNotifModal") && !e.target.closest("#serverListNotifBtn")) {
+      const pm = document.getElementById('pcNotifModal');
+      if (pm) pm.style.display = 'none';
+    }
+  });
+}
+
+function updateUnreadBadge(roomId) {
+  const badge = document.getElementById(`unread-badge-${roomId}`);
+  if (!badge) return;
+  const count = unreadCounts[roomId] || 0;
+  badge.style.display = (count > 0 && roomId !== currentRoomId) ? "block" : "none";
+}
+
+function updateServerCardDots() {
+  try {
+    const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+    document.querySelectorAll('.server-card[data-server-id]').forEach(card => {
+      const sid = card.dataset.serverId;
+      let dot = card.querySelector('.server-card-unread-dot');
+      if (sid !== currentServerId && items.some(it => it.serverId === sid)) {
+        if (!dot) { dot = document.createElement('span'); dot.className = 'server-card-unread-dot'; card.appendChild(dot); }
+        dot.style.display = 'block';
+      } else if (dot) {
+        dot.style.display = 'none';
+      }
+    });
+  } catch (e) { }
+}
+
+async function loadOlderMessages() {
+  if (!hasMoreOlderMessages || isLoadingOlderMessages) return;
+  if (allLoadedMessages.length === 0) return;
+  isLoadingOlderMessages = true;
+  const spinner = document.getElementById('topLoadingSpinner');
+  const spinnerText = document.getElementById('topLoadingSpinnerText');
+  if (spinnerText) spinnerText.textContent = "読み込み中...";
+  if (spinner) spinner.style.display = 'flex';
+
+  try {
+    if (window.globalUseRtdb) {
+      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      // Oldest message is at the end of the array (since we sort descending)
+      const oldestMessage = allLoadedMessages[0];
+      const rtdbTime = getMsgTimestamp(oldestMessage);
+
+      const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(rtdbTime, oldestMessage.id), limitToLast(21));
+      const snapshot = await get(q);
+
+      if (snapshot.exists()) {
+
+        const data = snapshot.val();
+        let docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+        docs.sort((a, b) => getMsgTimestamp(b) - getMsgTimestamp(a)); // descending
+
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => { });
+
+        // endAt(..., id) に合致する基準メッセージ自体を除外
+        docs = docs.filter(d => d.id !== oldestMessage.id);
+
+        if (docs.length > 0) {
+          allLoadedMessages = [...allLoadedMessages, ...docs];
+          const seen = new Set();
+          allLoadedMessages = allLoadedMessages.filter(m => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return true;
+          });
+          allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+          lastMessagesData = [...allLoadedMessages];
+          messagesIndexMap = {};
+          lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+          renderMessagesWithReadReceipts();
+
+          rtdbMessagesLimit += docs.length; // keep limit expanded
+        }
+        if (docs.length < 20) {
+          hasMoreOlderMessages = false;
+        }
+      } else {
+        hasMoreOlderMessages = false;
+      }
+
+    } else {
+      const oldestMessage = allLoadedMessages[0];
+      if (!oldestMessage) throw new Error("No oldest message");
+      const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, oldestMessage.id);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        hasMoreOlderMessages = false;
+        throw new Error("Doc not found");
+      }
+
+      messageLimit += 20;
+      const q = query(
+        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+        orderBy("timestamp", "desc"),
+        startAfter(docSnap),
+        limit(20)
+      );
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) {
+        hasMoreOlderMessages = false;
+      } else {
+        const olderDocs = [];
+        querySnapshot.forEach(d => {
+          const data = d.data(); data.id = d.id;
+          olderDocs.push(data);
+        });
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(olderDocs, currentServerId, currentRoomId, _members).catch(() => { });
+
+        allLoadedMessages = [...allLoadedMessages, ...olderDocs];
+        const seen = new Set();
+        allLoadedMessages = allLoadedMessages.filter(m => {
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        });
+        allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+        lastMessagesData = [...allLoadedMessages];
+        renderMessagesWithReadReceipts();
+
+        if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+        if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+        const newQ = query(
+          collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+          orderBy("timestamp", "desc"),
+          limit(messageLimit)
+        );
+        unsubscribeMessages = onSnapshot(newQ, async (snap) => {
+          // Reduced for brevity in script, rely on main subscriber update
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Older messages load error", e);
+  }
+
+  isLoadingOlderMessages = false;
+  if (spinner) spinner.style.display = 'none';
+  allowPagination = true;
+}
+
+function subscribeToMessages() {
+  if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+  if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+
+  allLoadedMessages = [];
+  hasMoreOlderMessages = true;
+  isLoadingOlderMessages = false;
+  rtdbMessagesLimit = 20;
+  const spinner = document.getElementById('topLoadingSpinner');
+  if (spinner) spinner.style.display = 'none';
+
+  subscribeToMessagesRTDB();
+}
+
+async function subscribeToMessagesRTDB() {
+  const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, orderByChild, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  const rtdb = await _getOrInitRTDB();
+  const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+  const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
+
+  let initialLoadTimeout = null;
+  let buffer = [];
+  let isInitialPhase = true;
+
+  const processBuffer = async () => {
+    if (buffer.length === 0) return;
+    const docsToProcess = [...buffer];
+    buffer = [];
+
+    const _members = (currentServerData && currentServerData.joinedUsers) || [];
+    await decryptMessagesInPlace(docsToProcess, currentServerId, currentRoomId, _members).catch(() => { });
+
+    docsToProcess.forEach(msg => {
+      const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+      if (idx >= 0) allLoadedMessages[idx] = msg;
+      else allLoadedMessages.push(msg);
+    });
+
+    // Sort descending (newest first) to match Firestore reversed array
+    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+    renderPinnedMessages();
+    renderMessagesWithReadReceipts();
+    updateReadReceiptForCurrentUser();
+  };
+
+  const handleAdded = async (snapshot) => {
+    const data = snapshot.val();
+    data.id = snapshot.key;
+
+    // Notification logic
+    if (!isInitialPhase && data.senderId !== userId) {
+      let bodyText = data.text;
+      try {
+        if (isEncrypted(bodyText)) {
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
+        }
+      } catch (e) { }
+      const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
+      if (isMentioned && document.hasFocus()) {
+        showMentionToast(data.senderNickname || "ユーザー");
+      }
+    }
+
+    buffer.push(data);
+    if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
+    initialLoadTimeout = setTimeout(() => {
+      if (isInitialPhase) {
+        isInitialPhase = false;
+        isInitialMessageLoad = true;
+        processBuffer().then(() => {
+          messagesDisplay.scrollTop = 0;
+          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
+          isInitialMessageLoad = false;
+          setTimeout(() => {
+            allowPagination = true;
+            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+              loadOlderMessages();
+            }
+          }, 500);
+        });
+      } else {
+        const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
+        processBuffer().then(() => {
+          if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
+        });
+      }
+    }, 100);
+  };
+
+  const handleChanged = async (snapshot) => {
+    const data = snapshot.val();
+    data.id = snapshot.key;
+    buffer.push(data);
+    processBuffer();
+  };
+
+  const handleRemoved = (snapshot) => {
+    allLoadedMessages = allLoadedMessages.filter(m => m.id !== snapshot.key);
+    lastMessagesData = [...allLoadedMessages];
+    renderMessagesWithReadReceipts();
+  };
+
+  onChildAdded(q, handleAdded);
+  onChildChanged(q, handleChanged);
+  onChildRemoved(q, handleRemoved);
+
+  const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
+  if (window.typingUnsubscribe) { window.typingUnsubscribe(); }
+  const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  const onTyping = onValue(typingRef, (snap) => {
+    const now = Date.now();
+    const others = [];
+    snap.forEach((child) => {
+      if (child.key !== userId) {
+        const data = child.val();
+        if (data && data.t && (now - data.t) < 10000) {
+          others.push(data.n);
+        }
+      }
+    });
+    const indicator = document.getElementById('typingIndicator');
+    if (others.length > 0) {
+      indicator.textContent = others.join(', ') + ' が入力中...';
+      indicator.classList.remove('hidden');
+    } else {
+      indicator.classList.add('hidden');
+    }
+  });
+  window.typingUnsubscribe = () => off(typingRef, 'value', onTyping);
+
+  const rrRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
+  if (window.readReceiptsUnsubscribe) { window.readReceiptsUnsubscribe(); }
+  const onRR = onValue(rrRef, (snap) => {
+    roomReadReceipts = {};
+    snap.forEach((child) => {
+      roomReadReceipts[child.key] = child.val();
+    });
+    renderMessagesWithReadReceipts();
+  });
+  window.readReceiptsUnsubscribe = () => off(rrRef, 'value', onRR);
+
+  window.rtdbMessagesUnsub = () => {
+    off(q);
+    if (window.typingUnsubscribe) window.typingUnsubscribe();
+    if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
+  };
+
+  membersSidebar.classList.remove("hidden");
+}
+
+// subscribeToMessagesFirestore removed (permanently using RTDB)
+function selectRoom(roomId, roomName) {
+  // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
+  if (window.innerWidth < 768 && currentRoomId === roomId) {
+    sidebar.classList.add("mobile-hidden");
+    currentRoomHeader.classList.remove("hidden");
+    return;
+  }
+
+  if (currentRoomId === roomId) return;
+  currentRoomId = roomId;
+  // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
+  unreadBoundaryAt = 0;
+  unreadBoundaryMessageId = null;
+  try {
+    const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+    // covo_last_read には「+60000/+10000」した先読み値が入るので、その分を引いて実際の既読時刻に戻す
+    const prevRead = rm[roomId];
+    if (typeof prevRead === 'number' && prevRead > 0) {
+      unreadBoundaryAt = prevRead - 60000;
+    }
+    if (typeof updateLocalAndRemoteReadState === 'function') {
+      updateLocalAndRemoteReadState(roomId, Date.now() + 60000);
+    } else {
+      rm[roomId] = Date.now() + 60000;
+      localStorage.setItem('covo_last_read', JSON.stringify(rm));
+    }
+    const badge = document.getElementById('unread-badge-' + roomId);
+    if (badge) badge.style.display = 'none';
+  } catch (e) { }
+  updateUserStatus('online'); // Sync room selection for notifications
+  document.querySelectorAll('.room-item-animate').forEach(el => el.classList.remove('active'));
+  const activeItem = document.getElementById('room-item-' + roomId);
+  if (activeItem) activeItem.classList.add('active');
+  currentRoomTitleText.textContent = roomName;
+  currentRoomHeader.classList.remove("hidden");
+  clearMessagesDOM();
+  lastMessagesData = [];
+  messageInput.disabled = false;
+  fileAttachButton.disabled = false;
+  { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
+  { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = false; }
+  document.getElementById('callButton').disabled = false;
+  { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
+  prewarmPeerConnection();
+  sendMessageButton.disabled = false;
+  messageLimit = 20; // ルームに入り直したらリミットをリセット
+  clearAttachedFile();
+  cancelReply();
+
+  // 未読バッジを確実かつ即座にクリア
+  unreadCounts[roomId] = 0;
+  const badgeElem = document.getElementById(`unread-badge-${roomId}`);
+  if (badgeElem) badgeElem.style.display = 'none';
+  updateGlobalNotifUI();
+  updateUnreadBadge(roomId);
+  if (isTauri && window.__TAURI__?.core?.invoke) {
+    let globalCount = 0;
+    try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch (e) { }
+    window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(() => { });
+  }
+
+  // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
+  if (window.innerWidth < 768) {
+    sidebar.classList.add("mobile-hidden");
+    const bottomNav = document.getElementById("mobileBottomNav");
+    if (bottomNav) bottomNav.style.display = "none";
+    document.body.classList.add('in-chat-view');
+    if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+  }
+
+  if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
+  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   clearTimeout(typingTimeout);
   isCurrentlyTyping = false;
   setTypingStatus(false);
 
-  try {
-    // --- E2EE: 本文を暗号化（鍵が無い/失敗時はユーザーに警告確認を行う） ---
-    let textToStore = text;
-    if (text) {
-      if (!_subtleOK) {
-        console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
-        if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
-          return;
+  isInitialMessageLoad = true;
+  allLoadedMessages = [];
+  hasMoreOlderMessages = true;
+  isLoadingOlderMessages = false;
+
+  subscribeToMessages();
+
+
+  // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
+  (async () => {
+    try {
+      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
+      const members = (currentServerData && currentServerData.joinedUsers) || [];
+      const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+      if (key) {
+        await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+        // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
+
+        const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/rescueRequests`));
+        if (!resSnap.empty) {
+          const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
+          for (const resDoc of resSnap.docs) {
+            const reqUserId = resDoc.id;
+            await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [reqUserId], key.latestVersion);
+            await deleteDoc(resDoc.ref);
+          }
         }
+
       } else {
-        try {
-          const members = (currentServerData && currentServerData.joinedUsers) || [];
-          const overlayWasHidden = loadingOverlay.classList.contains("hidden");
-          if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
-            loadingOverlay.classList.remove("hidden");
+        // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
+        let retryCount = 0;
+        const checkTimer = setInterval(async () => {
+          retryCount++;
+          if (retryCount > 15 || _e2ee.roomKeyCache[currentRoomId]) { clearInterval(checkTimer); return; }
+          const arrived = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+          if (arrived) {
+            clearInterval(checkTimer);
+            if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
           }
-          const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
-          if (!roomKey) {
-            console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
-            loadingOverlay.classList.add("hidden");
-            alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復(レスキュー)を実行します。数秒後にもう一度お試しください。", "error");
-            await requestEscrowRescue(currentServerId, currentRoomId);
-            return;
-          } else {
-            const enc = await encryptText(text, roomKey);
-            if (enc) {
-              textToStore = enc; // 暗号化成功時のみ保存用テキストに代入
-            } else {
-              console.warn(`[E2EE] 本文の暗号化処理に失敗 (server=${currentServerId}, room=${currentRoomId})`);
-              alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
-              await requestEscrowRescue(currentServerId, currentRoomId);
-              return;
-            }
-          }
-        } catch (e) {
-          console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
-          loadingOverlay.classList.add("hidden");
-          alertMessage("🔒 暗号化保護エラー: 予期せぬ例外が発生したため平文での送信を強制遮断しました。自動で修復を実行します。", "error");
-          await requestEscrowRescue(currentServerId, currentRoomId);
-          return;
+        }, 2000);
+      }
+    } catch (e) { }
+  })();
+
+  const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
+  readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
+    roomReadReceipts = {};
+    snap.forEach(d => roomReadReceipts[d.id] = d.data());
+    renderMessagesWithReadReceipts();
+  });
+
+  const typingColRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
+  typingUnsubscribe = onSnapshot(typingColRef, (snap) => {
+    const now = Date.now();
+    const others = snap.docs
+      .filter(d => d.id !== userId)
+      .filter(d => {
+        const t = d.data().t;
+        if (!t || !t.toDate) return true;
+        return (now - t.toDate().getTime()) < 10000;
+      })
+      .map(d => d.data().n)
+      .filter(Boolean);
+    const indicator = document.getElementById('typingIndicator');
+    if (others.length > 0) {
+      indicator.textContent = others.join(', ') + ' が入力中...';
+      indicator.classList.remove('hidden');
+    } else {
+      indicator.classList.add('hidden');
+    }
+  });
+
+  membersSidebar.classList.remove("hidden");
+}
+
+let floatingDateTimer = null;
+messagesDisplay.addEventListener("scroll", async () => {
+  if (!allowPagination) return;
+
+  const floatingContainer = document.getElementById('floatingDateContainer');
+  const floatingBadge = document.getElementById('floatingDateBadge');
+  if (floatingContainer && floatingBadge) {
+    const viewTop = messagesDisplay.scrollTop + messagesDisplay.clientHeight;
+    const dividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
+
+    // 1. チャット内ディバイダーは一切いじらない（そのまま残す）
+    dividers.forEach(div => {
+      const inner = div.querySelector('.date-divider-inner');
+      if (inner) inner.style.opacity = '1';
+    });
+
+    // 2. viewTop（画面最上部）の直下に存在する「現在の日付」と、衝突しつつある「押し出し日付」を特定する
+    // DOMツリー上は上が最新(offsetTop小)、下が過去(offsetTop大)。
+    // viewTop以下のうち最もoffsetTopが大きいもの（画面最上部に位置するもの）が activeDivider となる
+    let activeDivider = null;
+    let pushingDivider = null;
+
+    for (let i = 0; i < dividers.length; i++) {
+      const top = dividers[i].offsetTop;
+      if (top <= viewTop) {
+        if (!activeDivider || top > activeDivider.offsetTop) {
+          activeDivider = dividers[i];
         }
       }
     }
-    const data = { text: textToStore, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
-    if (attachedKvFile) {
-      Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
-    }
-    if (attachedFile) {
-      progressBar.classList.remove("hidden");
-      progressFill.style.width = "0%";
-      progressText.textContent = "アップロード中... 0%";
-      try {
-        let fileToUpload = attachedFile.file;
-        let isFileEncrypted = false;
 
-        // E2EE File Encryption
-        if (_subtleOK) {
-          const members = (currentServerData && currentServerData.joinedUsers) || [];
-          const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
-          if (roomKey) {
-            const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
-            fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
-            isFileEncrypted = true;
-          } else {
-            console.warn("[E2EE] ルーム鍵が取得できないためファイルを平文でアップロードします");
-            if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が取得できないため、ファイルを平文でアップロードします。よろしいですか？")) {
-              return;
-            }
-          }
+    // 次に、activeDivider の1つ新しい側（offsetTopが小さい側＝下から昇ってくる側）のディバイダーが、
+    // viewTopから下方向へ 38px 以内（バッジの高さ付近）にめり込んでいるかを判定する
+    if (activeDivider) {
+      for (let j = 0; j < dividers.length; j++) {
+        const top = dividers[j].offsetTop;
+        if (top < activeDivider.offsetTop && top > viewTop - 38) {
+          pushingDivider = dividers[j];
+          break;
         }
-
-        const fileUrl = await uploadToExternalService(
-          fileToUpload,
-          (pct) => {
-            progressFill.style.width = pct + "%";
-            progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
-          },
-          "simplechat/messages"
-        );
-        Object.assign(data, {
-          fileData: fileUrl,
-          fileName: attachedFile.name,
-          fileType: attachedFile.type,
-          fileSize: attachedFile.size,
-          isFileEncrypted: isFileEncrypted
-        });
-      } finally {
-        // 進捗バーを確実に隠す（100%表示のまま固まって見えるのを防ぐ）
-        progressBar.classList.add("hidden");
-        progressFill.style.width = "0%";
       }
     }
-    if (replyingToMessage) {
-      data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
-    }
-    const wasEncrypted = isEncrypted(textToStore);
-    let newMessageId;
 
-    const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+    if (activeDivider && messagesDisplay.scrollTop > 50) {
+      const text = activeDivider.textContent.trim();
+      if (text) {
+        if (floatingBadge.textContent !== text) {
+          floatingBadge.textContent = text;
+        }
+
+        // ★PC・スマホ両方でチャット内の日付バッジとミリ単位で座標を完全一致させる神業
+        const activeInner = activeDivider.querySelector('.date-divider-inner');
+        if (activeInner) {
+          const rect = activeInner.getBoundingClientRect();
+          const containerRect = floatingContainer.getBoundingClientRect();
+          const offsetLeft = rect.left - containerRect.left;
+          floatingBadge.style.position = 'absolute';
+          floatingBadge.style.left = `${offsetLeft}px`;
+          floatingBadge.style.width = `${rect.width}px`;
+        }
+
+        // 押し出しアニメーション（Sticky Pushing Replacement Effect）の計算
+        if (pushingDivider) {
+          const diff = viewTop - pushingDivider.offsetTop; // 0px 〜 38px
+          const translateY = -(diff); // ぶつかり始め(0px)から上に押し出されていく(-38px)
+          floatingContainer.style.transform = `translateY(${translateY}px)`;
+        } else {
+          floatingContainer.style.transform = `translateY(0px)`;
+        }
+
+        floatingContainer.classList.remove('opacity-0');
+        floatingContainer.classList.add('opacity-100');
+
+        if (floatingDateTimer) clearTimeout(floatingDateTimer);
+        floatingDateTimer = setTimeout(() => {
+          floatingContainer.classList.add('opacity-0');
+          floatingContainer.classList.remove('opacity-100');
+          setTimeout(() => { floatingContainer.style.transform = `translateY(0px)`; }, 300);
+        }, 1400);
+      } else {
+        floatingContainer.classList.add('opacity-0');
+        floatingContainer.classList.remove('opacity-100');
+      }
+    } else {
+      floatingContainer.classList.add('opacity-0');
+      floatingContainer.classList.remove('opacity-100');
+    }
+  }
+
+  const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
+  if (messagesDisplay.scrollTop <= 20) {
+    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+    jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+
+    // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
+    if (isJumpView && !hasMoreJumpNewer) {
+      window.exitJumpMode();
+    }
+  } else if (isJumpView || messagesDisplay.scrollTop > 300) {
+    jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
+    jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
+  }
+
+  const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
+
+  // 過去への読み込み (scrollTop大 = 上スクロール)
+  if (scrollDistanceToTop < 300) {
+    if (!isJumpView && !isLoadingOlderMessages && hasMoreOlderMessages) {
+      await loadOlderMessages();
+    } else if (isJumpView && !isLoadingJumpOlder && hasMoreJumpOlder) {
+      await loadJumpOlderMessages();
+    }
+  }
+
+  // ジャンプ中のみ、未来への読み込み (scrollTop小 = 下スクロール)
+  if (isJumpView && messagesDisplay.scrollTop < 300 && !isLoadingJumpNewer && hasMoreJumpNewer) {
+    await loadJumpNewerMessages();
+  }
+});
+
+async function loadJumpOlderMessages() {
+  if (isLoadingJumpOlder || !hasMoreJumpOlder || !jumpViewMessages.length) return;
+  isLoadingJumpOlder = true;
+  try {
+    const oldestMsg = jumpViewMessages[0];
+    if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
+    const q = query(
+      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+      orderBy("timestamp", "desc"),
+      startAfter(oldestMsg.timestamp),
+      limit(20)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
+    if (!snap.empty) {
+      const fetched = [];
+      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+      fetched.reverse();
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
+
+      jumpViewMessages = [...fetched, ...jumpViewMessages];
+      allLoadedMessages = [...jumpViewMessages];
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+      renderMessagesWithReadReceipts();
+    }
+  } catch (e) { console.error("loadJumpOlderMessages error:", e); }
+  finally { isLoadingJumpOlder = false; }
+}
+
+async function loadJumpNewerMessages() {
+  if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
+  isLoadingJumpNewer = true;
+  try {
+    const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
+    if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
+    const q = query(
+      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+      orderBy("timestamp", "asc"),
+      startAfter(newestMsg.timestamp),
+      limit(20)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
+    if (!snap.empty) {
+      const fetched = [];
+      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
+
+      const oldScrollHeight = messagesDisplay.scrollHeight;
+      const oldScrollTop = messagesDisplay.scrollTop;
+
+      jumpViewMessages = [...jumpViewMessages, ...fetched];
+      allLoadedMessages = [...jumpViewMessages];
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+      renderMessagesWithReadReceipts();
+
+      messagesDisplay.scrollTop = oldScrollTop + (messagesDisplay.scrollHeight - oldScrollHeight);
+    }
+  } catch (e) { console.error("loadJumpNewerMessages error:", e); }
+  finally { isLoadingJumpNewer = false; }
+}
+
+window.exitJumpMode = function () {
+  const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
+  jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+  jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+
+  if (isJumpView) {
+    isJumpView = false;
+    if (window.globalUseRtdb) {
+      allLoadedMessages = [];
+      lastMessagesData = [];
+      messagesIndexMap = {};
+      messagesDisplay.innerHTML = '';
+      if (typeof subscribeToMessagesRTDB === 'function') {
+        if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
+        subscribeToMessagesRTDB();
+      }
+    } else {
+      // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
+      allLoadedMessages = [...realTimeMessagesCache];
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+      renderMessagesWithReadReceipts();
+      messagesDisplay.scrollTop = 0;
+    }
+  } else {
+    messagesDisplay.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+// PCでのマウスホイールによるスクロール方向逆転の修正
+messagesDisplay.addEventListener("wheel", (e) => {
+  // flipped (scaleY(-1)) されているため、デフォルトのスクロール方向が逆になる。
+  // これをキャンセルし、自力で正しい方向にスクロール位置を加算・減算する。
+  e.preventDefault();
+  messagesDisplay.scrollTop -= e.deltaY;
+}, { passive: false });
+
+// 旧ルーム作成ボタンは無効化（サーバー設定から管理）
+
+function handleDeleteRoomClick(id, name) {
+  pendingRoomDelete = { roomId: id, roomName: name };
+  deleteRoomConfirmModal.classList.remove("hidden");
+  roomToDeleteNameSpan.textContent = name;
+}
+confirmDeleteButton.addEventListener("click", async () => {
+  deleteRoomConfirmModal.classList.add("hidden");
+  await deleteRoomAndMessages(pendingRoomDelete.roomId);
+});
+cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
+
+async function deleteRoomAndMessages(roomId) {
+  if (!currentServerId) return;
+  if (currentRoomId === roomId) {
+    currentRoomId = null;
+    updateUserStatus('online');
+    currentRoomHeader.classList.add("hidden");
+    clearMessagesDOM();
+    messageInput.disabled = true;
+    sendMessageButton.disabled = true;
+    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+    if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+    if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+    if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+  }
+
+  try {
+    const batch = writeBatch(db);
+
+    // 1. messages サブコレクションの全削除
+    const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
+    const messagesSnap = await getDocs(messagesRef);
+    messagesSnap.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+
+    // 2. readReceipts サブコレクションの全削除
+    const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
+    const readReceiptsSnap = await getDocs(readReceiptsRef);
+    readReceiptsSnap.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+
+    // 3. ルーム本体の削除
+    const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
+    batch.delete(roomRef);
+
+    await batch.commit();
     try {
-      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgRef.id}`);
-      const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() }; // RTDB uses unix timestamp number
-      await set(rtdbMsgRef, rtdbData);
-    } catch (e) { console.error("RTDB Dual Write Failed in sendMessage", e); }
-    newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
-    // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
-    try {
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
-        lastMessageAt: data.timestamp,
-        lastMessageSender: userId,
-        lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
-      });
-    } catch (updateErr) {
-      console.warn("プレビュー情報の更新に失敗しました:", updateErr);
-    }
-
-
-    // FCMプッシュ通知（サーバーメンバー全員に送信）
-    try {
-      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
-      if (serverSnap.exists()) {
-        const serverData = serverSnap.data();
-        const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
-        if (receiverIds.length > 0) {
-          const serverName = serverData.name || 'Covo';
-          const roomName = roomNames[currentRoomId] || 'room';
-          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-          const notifPayload = JSON.stringify({
-            receiverIds,
-            title: `${serverName} › #${roomName}`,
-            body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
-            roomId: currentRoomId,
-            messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
-            appId: appId,
-            senderId: userId,
-            idToken
-          });
-          // sendBeaconはページを閉じても確実に届く（fetchより信頼性が高い）
-          const beaconSent = navigator.sendBeacon
-            ? navigator.sendBeacon(
-              "https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification",
-              new Blob([notifPayload], { type: 'application/json' })
-            )
-            : false;
-          if (!beaconSent) {
-            fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: notifPayload,
-              keepalive: true
-            }).catch(e => console.error("Notification trigger error:", e));
-          }
-        }
-      }
-    } catch (notifyErr) {
-      console.error("Failed to trigger notification:", notifyErr);
-    }
-
-    // messageInput.value cleared optimistically at the start
-    clearAttachedFile(); cancelReply();
-
-    // ★ メッセージ送信後にタイマーをリセット
-    resetAwayTimer();
-
-  } catch (e) {
-    console.error(e);
-    alertMessage("送信に失敗しました", "error");
-  } finally {
-    loadingOverlay.classList.add("hidden");
-    progressBar.classList.add("hidden");
-    progressFill.style.width = "0%";
-    messageInput.disabled = false;
-    sendMessageButton.disabled = false;
-    isSendingMessage = false;
-    setTimeout(() => messageInput.focus(), 10);
+      await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
+    } catch (err) { console.error("RTDB Room Delete Failed", err); }
+    console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
+  } catch (error) {
+    console.error("Error during room deletion process:", error);
+    throw error;
   }
 }
+const executeDeleteRoom = async () => {
+  if (!pendingRoomDelete) return;
+  loadingOverlay.classList.remove("hidden");
+  try {
+    await deleteRoomAndMessages(pendingRoomDelete.roomId);
+    alertMessage(`ルーム「${pendingRoomDelete.roomName}」を削除しました。`, "success");
+  } catch (error) {
+    alertMessage("ルームの削除に失敗しました。", "error");
+  } finally {
+    loadingOverlay.classList.add("hidden");
+    pendingRoomDelete = null;
+  }
+};
+
+// --- 検索機能 ---
+const toggleSearchButton = document.getElementById("toggleSearchButton");
+const searchContainer = document.getElementById("searchContainer");
+const closeSearchBtn = document.getElementById("closeSearchBtn");
+const searchInput = document.getElementById("searchInput");
+const mobileBackButton = document.getElementById("mobileBackButton");
+
+if (toggleSearchButton && searchContainer) {
+  toggleSearchButton.addEventListener("click", () => {
+    searchContainer.classList.toggle("hidden");
+    if (!searchContainer.classList.contains("hidden")) {
+      if (searchInput) searchInput.focus();
+      messageLimit = 9999;
+      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    } else {
+      searchQuery = "";
+      if (searchInput) searchInput.value = "";
+      messageLimit = 20;
+      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    }
+  });
+}
+
+if (closeSearchBtn && searchContainer) {
+  closeSearchBtn.addEventListener("click", () => {
+    searchContainer.classList.add("hidden");
+    searchQuery = "";
+    if (searchInput) searchInput.value = "";
+    messageLimit = 20;
+    if (typeof subscribeToMessages === 'function') subscribeToMessages();
+  });
+}
+
+if (searchInput) {
+  searchInput.addEventListener("input", (e) => {
+    searchQuery = e.target.value.toLowerCase();
+    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+  });
+}
+
+// --- スマホ用戻るボタン ---
+if (mobileBackButton) {
+  mobileBackButton.addEventListener("click", () => {
+    const sidebar = document.getElementById("sidebar");
+    const currentRoomHeader = document.getElementById("currentRoomHeader");
+    if (sidebar) sidebar.classList.remove("mobile-hidden");
+    if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
+    // ボトムナビを再表示
+    const bottomNav = document.getElementById("mobileBottomNav");
+    if (bottomNav) bottomNav.style.display = "flex";
+    document.body.classList.remove('in-chat-view');
+    if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+
+    // ルーム退出処理（開いている判定を解除する）
+    currentRoomId = null;
+    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+    if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+    if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+    if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+    if (typeof clearMessagesDOM === 'function') clearMessagesDOM();
+    lastMessagesData = [];
+    const messageInput = document.getElementById("messageInput");
+    const fileAttachButton = document.getElementById("fileAttachButton");
+    const sendMessageButton = document.getElementById("sendMessageButton");
+    if (messageInput) messageInput.disabled = true;
+    if (fileAttachButton) fileAttachButton.disabled = true;
+    { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
+    { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = true; }
+    if (sendMessageButton) sendMessageButton.disabled = true;
+    if (typeof clearAttachedFile === 'function') clearAttachedFile();
+    if (typeof cancelReply === 'function') cancelReply();
+  });
+}
+
+// ================= MODULE: stickers_data.js ================
+// ================= STICKERS DATA MODULE ================
 /* =====================================================================
    スタンプ機能（Twemoji絵文字をLINE風スタンプとして送る）
    - カテゴリ別の絵文字グリッド + よく使う(お気に入り) + 最近使った
@@ -6360,6 +6511,8 @@ document.addEventListener('DOMContentLoaded', () => { });
   });
 }
 
+// ================= MODULE: media_preview.js ================
+// ================= MEDIA PREVIEW MODULE ================
 // === Google / Apple Photosと同等の世界最高峰画像プレビュー (PhotoSwipe v5) ===
 function ensurePhotoSwipeCSS() {
   if (!document.getElementById('pswp-css')) {
@@ -6575,6 +6728,291 @@ function updateFilePreview() {
     filePreviewContainer.classList.add("hidden");
     progressBar.classList.add("hidden");
     progressFill.style.width = "0%";
+  }
+}
+
+// ===== インアプリブラウザ (In-App Browser) 制御 =====
+let currentInAppBrowserUrl = '';
+
+window.openInAppBrowser = function (url) {
+  if (!url) return;
+  currentInAppBrowserUrl = url;
+
+  // 判定: Windows版 (Tauri) または iOS PWA / スタンドアロン表示時
+  const isTauri = !!window.__TAURI__;
+  const isPwa = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+  if (isTauri || isPwa) {
+    const modal = document.getElementById('inAppBrowserModal');
+    const iframe = document.getElementById('inAppBrowserIframe');
+    const urlDisplay = document.getElementById('inAppBrowserUrlDisplay');
+
+    if (modal && iframe && urlDisplay) {
+      urlDisplay.textContent = url;
+      iframe.src = url;
+      modal.classList.remove('hidden');
+      return;
+    }
+  }
+
+  // 通常のWebブラウザでタブとして開いている場合は新しいタブで開く
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
+
+window.closeInAppBrowser = function () {
+  const modal = document.getElementById('inAppBrowserModal');
+  const iframe = document.getElementById('inAppBrowserIframe');
+  if (modal) modal.classList.add('hidden');
+  if (iframe) iframe.src = 'about:blank';
+  currentInAppBrowserUrl = '';
+};
+
+window.reloadInAppBrowser = function () {
+  const iframe = document.getElementById('inAppBrowserIframe');
+  if (iframe && currentInAppBrowserUrl) {
+    iframe.src = currentInAppBrowserUrl;
+  }
+};
+
+window.copyInAppBrowserUrl = function () {
+  if (!currentInAppBrowserUrl) return;
+  safeCopy(currentInAppBrowserUrl);
+  alertMessage('リンクをコピーしました', 'success');
+};
+
+window.openInAppBrowserInExternal = function () {
+  if (!currentInAppBrowserUrl) return;
+  if (window.__TAURI__?.core) {
+    window.__TAURI__.core.invoke('plugin:shell|open', { path: currentInAppBrowserUrl }).catch(() => {
+      window.open(currentInAppBrowserUrl, '_blank');
+    });
+  } else {
+    window.open(currentInAppBrowserUrl, '_blank', 'noopener,noreferrer');
+  }
+};
+
+// チャット内のURLリンククリックをインターセプト
+document.addEventListener('click', (e) => {
+  const anchor = e.target.closest('#messagesDisplay a, #pinnedMessagesArea a');
+  if (anchor && anchor.href && !anchor.href.startsWith('javascript:')) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.openInAppBrowser(anchor.href);
+  }
+});
+
+// ================= MODULE: messages.js ================
+// ================= MESSAGES MODULE ================
+async function sendMessage() {
+  // Allow concurrent text sends (LINE style), but block if actively uploading a file to prevent overlapping logic.
+  if (isSendingMessage && (attachedFile || attachedKvFile)) return;
+  const text = messageInput.value.trim();
+  if ((!text && !attachedFile && !attachedKvFile) || !currentRoomId) return;
+
+  // Optimistic input clearing (LINE style)
+  messageInput.value = "";
+  messageInput.style.height = "auto";
+  if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+
+  // 共通のUI要素を取得 (finallyブロックでの参照エラー防止)
+  const progressBar = document.getElementById("uploadProgressBar");
+  const progressFill = document.getElementById("uploadProgressFill");
+  const progressText = document.getElementById("uploadProgressText");
+
+  // Only lock UI fully if a file is attached
+  if (attachedFile || attachedKvFile) {
+    isSendingMessage = true;
+    messageInput.disabled = true;
+    sendMessageButton.disabled = true;
+    progressBar.classList.remove("hidden");
+  }
+
+  clearTimeout(typingTimeout);
+  isCurrentlyTyping = false;
+  setTypingStatus(false);
+
+  try {
+    // --- E2EE: 本文を暗号化（鍵が無い/失敗時はユーザーに警告確認を行う） ---
+    let textToStore = text;
+    if (text) {
+      if (!_subtleOK) {
+        console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
+        if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+          return;
+        }
+      } else {
+        try {
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          const overlayWasHidden = loadingOverlay.classList.contains("hidden");
+          if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
+            loadingOverlay.classList.remove("hidden");
+          }
+          const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+          if (!roomKey) {
+            console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+            loadingOverlay.classList.add("hidden");
+            alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復(レスキュー)を実行します。数秒後にもう一度お試しください。", "error");
+            await requestEscrowRescue(currentServerId, currentRoomId);
+            return;
+          } else {
+            const enc = await encryptText(text, roomKey);
+            if (enc) {
+              textToStore = enc; // 暗号化成功時のみ保存用テキストに代入
+            } else {
+              console.warn(`[E2EE] 本文の暗号化処理に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+              alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
+              await requestEscrowRescue(currentServerId, currentRoomId);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
+          loadingOverlay.classList.add("hidden");
+          alertMessage("🔒 暗号化保護エラー: 予期せぬ例外が発生したため平文での送信を強制遮断しました。自動で修復を実行します。", "error");
+          await requestEscrowRescue(currentServerId, currentRoomId);
+          return;
+        }
+      }
+    }
+    const data = { text: textToStore, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+    if (attachedKvFile) {
+      Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
+    }
+    if (attachedFile) {
+      progressBar.classList.remove("hidden");
+      progressFill.style.width = "0%";
+      progressText.textContent = "アップロード中... 0%";
+      try {
+        let fileToUpload = attachedFile.file;
+        let isFileEncrypted = false;
+
+        // E2EE File Encryption
+        if (_subtleOK) {
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+          if (roomKey) {
+            const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
+            fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+            isFileEncrypted = true;
+          } else {
+            console.warn("[E2EE] ルーム鍵が取得できないためファイルを平文でアップロードします");
+            if (!confirm("⚠️ セキュリティ保護警告: ルームの暗号化鍵が取得できないため、ファイルを平文でアップロードします。よろしいですか？")) {
+              return;
+            }
+          }
+        }
+
+        const fileUrl = await uploadToExternalService(
+          fileToUpload,
+          (pct) => {
+            progressFill.style.width = pct + "%";
+            progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
+          },
+          "simplechat/messages"
+        );
+        Object.assign(data, {
+          fileData: fileUrl,
+          fileName: attachedFile.name,
+          fileType: attachedFile.type,
+          fileSize: attachedFile.size,
+          isFileEncrypted: isFileEncrypted
+        });
+      } finally {
+        // 進捗バーを確実に隠す（100%表示のまま固まって見えるのを防ぐ）
+        progressBar.classList.add("hidden");
+        progressFill.style.width = "0%";
+      }
+    }
+    if (replyingToMessage) {
+      data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+    }
+    const wasEncrypted = isEncrypted(textToStore);
+    let newMessageId;
+
+    const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgRef.id}`);
+      const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() }; // RTDB uses unix timestamp number
+      await set(rtdbMsgRef, rtdbData);
+    } catch (e) { console.error("RTDB Dual Write Failed in sendMessage", e); }
+    newMessageId = msgRef.id; // 各メッセージ固有のID（通知tagに使用）
+    // ルーム一覧プレビュー: 暗号化できた場合は本文を平文で残さず汎用文言にする
+    try {
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+        lastMessageAt: data.timestamp,
+        lastMessageSender: userId,
+        lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+      });
+    } catch (updateErr) {
+      console.warn("プレビュー情報の更新に失敗しました:", updateErr);
+    }
+
+
+    // FCMプッシュ通知（サーバーメンバー全員に送信）
+    try {
+      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+      if (serverSnap.exists()) {
+        const serverData = serverSnap.data();
+        const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
+        if (receiverIds.length > 0) {
+          const serverName = serverData.name || 'Covo';
+          const roomName = roomNames[currentRoomId] || 'room';
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const notifPayload = JSON.stringify({
+            receiverIds,
+            title: `${serverName} › #${roomName}`,
+            body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
+            roomId: currentRoomId,
+            messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
+            appId: appId,
+            senderId: userId,
+            idToken
+          });
+          // sendBeaconはページを閉じても確実に届く（fetchより信頼性が高い）
+          const beaconSent = navigator.sendBeacon
+            ? navigator.sendBeacon(
+              "https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification",
+              new Blob([notifPayload], { type: 'application/json' })
+            )
+            : false;
+          if (!beaconSent) {
+            fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: notifPayload,
+              keepalive: true
+            }).catch(e => console.error("Notification trigger error:", e));
+          }
+        }
+      }
+    } catch (notifyErr) {
+      console.error("Failed to trigger notification:", notifyErr);
+    }
+
+    // messageInput.value cleared optimistically at the start
+    clearAttachedFile(); cancelReply();
+
+    // ★ メッセージ送信後にタイマーをリセット
+    resetAwayTimer();
+
+  } catch (e) {
+    console.error(e);
+    // 送信失敗時に入力テキストを復元
+    if (typeof text !== 'undefined' && text) {
+      const mi = document.getElementById("messageInput");
+      if (mi && !mi.value) mi.value = text;
+    }
+    alertMessage("送信に失敗しました", "error");
+  } finally {
+    loadingOverlay.classList.add("hidden");
+    progressBar.classList.add("hidden");
+    progressFill.style.width = "0%";
+    messageInput.disabled = false;
+    sendMessageButton.disabled = false;
+    isSendingMessage = false;
+    setTimeout(() => messageInput.focus(), 10);
   }
 }
 clearFileButton.addEventListener("click", clearAttachedFile);
@@ -8519,301 +8957,6 @@ document.addEventListener("contextmenu", (e) => {
   }
 });
 
-// ===== サーバーカードコンテキストメニュー =====
-let serverCtxData = null;
-
-function showServerContextMenu(server, x, y) {
-  serverCtxData = server;
-  const menu = document.getElementById("serverContextMenu");
-  const isSvAdmin = server.serverAdmins && server.serverAdmins.includes(userId);
-  const isOwner = server.createdBy === userId;
-  const isJoined = server.joinedUsers && server.joinedUsers.includes(userId);
-  // 権限ごとに表示切り替え
-  document.getElementById("serverCtxSettings").style.display = (isAdmin || isSvAdmin) ? "" : "none";
-  document.getElementById("serverCtxLeave").style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
-  document.getElementById("serverCtxDeleteSep").style.display = (isAdmin || isOwner) ? "" : "none";
-  document.getElementById("serverCtxDelete").style.display = (isAdmin || isOwner) ? "" : "none";
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  menu.classList.remove("hidden");
-  requestAnimationFrame(() => {
-    const r = menu.getBoundingClientRect();
-    if (r.right > window.innerWidth - 8) menu.style.left = `${x - r.width}px`;
-    if (r.bottom > window.innerHeight - 8) menu.style.top = `${y - r.height}px`;
-  });
-}
-
-document.getElementById("serverCtxEnter").addEventListener("click", () => {
-  if (serverCtxData) enterServer(serverCtxData.id, serverCtxData);
-  document.getElementById("serverContextMenu").classList.add("hidden");
-});
-
-document.getElementById("serverCtxSettings").addEventListener("click", async () => {
-  const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
-  if (!sv) return;
-  await enterServer(sv.id, sv);
-  setTimeout(() => openServerSettings(), 600);
-});
-
-document.getElementById("serverCtxLeave").addEventListener("click", async () => {
-  const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
-  if (!sv) return;
-  if (!await showCustomConfirm(`「${sv.name || sv.id}」を退出しますか？`, "退出する", "キャンセル")) return;
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await updateDoc(doc(db, `artifacts/${appId}/servers`, sv.id), {
-      joinedUsers: arrayRemove(userId),
-      serverAdmins: arrayRemove(userId),
-      memberCount: increment(-1)
-    });
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
-    } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
-    alertMessage("サーバーを退出しました", "success");
-  } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
-});
-
-document.getElementById("serverCtxDelete").addEventListener("click", async () => {
-  const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
-  if (!sv) return;
-  if (!await showCustomConfirm(`「${sv.name || sv.id}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await deleteServerCascade(sv.id);
-    alertMessage("サーバーを削除しました", "success");
-  } catch (e) { alertMessage("削除に失敗しました: " + e.message, "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
-});
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest("#serverContextMenu")) {
-    document.getElementById("serverContextMenu").classList.add("hidden");
-  }
-});
-
-// 他サーバーのメッセージを監視するグローバルリスナー
-let globalNotifListeners = {};
-
-async function setupGlobalNotificationListeners() {
-  Object.values(globalNotifListeners).forEach(unsub => unsub());
-  globalNotifListeners = {};
-  if (!isTauri && currentFcmToken) {
-    console.log('🔔 [通知] FCM(プッシュ通知)が有効なため、バックグラウンド監視を最適化しました');
-    return;
-  }
-
-  try {
-    const serversSnap = await getDocs(
-      query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
-    );
-    for (const serverDoc of serversSnap.docs) {
-      const svId = serverDoc.id;
-      const svData = serverDoc.data();
-      if (svId === currentServerId) continue;
-
-      const roomsQuery = collection(db, `artifacts/${appId}/servers/${svId}/rooms`);
-      let isFirst = true;
-      let roomLastNotifTs = {};
-
-      window.__globalRoomsCache = window.__globalRoomsCache || {};
-      window.__globalRoomsCache[svId] = window.__globalRoomsCache[svId] || {};
-
-      const unsub = onSnapshot(roomsQuery, snapshot => {
-        if (isFirst) {
-          isFirst = false;
-          snapshot.forEach(doc => {
-            const d = doc.data();
-            window.__globalRoomsCache[svId][doc.id] = d;
-            roomLastNotifTs[doc.id] = typeof d.lastMessageAt === 'number' ? d.lastMessageAt : (d.lastMessageAt?.toMillis?.() || (d.lastMessageAt?.seconds ? d.lastMessageAt.seconds * 1000 : 0));
-          });
-          return;
-        }
-        let hasNewMessage = false;
-        let newItemsToNotif = [];
-        snapshot.docChanges().forEach(change => {
-          if (change.type === "modified" || change.type === "added") {
-            const roomData = change.doc.data();
-            const rmId = change.doc.id;
-            window.__globalRoomsCache[svId][rmId] = roomData;
-            const rmName = roomData.name || rmId;
-            const ts = typeof roomData.lastMessageAt === 'number' ? roomData.lastMessageAt : (roomData.lastMessageAt?.toMillis?.() || (roomData.lastMessageAt?.seconds ? roomData.lastMessageAt.seconds * 1000 : 0));
-            const prevTs = roomLastNotifTs[rmId] || 0;
-
-            if (ts > prevTs) {
-              roomLastNotifTs[rmId] = ts;
-              hasNewMessage = true;
-              if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
-                newItemsToNotif.push({ serverId: svId, serverName: svData.name || svId, roomId: rmId, roomName: rmName, lastAt: ts });
-                (async () => {
-                  let body = roomData.lastMessageText || '新着メッセージ';
-                  try {
-                    if (typeof isEncrypted === 'function' && isEncrypted(body)) {
-                      const _members = (svData && svData.joinedUsers) || [];
-                      body = await decryptText(body, svId, rmId, _members);
-                    }
-                  } catch (e) { body = '（暗号化されたメッセージ）'; }
-                  if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
-                  showInAppNotification(
-                    svData.name || svId, rmName,
-                    'メンバー',
-                    body,
-                    svId, svData, rmId, rmName
-                  );
-                  // Push Notification for other servers
-                  if (!document.hasFocus()) {
-                    if (isTauri) {
-                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
-                    } else if (!currentFcmToken) {
-                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
-                    }
-                  }
-                })();
-              }
-            }
-          }
-        });
-        // バッジ更新のために即座に更新するか、未読再スキャンをトリガー
-        if (hasNewMessage) {
-          if (newItemsToNotif.length > 0) {
-            try {
-              let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
-              newItemsToNotif.forEach(ni => {
-                const idx = items.findIndex(it => it.serverId === ni.serverId && it.roomId === ni.roomId);
-                if (idx > -1) items[idx].lastAt = ni.lastAt;
-                else items.push(ni);
-              });
-              items.sort((a, b) => b.lastAt - a.lastAt);
-              localStorage.setItem('covo_global_items', JSON.stringify(items));
-              if (typeof renderNotifList === 'function') renderNotifList(items);
-              if (isTauri && window.__TAURI__?.core?.invoke) {
-                window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => { });
-              }
-            } catch (e) { console.error(e); }
-          } else if (typeof scanAllUnreadAndRender === 'function') {
-            scanAllUnreadAndRender();
-          }
-        }
-      });
-      globalNotifListeners[svId] = unsub;
-    }
-  } catch (e) { console.error("globalNotifListeners error:", e); }
-}
-
-function showMentionToast(fromNickname) {
-  const box = document.createElement("div");
-  box.className = "fixed top-4 right-4 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-lg z-[9999] text-sm font-medium mention-toast";
-  box.style.cssText += "animation: slideUpFade 0.22s ease both;";
-  box.innerHTML = `<span class="mention-toast-badge">@メンション</span><span>${escapeHtml(fromNickname)}さんにメンションされました</span>`;
-  document.body.appendChild(box);
-  setTimeout(() => {
-    box.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => box.remove(), 200);
-  }, 3500);
-}
-
-function showCustomConfirm(message, okText = "確認", cancelText = "キャンセル", subMessage = "") {
-  return new Promise(resolve => {
-    const modal = document.getElementById("customConfirmModal");
-    document.getElementById("customConfirmMessage").textContent = message;
-    document.getElementById("customConfirmOk").textContent = okText;
-    document.getElementById("customConfirmCancel").textContent = cancelText;
-    const subEl = document.getElementById("customConfirmSub");
-    if (subMessage) { subEl.textContent = subMessage; subEl.classList.remove("hidden"); }
-    else { subEl.classList.add("hidden"); }
-
-    openModal(modal);
-
-    const okBtn = document.getElementById("customConfirmOk");
-    const cancelBtn = document.getElementById("customConfirmCancel");
-
-    function onOk() { cleanup(); resolve(true); }
-    function onCancel() { cleanup(); resolve(false); }
-    function cleanup() {
-      modal.classList.add("hidden");
-      okBtn.removeEventListener("click", onOk);
-      cancelBtn.removeEventListener("click", onCancel);
-    }
-    okBtn.addEventListener("click", onOk);
-    cancelBtn.addEventListener("click", onCancel);
-  });
-}
-
-function showCustomAlert(message) {
-  return new Promise(resolve => {
-    const modal = document.getElementById("customAlertModal");
-    document.getElementById("customAlertMessage").textContent = message;
-    openModal(modal);
-    const okBtn = document.getElementById("customAlertOk");
-    function onOk() {
-      modal.classList.add("hidden");
-      okBtn.removeEventListener("click", onOk);
-      resolve();
-    }
-    okBtn.addEventListener("click", onOk);
-  });
-}
-
-
-// --- 検索機能 ---
-toggleSearchButton.addEventListener("click", () => {
-  searchContainer.classList.toggle("hidden");
-  if (!searchContainer.classList.contains("hidden")) {
-    searchInput.focus();
-    // 検索開始時は全メッセージを読み込む
-    messageLimit = 9999;
-    subscribeToMessages();
-  } else {
-    searchQuery = ""; searchInput.value = "";
-    // 検索終了時は通常の20件に戻す
-    messageLimit = 20;
-    subscribeToMessages();
-  }
-});
-closeSearchBtn.addEventListener("click", () => {
-  searchContainer.classList.add("hidden");
-  searchQuery = ""; searchInput.value = "";
-  // 通常の20件に戻す
-  messageLimit = 20;
-  subscribeToMessages();
-});
-searchInput.addEventListener("input", (e) => {
-  searchQuery = e.target.value.toLowerCase();
-  renderMessagesWithReadReceipts();
-});
-
-// --- スマホ用戻るボタン ---
-mobileBackButton.addEventListener("click", () => {
-  sidebar.classList.remove("mobile-hidden");
-  currentRoomHeader.classList.add("hidden");
-  // ボトムナビを再表示
-  const bottomNav = document.getElementById("mobileBottomNav");
-  if (bottomNav) bottomNav.style.display = "flex";
-  document.body.classList.remove('in-chat-view');
-  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
-
-  // ルーム退出処理（開いている判定を解除する）
-  currentRoomId = null;
-  if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-  if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
-  if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
-  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
-  clearMessagesDOM();
-  lastMessagesData = [];
-  messageInput.disabled = true;
-  fileAttachButton.disabled = true;
-  { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
-  { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = true; }
-  sendMessageButton.disabled = true;
-  clearAttachedFile();
-  cancelReply();
-});
-
 // --- スマホ用メンバー一覧（ボトムシート） ---
 function openBottomSheet() {
   if (window.innerWidth >= 768) return; // PCでは何もしない
@@ -9035,363 +9178,8 @@ function jumpToMsg(id) {
   }
 }
 
-// =========================================================================
-// Keyboard Shortcuts (Enter for Confirm, Shift for Cancel)
-// =========================================================================
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    if (e.isComposing || e.keyCode === 229) return;
-    if (
-      !authContainer.classList.contains("hidden") &&
-      (document.activeElement === emailInput || document.activeElement === passwordInput)
-    ) {
-      e.preventDefault(); authButton.click();
-    } else if (
-      !nicknameContainer.classList.contains("hidden") && document.activeElement === nicknameInput
-    ) {
-      e.preventDefault(); setNicknameButton.click();
-    } else if (
-      !createRoomPasswordModal.classList.contains("hidden") &&
-      (document.activeElement === document.getElementById("modalNewRoomNameInput") || document.activeElement === newRoomPasswordInput)
-    ) {
-      e.preventDefault(); confirmCreateRoomButton.click();
-    } else if (
-      !joinRoomPasswordModal.classList.contains("hidden") && document.activeElement === joinRoomPasswordInput
-    ) {
-      e.preventDefault(); confirmJoinRoomButton.click();
-    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
-      e.preventDefault(); confirmDeleteButton.click();
-    } else if (
-      !deleteRoomPasswordModal.classList.contains("hidden") && document.activeElement === deleteRoomPasswordInput
-    ) {
-      e.preventDefault(); confirmDeletePasswordButton.click();
-    } else if (
-      !settingsModal.classList.contains("hidden") && document.activeElement === settingsNicknameInput
-    ) {
-      e.preventDefault(); saveSettingsButton.click();
-    }
-  }
-
-  if (e.key === "Shift") {
-    if (!createRoomPasswordModal.classList.contains("hidden")) {
-      cancelCreateRoomButton.click();
-    } else if (!joinRoomPasswordModal.classList.contains("hidden")) {
-      cancelJoinRoomButton.click();
-    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
-      cancelDeleteButton.click();
-    } else if (!deleteRoomPasswordModal.classList.contains("hidden")) {
-      cancelDeletePasswordButton.click();
-    } else if (!settingsModal.classList.contains("hidden")) {
-      closeSettingsButton.click();
-    }
-  }
-});
-
-
-// =========================================================================
-// FCM Initialization (全プラットフォーム対応)
-// =========================================================================
-let fcmInitialized = false;
-async function initializeFCM() {
-  if (fcmInitialized) return;
-  // Tauri 版は FCM/Service Worker を使わない:
-  //   - WebView2 では Web Push の配信が安定しない
-  //   - 代わりに dummyUnreadListener が Firestore 経由で新着を検知し、
-  //     show_notification_window で独自UI（LINE風）の通知を出す
-  if (isTauri) {
-    fcmInitialized = true;
-
-    if (window.__TAURI__?.notification?.onAction) {
-      window.__TAURI__.notification.onAction((event) => {
-        if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('show_main_window').catch(console.error);
-        }
-      }).catch(e => { /* ignore error as notification plugin might be missing some commands */ });
-    }
-    console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
-    return;
-  }
-  fcmInitialized = true;
-  try {
-    // Service Worker を明示的に登録
-    if ('serviceWorker' in navigator) {
-      const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
-      console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
-
-      // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
-      const sendUserIdToSW = () => {
-        const sw = navigator.serviceWorker.controller;
-        if (sw && userId) {
-          sw.postMessage({ type: 'SET_USER_ID', userId, appId, idToken: _cachedIdToken });
-        }
-      };
-      // 即時送信 + コントローラー切り替わり時にも送信
-      sendUserIdToSW();
-      navigator.serviceWorker.addEventListener('controllerchange', sendUserIdToSW);
-
-      // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカス
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
-          if (window.__TAURI__) {
-            try {
-              window.__TAURI__.window.getCurrent().setFocus();
-            } catch (e) {
-              try { window.__TAURI__.invoke('tauri', { __tauriModule: 'Window', message: { cmd: 'setFocus' } }); } catch (_) { }
-            }
-          }
-          if (event.data.data?.type === 'incoming_call') {
-            handleCallNotificationClick(event.data.data);
-          }
-        }
-        if (event.data && event.data.type === 'CALL_DECLINED_FROM_NOTIFICATION') {
-          handleCallDeclinedFromNotification(event.data);
-        }
-      });
-    }
-
-    if (!messaging) messaging = getMessaging(app);
-
-    // 通知権限の取得（ブラウザ通知トグルが有効な場合のみ）
-    const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (browserEnabled && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        console.log('📱 [通知] ブラウザ通知権限が未設定です。ユーザーアクションによる設定を待機します。');
-        return; // Safari等でジェスチャー無しでリクエストするとブロックされるため、ここではリクエストしない
-      }
-      if (Notification.permission === 'granted') {
-        try {
-          // iOS 18+対策: SW が完全に有効化されるまで待つ
-          const swReg = await navigator.serviceWorker.ready;
-          const token = await getToken(messaging, {
-            vapidKey: "BCe5ICJmyyuurq1DsPBXY6AsQcSsIDuXPieZ-c4L1_5zcNwyq2HC3DBhMBND0g9oTwPmEzUhiLqsAjLrnmVlxj0",
-            serviceWorkerRegistration: swReg
-          });
-          if (token && userId) {
-            console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
-            currentFcmToken = token;
-            const userRef = doc(db, `artifacts/${appId}/users`, userId);
-            // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
-            const prevToken = localStorage.getItem('covo_fcm_token');
-            if (prevToken && prevToken !== token) {
-              console.log('📱 [通知] プッシュ通知用トークンが更新されたため、古いものを削除しました');
-              try { await updateDoc(userRef, { fcmTokens: arrayRemove(prevToken) }); } catch (_) { }
-            }
-            await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
-            localStorage.setItem('covo_fcm_token', token);
-
-            // ★ FCMトークン週次リフレッシュ（トークン失効による通知停止を防ぐ）
-            // 旧タイムスタンプを先に読んでから、今回の時刻を書き込む（順序が重要！）
-            const lastRefreshed = parseInt(localStorage.getItem('covo_fcm_token_refreshed_at') || '0', 10);
-            localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
-            const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-            if (lastRefreshed > 0 && Date.now() - lastRefreshed > SEVEN_DAYS) {
-              console.log('📱 [通知] 定期的なプッシュ通知用トークンの更新を実行しました');
-              try {
-                const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');
-                await deleteToken(messaging);
-                fcmInitialized = false;
-                await initializeFCM(); // 再初期化でトークン再取得
-                return;
-              } catch (_) { }
-            }
-          } else if (!token) {
-            console.warn('FCM Token not obtained — push notifications may not work on this device');
-          }
-        } catch (tokenErr) {
-          console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
-        }
-      } else {
-        console.log('📱 [通知] 通知権限が許可されていないため、プッシュ通知の登録をスキップしました (現在の状態: ' + permission + ')');
-      }
-    } else {
-      console.log('📱 [通知] 通知設定がオフ、またはお使いのブラウザが通知に対応していません');
-    }
-
-    // フォアグラウンドメッセージ受信
-    onMessage(messaging, (payload) => {
-      const data = payload.data;
-      if (data && data.serverId && data.serverId !== currentServerId) {
-        showInAppNotification(
-          data.serverName || data.serverId,
-          data.roomName || data.roomId,
-          data.senderName || 'メンバー',
-          data.body || '新着メッセージ',
-          data.serverId,
-          null,
-          data.roomId
-        );
-        try {
-          let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
-          if (!items.find(it => it.roomId === data.roomId)) {
-            items.push({
-              serverId: data.serverId,
-              serverName: data.serverName || data.serverId,
-              roomId: data.roomId,
-              roomName: data.roomName || data.roomId,
-              lastAt: Date.now()
-            });
-            localStorage.setItem('covo_global_items', JSON.stringify(items));
-          }
-          if (typeof renderNotifList === 'function') renderNotifList(items);
-        } catch (e) { }
-      }
-    });
-  } catch (error) {
-    console.error('FCM Initialization Error:', error);
-  }
-}
-
-// ブラウザ通知トグル ON/OFF: トークンを Firestore から削除/再登録することで
-// サーバーが push を送らなくする（SW がそもそも呼ばれない = 確実にオフになる）
-async function setBrowserPushEnabled(enabled) {
-  if (isTauri) return;
-  if (enabled) {
-    if ('Notification' in window && Notification.permission === 'default') {
-      await Notification.requestPermission();
-    }
-    // 再度トークンを取得して Firestore に登録
-    fcmInitialized = false;
-    await initializeFCM();
-  } else {
-    // トークンを削除して通知をブロック
-    try {
-      if (currentFcmToken && userId) {
-        const userRef = doc(db, `artifacts/${appId}/users`, userId);
-        await updateDoc(userRef, { fcmTokens: arrayRemove(currentFcmToken) });
-      }
-      if (messaging) {
-        try { await deleteToken(messaging); } catch (e) { console.warn('deleteToken failed', e); }
-      }
-      currentFcmToken = null;
-      console.log('📱 [通知] プッシュ通知が無効化されました (トークン削除済)');
-    } catch (e) {
-      console.error('Failed to disable push:', e);
-    }
-  }
-}
-
-// =========================================================================
-// Sidebar Resizing Feature - ★改善版に置き換え
-// =========================================================================
-function initializeResizer() {
-  // --- Left Sidebar ---
-  const sidebar = document.getElementById("sidebar");
-  const resizer = document.getElementById("resizer");
-  const toggleLeftBtn = document.getElementById("toggleLeftSidebarBtn");
-  const LEFT_WIDTH_KEY = "chatAppSidebarWidth";
-  const LEFT_COLLAPSED_KEY = "chatAppSidebarCollapsed";
-
-  const savedLeftWidth = localStorage.getItem(LEFT_WIDTH_KEY);
-  if (savedLeftWidth && sidebar) {
-    sidebar.style.width = savedLeftWidth;
-  }
-
-  const isLeftCollapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === "true";
-  if (isLeftCollapsed && window.innerWidth >= 768 && sidebar) {
-    sidebar.classList.add("hidden");
-    sidebar.classList.remove("md:flex");
-  }
-
-  let isResizingLeft = false;
-  if (resizer) {
-    resizer.addEventListener("mousedown", (e) => {
-      isResizingLeft = true;
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleLeftMouseMove);
-      document.addEventListener("mouseup", handleLeftMouseUp);
-    });
-  }
-
-  function handleLeftMouseMove(e) {
-    if (isResizingLeft && sidebar) {
-      const newWidth = Math.max(180, Math.min(600, e.clientX));
-      sidebar.style.width = `${newWidth}px`;
-    }
-  }
-
-  function handleLeftMouseUp() {
-    isResizingLeft = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleLeftMouseMove);
-    document.removeEventListener("mouseup", handleLeftMouseUp);
-    if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
-  }
-
-  if (toggleLeftBtn && sidebar) {
-    toggleLeftBtn.addEventListener("click", () => {
-      const isHidden = sidebar.classList.contains("hidden") || sidebar.style.display === "none";
-      if (isHidden) {
-        sidebar.classList.remove("hidden");
-        sidebar.classList.add("md:flex");
-        localStorage.setItem(LEFT_COLLAPSED_KEY, "false");
-      } else {
-        sidebar.classList.add("hidden");
-        sidebar.classList.remove("md:flex");
-        localStorage.setItem(LEFT_COLLAPSED_KEY, "true");
-      }
-    });
-  }
-
-  // --- Right Sidebar (Members) ---
-  const membersSidebar = document.getElementById("membersSidebar");
-  const resizerRight = document.getElementById("resizerRight");
-  const toggleMembersBtn = document.getElementById("toggleMembersSidebarBtn");
-  const RIGHT_WIDTH_KEY = "chatAppMembersWidth";
-  const RIGHT_COLLAPSED_KEY = "chatAppMembersCollapsed";
-
-  const savedRightWidth = localStorage.getItem(RIGHT_WIDTH_KEY);
-  if (savedRightWidth && membersSidebar) membersSidebar.style.width = savedRightWidth;
-
-  const isRightCollapsed = localStorage.getItem(RIGHT_COLLAPSED_KEY) === "true";
-  if (isRightCollapsed && window.innerWidth >= 768 && membersSidebar) {
-    membersSidebar.style.setProperty("display", "none", "important");
-    membersSidebar.classList.add("hidden");
-    membersSidebar.classList.remove("md:flex");
-  }
-
-  let isResizingRight = false;
-  if (resizerRight) {
-    resizerRight.addEventListener("mousedown", (e) => {
-      isResizingRight = true;
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleRightMouseMove);
-      document.addEventListener("mouseup", handleRightMouseUp);
-    });
-  }
-
-  function handleRightMouseMove(e) {
-    if (isResizingRight && membersSidebar) {
-      const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
-      membersSidebar.style.width = `${newWidth}px`;
-    }
-  }
-
-  function handleRightMouseUp() {
-    isResizingRight = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleRightMouseMove);
-    document.removeEventListener("mouseup", handleRightMouseUp);
-    if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
-  }
-
-  if (toggleMembersBtn && membersSidebar) {
-    toggleMembersBtn.addEventListener("click", () => {
-      const isHidden = membersSidebar.style.display === "none" || membersSidebar.classList.contains("hidden");
-      if (isHidden) {
-        membersSidebar.style.setProperty("display", "", "important");
-        membersSidebar.classList.remove("hidden");
-        membersSidebar.classList.add("md:flex");
-        localStorage.setItem(RIGHT_COLLAPSED_KEY, "false");
-      } else {
-        membersSidebar.style.setProperty("display", "none", "important");
-        membersSidebar.classList.add("hidden");
-        membersSidebar.classList.remove("md:flex");
-        localStorage.setItem(RIGHT_COLLAPSED_KEY, "true");
-      }
-    });
-  }
-}
-
+// ================= MODULE: voice_call.js ================
+// ================= VOICE CALL & WEBRTC MODULE ================
 // =========================================================================
 // Notifications & Updater
 // =========================================================================
@@ -10908,6 +10696,8 @@ window.closeUpdateOverlay = function () {
   }
 };
 
+// ================= MODULE: updater.js ================
+// ================= UPDATER MODULE ================
 // =========================================================================
 // 🛡️ リリース履歴取得＆強制アプデ回避機能管理（設定モーダル＆リカバリー用）
 // =========================================================================
@@ -11451,6 +11241,562 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ===== Web版専用: Windowsインストーラー自動取得＆ダウンロード =====
+// PWAインストールプロンプトの捕捉
+let deferredPwaPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPwaPrompt = e;
+  window.__deferredPwaPrompt = e;
+});
+
+// ===== デバイス判定＆ダウンロード / インストール分岐 =====
+window.openWindowsDownloadModal = function () {
+  const ua = navigator.userAgent || '';
+  const isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  const isAndroid = /android/i.test(ua);
+
+  // 1. iOS Safari の場合: ホーム画面追加ガイドモーダルを表示
+  if (isIos && isSafari) {
+    const iosModal = document.getElementById('iosPwaGuideModal');
+    if (iosModal) {
+      iosModal.classList.remove('hidden');
+      return;
+    }
+  }
+
+  // 2. Android の場合: ワンタップでPWAインストールプロンプトを起動
+  if (isAndroid && deferredPwaPrompt) {
+    deferredPwaPrompt.prompt();
+    deferredPwaPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        alertMessage('ホーム画面に追加しました！', 'success');
+      }
+      deferredPwaPrompt = null;
+    });
+    return;
+  }
+
+  // 3. PC Web版の場合: Windows版ダウンロード案内モーダルを表示
+  const modal = document.getElementById('windowsDownloadModal');
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.downloadLatestWindowsApp = async function (triggerBtn) {
+  const btn = triggerBtn || document.getElementById('modalDownloadExeBtn');
+  const orgHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 最新版を取得中...';
+  }
+
+  try {
+    const res = await fetch('https://api.github.com/repos/qwertyuiop1229/covo/releases/latest');
+    if (!res.ok) throw new Error('Release API error: ' + res.status);
+    const data = await res.json();
+    
+    // .exe ファイルを探す
+    let downloadUrl = null;
+    if (data.assets && data.assets.length > 0) {
+      const exeAsset = data.assets.find(a => a.name.endsWith('.exe') || a.name.endsWith('-setup.exe'));
+      if (exeAsset) {
+        downloadUrl = exeAsset.browser_download_url;
+      }
+    }
+
+    if (!downloadUrl) {
+      downloadUrl = data.html_url || 'https://github.com/qwertyuiop1229/covo/releases/latest';
+    }
+
+    // ダウンロードを開始
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = '';
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    if (btn) {
+      btn.innerHTML = '<i class="fas fa-check"></i> ダウンロードを開始しました';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = orgHtml;
+        const modal = document.getElementById('windowsDownloadModal');
+        if (modal) modal.classList.add('hidden');
+      }, 2000);
+    }
+  } catch (err) {
+    console.error('Download latest Windows app failed:', err);
+    // フォールバック
+    window.open('https://github.com/qwertyuiop1229/covo/releases/latest', '_blank');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = orgHtml;
+    }
+  }
+};
+
+// ===== Windows版 (Tauri) Discord風 カスタムタイトルバー ウィンドウ操作 =====
+window.minimizeWindow = function () {
+  if (window.__TAURI__?.window?.getCurrentWindow) {
+    window.__TAURI__.window.getCurrentWindow().minimize().catch(console.error);
+  } else if (window.__TAURI__?.core) {
+    window.__TAURI__.core.invoke('plugin:window|minimize').catch(console.error);
+  }
+};
+
+window.toggleMaximizeWindow = async function () {
+  if (window.__TAURI__?.window?.getCurrentWindow) {
+    const win = window.__TAURI__.window.getCurrentWindow();
+    const isMax = await win.isMaximized().catch(() => false);
+    if (isMax) win.unmaximize().catch(console.error);
+    else win.maximize().catch(console.error);
+  } else if (window.__TAURI__?.core) {
+    window.__TAURI__.core.invoke('plugin:window|toggle_maximize').catch(console.error);
+  }
+};
+
+window.closeWindow = function () {
+  const closeBehavior = localStorage.getItem('covo_close_behavior') || 'minimize';
+  if (closeBehavior === 'quit') {
+    if (window.__TAURI__?.window?.getCurrentWindow) {
+      window.__TAURI__.window.getCurrentWindow().close().catch(console.error);
+    } else if (window.__TAURI__?.core) {
+      window.__TAURI__.core.invoke('plugin:process|exit', { code: 0 }).catch(console.error);
+    }
+  } else if (closeBehavior === 'hide') {
+    if (window.__TAURI__?.window?.getCurrentWindow) {
+      window.__TAURI__.window.getCurrentWindow().hide().catch(console.error);
+    } else if (window.__TAURI__?.core) {
+      window.__TAURI__.core.invoke('plugin:window|hide').catch(console.error);
+    }
+  } else {
+    // minimize
+    window.minimizeWindow();
+  }
+};
+
+// 環境判定とタイトルバー / ダウンロードボタンの表示初期化
+(function initDesktopAndWebUI() {
+  if (window.__TAURI__) {
+    // Windowsデスクトップアプリ: タイトルバーを表示
+    const titleBar = document.getElementById('discordTitleBar');
+    if (titleBar) titleBar.style.display = 'flex';
+  } else {
+    // Web版: ダウンロードボタンを表示
+    const dlBtn = document.getElementById('discordDownloadAppBtn');
+    if (dlBtn) dlBtn.style.display = 'flex';
+  }
+})();
+
+// ================= MODULE: settings_ui.js ================
+// ================= SETTINGS UI MODULE ================
+
+// === フィードバック機能 ===
+window.openFeedbackModal = function () {
+  document.getElementById('feedbackContent').value = '';
+  document.getElementById('feedbackCategory').value = 'bug';
+  document.getElementById('feedbackModal').classList.remove('hidden');
+};
+
+window.closeFeedbackModal = function () {
+  document.getElementById('feedbackModal').classList.add('hidden');
+};
+
+window.submitFeedback = async function () {
+  const btn = document.getElementById('feedbackSubmitBtn');
+  const contentVal = document.getElementById('feedbackContent').value.trim();
+  const categoryVal = document.getElementById('feedbackCategory').value;
+  if (!contentVal) {
+    alertMessage("内容を入力してください", "error");
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+  try {
+    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    await addDoc(collection(db, `artifacts/${appId}/feedbacks`), {
+      content: contentVal,
+      category: categoryVal,
+      createdBy: userId,
+      email: auth.currentUser?.email || '不明',
+      createdAt: serverTimestamp(),
+      status: 'open',
+      userAgent: navigator.userAgent,
+      screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      consoleLogs: window._covoLogs.join('\n')
+    });
+    window.closeFeedbackModal();
+    alertMessage("ご報告ありがとうございました。運営チームに送信されました。", "success");
+  } catch (e) {
+    console.error("Feedback submit error:", e);
+    alertMessage("送信に失敗しました", "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "送信";
+  }
+};
+
+// =========================================================================
+// Keyboard Shortcuts (Enter for Confirm, Shift for Cancel)
+// =========================================================================
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (
+      !authContainer.classList.contains("hidden") &&
+      (document.activeElement === emailInput || document.activeElement === passwordInput)
+    ) {
+      e.preventDefault(); authButton.click();
+    } else if (
+      !nicknameContainer.classList.contains("hidden") && document.activeElement === nicknameInput
+    ) {
+      e.preventDefault(); setNicknameButton.click();
+    } else if (
+      !createRoomPasswordModal.classList.contains("hidden") &&
+      (document.activeElement === document.getElementById("modalNewRoomNameInput") || document.activeElement === newRoomPasswordInput)
+    ) {
+      e.preventDefault(); confirmCreateRoomButton.click();
+    } else if (
+      !joinRoomPasswordModal.classList.contains("hidden") && document.activeElement === joinRoomPasswordInput
+    ) {
+      e.preventDefault(); confirmJoinRoomButton.click();
+    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
+      e.preventDefault(); confirmDeleteButton.click();
+    } else if (
+      !deleteRoomPasswordModal.classList.contains("hidden") && document.activeElement === deleteRoomPasswordInput
+    ) {
+      e.preventDefault(); confirmDeletePasswordButton.click();
+    } else if (
+      !settingsModal.classList.contains("hidden") && document.activeElement === settingsNicknameInput
+    ) {
+      e.preventDefault(); saveSettingsButton.click();
+    }
+  }
+
+  if (e.key === "Shift") {
+    if (!createRoomPasswordModal.classList.contains("hidden")) {
+      cancelCreateRoomButton.click();
+    } else if (!joinRoomPasswordModal.classList.contains("hidden")) {
+      cancelJoinRoomButton.click();
+    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
+      cancelDeleteButton.click();
+    } else if (!deleteRoomPasswordModal.classList.contains("hidden")) {
+      cancelDeletePasswordButton.click();
+    } else if (!settingsModal.classList.contains("hidden")) {
+      closeSettingsButton.click();
+    }
+  }
+});
+
+
+// =========================================================================
+// FCM Initialization (全プラットフォーム対応)
+// =========================================================================
+let fcmInitialized = false;
+async function initializeFCM() {
+  if (fcmInitialized) return;
+  // Tauri 版は FCM/Service Worker を使わない:
+  //   - WebView2 では Web Push の配信が安定しない
+  //   - 代わりに dummyUnreadListener が Firestore 経由で新着を検知し、
+  //     show_notification_window で独自UI（LINE風）の通知を出す
+  if (isTauri) {
+    fcmInitialized = true;
+
+    if (window.__TAURI__?.notification?.onAction) {
+      window.__TAURI__.notification.onAction((event) => {
+        if (window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('show_main_window').catch(console.error);
+        }
+      }).catch(e => { /* ignore error as notification plugin might be missing some commands */ });
+    }
+    console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
+    return;
+  }
+  fcmInitialized = true;
+  try {
+    // Service Worker を明示的に登録
+    if ('serviceWorker' in navigator) {
+      const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+      console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
+
+      // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
+      const sendUserIdToSW = () => {
+        const sw = navigator.serviceWorker.controller;
+        if (sw && userId) {
+          sw.postMessage({ type: 'SET_USER_ID', userId, appId, idToken: _cachedIdToken });
+        }
+      };
+      // 即時送信 + コントローラー切り替わり時にも送信
+      sendUserIdToSW();
+      navigator.serviceWorker.addEventListener('controllerchange', sendUserIdToSW);
+
+      // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカス
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
+          if (window.__TAURI__) {
+            try {
+              window.__TAURI__.window.getCurrent().setFocus();
+            } catch (e) {
+              try { window.__TAURI__.invoke('tauri', { __tauriModule: 'Window', message: { cmd: 'setFocus' } }); } catch (_) { }
+            }
+          }
+          if (event.data.data?.type === 'incoming_call') {
+            handleCallNotificationClick(event.data.data);
+          }
+        }
+        if (event.data && event.data.type === 'CALL_DECLINED_FROM_NOTIFICATION') {
+          handleCallDeclinedFromNotification(event.data);
+        }
+      });
+    }
+
+    if (!messaging) messaging = getMessaging(app);
+
+    // 通知権限の取得（ブラウザ通知トグルが有効な場合のみ）
+    const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    if (browserEnabled && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        console.log('📱 [通知] ブラウザ通知権限が未設定です。ユーザーアクションによる設定を待機します。');
+        return; // Safari等でジェスチャー無しでリクエストするとブロックされるため、ここではリクエストしない
+      }
+      if (Notification.permission === 'granted') {
+        try {
+          // iOS 18+対策: SW が完全に有効化されるまで待つ
+          const swReg = await navigator.serviceWorker.ready;
+          const token = await getToken(messaging, {
+            vapidKey: "BCe5ICJmyyuurq1DsPBXY6AsQcSsIDuXPieZ-c4L1_5zcNwyq2HC3DBhMBND0g9oTwPmEzUhiLqsAjLrnmVlxj0",
+            serviceWorkerRegistration: swReg
+          });
+          if (token && userId) {
+            console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
+            currentFcmToken = token;
+            const userRef = doc(db, `artifacts/${appId}/users`, userId);
+            // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
+            const prevToken = localStorage.getItem('covo_fcm_token');
+            if (prevToken && prevToken !== token) {
+              console.log('📱 [通知] プッシュ通知用トークンが更新されたため、古いものを削除しました');
+              try { await updateDoc(userRef, { fcmTokens: arrayRemove(prevToken) }); } catch (_) { }
+            }
+            await setDoc(userRef, { fcmTokens: arrayUnion(token) }, { merge: true });
+            localStorage.setItem('covo_fcm_token', token);
+
+            // ★ FCMトークン週次リフレッシュ（トークン失効による通知停止を防ぐ）
+            // 旧タイムスタンプを先に読んでから、今回の時刻を書き込む（順序が重要！）
+            const lastRefreshed = parseInt(localStorage.getItem('covo_fcm_token_refreshed_at') || '0', 10);
+            localStorage.setItem('covo_fcm_token_refreshed_at', Date.now().toString());
+            const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+            if (lastRefreshed > 0 && Date.now() - lastRefreshed > SEVEN_DAYS) {
+              console.log('📱 [通知] 定期的なプッシュ通知用トークンの更新を実行しました');
+              try {
+                const { deleteToken } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js');
+                await deleteToken(messaging);
+                fcmInitialized = false;
+                await initializeFCM(); // 再初期化でトークン再取得
+                return;
+              } catch (_) { }
+            }
+          } else if (!token) {
+            console.warn('FCM Token not obtained — push notifications may not work on this device');
+          }
+        } catch (tokenErr) {
+          console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
+        }
+      } else {
+        console.log('📱 [通知] 通知権限が許可されていないため、プッシュ通知の登録をスキップしました (現在の状態: ' + permission + ')');
+      }
+    } else {
+      console.log('📱 [通知] 通知設定がオフ、またはお使いのブラウザが通知に対応していません');
+    }
+
+    // フォアグラウンドメッセージ受信
+    onMessage(messaging, (payload) => {
+      const data = payload.data;
+      if (data && data.serverId && data.serverId !== currentServerId) {
+        showInAppNotification(
+          data.serverName || data.serverId,
+          data.roomName || data.roomId,
+          data.senderName || 'メンバー',
+          data.body || '新着メッセージ',
+          data.serverId,
+          null,
+          data.roomId
+        );
+        try {
+          let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+          if (!items.find(it => it.roomId === data.roomId)) {
+            items.push({
+              serverId: data.serverId,
+              serverName: data.serverName || data.serverId,
+              roomId: data.roomId,
+              roomName: data.roomName || data.roomId,
+              lastAt: Date.now()
+            });
+            localStorage.setItem('covo_global_items', JSON.stringify(items));
+          }
+          if (typeof renderNotifList === 'function') renderNotifList(items);
+        } catch (e) { }
+      }
+    });
+  } catch (error) {
+    console.error('FCM Initialization Error:', error);
+  }
+}
+
+// ブラウザ通知トグル ON/OFF: トークンを Firestore から削除/再登録することで
+// サーバーが push を送らなくする（SW がそもそも呼ばれない = 確実にオフになる）
+async function setBrowserPushEnabled(enabled) {
+  if (isTauri) return;
+  if (enabled) {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+    // 再度トークンを取得して Firestore に登録
+    fcmInitialized = false;
+    await initializeFCM();
+  } else {
+    // トークンを削除して通知をブロック
+    try {
+      if (currentFcmToken && userId) {
+        const userRef = doc(db, `artifacts/${appId}/users`, userId);
+        await updateDoc(userRef, { fcmTokens: arrayRemove(currentFcmToken) });
+      }
+      if (messaging) {
+        try { await deleteToken(messaging); } catch (e) { console.warn('deleteToken failed', e); }
+      }
+      currentFcmToken = null;
+      console.log('📱 [通知] プッシュ通知が無効化されました (トークン削除済)');
+    } catch (e) {
+      console.error('Failed to disable push:', e);
+    }
+  }
+}
+
+// =========================================================================
+// Sidebar Resizing Feature - ★改善版に置き換え
+// =========================================================================
+function initializeResizer() {
+  // --- Left Sidebar ---
+  const sidebar = document.getElementById("sidebar");
+  const resizer = document.getElementById("resizer");
+  const toggleLeftBtn = document.getElementById("toggleLeftSidebarBtn");
+  const LEFT_WIDTH_KEY = "chatAppSidebarWidth";
+  const LEFT_COLLAPSED_KEY = "chatAppSidebarCollapsed";
+
+  const savedLeftWidth = localStorage.getItem(LEFT_WIDTH_KEY);
+  if (savedLeftWidth && sidebar) {
+    sidebar.style.width = savedLeftWidth;
+  }
+
+  const isLeftCollapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === "true";
+  if (isLeftCollapsed && window.innerWidth >= 768 && sidebar) {
+    sidebar.classList.add("hidden");
+    sidebar.classList.remove("md:flex");
+  }
+
+  let isResizingLeft = false;
+  if (resizer) {
+    resizer.addEventListener("mousedown", (e) => {
+      isResizingLeft = true;
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", handleLeftMouseMove);
+      document.addEventListener("mouseup", handleLeftMouseUp);
+    });
+  }
+
+  function handleLeftMouseMove(e) {
+    if (isResizingLeft && sidebar) {
+      const maxAllowed = Math.min(600, window.innerWidth - 120);
+      const newWidth = Math.max(180, Math.min(maxAllowed, e.clientX));
+      sidebar.style.width = `${newWidth}px`;
+    }
+  }
+
+  function handleLeftMouseUp() {
+    isResizingLeft = false;
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", handleLeftMouseMove);
+    document.removeEventListener("mouseup", handleLeftMouseUp);
+    if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+  }
+
+  if (toggleLeftBtn && sidebar) {
+    toggleLeftBtn.addEventListener("click", () => {
+      const isHidden = sidebar.classList.contains("hidden") || sidebar.style.display === "none";
+      if (isHidden) {
+        sidebar.classList.remove("hidden");
+        sidebar.classList.add("md:flex");
+        localStorage.setItem(LEFT_COLLAPSED_KEY, "false");
+      } else {
+        sidebar.classList.add("hidden");
+        sidebar.classList.remove("md:flex");
+        localStorage.setItem(LEFT_COLLAPSED_KEY, "true");
+      }
+    });
+  }
+
+  // --- Right Sidebar (Members) ---
+  const membersSidebar = document.getElementById("membersSidebar");
+  const resizerRight = document.getElementById("resizerRight");
+  const toggleMembersBtn = document.getElementById("toggleMembersSidebarBtn");
+  const RIGHT_WIDTH_KEY = "chatAppMembersWidth";
+  const RIGHT_COLLAPSED_KEY = "chatAppMembersCollapsed";
+
+  const savedRightWidth = localStorage.getItem(RIGHT_WIDTH_KEY);
+  if (savedRightWidth && membersSidebar) membersSidebar.style.width = savedRightWidth;
+
+  const isRightCollapsed = localStorage.getItem(RIGHT_COLLAPSED_KEY) === "true";
+  if (isRightCollapsed && window.innerWidth >= 768 && membersSidebar) {
+    membersSidebar.style.setProperty("display", "none", "important");
+    membersSidebar.classList.add("hidden");
+    membersSidebar.classList.remove("md:flex");
+  }
+
+  let isResizingRight = false;
+  if (resizerRight) {
+    resizerRight.addEventListener("mousedown", (e) => {
+      isResizingRight = true;
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", handleRightMouseMove);
+      document.addEventListener("mouseup", handleRightMouseUp);
+    });
+  }
+
+  function handleRightMouseMove(e) {
+    if (isResizingRight && membersSidebar) {
+      const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
+      membersSidebar.style.width = `${newWidth}px`;
+    }
+  }
+
+  function handleRightMouseUp() {
+    isResizingRight = false;
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", handleRightMouseMove);
+    document.removeEventListener("mouseup", handleRightMouseUp);
+    if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+  }
+
+  if (toggleMembersBtn && membersSidebar) {
+    toggleMembersBtn.addEventListener("click", () => {
+      const isHidden = membersSidebar.style.display === "none" || membersSidebar.classList.contains("hidden");
+      if (isHidden) {
+        membersSidebar.style.setProperty("display", "", "important");
+        membersSidebar.classList.remove("hidden");
+        membersSidebar.classList.add("md:flex");
+        localStorage.setItem(RIGHT_COLLAPSED_KEY, "false");
+      } else {
+        membersSidebar.style.setProperty("display", "none", "important");
+        membersSidebar.classList.add("hidden");
+        membersSidebar.classList.remove("md:flex");
+        localStorage.setItem(RIGHT_COLLAPSED_KEY, "true");
+      }
+    });
+  }
+}
+
 // =========================================================================
 // PWA & Settings Management
 // =========================================================================
@@ -11626,463 +11972,161 @@ function initSettings() {
   if (closeBehaviorSelect) {
     const saved = localStorage.getItem('covo_close_behavior') || 'minimize';
     closeBehaviorSelect.value = saved;
+    const labelEl = document.getElementById('closeBehaviorSelectedLabel');
+    if (labelEl) {
+      const opt = document.querySelector(`.covo-select-option[data-value="${saved}"]`);
+      if (opt) {
+        document.querySelectorAll('#closeBehaviorDropdown .covo-select-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        labelEl.textContent = opt.textContent;
+      }
+    }
     if (window.__TAURI__?.core) {
       window.__TAURI__.core.invoke('set_close_behavior', { behavior: saved }).catch(console.error);
     }
-
-    closeBehaviorSelect.addEventListener('change', (e) => {
-      const val = e.target.value;
-      localStorage.setItem('covo_close_behavior', val);
-      if (window.__TAURI__?.core) {
-        window.__TAURI__.core.invoke('set_close_behavior', { behavior: val }).catch(console.error);
-      }
-    });
   }
 }
 
+// ===== テーマ切り替えロジック (Light, Dark Navy, Discord Dark) =====
+window.setAppTheme = function (theme) {
+  document.body.classList.remove('dark-server-theme', 'discord-dark-theme');
+  localStorage.setItem('covo_app_theme', theme);
 
-
-// =========================================================================
-// Application Startup
-// =========================================================================
-window.onload = async () => {
-  loadingOverlay.classList.remove('hidden');
-
-  initSettings();
-
-  // 保存済みショートカットキーを Tauri に適用
-  if (isTauri && window.__TAURI__?.core?.invoke) {
-    const savedKey = localStorage.getItem('simplechat_shortcut_key') || 'S';
-    window.__TAURI__.core.invoke('update_shortcut_key', { key: savedKey }).catch(console.error);
+  if (theme === 'dark-navy') {
+    document.body.classList.add('dark-server-theme');
+  } else if (theme === 'discord-dark') {
+    document.body.classList.add('discord-dark-theme');
   }
-
-  // Tauri 通知からのルーム遷移イベントリッスン
-  if (isTauri && window.__TAURI__?.event?.listen) {
-    window.__TAURI__.event.listen('open-room', (event) => {
-      const rId = event.payload?.roomId;
-      if (rId) {
-        // Focus main window
-        if (window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          window.__TAURI__.window.getCurrentWindow().unminimize();
-          window.__TAURI__.window.getCurrentWindow().show();
-          window.__TAURI__.window.getCurrentWindow().setFocus();
-        } else if (window.__TAURI__.webviewWindow && window.__TAURI__.webviewWindow.getCurrentWebviewWindow) {
-          window.__TAURI__.webviewWindow.getCurrentWebviewWindow().unminimize();
-          window.__TAURI__.webviewWindow.getCurrentWebviewWindow().show();
-          window.__TAURI__.webviewWindow.getCurrentWebviewWindow().setFocus();
-        } else if (window.__TAURI__.window && window.__TAURI__.window.getCurrent) {
-          window.__TAURI__.window.getCurrent().unminimize();
-          window.__TAURI__.window.getCurrent().show();
-          window.__TAURI__.window.getCurrent().setFocus();
-        }
-        if (typeof goToRoom === 'function') goToRoom(rId);
-        else { const roomItem = document.getElementById(`room-item-${rId}`); if (roomItem) roomItem.click(); }
-      }
-    });
-    window.__TAURI__.event.listen('notification-clicked', (event) => {
-      console.log("[DEBUG] notification-clicked fired", event);
-      const rId = event.payload;
-
-      if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
-        console.log("[DEBUG] invoking show_main_window");
-        window.__TAURI__.core.invoke('show_main_window').then(() => {
-          console.log("[DEBUG] show_main_window invoke succeeded");
-        }).catch((err) => {
-          console.error("[DEBUG] show_main_window invoke error:", err);
-        });
-      }
-
-      if (rId && typeof rId === 'string') {
-        console.log("[DEBUG] jumping to room", rId);
-        if (typeof goToRoom === 'function') {
-          goToRoom(rId);
-        } else {
-          const roomItem = document.getElementById(`room-item-${rId}`);
-          if (roomItem) roomItem.click();
-        }
-      } else {
-        console.warn("[DEBUG] payload did not contain actionTypeId", payload);
-      }
-    });
-  }
-
-  // Tauri版: まずアップデートチェック（ブロッキング）
-  const hasUpdate = await blockingUpdateCheck();
-  if (hasUpdate) {
-    // アップデートがある場合、オーバーレイを表示したまま
-    // Firebase初期化はしない（ユーザーにアプデを促す）
-    loadingOverlay.classList.add('hidden');
-    return;
-  }
-
-  // アップデートがない場合、通常起動
-  initializeFirebase();
-  if ('Notification' in window) Notification.requestPermission();
-  initializeResizer();
-
-  const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') === 'true';
-  setDiscordUIMode(isDiscordMode);
+  updateThemeSelectorUI(theme);
 };
 
-// === Discord風UIモード制御JSロジック ===
-window.setDiscordUIMode = function (enabled) {
-  localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
-  document.body.classList.toggle('discord-ui-mode', enabled);
-  const pcToggle = document.getElementById('toggleDiscordUI');
-  const mobileToggle = document.getElementById('toggleDiscordUIMobile');
-  if (pcToggle) pcToggle.checked = enabled;
-  if (mobileToggle) mobileToggle.checked = enabled;
+window.updateThemeSelectorUI = function (theme) {
+  const t = theme || localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server_theme') === 'true' ? 'dark-navy' : 'light');
+  const btnLight = document.getElementById('themeBtnLight');
+  const btnNavy = document.getElementById('themeBtnDarkNavy');
+  const btnDiscord = document.getElementById('themeBtnDiscordDark');
 
-  if (enabled) {
-    if (!currentServerId) {
-      document.body.classList.add("discord-home-view");
-      const appCont = document.getElementById("appContainer");
-      if (appCont) appCont.classList.remove("hidden");
-    } else {
-      document.body.classList.remove("discord-home-view");
+  [btnLight, btnNavy, btnDiscord].forEach(b => {
+    if (b) {
+      b.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
     }
-    renderDiscordServerNav();
-  } else {
-    document.body.classList.remove("discord-home-view");
-    if (!currentServerId) {
-      const appCont = document.getElementById("appContainer");
-      if (appCont) appCont.classList.add("hidden");
-      const sls = document.getElementById("serverListScreen");
-      if (sls) sls.classList.remove("hidden");
-    }
-  }
-};
-
-window.renderDiscordServerNav = function () {
-  const navList = document.getElementById("discordServerNavList");
-  const homeGrid = document.getElementById("discordHomeServerGrid");
-  const homeBtn = document.querySelector(".discord-home-btn");
-  if (!navList) return;
-  navList.innerHTML = "";
-  if (homeGrid) homeGrid.innerHTML = "";
-
-  if (!currentServerId) {
-    if (homeBtn) homeBtn.classList.add("active");
-  } else {
-    if (homeBtn) homeBtn.classList.remove("active");
-  }
-
-  if (typeof allServersCache !== 'undefined' && allServersCache) {
-    const servers = [...allServersCache];
-    // 順序を一定に固定するため、過去のアクセス順ソート処理を完全排除
-
-    // 未読情報の取得
-    let globalItems = [];
-    try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch (e) { }
-
-    const joinedServers = servers.filter(server => {
-      if (!isAdmin) return (server.joinedUsers || []).includes(userId);
-      return (server.joinedUsers || []).includes(userId);
-    });
-    const unjoinedServers = isAdmin ? servers.filter(server => !(server.joinedUsers || []).includes(userId)) : [];
-
-    const renderServer = (server) => {
-      const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
-      const hasUnread = globalItems.some(it => it.serverId === server.id);
-      const isActive = currentServerId === server.id;
-
-      // 1. 左側サーバーナビゲーションへの追加
-      const item = document.createElement("div");
-      item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
-      item.title = server.name || server.id;
-
-      const pill = document.createElement("div");
-      pill.className = "discord-server-pill";
-      item.appendChild(pill);
-
-      const icon = document.createElement("div");
-      icon.className = "discord-server-icon";
-      if (server.iconUrl) {
-        icon.className += " custom-bg";
-        icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-      } else {
-        icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-      }
-      item.appendChild(icon);
-
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (currentServerId !== server.id) {
-          enterServer(server.id, server);
-        }
-      });
-      navList.appendChild(item);
-
-      // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
-      if (homeGrid) {
-        const card = document.createElement("div");
-        card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
-
-        const cardIcon = document.createElement("div");
-        cardIcon.className = "discord-card-icon w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden transition-all duration-300 group-hover:rounded-2xl";
-        if (server.iconUrl) {
-          cardIcon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-        } else {
-          cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-        }
-        card.appendChild(cardIcon);
-
-        const cardInfo = document.createElement("div");
-        cardInfo.className = "flex-1 min-w-0";
-        cardInfo.innerHTML = `
-              <div class="font-bold text-base truncate mb-1">${escapeHtml(server.name || server.id)}</div>
-              <div class="text-xs text-gray-400 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                <span>${(server.joinedUsers || []).length} 名のメンバー</span>
-              </div>
-            `;
-        card.appendChild(cardInfo);
-
-        const enterBtn = document.createElement("button");
-        enterBtn.className = "discord-card-btn font-bold px-5 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
-        enterBtn.textContent = "開く";
-        card.appendChild(enterBtn);
-
-        card.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (currentServerId !== server.id) {
-            enterServer(server.id, server);
-          }
-        });
-        homeGrid.appendChild(card);
-      }
-    };
-
-    joinedServers.forEach(server => renderServer(server));
-
-    if (isAdmin && unjoinedServers.length > 0) {
-      // nav separator
-      const navSep = document.createElement("div");
-      navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
-      navList.appendChild(navSep);
-
-      // home grid separator
-      if (homeGrid) {
-        const homeSep = document.createElement("div");
-        homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
-        homeSep.innerHTML = `<span class="bg-gray-50 dark:bg-gray-900 px-4 text-xs font-bold text-gray-400 -mt-2">未参加のサーバー</span>`;
-        homeGrid.appendChild(homeSep);
-      }
-      unjoinedServers.forEach(server => renderServer(server));
-    }
-
-    if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
-      homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
-    }
-  }
-};
-
-// 既存のrenderServerList実行時に連動させるためのフックを強化
-const _origRenderServerList = window.renderServerList;
-window.renderServerList = function () {
-  if (_origRenderServerList) _origRenderServerList.apply(this, arguments);
-  if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
-};
-
-// サーバーアイコン変更用JS (Moved from global scope)
-// サーバーアイコン変更用JSロジック
-const serverIconUploadInput = document.getElementById("serverIconUploadInput");
-const newServerIconUploadInput = document.getElementById("newServerIconUploadInput");
-const serverIconCropModal = document.getElementById("serverIconCropModal");
-const serverIconCropCanvas = document.getElementById("serverIconCropCanvas");
-const serverIconZoomSlider = document.getElementById("serverIconZoomSlider");
-let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
-let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
-let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
-let isNewServerIconCrop = false;
-window.pendingNewServerIconBlob = null;
-const SICON_SIZE = 240;
-
-if (document.getElementById("serverIconSettingsWrapper") && serverIconUploadInput) {
-  document.getElementById("serverIconSettingsWrapper").addEventListener("click", () => {
-    if (document.getElementById("serverIconSettingsWrapper").dataset.canEdit === "false") return;
-    isNewServerIconCrop = false;
-    serverIconUploadInput.click();
   });
-}
-window.openNewServerIconPicker = function () {
-  const newFileInput = document.getElementById("newServerIconUploadInput");
-  if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
+
+  if (t === 'discord-dark' && btnDiscord) {
+    btnDiscord.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+  } else if (t === 'dark-navy' && btnNavy) {
+    btnNavy.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+  } else if (btnLight) {
+    btnLight.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+  }
 };
 
-function handleSIconFileChange(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const objectUrl = URL.createObjectURL(file);
-  sIconImage = new Image();
-  sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
-  sIconImage.onload = () => {
-    URL.revokeObjectURL(objectUrl);
-    const scaleX = SICON_SIZE / sIconImage.naturalWidth;
-    const scaleY = SICON_SIZE / sIconImage.naturalHeight;
-    sIconMinScale = Math.max(scaleX, scaleY);
-    sIconScale = sIconMinScale;
-    serverIconZoomSlider.min = sIconMinScale;
-    serverIconZoomSlider.max = sIconMinScale * 4;
-    serverIconZoomSlider.value = sIconScale;
-    sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
-    sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
-    document.getElementById('serverIconUploadProgress').classList.add('hidden');
-    serverIconCropModal.classList.remove('hidden');
-    drawSIconPreview();
-  };
-  e.target.value = '';
-  if (sIconImage) sIconImage.src = objectUrl;
-}
+// 初期テーマの復元
+(function initTheme() {
+  const savedTheme = localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server_theme') === 'true' ? 'dark-navy' : 'light');
+  window.setAppTheme(savedTheme);
+})();
 
-if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
-if (newServerIconUploadInput) newServerIconUploadInput.addEventListener("change", handleSIconFileChange);
+// ===== 独自カスタムドロップダウン制御 =====
+window.toggleCustomDropdown = function (id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isOpen = el.classList.contains('open');
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+  if (!isOpen) {
+    el.classList.add('open');
+  }
+};
 
-function clampSIconOffset() {
-  if (!sIconImage) return;
-  const maxW = sIconImage.naturalWidth * sIconScale;
-  const maxH = sIconImage.naturalHeight * sIconScale;
-  if (maxW <= SICON_SIZE) sIconOffsetX = (SICON_SIZE - maxW) / 2;
-  else sIconOffsetX = Math.min(0, Math.max(SICON_SIZE - maxW, sIconOffsetX));
-  if (maxH <= SICON_SIZE) sIconOffsetY = (SICON_SIZE - maxH) / 2;
-  else sIconOffsetY = Math.min(0, Math.max(SICON_SIZE - maxH, sIconOffsetY));
-}
+window.selectCloseBehaviorOption = function (val, label) {
+  const hiddenInput = document.getElementById('closeBehaviorSelect');
+  const labelEl = document.getElementById('closeBehaviorSelectedLabel');
+  if (hiddenInput) hiddenInput.value = val;
+  if (labelEl) labelEl.textContent = label;
 
-function drawSIconPreview() {
-  if (!sIconImage) return;
-  const ctx = serverIconCropCanvas.getContext('2d');
-  ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
-  ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
-}
+  document.querySelectorAll('#closeBehaviorDropdown .covo-select-option').forEach(o => {
+    if (o.getAttribute('data-value') === val) {
+      o.classList.add('selected');
+    } else {
+      o.classList.remove('selected');
+    }
+  });
 
-serverIconCropCanvas.addEventListener('mousedown', (e) => {
-  e.preventDefault(); sIconIsDragging = true;
-  sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
-  sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
-  serverIconCropCanvas.style.cursor = 'grabbing';
-});
-document.addEventListener('mousemove', (e) => {
-  if (!sIconIsDragging || !sIconImage) return;
-  sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
-  sIconOffsetY = sIconDragStartOffsetY + (e.clientY - sIconDragStartY);
-  clampSIconOffset(); drawSIconPreview();
-});
-document.addEventListener('mouseup', () => {
-  if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+  localStorage.setItem('covo_close_behavior', val);
+  if (window.__TAURI__?.core) {
+    window.__TAURI__.core.invoke('set_close_behavior', { behavior: val }).catch(console.error);
+  }
+
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+};
+
+// ドロップダウン外クリックで閉じる
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.covo-custom-select')) {
+    document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+  }
 });
 
-// タッチドラッグ対応（スマホ・タブレット）
-serverIconCropCanvas.addEventListener('touchstart', (e) => {
-  e.preventDefault(); // スクロール防止
-  if (e.touches.length !== 1) return;
-  sIconIsDragging = true;
-  sIconDragStartX = e.touches[0].clientX;
-  sIconDragStartY = e.touches[0].clientY;
-  sIconDragStartOffsetX = sIconOffsetX;
-  sIconDragStartOffsetY = sIconOffsetY;
-}, { passive: false });
-document.addEventListener('touchmove', (e) => {
-  if (!sIconIsDragging || !sIconImage) return;
-  if (e.touches.length !== 1) return;
-  e.preventDefault(); // スクロール防止
-  sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
-  sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
-  clampSIconOffset(); drawSIconPreview();
-}, { passive: false });
-document.addEventListener('touchend', () => {
-  if (sIconIsDragging) { sIconIsDragging = false; }
-}, { passive: true });
-
-serverIconZoomSlider.addEventListener('input', () => {
-  if (!sIconImage) return;
-  const newScale = parseFloat(serverIconZoomSlider.value);
-  const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
-  sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
-  sIconOffsetY = cy - (cy - sIconOffsetY) * (newScale / sIconScale);
-  sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
-});
-
-document.getElementById('serverIconCropCancel').addEventListener('click', () => {
-  serverIconCropModal.classList.add('hidden'); sIconImage = null;
-  if (serverIconUploadInput) serverIconUploadInput.value = '';
-  const newFileInput = document.getElementById("newServerIconUploadInput");
-  if (newFileInput) newFileInput.value = '';
-});
-
-document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
-  if (!sIconImage) return;
-  if (!isNewServerIconCrop && !currentServerId) return;
-
-  // 元画像サイズを考慮した最適な出力解像度（最大1024px）
-  const maxOutputSize = 1024;
-  const OUTPUT = Math.min(maxOutputSize, Math.max(
-    sIconImage.naturalWidth * sIconScale,
-    sIconImage.naturalHeight * sIconScale,
-    640 // 最低限640px
-  ));
-  const offscreen = document.createElement('canvas');
-  offscreen.width = OUTPUT; offscreen.height = OUTPUT;
-  const offCtx = offscreen.getContext('2d');
-  offCtx.imageSmoothingEnabled = true; offCtx.imageSmoothingQuality = 'high';
-  const sf = OUTPUT / SICON_SIZE;
-  offCtx.drawImage(sIconImage, sIconOffsetX * sf, sIconOffsetY * sf, sIconImage.naturalWidth * sIconScale * sf, sIconImage.naturalHeight * sIconScale * sf);
-
-  // WebP対応確認（非対応の場合はJPEGにフォールバック）
-  const supportsWebp = offscreen.toDataURL('image/webp').startsWith('data:image/webp');
-  const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
-  const quality = 0.95;
-  const ext = supportsWebp ? 'webp' : 'jpg';
-
-  offscreen.toBlob(async (blob) => {
-    if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
-
-    if (isNewServerIconCrop) {
-      window.pendingNewServerIconBlob = blob;
-      const previewContent = document.getElementById("newServerIconPreviewContent");
-      const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
-      if (previewContent && previewWrapper) {
-        const tempUrl = URL.createObjectURL(blob);
-        previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
-        previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
-      }
-      serverIconCropModal.classList.add('hidden');
-      sIconImage = null;
-      alertMessage("サーバーアイコンのプレビューを設定しました", "success");
+// ===== グローバル Esc キーでモーダルを閉じる =====
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    // ドロップダウンが開いていればまず閉じる
+    const openSelects = document.querySelectorAll('.covo-custom-select.open');
+    if (openSelects.length > 0) {
+      openSelects.forEach(s => s.classList.remove('open'));
       return;
     }
-
-    const progressDiv = document.getElementById('serverIconUploadProgress');
-    const progressFill = document.getElementById('serverIconUploadProgressFill');
-    const progressText = document.getElementById('serverIconUploadProgressText');
-    const confirmBtn = document.getElementById('serverIconCropConfirm');
-    const cancelBtn = document.getElementById('serverIconCropCancel');
-    progressDiv.classList.remove('hidden'); progressFill.style.width = '0%';
-    confirmBtn.disabled = true; cancelBtn.disabled = true;
-    try {
-      const fileUrl = await uploadToExternalService(
-        new File([blob], `server_icon.${ext}`, { type: mimeType }),
-        (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
-        'simplechat/servericons'
-      );
-
-      await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
-
-      if (currentServerData) currentServerData.iconUrl = fileUrl;
-      if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
-        window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
+    const openModals = document.querySelectorAll('.modal:not(.hidden), [id$="Modal"]:not(.hidden), #avatarLightbox[style*="flex"], #imageLightbox[style*="flex"]');
+    if (openModals.length > 0) {
+      const topModal = openModals[openModals.length - 1];
+      if (topModal.id === 'avatarLightbox' || topModal.id === 'imageLightbox') {
+        topModal.style.display = 'none';
+      } else {
+        topModal.classList.add('hidden');
+        if (topModal.style.display === 'flex') topModal.style.display = 'none';
       }
-      const iconPreview = document.getElementById("serverIconSettingsPreview");
-      if (iconPreview) {
-        iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
-        iconPreview.style.backgroundColor = "transparent";
-      }
-      if (typeof renderServerList === 'function') renderServerList();
-      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
-      serverIconCropModal.classList.add('hidden');
-      sIconImage = null;
-      alertMessage("サーバーアイコンを更新しました", "success");
-    } catch (err) {
-      console.error(err); alertMessage("アップロードに失敗しました: " + err.message, "error");
-    } finally { confirmBtn.disabled = false; cancelBtn.disabled = false; }
-  }, mimeType, quality);
+    }
+  }
 });
+
+// =========================================================================
+// アプリ起動エントリーポイント (Boot Sequence)
+// =========================================================================
+(async function bootstrapApp() {
+  try {
+    // 1. Tauri環境の場合: アップデートチェック
+    if (isTauri && typeof blockingUpdateCheck === 'function') {
+      const hasUpdate = await blockingUpdateCheck();
+      if (hasUpdate) {
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+        return;
+      }
+    }
+
+    // 2. Firebase初期化
+    if (typeof initializeFirebase === 'function') {
+      initializeFirebase();
+    }
+
+    // 3. 通知の許可リクエスト
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    // 4. リサイザー初期化
+    if (typeof initializeResizer === 'function') {
+      initializeResizer();
+    }
+
+    // 5. Discord風UIモードの初期適用
+    const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+    if (typeof setDiscordUIMode === 'function') {
+      setDiscordUIMode(isDiscordMode);
+    }
+  } catch (err) {
+    console.error('App bootstrap error:', err);
+    if (typeof showEmergencyRecoveryPanel === 'function') {
+      showEmergencyRecoveryPanel(err.message || '初期化起動エラー', err);
+    }
+  }
+})();

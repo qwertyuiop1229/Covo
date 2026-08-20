@@ -1,4 +1,4 @@
-﻿# Covo Deploy Script
+# Covo Deploy Script
 # Usage: .\deploy.ps1       (interactive confirm)
 #        .\deploy.ps1 -y    (skip confirm)
 #        npm run deploy      (deploy update)
@@ -60,7 +60,7 @@ Write-Host ''
 
 # [0/5] Tailwind CSS
 Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/styles.css --minify
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
 
 # [1/5] version.json + tauri.conf.json
 $vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
@@ -122,7 +122,7 @@ Write-Host ''
 
 $REPO = 'qwertyuiop1229/Covo'
 
-# ターミナル未再起動でもレジストリから直接 GITHUB_TOKEN を取得する強力な仕組み！
+# Retrieve GITHUB_TOKEN directly from environment or registry
 $GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
 if (-not $GITHUB_TOKEN_ENV) {
     try {
@@ -202,10 +202,10 @@ for ($i = 1; $i -le 15; $i++) {
 
 if ($global:RateLimitHit -and -not $run) {
     Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] 匿名アクセスの取得上限(1時間60回)に到達しました。' -ForegroundColor Yellow
-    Write-Host '   デプロイ実作業 (git push & Firebase) は【正常に完了】しています！' -ForegroundColor Green
-    Write-Host '   進捗状況は以下の Actions 画面からブラウザでご確認ください：' -ForegroundColor Yellow
-    Write-Host ('   👉 https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
     Write-Host ''
     exit 0
 }
@@ -213,9 +213,9 @@ if ($global:RateLimitHit -and -not $run) {
 if (-not $run) {
     Write-Host ''
     Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push & Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
     Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   👉 https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
     exit 0
 }
 
@@ -223,8 +223,9 @@ $runId  = $run.id
 $runUrl = $run.html_url
 Write-Host ''
 Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   👉 ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
 Write-Host ''
+
 
 $StepDefs = @(
     [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
@@ -239,7 +240,7 @@ $totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
 
 $Spinners   = @('-', '\', '|', '/')
 $pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "認証済み (上限5000回/時)" } else { "匿名 (上限60回/時 | API節約モード)" }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
 
 Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
 Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
@@ -267,9 +268,9 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
         $newJobs = @(Get-RunJobs -RunId $runId)
         if ($global:RateLimitHit) {
             if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit (1時間60回) に到達したためターミナル更新を停止します。'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      裏側のデプロイ・ビルド実作業は【正常に進行中】です！'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      👉 ブラウザ確認用URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
             Write-Host (' ' * 80)
             Write-Host (' ' * 80)
             Write-Host (' ' * 80)
@@ -330,7 +331,7 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
             } catch {}
         }
 
-        $stepLogInfo = 'ログ準備中...'
+        $stepLogInfo = 'Preparing logs...'
         $stepElapsedStr = '00:00'
 
         if ($currentStep -and $currentStep.started_at) {
@@ -355,7 +356,7 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
                 $curLine = [int]([Math]::Round($expLines * $progRatio))
                 if ($curLine -lt 1) { $curLine = 1 }
                 if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('ログ: ' + $curLine + '/' + $expLines + '行')
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
             } catch {}
         }
 
@@ -371,10 +372,10 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
             $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
         }
 
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (総経過時間: ' + $elapsedJobStr + ')').PadRight(80)
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
         $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (ステップ経過時間: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  👉 ' + $jobUrl).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
         $l5 = (' ' * 80)
         $l6 = (' ' * 80)
 
