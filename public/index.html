@@ -56,8 +56,8 @@
 </head>
 
 <body>
-  <!-- 初期起動スプラッシュ画面（ログイン済み時のログイン画面チラつきを完全防止） -->
-  <div id="appLoadingSplash" class="fixed inset-0 bg-[#f2f3f5] dark:bg-[#1e1f22] flex flex-col items-center justify-center z-[99999] transition-opacity duration-300">
+  <!-- 初期起動スプラッシュ画面 -->
+  <div id="appLoadingSplash" class="fixed inset-0 bg-[#f2f3f5] dark:bg-[#1e1f22] flex flex-col items-center justify-center z-[99999] transition-opacity duration-300 pointer-events-auto">
     <div class="w-16 h-16 bg-indigo-500/10 text-indigo-500 rounded-2xl flex items-center justify-center text-3xl mb-4 animate-pulse border border-indigo-500/20 shadow-inner">
       <i class="fas fa-comments"></i>
     </div>
@@ -68,6 +68,18 @@
   </div>
 
   <script>
+    // スプラッシュ解除ヘルパー（確実にスプラッシュを消す）
+    window.dismissLoadingSplash = function() {
+      const splash = document.getElementById('appLoadingSplash');
+      if (splash) {
+        splash.style.opacity = '0';
+        splash.style.pointerEvents = 'none';
+        setTimeout(function() {
+          if (splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 350);
+      }
+    };
+
     // iPad・タブレットの全体スクロールを固定
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
       document.documentElement.style.setProperty('overflow', 'hidden', 'important');
@@ -122,10 +134,17 @@
     }
     updateMetaThemeColor();
 
-    const themeObserver = new MutationObserver(() => {
+    // 認証状態の変化や画面表示を監視してスプラッシュを自動解除
+    const themeObserver = new MutationObserver(function() {
       updateMetaThemeColor();
+      if (document.body.classList.contains('logged-in') || document.body.classList.contains('auth-ready') || window.__app_fully_loaded__) {
+        window.dismissLoadingSplash();
+      }
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: false });
+
+    // 通信遅延等があっても3秒後には必ずスプラッシュを解除する安全装置
+    setTimeout(window.dismissLoadingSplash, 3000);
 
     // iPhoneでの予期せぬズーム（ピンチ＆ダブルタップ）を防止
     document.addEventListener('touchmove', function(event) {
@@ -152,6 +171,7 @@
     window.__app_fully_loaded__ = false;
 
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
+      window.dismissLoadingSplash();
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
       panel.classList.remove('hidden');
