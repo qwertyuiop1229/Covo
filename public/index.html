@@ -55,7 +55,7 @@
   </script>
 </head>
 
-<body>
+<body class="auth-unauthenticated">
   <script>
     // iPadのみ全体スクロールを完全に固定する
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
@@ -186,6 +186,13 @@
     // =========================================================================
     window.__app_fully_loaded__ = false;
 
+    window.closeEmergencyPanel = function() {
+      const panel = document.getElementById('emergencyRecoveryOverlay');
+      if (!panel) return;
+      panel.classList.add('hidden');
+      panel.style.setProperty('display', 'none', 'important');
+    };
+
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
@@ -234,13 +241,14 @@
       }
     });
 
-    // 15秒間のウォッチドッグタイマー：タイムアウト時に強制的にリカバリーパネルを展開
+    // PWAでは初回ロードが遅いため30秒のウォッチドッグタイマー
     setTimeout(function() {
       if (!window.__app_fully_loaded__) {
-        console.warn('[Watchdog Timer] 15秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
+        console.warn('[Watchdog Timer] 30秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
         showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（フリーズまたは通信遮断の可能性）', null);
       }
-    }, 15000);
+    }, 30000);
+  
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
@@ -308,7 +316,7 @@
             <p class="text-xs text-gray-400">アプリ起動処理中に問題が発生・またはタイムアウトしました</p>
           </div>
         </div>
-        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="w-9 h-9 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition">
+        <button onclick="closeEmergencyPanel()" class="w-9 h-9 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition">
           <i class="fas fa-times"></i>
         </button>
       </div>
@@ -344,7 +352,7 @@
         <button onclick="if(window.caches){caches.keys().then(k=>k.forEach(c=>caches.delete(c)))};if(navigator.serviceWorker){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()))};window.location.reload(true)" class="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition flex items-center gap-2">
           <i class="fas fa-trash-alt"></i>キャッシュ＆ストレージをリセットして再起動
         </button>
-        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
+        <button onclick="closeEmergencyPanel()" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
           閉じて続行を試みる
         </button>
       </div>

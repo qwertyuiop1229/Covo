@@ -254,8 +254,17 @@
       #messageInputInner:focus-within {
         border: 0 none !important;
         background: #f3f4f6 !important;
+        border-radius: 12px !important;
         min-height: 42px;
         align-items: center;
+      }
+      /* mobile: メッセージ入力textareaの角丸・余白を明示的にリセット（modal内スタイルの誤適用防止） */
+      textarea#messageInput {
+        border-radius: 0 !important;
+        padding: 8px 10px 8px 2px !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
       }
       body.dark-server-theme #messageInputInner,
       body.dark-server-theme #messageInputInner:focus-within {

@@ -506,7 +506,8 @@
       }
 
       /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
-      .modal-overlay:not(.hidden) {
+      /* 注: emergencyRecoveryOverlay / pastVersionsModal / forceOverrideConfirmModal はフルスクリーン適用除外 */
+      .modal-overlay:not(.hidden):not(#emergencyRecoveryOverlay):not(#pastVersionsModal):not(#forceOverrideConfirmModal) {
         padding: 0 !important;
         margin: 0 !important;
         display: flex !important;
@@ -519,7 +520,7 @@
         height: 100% !important;
       }
       /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
-      .modal-overlay:not(.hidden) > div:not(.modal-box) {
+      .modal-overlay:not(.hidden):not(#emergencyRecoveryOverlay):not(#pastVersionsModal):not(#forceOverrideConfirmModal) > div:not(.modal-box) {
         padding: 0 !important;
         margin: 0 !important;
         display: flex !important;
