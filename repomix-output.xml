@@ -16249,546 +16249,6 @@ if (typeof window !== 'undefined') {
 </html>
 </file>
 
-<file path="public/css/modules/animations.css">
-/* === サーバーリスト画面 === */
-    #serverListScreen {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #f3f4f6;
-      overflow-y: auto;
-    }
-
-    #serverListScreen.hidden {
-      display: none !important;
-    }
-
-    /* === アニメーション定義 === */
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    @keyframes slideUpFade {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes scaleInFade {
-      from {
-        opacity: 0;
-        transform: scale(0.96) translateY(6px);
-      }
-
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-
-    @keyframes cardIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .anim-fade-in {
-      animation: fadeIn 0.18s ease both;
-    }
-
-    .anim-slide-up {
-      animation: slideUpFade 0.22s ease both;
-    }
-
-    .anim-scale-in {
-      animation: scaleInFade 0.22s ease both;
-    }
-
-    .anim-card {
-      animation: cardIn 0.28s ease both;
-      opacity: 0;
-    }
-
-    /* === サーバーリスト画面 === */
-    .server-list-header {
-      background: #1f2937;
-      color: white;
-      padding: 0.875rem 1.25rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-
-    .server-list-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-    }
-
-    .server-list-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .server-list-actions button:not(.server-list-user-btn) {
-      padding: 7px 13px;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    #joinServerBtn {
-      background: rgba(255, 255, 255, 0.12);
-      color: white;
-    }
-
-    #joinServerBtn:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-
-    #createServerBtn {
-      background: #f3f4f6;
-      color: #1f2937;
-    }
-
-    #createServerBtn:hover {
-      background: #e5e7eb;
-    }
-
-    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
-    .server-list-user-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s, transform 0.12s;
-      flex-shrink: 0;
-    }
-
-    .server-list-user-btn:hover {
-      background: rgba(255, 255, 255, 0.28);
-      transform: scale(1.07);
-    }
-
-    .server-list-user-btn:active {
-      transform: scale(0.95);
-    }
-
-    .server-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 14px;
-      padding: 1.25rem 1.25rem 0 1.25rem;
-    }
-
-    .server-section-label {
-      grid-column: 1 / -1;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #9ca3af;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 0 2px 2px;
-      border-bottom: 1px solid #f3f4f6;
-      margin-bottom: 2px;
-      margin-top: 4px;
-    }
-
-    .server-section-label:first-child {
-      margin-top: 0;
-    }
-
-    .admin-join-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: white;
-      border: 1px solid #f3f4f6;
-      cursor: pointer;
-      width: 100%;
-      text-align: left;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .admin-join-item:hover {
-      background: #f9fafb;
-      border-color: #e5e7eb;
-    }
-
-    .admin-join-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      flex-shrink: 0;
-      font-size: 0.85rem;
-    }
-
-    .admin-join-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #111827;
-    }
-
-    .admin-join-meta {
-      font-size: 0.72rem;
-      color: #9ca3af;
-      margin-top: 1px;
-    }
-
-    .admin-join-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      background: #e0e7ff;
-      color: #3730a3;
-      padding: 3px 9px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-
-    .server-card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 16px;
-      padding: 1.25rem;
-      cursor: pointer;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      position: relative;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-
-    .server-card:hover {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      transform: translateY(-2px);
-      border-color: #cbd5e1;
-    }
-
-    .server-card:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-
-    .server-card-icon {
-      width: 44px;
-      height: 44px;
-      background: #4f46e5;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: white;
-      margin-bottom: 2px;
-      font-weight: 700;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-
-    .server-card-icon img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: inherit;
-    }
-
-    .server-card:hover .server-card-icon {
-      border-radius: 14px;
-      transform: translateY(-1px);
-      background: #4338ca;
-    }
-
-    .server-card-name {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #111827;
-      line-height: 1.2;
-    }
-
-    .server-card-meta {
-      font-size: 0.73rem;
-      color: #6b7280;
-    }
-
-    .server-card-admin-badge {
-      display: inline-block;
-      background: #e5e7eb;
-      color: #374151;
-      font-size: 0.63rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 99px;
-      border: 1px solid #d1d5db;
-    }
-
-    .server-list-empty {
-      text-align: center;
-      padding: 3rem 1.5rem;
-      color: #6b7280;
-      animation: fadeIn 0.3s ease;
-    }
-
-    .server-list-empty i {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      color: #d1d5db;
-    }
-    /* === ルームリストアイテムアニメーション === */
-    @keyframes roomSlideIn {
-      from {
-        opacity: 0;
-        transform: translateX(-8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    .room-list-anim {
-      animation: roomSlideIn 0.2s ease both;
-    }
-
-    /* === メンバーリストアイテムアニメーション === */
-    @keyframes memberFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .member-anim {
-      animation: memberFadeIn 0.18s ease both;
-    }
-    /* === スムーズなアニメーション（UIの触り心地向上） === */
-    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
-      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
-    }
-    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
-      transform: scale(0.96);
-    }
-
-    /* Mobile full-screen pages */
-    #mobileProfileScreen,
-    #mobileNotifScreen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      -webkit-overflow-scrolling: touch;
-      z-index: 100;
-      overflow-y: auto;
-      flex-direction: column;
-    }
-    #mobileProfileScreen.active,
-    #mobileNotifScreen.active {
-      display: flex;
-    }
-
-    .mobile-profile-header {
-      background: #1f2937;
-      padding: 1.25rem;
-      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-    .mobile-profile-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 1.3rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .mobile-profile-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .mobile-profile-name {
-      font-size: 1rem;
-      font-weight: 700;
-      color: white;
-    }
-    .mobile-profile-sub {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-
-    .mobile-settings-section {
-      margin: 1rem;
-    }
-    .mobile-settings-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #6b7280;
-      padding: 0 4px;
-      margin-bottom: 6px;
-    }
-    .mobile-settings-group {
-      background: white;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid #e5e7eb;
-    }
-    .mobile-settings-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 13px 16px;
-      cursor: pointer;
-      transition: background 0.12s;
-      border-bottom: 1px solid #f3f4f6;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-settings-row:last-child {
-      border-bottom: none;
-    }
-    .mobile-settings-row:active {
-      background: #f9fafb;
-    }
-    .mobile-settings-row-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.85rem;
-      flex-shrink: 0;
-    }
-    .mobile-settings-row-text {
-      flex: 1;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: #111827;
-    }
-    .mobile-settings-row-arrow {
-      color: #d1d5db;
-      font-size: 0.8rem;
-    }
-    .mobile-settings-row.danger .mobile-settings-row-text {
-      color: #ef4444;
-    }
-
-    /* Mobile settings slide-in detail */
-    .mobile-settings-detail {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      z-index: 300;
-      flex-direction: column;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mobile-settings-detail.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    @keyframes slideInFromRight {
-      from { transform: translateX(100%); opacity: 0.7; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOutToRight {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0.7; }
-    }
-    .mobile-settings-detail.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-detail-header {
-      background: #1f2937;
-      color: white;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0.875rem 1rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      flex-shrink: 0;
-    }
-    .mobile-detail-back {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
-    .mobile-detail-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-    .mobile-notif-item {
-      background: white;
-      margin: 0 1rem 0.75rem;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      color: #374151;
-    }
-</file>
-
 <file path="public/css/modules/components.css">
 /* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
     .flipped {
@@ -19888,6 +19348,551 @@ pub fn run() {
 }
 </file>
 
+<file path="public/css/modules/animations.css">
+/* === サーバーリスト画面 === */
+    #serverListScreen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+      overflow-y: auto;
+    }
+
+    #serverListScreen.hidden {
+      display: none !important;
+    }
+
+    /* === アニメーション定義 === */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleInFade {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .anim-fade-in {
+      animation: fadeIn 0.18s ease both;
+    }
+
+    .anim-slide-up {
+      animation: slideUpFade 0.22s ease both;
+    }
+
+    .anim-scale-in {
+      animation: scaleInFade 0.22s ease both;
+    }
+
+    .anim-card {
+      animation: cardIn 0.28s ease both;
+      opacity: 0;
+    }
+
+    /* === サーバーリスト画面 === */
+    .server-list-header {
+      background: #1f2937;
+      color: white;
+      padding: 0.875rem 1.25rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .server-list-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .server-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .server-list-actions button:not(.server-list-user-btn) {
+      padding: 7px 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #joinServerBtn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    #joinServerBtn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    #createServerBtn {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+
+    #createServerBtn:hover {
+      background: #e5e7eb;
+    }
+
+    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
+    .server-list-user-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.12s;
+      flex-shrink: 0;
+    }
+
+    .server-list-user-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: scale(1.07);
+    }
+
+    .server-list-user-btn:active {
+      transform: scale(0.95);
+    }
+
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      padding: 1.25rem 1.25rem 0 1.25rem;
+    }
+
+    .server-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0 2px 2px;
+      border-bottom: 1px solid #f3f4f6;
+      margin-bottom: 2px;
+      margin-top: 4px;
+    }
+
+    .server-section-label:first-child {
+      margin-top: 0;
+    }
+
+    .admin-join-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid #f3f4f6;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .admin-join-item:hover {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+
+    .admin-join-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+
+    .admin-join-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .admin-join-meta {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+
+    .admin-join-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 3px 9px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .server-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+    }
+
+    .server-card:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card-icon {
+      width: 44px;
+      height: 44px;
+      background: #4f46e5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: translateY(-1px);
+      background: #4338ca;
+    }
+
+    .server-card-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+
+    .server-card-meta {
+      font-size: 0.73rem;
+      color: #6b7280;
+    }
+
+    .server-card-admin-badge {
+      display: inline-block;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.63rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid #d1d5db;
+    }
+
+    .server-list-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: #6b7280;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .server-list-empty i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+    /* === ルームリストアイテムアニメーション === */
+    @keyframes roomSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .room-list-anim {
+      animation: roomSlideIn 0.2s ease both;
+    }
+
+    /* === メンバーリストアイテムアニメーション === */
+    @keyframes memberFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .member-anim {
+      animation: memberFadeIn 0.18s ease both;
+    }
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
+    }
+
+    /* Mobile full-screen pages (スライドインアニメーション対応) */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
+      z-index: 300;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    #mobileProfileScreen.closing,
+    #mobileNotifScreen.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }
+</file>
+
 <file path="public/css/modules/chat.css">
 /* --- 追加機能用スタイル --- */
     /* メンションのハイライト */
@@ -20813,313 +20818,6 @@ if (typeof window !== 'undefined') {
   window.copyDevConsole = copyDevConsole;
   window.copyDebugText = copyDebugText;
 }
-</file>
-
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
-    input, textarea, select, button {
-      font-size: 16px !important;
-    }
-    .stamp-jump-anim {
-      animation: stampWiggle 0.8s ease-in-out;
-    }
-    @keyframes stampWiggle {
-      0%, 100% { transform: translateX(0); }
-      15% { transform: translateX(-10px) rotate(-5deg); }
-      30% { transform: translateX(8px) rotate(3deg); }
-      45% { transform: translateX(-6px) rotate(-2deg); }
-      60% { transform: translateX(4px) rotate(1deg); }
-      75% { transform: translateX(-2px); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-    
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
 </file>
 
 <file path="public/js/geo_study.js">
@@ -23911,6 +23609,634 @@ async function handleD1Api(request, env, url) {
 }
 </file>
 
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
+    input, textarea, select, button {
+      font-size: 16px !important;
+    }
+    .stamp-jump-anim {
+      animation: stampWiggle 0.8s ease-in-out;
+    }
+    @keyframes stampWiggle {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px) rotate(-5deg); }
+      30% { transform: translateX(8px) rotate(3deg); }
+      45% { transform: translateX(-6px) rotate(-2deg); }
+      60% { transform: translateX(4px) rotate(1deg); }
+      75% { transform: translateX(-2px); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+    
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
+</file>
+
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- ユーティリティ関数 ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isGlobalAdmin(appId));
+    }
+
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          || isGlobalAdmin(appId));
+    }
+
+    // --- 各コレクションのルール ---
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定
+      match /settings/{docId} {
+        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
+      match /allowedEmails/{emailId} {
+        // 全体管理者はフルアクセス。
+        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
+        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
+        allow get: if isGlobalAdmin(appId) ||
+                   (isAuthenticated() && request.auth.token.email == emailId) ||
+                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated();
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 招待コードインデックス（コード→サーバーID の逆引き）
+      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報
+      match /users/{userId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // サーバー作成クォータ（本人のみ読み書き）
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == qUserId;
+        allow write: if false; // クライアントからの直接更新を禁止
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 3. グローバルオンライン状態
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 4. P2P音声通話シグナリング
+      match /calls/{callId} {
+        allow read: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.caller.uid == request.auth.uid;
+        match /callerCandidates/{candId} {
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+        match /calleeCandidates/{candId} {
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      match /fileshares/{shareId} {
+        allow read: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.sender.uid == request.auth.uid;
+        allow delete: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid);
+        match /senderCandidates/{candId} {
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+        match /receiverCandidates/{candId} {
+          allow read, create: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+      }
+
+      // ============================================================
+      // サーバーベース構造
+      // ============================================================
+
+      match /servers/{serverId} {
+        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
+        allow get: if isAuthenticated();
+        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
+
+        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.serverAdmins == [request.auth.uid] &&
+          request.resource.data.joinedUsers == [request.auth.uid];
+
+        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+
+        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]) &&
+          request.resource.data.memberCount == resource.data.memberCount - 1;
+
+        // サーバー削除: グローバル管理者またはサーバー管理者
+        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+
+        // サーバー内の秘密情報（管理者のみ）
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId);
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
+          );
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+
+          // ルーム内メッセージ
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              request.resource.data.senderId == request.auth.uid;
+            allow update: if isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
+              || (isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+            );
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          }
+
+          // 既読レシート
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              request.auth.uid == receiptUserId;
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
+          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
+          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId);
+          }
+
+          // タイピングインジケーター（サーバー参加者のみ）
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+          }
+        }
+
+        // サーバー別プロフィール
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            request.auth.uid == profileUserId;
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string &&
+            request.resource.data.url is string;
+          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
+          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ（古い形式 / 拡張形式）
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+    }
+
+  }
+}
+</file>
+
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -24032,22 +24358,7 @@ async function handleD1Api(request, env, url) {
       --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
     }
     #mobileBottomNav {
-      display: none;
-      width: 100%;
-      height: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
-      padding-top: 0 !important;
-      padding-left: var(--safe-left) !important;
-      padding-right: var(--safe-right) !important;
-      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-      margin: 0 !important;
-      background: #0b0f19 !important;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-around;
-      border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
-      box-sizing: border-box;
-      transition: background 0.2s ease;
-      z-index: 200 !important;
+      display: none !important;
     }
     .mobile-nav-tab {
       flex: 1 1 0;
@@ -24090,16 +24401,21 @@ async function handleD1Api(request, env, url) {
       border: 1.5px solid #1f2937;
     }
 
-    /* fixed全画面スクリーン (プロフィール・通知) はナビ上端までにとどめ、スクロール下部も美しく確保 */
+    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
+    body.in-chat-view #mobileBottomNav {
+      display: none !important;
+    }
+
+    /* 全画面スクリーン (プロフィール・通知) */
     #mobileProfileScreen,
     #mobileNotifScreen {
-      inset: 0 0 var(--mnav-total) 0 !important;
+      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
       padding-bottom: 0 !important;
       box-sizing: border-box;
     }
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 var(--mnav-total) 0 !important;
+      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
     }
     /* =============================================
        Server list-view toggle
@@ -24743,325 +25059,6 @@ async function handleD1Api(request, env, url) {
     }
 </file>
 
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // --- ユーティリティ関数 ---
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          || isGlobalAdmin(appId));
-    }
-
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          || isGlobalAdmin(appId));
-    }
-
-    // --- 各コレクションのルール ---
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定
-      match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
-      match /allowedEmails/{emailId} {
-        // 全体管理者はフルアクセス。
-        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
-        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
-        allow get: if isGlobalAdmin(appId) ||
-                   (isAuthenticated() && request.auth.token.email == emailId) ||
-                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated();
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報
-      match /users/{userId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // サーバー作成クォータ（本人のみ読み書き）
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 3. グローバルオンライン状態
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 4. P2P音声通話シグナリング
-      match /calls/{callId} {
-        allow read: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.caller.uid == request.auth.uid;
-        match /callerCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-        match /calleeCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
-      match /fileshares/{shareId} {
-        allow read: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.sender.uid == request.auth.uid;
-        allow delete: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
-        match /senderCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-        match /receiverCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-      }
-
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
-
-      match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
-        allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
-
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
-
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
-
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]) &&
-          request.resource.data.memberCount == resource.data.memberCount - 1;
-
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
-
-        // サーバー内の秘密情報（管理者のみ）
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
-          );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-
-          // ルーム内メッセージ
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
-            allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
-            );
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
-          }
-
-          // 既読レシート
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId);
-            allow update, delete: if isServerAdmin(appId, serverId);
-          }
-
-          // タイピングインジケーター（サーバー参加者のみ）
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-          }
-        }
-
-        // サーバー別プロフィール
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string &&
-            request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ（古い形式 / 拡張形式）
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-    }
-
-  }
-}
-</file>
-
 <file path="public/css/modules/sidebar.css">
 /* --- メンバーリスト用スタイル (Discord風) --- */
     #membersSidebar {
@@ -25276,15 +25273,17 @@ service cloud.firestore {
         display: flex !important;
       }
 
-      /* スマホ入力欄: 下部Safe Areaを適切に吸収 */
+      /* スマホ入力欄: 下部Safe Area（ホームバー）を自然に吸収し、無駄な余白をゼロに */
       #messageInputArea {
         border-top: 0 none !important;
         border-top-width: 0 !important;
         border-bottom: 0 none !important;
         padding-top: 0.5rem !important;
-        padding-bottom: max(0.5rem, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)) !important;
+        margin-bottom: 0 !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
+        flex-shrink: 0 !important;
       }
       /* 入力欄とボトムナビの境目に出る影・線を完全に除去 */
       #messageInputArea::before,
@@ -26025,16 +26024,31 @@ service cloud.firestore {
         border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
         background: #162032 !important;
       }
+      /* スマホ表示時の全体メンバーリスト非表示（画面幅240px占拠・探索画面押し潰れの完全防止） */
+      body.discord-ui-mode #discordHomeMembers {
+        display: none !important;
+      }
+
+      /* 各ヘッダー（探索・DM・チャット）に Safe Area Top を適用してダイナミックアイランドを回避 */
+      body.discord-ui-mode #discordDiscoverHeader,
+      body.discord-ui-mode #discordDmHeader,
+      #currentRoomHeader {
+        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(48px + env(safe-area-inset-top, 0px)) !important;
+        height: auto !important;
+        box-sizing: border-box !important;
+      }
+
       /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応（全幅に最適化） */
       body.discord-ui-mode.discord-discover-view #sidebar {
         display: none !important;
       }
       body.discord-ui-mode.discord-discover-view #discordDiscoverView {
-        flex: 1 1 auto !important;
-        width: calc(100% - 56px) !important;
-        max-width: calc(100% - 56px) !important;
+        flex: 1 1 0% !important;
+        width: auto !important;
+        max-width: none !important;
         display: flex !important;
-        padding: 1rem !important;
+        padding: 0 !important;
         min-width: 0 !important;
         overflow-x: hidden !important;
       }
@@ -26043,23 +26057,32 @@ service cloud.firestore {
       }
       body.discord-ui-mode.discord-dm-view #sidebar {
         display: flex !important;
-        width: calc(100% - 56px) !important;
-        max-width: calc(100% - 56px) !important;
+        flex: 1 1 0% !important;
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
       }
       body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
         display: flex !important;
         width: 100% !important;
       }
-      /* チャット画面表示中：全画面表示 */
+
+      /* チャット画面表示中：親Flexコンテナ内で自然に全画面展開（fixed inset 0 の破壊的レイアウトを廃止） */
+      body.discord-ui-mode.in-chat-view #discordServerNav,
+      body.discord-ui-mode.in-chat-view #sidebar {
+        display: none !important;
+      }
       body.discord-ui-mode.in-chat-view #chatArea {
-        position: fixed !important;
-        inset: 0 !important;
-        z-index: 50 !important;
+        position: relative !important;
+        inset: auto !important;
+        z-index: 10 !important;
         display: flex !important;
         width: 100% !important;
         height: 100% !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
       }
-      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示にし、右下に送信ボタンが浮き出る裏写りを100%根絶！ */
+      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示 */
       body.discord-ui-mode:not(.in-chat-view) #chatArea {
         display: none !important;
       }
@@ -27574,14 +27597,31 @@ if (window.matchMedia('(max-width: 768px)').matches) {
 // 最大10pxだけホームインジケータ用に確保し、棒の無い端末では0になる。
 // position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
 
+window.openMobileProfileScreen = function () {
+  updateMobileProfileScreen();
+  const el = document.getElementById('mobileProfileScreen');
+  if (el) {
+    el.classList.remove('closing');
+    el.classList.add('active');
+  }
+};
+
+window.closeMobileProfileScreen = function () {
+  const el = document.getElementById('mobileProfileScreen');
+  if (el) {
+    el.classList.add('closing');
+    setTimeout(() => {
+      el.classList.remove('active', 'closing');
+    }, 200);
+  }
+};
+
 window.switchMobileTab = function (tab) {
-  document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
-  const tb = document.getElementById('mobileTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
-  if (tb) tb.classList.add('active');
-  document.getElementById('mobileProfileScreen').classList.remove('active');
-  document.getElementById('mobileNotifScreen').classList.remove('active');
-  if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); requestScanAllUnread(); }
-  else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
+  if (tab === 'you') {
+    openMobileProfileScreen();
+  } else if (tab === 'notif') {
+    openNotifModal();
+  }
 };
 
 
@@ -27887,9 +27927,9 @@ const tnbp = document.getElementById('toggleBrowserNotif');
 if (tnsm && tnsp) { tnsm.checked = tnsp.checked; tnsm.addEventListener('change', () => { tnsp.checked = tnsm.checked; tnsp.dispatchEvent(new Event('change')); }); }
 if (tnbm && tnbp) { tnbm.checked = tnbp.checked; tnbm.addEventListener('change', () => { tnbp.checked = tnbm.checked; tnbp.dispatchEvent(new Event('change')); }); }
 
-// serverListUserBtn on mobile → go to "you" tab
+// サーバーリストのアバターボタン押下時（スマホはスライドイン設定画面）
 document.getElementById('serverListUserBtn')?.addEventListener('click', (e) => {
-  if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); switchMobileTab('you'); }
+  if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); openMobileProfileScreen(); }
 }, true);
 
 // ============ Server View Toggle ============
@@ -28245,7 +28285,7 @@ const nicknameMsgEl = document.getElementById("nicknameMessage");
 if (userPanelEl) {
   userPanelEl.addEventListener("click", (e) => {
     if (e.target.closest('#openSettingsBtn')) return;
-    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    if (window.matchMedia('(max-width: 768px)').matches) { openMobileProfileScreen(); return; }
     openSettingsModal("profile");
   });
 }
@@ -28253,7 +28293,7 @@ if (userPanelEl) {
 if (openSettingsBtnEl) {
   openSettingsBtnEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    if (window.matchMedia('(max-width: 768px)').matches) { openMobileProfileScreen(); return; }
     openSettingsModal("settings");
   });
 }
@@ -32045,11 +32085,8 @@ function selectRoom(roomId, roomName) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(() => { });
   }
 
-  // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
+  // スマホ: チャット画面ビューに切り替え (CSS側でナビ・ヘッダー・セーフエリアを一元制御)
   if (window.innerWidth < 768) {
-    sidebar.classList.add("mobile-hidden");
-    const bottomNav = document.getElementById("mobileBottomNav");
-    if (bottomNav) bottomNav.style.display = "none";
     document.body.classList.add('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
   }
@@ -32480,13 +32517,8 @@ if (searchInput) {
 // --- スマホ用戻るボタン ---
 if (mobileBackButton) {
   mobileBackButton.addEventListener("click", () => {
-    const sidebar = document.getElementById("sidebar");
     const currentRoomHeader = document.getElementById("currentRoomHeader");
-    if (sidebar) sidebar.classList.remove("mobile-hidden");
     if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
-    // ボトムナビを再表示
-    const bottomNav = document.getElementById("mobileBottomNav");
-    if (bottomNav) bottomNav.style.display = "flex";
     document.body.classList.remove('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 
@@ -38500,7 +38532,7 @@ document.addEventListener("keydown", (e) => {
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>Covo</title>
   <!-- ここにnoindexメタタグを追加してGoogle検索からのインデックス登録を防ぎます -->
   <meta name="robots" content="noindex, nofollow" />
@@ -40168,19 +40200,18 @@ document.addEventListener("keydown", (e) => {
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
             class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
-            <!-- 左側: 戻る/サイドバートグル + サーバー名/チャンネル名 -->
+            <!-- 左側: 戻るボタン + ルーム名 -->
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <button id="mobileBackButton"
                 class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
                 style="display:none;"><i class="fas fa-arrow-left"></i></button>
-              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex" title="左サイドバーの表示/非表示"><i class="fas fa-bars"></i></button>
               <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
                 <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
                 <span id="currentRoomTitleText" class="truncate"></span>
               </div>
             </div>
 
-            <!-- 中央〜右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス、メンバー) -->
+            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
               <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
                 <i class="fas fa-phone"></i>
@@ -40195,8 +40226,6 @@ document.addEventListener("keydown", (e) => {
                 <i class="fas fa-inbox text-base"></i>
                 <span class="header-notif-badge hidden"></span>
               </button>
-
-              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバーリスト"><i class="fas fa-user-friends"></i></button>
             </div>
           </div>
           <div id="searchContainer" class="hidden flex-shrink-0 flex items-center">
@@ -40762,10 +40791,11 @@ document.addEventListener("keydown", (e) => {
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
     <div class="mobile-profile-header">
+      <div class="mobile-detail-back mr-2 text-white cursor-pointer" onclick="closeMobileProfileScreen()"><i class="fas fa-chevron-left text-lg"></i></div>
       <div class="mobile-profile-avatar" id="mobileProfileAvatar"></div>
-      <div>
+      <div class="flex-1 min-w-0">
         <div class="mobile-profile-name" id="mobileProfileName">...</div>
-        <div class="mobile-profile-sub">アカウント設定</div>
+        <div class="mobile-profile-sub">設定</div>
       </div>
     </div>
     <div class="mobile-settings-section">
@@ -41042,7 +41072,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.28",
+  "version": "1.1.31",
   "force": false
 }
 </file>
@@ -41051,7 +41081,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.28",
+  "version": "1.1.31",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

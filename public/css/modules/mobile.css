@@ -101,10 +101,7 @@
     }
 
     /* =============================================
-       Mobile Bottom Navigation (作り直し v3:
-       - position:fixed をやめ、.container の最下子要素としてflexで配置
-       - iOS PWA の bottom:0 / safe-area の解釈ゆれを完全回避
-       - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
+       Mobile Bottom Navigation & BottomSheet System
     ============================================= */
     :root {
       /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
@@ -116,6 +113,89 @@
       /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
       --mnav-base-h: 50px;
       --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
+    }
+
+    /* 汎用ボトムシート（Drawer）共通スタイル */
+    .bottom-sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9998;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .bottom-sheet-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .bottom-sheet-handle-bar {
+      width: 40px;
+      height: 5px;
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+      margin: 10px auto 4px;
+    }
+    body.dark-server-theme .bottom-sheet-handle-bar,
+    body.discord-dark-theme .bottom-sheet-handle-bar {
+      background-color: #4b5563;
+    }
+
+    @media (max-width: 768px) {
+      .covo-bottom-sheet,
+      #membersSidebar,
+      #serverSettingsModal .modal-box,
+      #callPickerModal .call-picker-box {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: min(85vh, calc(100dvh - 30px)) !important;
+        border-top-left-radius: 28px !important;
+        border-top-right-radius: 28px !important;
+        border-bottom-left-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.28) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        z-index: 9999 !important;
+        transform: translateY(100%) !important;
+        transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+        touch-action: pan-y !important;
+        padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+      }
+
+      body.dark-server-theme .covo-bottom-sheet,
+      body.dark-server-theme #membersSidebar,
+      body.dark-server-theme #serverSettingsModal .modal-box,
+      body.dark-server-theme #callPickerModal .call-picker-box {
+        background-color: #111827 !important;
+      }
+      body.discord-dark-theme .covo-bottom-sheet,
+      body.discord-dark-theme #membersSidebar,
+      body.discord-dark-theme #serverSettingsModal .modal-box,
+      body.discord-dark-theme #callPickerModal .call-picker-box {
+        background-color: #2b2d31 !important;
+      }
+
+      .covo-bottom-sheet.bottom-sheet-open,
+      #membersSidebar.bottom-sheet-open,
+      #serverSettingsModal:not(.hidden) .modal-box,
+      #callPickerModal.show .call-picker-box {
+        transform: translateY(0) !important;
+      }
+
+      .covo-bottom-sheet.closing,
+      #membersSidebar.closing {
+        transform: translateY(100%) !important;
+      }
     }
     #mobileBottomNav {
       display: none !important;

@@ -355,6 +355,7 @@ function initializeFirebase() {
       if (_authHandlerBusy) return;
       _authHandlerBusy = true;
       loadingOverlay.classList.add("hidden");
+      const splash = document.getElementById("appLoadingSplash");
       try {
 
         if (user) {
@@ -452,7 +453,11 @@ function initializeFirebase() {
             headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
             updateUserPanelUI();
 
-            document.body.classList.add("logged-in");
+            document.body.classList.add("logged-in", "auth-ready");
+            if (splash) {
+              splash.style.opacity = '0';
+              setTimeout(() => splash.remove(), 300);
+            }
             authContainer.classList.add("hidden");
             nicknameContainer.classList.add("hidden");
             
@@ -497,6 +502,12 @@ function initializeFirebase() {
           }
         } else {
           // Cleanup on logout
+          if (splash) {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 300);
+          }
+          document.body.classList.add("auth-ready");
+          document.body.classList.remove("logged-in");
           // SW にuserIdクリアを通知
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready.then(reg => {
@@ -506,7 +517,6 @@ function initializeFirebase() {
           _lastAuthUserId = null;
           userId = null; userNickname = null; isAdmin = false; isListAdmin = false; isAuthReady = false;
           currentRoomId = null; currentServerId = null; currentServerData = null;
-          document.body.classList.remove("logged-in");
           const headerTitle = document.getElementById("headerTitle");
           if (headerTitle) headerTitle.textContent = "";
           const currentRoomHeader = document.getElementById("currentRoomHeader");
@@ -9085,28 +9095,59 @@ document.addEventListener("contextmenu", (e) => {
   }
 });
 
-// --- スマホ用メンバー一覧（ボトムシート） ---
-function openBottomSheet() {
+// --- 汎用ボトムシート（Drawer）管理 ---
+window.openBottomSheet = function (sheetId) {
   if (window.innerWidth >= 768) return; // PCでは何もしない
-  bottomSheetOverlay.classList.add("show");
-  membersSidebar.classList.add("bottom-sheet-open");
-  membersSidebar.style.transform = ""; // JSのインラインスタイルをリセット
-}
+  const overlay = document.getElementById("bottomSheetOverlay");
+  const sheet = typeof sheetId === 'string' ? document.getElementById(sheetId) : (sheetId || document.getElementById("membersSidebar"));
+  if (!sheet || !overlay) return;
 
-function closeBottomSheet() {
-  bottomSheetOverlay.classList.remove("show");
-  membersSidebar.classList.remove("bottom-sheet-open");
-  membersSidebar.style.transform = "";
-}
+  overlay.classList.add("show");
+  sheet.classList.remove("closing", "hidden");
+  sheet.classList.add("bottom-sheet-open");
+  sheet.style.transform = "";
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+};
+
+window.closeBottomSheet = function (sheetId) {
+  const overlay = document.getElementById("bottomSheetOverlay");
+  const sheets = sheetId ? [document.getElementById(sheetId)] : document.querySelectorAll(".bottom-sheet-open, .covo-bottom-sheet");
+  
+  sheets.forEach(sheet => {
+    if (!sheet) return;
+    sheet.classList.add("closing");
+    setTimeout(() => {
+      sheet.classList.remove("bottom-sheet-open", "closing");
+      sheet.style.transform = "";
+    }, 280);
+  });
+
+  if (overlay) {
+    overlay.classList.remove("show");
+  }
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+};
+
+function openBottomSheet(sheetId) { window.openBottomSheet(sheetId); }
+function closeBottomSheet(sheetId) { window.closeBottomSheet(sheetId); }
 
 const currentRoomTitleTextEl = document.getElementById("currentRoomTitleText");
+const currentRoomTitleAreaEl = document.getElementById("currentRoomTitleArea");
 const bottomSheetOverlayEl = document.getElementById("bottomSheetOverlay");
 const membersSidebarEl = document.getElementById("membersSidebar");
 const membersListEl = document.getElementById("membersList");
 const pinMessageBtn = document.getElementById("pinMessageButton");
 
-if (currentRoomTitleTextEl) currentRoomTitleTextEl.addEventListener("click", openBottomSheet);
-if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", closeBottomSheet);
+// チャット画面で上部ヘッダー（タイトル領域）をタップするとメンバー一覧ボトムシートが開く
+if (currentRoomTitleAreaEl) {
+  currentRoomTitleAreaEl.addEventListener("click", (e) => {
+    if (e.target.closest('#mobileBackButton') || e.target.closest('#toggleLeftSidebarBtn')) return;
+    openBottomSheet('membersSidebar');
+  });
+} else if (currentRoomTitleTextEl) {
+  currentRoomTitleTextEl.addEventListener("click", () => openBottomSheet('membersSidebar'));
+}
+if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", () => closeBottomSheet());
 
 // スワイプダウンで閉じる処理
 let touchStartY = 0;

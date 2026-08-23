@@ -406,6 +406,17 @@
     <button class="pwa-banner-btn" id="pwaInstallButton">インストール</button>
     <button class="pwa-banner-close" id="pwaInstallClose"><i class="fas fa-times"></i></button>
   </div>
+  <!-- 初期起動スプラッシュ画面（ログイン済み時のログイン画面チラつきを完全防止） -->
+  <div id="appLoadingSplash" class="fixed inset-0 bg-gray-100 dark:bg-[#1e1f22] flex flex-col items-center justify-center z-[99999] transition-opacity duration-300">
+    <div class="w-16 h-16 bg-indigo-500/10 text-indigo-500 rounded-2xl flex items-center justify-center text-3xl mb-4 animate-pulse border border-indigo-500/20 shadow-inner">
+      <i class="fas fa-comments"></i>
+    </div>
+    <div class="flex items-center gap-2.5 text-sm font-bold text-gray-700 dark:text-gray-200">
+      <i class="fas fa-circle-notch fa-spin text-indigo-500 text-xs"></i>
+      <span>読み込み中...</span>
+    </div>
+  </div>
+
   <div id="loadingOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
     <div class="text-white text-xl">読み込み中...</div>
   </div>
@@ -1487,17 +1498,30 @@
           </div>
         </div>
 
-        <!-- ルームリストサイドバー -->
-        <div id="sidebar" class="bg-gray-100 flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー (Discord風) -->
-          <div id="serverHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onclick="openServerSettings()">
-            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
-            <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
-              <span id="serverNameDisplay" class="font-bold truncate text-sm">サーバー</span>
-              <i class="fas fa-chevron-down text-xs text-gray-400"></i>
+        <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
+        <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
+          <!-- サーバーヘッダー (Discord風・検索＆招待アイコン内包) -->
+          <div id="serverHeader" class="border-b border-gray-100 dark:border-white/5 px-4 pt-3 pb-2.5 flex flex-col flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
+                <span id="serverNameDisplay" class="font-extrabold truncate text-base text-gray-900 dark:text-gray-100">サーバー</span>
+                <i class="fas fa-chevron-right text-[11px] text-gray-400"></i>
+              </div>
+              <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
             </div>
-            <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog"></i></button>
+            
+            <!-- Discordモバイル風: 検索ピル ＆ 招待ボタン -->
+            <div class="flex items-center gap-2 mt-2.5">
+              <div class="flex-1 bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200/80 dark:hover:bg-[#2b2d31] rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs text-gray-400 transition-colors shadow-inner" onclick="event.stopPropagation(); if(toggleSearchButton) toggleSearchButton.click();">
+                <i class="fas fa-search text-[11px]"></i>
+                <span class="font-medium text-gray-500 dark:text-gray-400">検索</span>
+              </div>
+              <button class="w-8 h-8 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200/80 dark:hover:bg-[#2b2d31] text-gray-500 dark:text-gray-400 flex items-center justify-center text-xs transition-colors flex-shrink-0 shadow-inner" title="招待" onclick="event.stopPropagation(); openServerSettings(); switchSsTab('invites');">
+                <i class="fas fa-user-plus"></i>
+              </button>
+            </div>
           </div>
+
           <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->
           <div id="discordHomeSidebar" class="hidden flex-col text-sm flex-1 overflow-y-auto">
             <!-- Discord風 検索バー風ボタン -->
@@ -1528,25 +1552,29 @@
               </div>
             </div>
           </div>
+
           <!-- ルームリスト -->
-          <div id="roomList" class="flex-1 scrollable p-4 pb-0">
+          <div id="roomList" class="flex-1 scrollable p-3 pb-0">
             <!-- ルームはここに動的に追加されます -->
           </div>
 
-          <!-- ユーザー情報パネル (Discord風マイページボタン) -->
-          <div id="userPanel" class="mt-auto">
-            <div class="avatar-placeholder" id="userPanelAvatar" style="width: 38px; height: 38px; margin-right: 10px;">
-              <!-- イニシャル -->
-              <div class="status-indicator status-online" id="userPanelStatus"></div>
+          <!-- ユーザー情報ミニバー (添付画像0/1完全準拠のフローティングカード) -->
+          <div id="userPanel" class="mt-auto m-2.5 p-2 bg-gray-50 dark:bg-[#161f2e] border border-gray-200/60 dark:border-white/5 rounded-2xl flex items-center justify-between shadow-sm cursor-pointer hover:bg-gray-100/80 dark:hover:bg-[#1e293b] transition-all">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <div class="avatar-placeholder relative w-9 h-9 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
+                <div class="status-indicator status-online" id="userPanelStatus"></div>
+              </div>
+              <div class="user-panel-info flex flex-col min-w-0 flex-1">
+                <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-gray-100 truncate" id="userPanelName">User</div>
+                <div class="user-panel-id text-[10px] text-gray-400 font-medium truncate" id="userPanelId">オンライン</div>
+              </div>
             </div>
-            <div class="user-panel-info">
-              <div class="user-panel-name" id="userPanelName">User</div>
-              <div class="user-panel-id" id="userPanelId">...</div>
+            <div class="flex items-center gap-1 flex-shrink-0">
+              <button id="openSettingsBtn"
+                class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-2 rounded-xl transition-all" title="設定">
+                <i class="fas fa-cog text-sm"></i>
+              </button>
             </div>
-            <button id="openSettingsBtn"
-              class="text-gray-500 hover:text-gray-800 hover:bg-gray-200 p-1.5 rounded-lg transition-all" title="設定">
-              <i class="fas fa-cog"></i>
-            </button>
           </div>
         </div>
 
@@ -1683,18 +1711,22 @@
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
             class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
-            <!-- 左側: 戻るボタン + ルーム名 -->
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <!-- 左側: 戻るボタン / PC用三本線ボタン + ルーム名 -->
+            <div class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer md:cursor-default" id="currentRoomTitleArea">
               <button id="mobileBackButton"
                 class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
                 style="display:none;"><i class="fas fa-arrow-left"></i></button>
+              <!-- PC用三本線ボタン（左サイドバー開閉） -->
+              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex mr-1" title="サイドバーの開閉">
+                <i class="fas fa-bars"></i>
+              </button>
               <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
                 <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
                 <span id="currentRoomTitleText" class="truncate"></span>
               </div>
             </div>
 
-            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス) -->
+            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス、PC用メンバー開閉) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
               <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
                 <i class="fas fa-phone"></i>
@@ -1704,6 +1736,11 @@
               </button>
               <button id="toggleSearchButton" class="topbar-btn" title="検索"><i class="fas fa-search"></i></button>
               
+              <!-- PC用メンバー一覧開閉ボタン（人型マーク） -->
+              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバー一覧の表示切替">
+                <i class="fas fa-user-group"></i>
+              </button>
+
               <!-- 受信ボックス (通知履歴) -->
               <button onclick="openNotifModal()" class="topbar-btn relative" title="受信ボックス / 通知履歴">
                 <i class="fas fa-inbox text-base"></i>
@@ -1825,12 +1862,18 @@
           </div>
         </div>
 
-        <!-- メンバーリストサイドバー (スマホではボトムシート) -->
+        <!-- メンバーリストサイドバー (スマホでは下からスライドインするボトムシート) -->
         <div id="resizerRight"></div>
-        <div id="bottomSheetOverlay"></div>
-        <div id="membersSidebar" class="hidden md:flex scrollable">
-          <div id="bottomSheetHandle"></div>
-          <div id="membersList" class="p-2 w-full">
+        <div id="bottomSheetOverlay" onclick="closeBottomSheet()"></div>
+        <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet">
+          <div class="bottom-sheet-handle" id="bottomSheetHandle">
+            <div class="bottom-sheet-handle-bar"></div>
+          </div>
+          <div class="px-4 py-2 border-b border-gray-100 dark:border-white/5 flex items-center justify-between md:hidden">
+            <span class="text-sm font-bold text-gray-800 dark:text-gray-100">メンバー一覧</span>
+            <button onclick="closeBottomSheet()" class="text-gray-400 hover:text-gray-600 p-1.5"><i class="fas fa-times"></i></button>
+          </div>
+          <div id="membersList" class="p-2 w-full flex-1 overflow-y-auto">
             <!-- メンバーはここに動的に追加されます -->
           </div>
         </div>
