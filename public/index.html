@@ -1452,8 +1452,7 @@
   <!-- チャットアプリ本体 -->
   <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full min-h-0">
         <!-- Discord風 左側サーバーナビゲーションバー -->
-        <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r"
-          style="padding-top: calc(0.75rem + var(--safe-top, env(safe-area-inset-top, 0px))); padding-bottom: max(12px, var(--safe-bottom, env(safe-area-inset-bottom, 0px)));">
+        <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r">
           <!-- DM/フレンドホームアイコン（吹き出しマーク）-->
           <div class="discord-server-item discord-home-btn group active" id="discordHomeBtn" onclick="openDmHomeView()" title="ダイレクトメッセージ / フレンド">
             <div class="discord-server-pill" id="discordHomePill"></div>
@@ -1563,7 +1562,7 @@
         <!-- Discord風 DM/フレンドメインビュー (吹き出しマーク押下時に表示) -->
         <div id="discordDmHomeView" class="flex-1 hidden md:flex flex-col overflow-hidden select-none relative min-w-0">
           <!-- フレンド上部ヘッダーバー (Discord完全準拠・ツールバー統合) -->
-          <div id="discordDmHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none" style="padding-top: var(--safe-top, 0px);">
+          <div id="discordDmHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none">
             <div class="flex-1 min-w-0 flex items-center gap-3 overflow-x-auto hide-scrollbar py-1">
               <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-2 md:hidden flex-shrink-0" onclick="leaveServerView()"><i class="fas fa-arrow-left"></i></button>
               <div class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-100 flex-shrink-0">
@@ -1689,8 +1688,7 @@
         <div id="chatArea" class="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
-            class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden"
-            style="padding-top: var(--safe-top, 0px);">
+            class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
             <!-- 左側: 戻る/サイドバートグル + サーバー名/チャンネル名 -->
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <button id="mobileBackButton"

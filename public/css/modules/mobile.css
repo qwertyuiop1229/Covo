@@ -107,14 +107,14 @@
        - 視覚デザインは従来と同じ（ダーク帯 + 3アイコン）
     ============================================= */
     :root {
-      /* すべてのiPhone / iPad / Android / PWA をサポートする堅牢なSafe Area変数 */
+      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-left: env(safe-area-inset-left, 0px);
       --safe-right: env(safe-area-inset-right, 0px);
 
-      /* ボトムナビゲーションの高さ計算 */
-      --mnav-base-h: 52px; /* タッチしやすい標準的な高さ */
+      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
+      --mnav-base-h: 50px;
       --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
     }
     #mobileBottomNav {
@@ -122,28 +122,33 @@
       flex: 0 0 var(--mnav-total) !important;
       width: 100%;
       height: var(--mnav-total) !important;
-      padding: 0 0 var(--safe-bottom) 0 !important;
+      padding-top: 0 !important;
+      padding-left: var(--safe-left) !important;
+      padding-right: var(--safe-right) !important;
+      padding-bottom: var(--safe-bottom) !important;
       margin: 0 !important;
       background: #1f2937;
       flex-direction: row;
-      align-items: stretch;
+      align-items: center;
+      justify-content: space-around;
       border-top: none !important;
       box-shadow: 0 -1px 3px rgba(0,0,0,0.05) !important;
       box-sizing: border-box;
       transition: background 0.2s ease;
-      z-index: 200 !important; /* ★大強化：いかなるビューにも隠されない絶対最前面配置！ */
+      z-index: 200 !important;
     }
     .mobile-nav-tab {
       flex: 1 1 0;
+      height: var(--mnav-base-h);
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center; /* アイコンを中央に配置し、下部余白のバグを防ぐ */
+      justify-content: center;
       cursor: pointer;
       color: rgba(255,255,255,0.5);
       border: none;
       background: transparent;
-      padding: 0 0 2px 0;
+      padding: 0;
       margin: 0;
       transition: color 0.15s;
       -webkit-tap-highlight-color: transparent;
@@ -644,21 +649,23 @@
       /* =======================================
          ★スマホ設定画面の息をのむほど美しいパーツ群
          ======================================= */
-      /* 1. Safe Areaを配慮し、ステータスバーを美しく包み込む重厚で透明感あふれる極上ネイティブヘッダー */
+      /* 1. Safe Areaを配慮したモーダルヘッダー */
       .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
       .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
         position: sticky !important;
         top: 0 !important;
         z-index: 40 !important;
         width: 100% !important;
-        /* ★iPhone 17のステータスバーやノッチを完全に避け、美しいゆとりを持たせる神余白設定 */
-        padding: calc(var(--safe-top) + 8px) 24px 20px 24px !important;
+        padding-top: max(12px, var(--safe-top)) !important;
+        padding-bottom: 14px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: flex-start !important;
-        background: rgba(30, 41, 59, 0.94) !important; /* 透け感のある極上のダークスレート */
-        backdrop-filter: blur(16px) !important; /* スクロール時に後ろが美しく透けるすりガラス仕様 */
+        background: rgba(30, 41, 59, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
         box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
