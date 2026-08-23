@@ -147,17 +147,10 @@
       color: #6b7280;
     }
 
-    /* スマホ対応CSS - LINE風UI */
-    @media (max-width: 767px) {
+    /* スマホ対応CSS - LINE風UI（ブレークポイントを768pxに統一） */
+    @media (max-width: 768px) {
       body {
         padding: 0;
-      }
-
-      .container {
-        /* height: fixed + inset:0 で全画面固定済み。100dvh 上書きは不要 */
-        padding: 0;
-        border-radius: 0;
-        background-color: #f3f4f6;
       }
 
       .container>div {
@@ -385,29 +378,11 @@
       }
     }
 
-    /* 強制上書き */
-    html,
-    body {
-      height: 100% !important;
-      width: 100% !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overscroll-behavior: none !important;
-    }
-
-    .container {
-      width: 100% !important;
-      max-width: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-    }
-
-    /* 旧 safe-area 計算の padding-bottom はユーザー指示で完全撤去（モバイルは @media 内で 0 固定）。
-       デスクトップは下行で 1rem に明示。 */
-    #messageInputArea {
-      padding-bottom: 1rem;
+    /* デスクトップ時のメッセージ入力欄の余白 */
+    @media (min-width: 769px) {
+      #messageInputArea {
+        padding-bottom: 1rem;
+      }
     }
     /* === Discord風UIモード専用スタイル === */
     body.discord-ui-mode #serverListScreen {

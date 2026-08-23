@@ -1,46 +1,4 @@
-    /* --- 全画面化用 --- */
-    html,
-    body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      background-color: #f3f4f6;
-      font-family: "Inter", sans-serif;
-      /* メッセージ入力欄以外での文字選択を無効化 */
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-    }
-
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed; /* iOS PWA: dvh/fill-available に依存しない確実な全画面表示 */
-      inset: 0;        /* top/right/bottom/left = 0 → viewport全体を覆う */
-      width: 100%;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-
+    /* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
     .flipped {
       transform: scaleY(-1);
     }

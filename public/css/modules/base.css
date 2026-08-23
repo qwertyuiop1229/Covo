@@ -1,17 +1,52 @@
-/* PWAのホームバー余白やステータスバーを完全に背景と同化させる最強のベーススタイル */
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
       height: 100%;
       width: 100%;
       margin: 0;
       padding: 0;
-      overflow-x: hidden;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
       touch-action: pan-x pan-y;
       background-color: #ffffff;
-      /* グラデーションのようにジワッと変わり違和感が出るのを100%防ぎ、0.0秒の瞬時切替にする神業 */
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
       transition: none !important;
     }
     html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
       background-color: #111827 !important;
+    }
+
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
     }
     /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
     .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
