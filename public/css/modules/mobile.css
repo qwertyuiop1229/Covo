@@ -176,16 +176,21 @@
       border: 1.5px solid #1f2937;
     }
 
-    /* fixed全画面スクリーン (プロフィール・通知) はナビ上端までにとどめ、スクロール下部も美しく確保 */
+    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
+    body.in-chat-view #mobileBottomNav {
+      display: none !important;
+    }
+
+    /* 全画面スクリーン (プロフィール・通知) */
     #mobileProfileScreen,
     #mobileNotifScreen {
-      inset: 0 0 var(--mnav-total) 0 !important;
+      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
       padding-bottom: 0 !important;
       box-sizing: border-box;
     }
     body.has-mobile-nav #mobileProfileScreen,
     body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 var(--mnav-total) 0 !important;
+      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
     }
     /* =============================================
        Server list-view toggle

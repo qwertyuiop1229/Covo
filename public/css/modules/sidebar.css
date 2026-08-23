@@ -211,15 +211,17 @@
         display: flex !important;
       }
 
-      /* スマホ入力欄: 下部Safe Areaを適切に吸収 */
+      /* スマホ入力欄: 下部Safe Area（ホームバー）を自然に吸収し、無駄な余白をゼロに */
       #messageInputArea {
         border-top: 0 none !important;
         border-top-width: 0 !important;
         border-bottom: 0 none !important;
         padding-top: 0.5rem !important;
-        padding-bottom: max(0.5rem, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)) !important;
+        margin-bottom: 0 !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
+        flex-shrink: 0 !important;
       }
       /* 入力欄とボトムナビの境目に出る影・線を完全に除去 */
       #messageInputArea::before,
@@ -960,16 +962,31 @@
         border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
         background: #162032 !important;
       }
+      /* スマホ表示時の全体メンバーリスト非表示（画面幅240px占拠・探索画面押し潰れの完全防止） */
+      body.discord-ui-mode #discordHomeMembers {
+        display: none !important;
+      }
+
+      /* 各ヘッダー（探索・DM・チャット）に Safe Area Top を適用してダイナミックアイランドを回避 */
+      body.discord-ui-mode #discordDiscoverHeader,
+      body.discord-ui-mode #discordDmHeader,
+      #currentRoomHeader {
+        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(48px + env(safe-area-inset-top, 0px)) !important;
+        height: auto !important;
+        box-sizing: border-box !important;
+      }
+
       /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応（全幅に最適化） */
       body.discord-ui-mode.discord-discover-view #sidebar {
         display: none !important;
       }
       body.discord-ui-mode.discord-discover-view #discordDiscoverView {
-        flex: 1 1 auto !important;
-        width: calc(100% - 56px) !important;
-        max-width: calc(100% - 56px) !important;
+        flex: 1 1 0% !important;
+        width: auto !important;
+        max-width: none !important;
         display: flex !important;
-        padding: 1rem !important;
+        padding: 0 !important;
         min-width: 0 !important;
         overflow-x: hidden !important;
       }
@@ -978,23 +995,32 @@
       }
       body.discord-ui-mode.discord-dm-view #sidebar {
         display: flex !important;
-        width: calc(100% - 56px) !important;
-        max-width: calc(100% - 56px) !important;
+        flex: 1 1 0% !important;
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
       }
       body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
         display: flex !important;
         width: 100% !important;
       }
-      /* チャット画面表示中：全画面表示 */
+
+      /* チャット画面表示中：親Flexコンテナ内で自然に全画面展開（fixed inset 0 の破壊的レイアウトを廃止） */
+      body.discord-ui-mode.in-chat-view #discordServerNav,
+      body.discord-ui-mode.in-chat-view #sidebar {
+        display: none !important;
+      }
       body.discord-ui-mode.in-chat-view #chatArea {
-        position: fixed !important;
-        inset: 0 !important;
-        z-index: 50 !important;
+        position: relative !important;
+        inset: auto !important;
+        z-index: 10 !important;
         display: flex !important;
         width: 100% !important;
         height: 100% !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
       }
-      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示にし、右下に送信ボタンが浮き出る裏写りを100%根絶！ */
+      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示 */
       body.discord-ui-mode:not(.in-chat-view) #chatArea {
         display: none !important;
       }

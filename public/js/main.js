@@ -5862,11 +5862,8 @@ function selectRoom(roomId, roomName) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(() => { });
   }
 
-  // スマホ: サイドバーを隠してチャットを表示し、ボトムナビを隠す
+  // スマホ: チャット画面ビューに切り替え (CSS側でナビ・ヘッダー・セーフエリアを一元制御)
   if (window.innerWidth < 768) {
-    sidebar.classList.add("mobile-hidden");
-    const bottomNav = document.getElementById("mobileBottomNav");
-    if (bottomNav) bottomNav.style.display = "none";
     document.body.classList.add('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
   }
@@ -6297,13 +6294,8 @@ if (searchInput) {
 // --- スマホ用戻るボタン ---
 if (mobileBackButton) {
   mobileBackButton.addEventListener("click", () => {
-    const sidebar = document.getElementById("sidebar");
     const currentRoomHeader = document.getElementById("currentRoomHeader");
-    if (sidebar) sidebar.classList.remove("mobile-hidden");
     if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
-    // ボトムナビを再表示
-    const bottomNav = document.getElementById("mobileBottomNav");
-    if (bottomNav) bottomNav.style.display = "flex";
     document.body.classList.remove('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 
