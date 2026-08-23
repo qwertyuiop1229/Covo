@@ -1391,14 +1391,31 @@ if (window.matchMedia('(max-width: 768px)').matches) {
 // 最大10pxだけホームインジケータ用に確保し、棒の無い端末では0になる。
 // position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
 
+window.openMobileProfileScreen = function () {
+  updateMobileProfileScreen();
+  const el = document.getElementById('mobileProfileScreen');
+  if (el) {
+    el.classList.remove('closing');
+    el.classList.add('active');
+  }
+};
+
+window.closeMobileProfileScreen = function () {
+  const el = document.getElementById('mobileProfileScreen');
+  if (el) {
+    el.classList.add('closing');
+    setTimeout(() => {
+      el.classList.remove('active', 'closing');
+    }, 200);
+  }
+};
+
 window.switchMobileTab = function (tab) {
-  document.querySelectorAll('.mobile-nav-tab').forEach(t => t.classList.remove('active'));
-  const tb = document.getElementById('mobileTab' + tab.charAt(0).toUpperCase() + tab.slice(1));
-  if (tb) tb.classList.add('active');
-  document.getElementById('mobileProfileScreen').classList.remove('active');
-  document.getElementById('mobileNotifScreen').classList.remove('active');
-  if (tab === 'notif') { document.getElementById('mobileNotifScreen').classList.add('active'); updateGlobalNotifUI(); requestScanAllUnread(); }
-  else if (tab === 'you') { updateMobileProfileScreen(); document.getElementById('mobileProfileScreen').classList.add('active'); }
+  if (tab === 'you') {
+    openMobileProfileScreen();
+  } else if (tab === 'notif') {
+    openNotifModal();
+  }
 };
 
 
@@ -1704,9 +1721,9 @@ const tnbp = document.getElementById('toggleBrowserNotif');
 if (tnsm && tnsp) { tnsm.checked = tnsp.checked; tnsm.addEventListener('change', () => { tnsp.checked = tnsm.checked; tnsp.dispatchEvent(new Event('change')); }); }
 if (tnbm && tnbp) { tnbm.checked = tnbp.checked; tnbm.addEventListener('change', () => { tnbp.checked = tnbm.checked; tnbp.dispatchEvent(new Event('change')); }); }
 
-// serverListUserBtn on mobile → go to "you" tab
+// サーバーリストのアバターボタン押下時（スマホはスライドイン設定画面）
 document.getElementById('serverListUserBtn')?.addEventListener('click', (e) => {
-  if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); switchMobileTab('you'); }
+  if (window.matchMedia('(max-width: 768px)').matches) { e.stopPropagation(); openMobileProfileScreen(); }
 }, true);
 
 // ============ Server View Toggle ============
@@ -2062,7 +2079,7 @@ const nicknameMsgEl = document.getElementById("nicknameMessage");
 if (userPanelEl) {
   userPanelEl.addEventListener("click", (e) => {
     if (e.target.closest('#openSettingsBtn')) return;
-    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    if (window.matchMedia('(max-width: 768px)').matches) { openMobileProfileScreen(); return; }
     openSettingsModal("profile");
   });
 }
@@ -2070,7 +2087,7 @@ if (userPanelEl) {
 if (openSettingsBtnEl) {
   openSettingsBtnEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    if (window.matchMedia('(max-width: 768px)').matches) { openMobileProfileScreen(); return; }
     openSettingsModal("settings");
   });
 }

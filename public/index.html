@@ -1683,19 +1683,18 @@
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
             class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
-            <!-- 左側: 戻る/サイドバートグル + サーバー名/チャンネル名 -->
+            <!-- 左側: 戻るボタン + ルーム名 -->
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <button id="mobileBackButton"
                 class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
                 style="display:none;"><i class="fas fa-arrow-left"></i></button>
-              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex" title="左サイドバーの表示/非表示"><i class="fas fa-bars"></i></button>
               <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
                 <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
                 <span id="currentRoomTitleText" class="truncate"></span>
               </div>
             </div>
 
-            <!-- 中央〜右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス、メンバー) -->
+            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
               <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
                 <i class="fas fa-phone"></i>
@@ -1710,8 +1709,6 @@
                 <i class="fas fa-inbox text-base"></i>
                 <span class="header-notif-badge hidden"></span>
               </button>
-
-              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバーリスト"><i class="fas fa-user-friends"></i></button>
             </div>
           </div>
           <div id="searchContainer" class="hidden flex-shrink-0 flex items-center">
@@ -2277,10 +2274,11 @@
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
     <div class="mobile-profile-header">
+      <div class="mobile-detail-back mr-2 text-white cursor-pointer" onclick="closeMobileProfileScreen()"><i class="fas fa-chevron-left text-lg"></i></div>
       <div class="mobile-profile-avatar" id="mobileProfileAvatar"></div>
-      <div>
+      <div class="flex-1 min-w-0">
         <div class="mobile-profile-name" id="mobileProfileName">...</div>
-        <div class="mobile-profile-sub">アカウント設定</div>
+        <div class="mobile-profile-sub">設定</div>
       </div>
     </div>
     <div class="mobile-settings-section">

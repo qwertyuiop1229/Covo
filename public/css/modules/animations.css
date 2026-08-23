@@ -362,7 +362,7 @@
       transform: scale(0.96);
     }
 
-    /* Mobile full-screen pages */
+    /* Mobile full-screen pages (スライドインアニメーション対応) */
     #mobileProfileScreen,
     #mobileNotifScreen {
       display: none;
@@ -370,13 +370,18 @@
       inset: 0;
       background: #f3f4f6;
       -webkit-overflow-scrolling: touch;
-      z-index: 100;
+      z-index: 300;
       overflow-y: auto;
       flex-direction: column;
     }
     #mobileProfileScreen.active,
     #mobileNotifScreen.active {
       display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    #mobileProfileScreen.closing,
+    #mobileNotifScreen.closing {
+      animation: slideOutToRight 0.22s ease both !important;
     }
 
     .mobile-profile-header {
