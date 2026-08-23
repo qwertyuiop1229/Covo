@@ -68,9 +68,9 @@
       const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
       const inChat = document.body.classList.contains('in-chat-view');
       
-      // 現在のベース背景色（RGB配列）を特定
-      let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [17, 24, 39] : [31, 41, 55]);
-      let targetHex = isDark ? (inChat ? '#1a202c' : '#111827') : (inChat ? '#ffffff' : '#1f2937');
+      // 現在のベース背景色（Discord本家準拠: ライト時はサーバーナビと同じ #f2f3f5）
+      let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [11, 15, 25] : [242, 243, 245]);
+      let targetHex = isDark ? (inChat ? '#1a202c' : '#0b0f19') : (inChat ? '#ffffff' : '#f2f3f5');
       let blendedHex = targetHex;
 
       // 1. メンバー一覧（#membersSidebar）が開いているかどうかを検知
@@ -1500,26 +1500,14 @@
 
         <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
         <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー (Discord風・検索＆招待アイコン内包) -->
-          <div id="serverHeader" class="border-b border-gray-100 dark:border-white/5 px-4 pt-3 pb-2.5 flex flex-col flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
-                <span id="serverNameDisplay" class="font-extrabold truncate text-base text-gray-900 dark:text-gray-100">サーバー</span>
-                <i class="fas fa-chevron-right text-[11px] text-gray-400"></i>
-              </div>
-              <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
+          <!-- サーバーヘッダー (添付画像3準拠のシンプル・洗練デザイン) -->
+          <div id="serverHeader" class="h-12 border-b border-gray-100 dark:border-white/5 px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
+            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
+              <span id="serverNameDisplay" class="font-extrabold truncate text-base text-gray-900 dark:text-gray-100">サーバー</span>
+              <i class="fas fa-chevron-right text-[11px] text-gray-400"></i>
             </div>
-            
-            <!-- Discordモバイル風: 検索ピル ＆ 招待ボタン -->
-            <div class="flex items-center gap-2 mt-2.5">
-              <div class="flex-1 bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200/80 dark:hover:bg-[#2b2d31] rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs text-gray-400 transition-colors shadow-inner" onclick="event.stopPropagation(); if(toggleSearchButton) toggleSearchButton.click();">
-                <i class="fas fa-search text-[11px]"></i>
-                <span class="font-medium text-gray-500 dark:text-gray-400">検索</span>
-              </div>
-              <button class="w-8 h-8 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200/80 dark:hover:bg-[#2b2d31] text-gray-500 dark:text-gray-400 flex items-center justify-center text-xs transition-colors flex-shrink-0 shadow-inner" title="招待" onclick="event.stopPropagation(); openServerSettings(); switchSsTab('invites');">
-                <i class="fas fa-user-plus"></i>
-              </button>
-            </div>
+            <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
           </div>
 
           <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->

@@ -401,6 +401,7 @@
 
     body.discord-ui-mode #discordServerNav {
       display: flex !important;
+      padding-top: 14px !important; /* PC時に個チャマークが上部天井にくっつくのを解消 */
     }
 
     body.discord-ui-mode #backToServerListBtn {
@@ -884,39 +885,48 @@
       background: #0f172a;
     }
 
-    /* モバイルビューのDiscordレイアウト適応（添付画像0/1完全準拠） */
+    /* モバイルビューのDiscordレイアウト適応（添付画像0/1/5/6/7完全準拠） */
     @media (max-width: 768px) {
+      /* アプリ基盤背景色をサーバーナビ色と完全一致（時計周り・ステータスバー・角丸外側の一体化） */
+      html, body, .container {
+        background-color: #f2f3f5 !important;
+      }
+      body.dark-server-theme, html:has(body.dark-server-theme), body.dark-server-theme .container {
+        background-color: #0b0f19 !important;
+      }
+      body.discord-dark-theme, html:has(body.discord-dark-theme), body.discord-dark-theme .container {
+        background-color: #1e1f22 !important;
+      }
+
       body.discord-ui-mode #appContainer {
         flex-direction: row !important;
         display: flex !important;
         width: 100% !important;
         height: 100% !important;
         flex: 1 1 0 !important;
-        background: #f2f3f5 !important;
-      }
-      body.discord-ui-mode.dark-server-theme #appContainer {
-        background: #0b0f19 !important;
-      }
-      body.discord-ui-mode.discord-dark-theme #appContainer {
-        background: #1e1f22 !important;
+        background: transparent !important;
+        box-shadow: none !important;
       }
 
       /* スマホ表示時は右側メンバーリストを非表示にしてメイン画面を全幅にする */
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px） */
+      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白80px） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
-        padding-top: max(10px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-bottom: max(10px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
-        z-index: 40;
+        padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-bottom: max(80px, calc(80px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+        z-index: 30;
+        background: transparent !important;
+        border-right: none !important;
         overflow-y: auto;
         overflow-x: hidden;
       }
       body.discord-ui-mode #serverHeader {
-        padding-top: max(10px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: max(8px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        min-height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
         border-bottom: 1px solid rgba(0,0,0,0.06);
         box-sizing: border-box;
       }
@@ -941,7 +951,7 @@
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 38px !important;
       }
-      /* モバイル時：#sidebarに左上角丸24pxを適用し、Discordモバイルのカードレイアウトを再現！ */
+      /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
       body.discord-ui-mode #sidebar {
         position: relative !important;
         left: auto !important;
@@ -951,12 +961,29 @@
         max-width: calc(100% - 70px) !important;
         display: flex !important;
         min-width: 0 !important;
-        border-top-left-radius: 24px !important;
-        box-shadow: -4px 0 20px rgba(0,0,0,0.04);
+        border-top-left-radius: 28px !important;
+        box-shadow: none !important; /* 下部の余計な影を完全排除 */
         overflow: hidden !important;
       }
       body.discord-ui-mode.dark-server-theme #sidebar {
-        box-shadow: -4px 0 20px rgba(0,0,0,0.25);
+        box-shadow: none !important;
+      }
+      /* ルームリスト（下部ユーザーバーに隠れないよう80pxパディングを確保） */
+      body.discord-ui-mode #sidebar #roomList {
+        padding-bottom: 80px !important;
+      }
+      /* 下部ユーザーミニバー（最前面に浮き出て、サーバーが増えても隠れない） */
+      body.discord-ui-mode #sidebar #userPanel {
+        position: absolute !important;
+        bottom: max(10px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+        left: 8px !important;
+        right: 8px !important;
+        z-index: 50 !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+        margin: 0 !important;
+      }
+      body.discord-ui-mode.dark-server-theme #sidebar #userPanel {
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
       }
       /* ルームリスト全体の余白とアイテムデザインをプロフェッショナル仕様に極上化 */
       body.discord-ui-mode #sidebar .overflow-y-auto {

@@ -216,7 +216,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     // ルーム共通鍵(AES-GCM)を取得。無ければ生成し、全メンバー＋エスクローへ配布。
     // 取得・生成いずれも失敗したら null（呼び出し側は平文で送る）。
     export async function _getOrCreateRoomKey(serverId, roomId, memberIds) {
-      if (!_subtleOK) return null;
+      if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
       if (_e2ee._roomKeyPromises[roomId]) return _e2ee._roomKeyPromises[roomId];
       _e2ee._roomKeyPromises[roomId] = (async () => {
@@ -227,7 +227,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       return _e2ee._roomKeyPromises[roomId];
     }
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
-      if (!_subtleOK) return null;
+      if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
 
       try {
         // 1) 共有ルームキー (Shared Room Key) がすでにルームドキュメントに存在するかチェック
