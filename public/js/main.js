@@ -574,90 +574,99 @@ function updateUserPanelUI() {
   }
 }
 
-// タブ切り替え処理
-tabLogin.addEventListener("click", () => {
-  tabLogin.classList.replace("text-gray-400", "text-gray-800");
-  tabLogin.classList.replace("border-transparent", "border-gray-800");
-  tabSignup.classList.replace("text-gray-800", "text-gray-400");
-  tabSignup.classList.replace("border-gray-800", "border-transparent");
-  loginFormArea.classList.remove("hidden");
-  signupFormArea.classList.add("hidden");
-  authMessage.textContent = "";
-});
+// タブ切り替え処理（安全なDOM参照とnullガード）
+const tabLoginEl = document.getElementById("tabLogin");
+const tabSignupEl = document.getElementById("tabSignup");
+const loginFormAreaEl = document.getElementById("loginFormArea");
+const signupFormAreaEl = document.getElementById("signupFormArea");
+const authMessageEl = document.getElementById("authMessage");
+const authButtonEl = document.getElementById("authButton");
+const signupButtonEl = document.getElementById("signupButton");
+const emailInputEl = document.getElementById("emailInput");
+const passwordInputEl = document.getElementById("passwordInput");
+const signupEmailInputEl = document.getElementById("signupEmailInput");
+const signupPasswordInputEl = document.getElementById("signupPasswordInput");
 
-tabSignup.addEventListener("click", () => {
-  tabSignup.classList.replace("text-gray-400", "text-gray-800");
-  tabSignup.classList.replace("border-transparent", "border-gray-800");
-  tabLogin.classList.replace("text-gray-800", "text-gray-400");
-  tabLogin.classList.replace("border-gray-800", "border-transparent");
-  signupFormArea.classList.remove("hidden");
-  loginFormArea.classList.add("hidden");
-  authMessage.textContent = "";
-});
+if (tabLoginEl && tabSignupEl && loginFormAreaEl && signupFormAreaEl) {
+  tabLoginEl.addEventListener("click", () => {
+    tabLoginEl.classList.replace("text-gray-400", "text-gray-800");
+    tabLoginEl.classList.replace("border-transparent", "border-gray-800");
+    tabSignupEl.classList.replace("text-gray-800", "text-gray-400");
+    tabSignupEl.classList.replace("border-gray-800", "border-transparent");
+    loginFormAreaEl.classList.remove("hidden");
+    signupFormAreaEl.classList.add("hidden");
+    if (authMessageEl) authMessageEl.textContent = "";
+  });
 
-authButton.addEventListener("click", async () => {
-  const email = (emailInput.value || "").trim();
-  const password = passwordInput.value;
-  authMessage.textContent = "";
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-  } catch (error) {
-    const code = error.code || "";
-    if (code === "auth/user-not-found") {
-      authMessage.textContent = "このメールアドレスは登録されていません。";
-    } else if (code === "auth/wrong-password") {
-      authMessage.textContent = "パスワードが正しくありません。";
-    } else if (code === "auth/invalid-credential") {
-      authMessage.textContent = "メールアドレスまたはパスワードが正しくありません。";
-    } else if (code === "auth/invalid-email") {
-      authMessage.textContent = "メールアドレスの形式が正しくありません。";
-    } else if (code === "auth/user-disabled") {
-      authMessage.textContent = "このアカウントは無効になっています。管理者にお問い合わせください。";
-    } else if (code === "auth/too-many-requests") {
-      authMessage.textContent = "ログイン試行が多すぎます。しばらく待ってからお試しください。";
-    } else {
-      authMessage.textContent = "ログインに失敗しました。";
+  tabSignupEl.addEventListener("click", () => {
+    tabSignupEl.classList.replace("text-gray-400", "text-gray-800");
+    tabSignupEl.classList.replace("border-transparent", "border-gray-800");
+    tabLoginEl.classList.replace("text-gray-800", "text-gray-400");
+    tabLoginEl.classList.replace("border-gray-800", "border-transparent");
+    signupFormAreaEl.classList.remove("hidden");
+    loginFormAreaEl.classList.add("hidden");
+    if (authMessageEl) authMessageEl.textContent = "";
+  });
+}
+
+if (authButtonEl && emailInputEl && passwordInputEl) {
+  authButtonEl.addEventListener("click", async () => {
+    const email = (emailInputEl.value || "").trim();
+    const password = passwordInputEl.value;
+    if (authMessageEl) authMessageEl.textContent = "";
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      const code = error.code || "";
+      let msg = "ログインに失敗しました。";
+      if (code === "auth/user-not-found") msg = "このメールアドレスは登録されていません。";
+      else if (code === "auth/wrong-password") msg = "パスワードが正しくありません。";
+      else if (code === "auth/invalid-credential") msg = "メールアドレスまたはパスワードが正しくありません。";
+      else if (code === "auth/invalid-email") msg = "メールアドレスの形式が正しくありません。";
+      else if (code === "auth/user-disabled") msg = "このアカウントは無効になっています。管理者にお問い合わせください。";
+      else if (code === "auth/too-many-requests") msg = "ログイン試行が多すぎます。しばらく待ってからお試しください。";
+      if (authMessageEl) authMessageEl.textContent = msg;
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
     }
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
+  });
+}
 
 // サインアップ処理（誰でも登録可能）
-signupButton.addEventListener("click", async () => {
-  const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-  const email = (signupEmailInput.value || "").trim();
-  const password = signupPasswordInput.value;
-  authMessage.textContent = "";
+if (signupButtonEl && signupEmailInputEl && signupPasswordInputEl) {
+  signupButtonEl.addEventListener("click", async () => {
+    const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+    const email = (signupEmailInputEl.value || "").trim();
+    const password = signupPasswordInputEl.value;
+    if (authMessageEl) authMessageEl.textContent = "";
 
-  if (!email || !password) {
-    authMessage.textContent = "メールアドレスとパスワードを入力してください。";
-    return;
-  }
-  if (password.length < 6) {
-    authMessage.textContent = "パスワードは6文字以上で設定してください。";
-    return;
-  }
-
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await createUserWithEmailAndPassword(auth, email, password);
-  } catch (err) {
-    console.error("Signup error:", err);
-    if (err.code === "auth/email-already-in-use") {
-      authMessage.textContent = "このメールアドレスはすでに使われています。";
-    } else if (err.code === "auth/invalid-email") {
-      authMessage.textContent = "メールアドレスの形式が正しくありません。";
-    } else if (err.code === "auth/weak-password") {
-      authMessage.textContent = "パスワードが弱すぎます（6文字以上）。";
-    } else {
-      authMessage.textContent = "アカウント作成に失敗しました。もう一度お試しください。";
+    if (!email || !password) {
+      if (authMessageEl) authMessageEl.textContent = "メールアドレスとパスワードを入力してください。";
+      return;
     }
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
+    if (password.length < 6) {
+      if (authMessageEl) authMessageEl.textContent = "パスワードは6文字以上で設定してください。";
+      return;
+    }
+
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      console.error("Signup error:", err);
+      let msg = "アカウント作成に失敗しました。もう一度お試しください。";
+      if (err.code === "auth/email-already-in-use") msg = "このメールアドレスはすでに使われています。";
+      else if (err.code === "auth/invalid-email") msg = "メールアドレスの形式が正しくありません。";
+      else if (err.code === "auth/weak-password") msg = "パスワードが弱すぎます（6文字以上）。";
+      if (authMessageEl) authMessageEl.textContent = msg;
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+    }
+  });
+}
 
 // authEmail を保持するための変数
 let userAuthEmail = "";
@@ -1001,22 +1010,25 @@ async function loadAdminPanelData() {
   }
 }
 
-openAdminModalButton.addEventListener("click", () => {
-  if (!isAdmin && !isListAdmin) return;
-  document.querySelectorAll(".admin-only-tab").forEach(el => {
-    el.style.display = isAdmin ? "" : "none";
+const openAdminModalBtn = document.getElementById("openAdminModalButton");
+if (openAdminModalBtn) {
+  openAdminModalBtn.addEventListener("click", () => {
+    if (!isAdmin && !isListAdmin) return;
+    document.querySelectorAll(".admin-only-tab").forEach(el => {
+      el.style.display = isAdmin ? "" : "none";
+    });
+    document.querySelectorAll(".admin-only-section").forEach(el => {
+      el.classList.toggle("hidden", !isAdmin);
+    });
+    switchAdminTab("allowed");
+    loadAdminPanelData();
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      openMobileDetail('admin');
+    } else {
+      switchDiscordSettingsTab('admin');
+    }
   });
-  document.querySelectorAll(".admin-only-section").forEach(el => {
-    el.classList.toggle("hidden", !isAdmin);
-  });
-  switchAdminTab("allowed");
-  loadAdminPanelData();
-  if (window.matchMedia('(max-width: 768px)').matches) {
-    openMobileDetail('admin');
-  } else {
-    switchDiscordSettingsTab('admin');
-  }
-});
+}
 
 // 許可リスト追加
 // ストレージ統計
@@ -1144,64 +1156,74 @@ document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async
   }
 });
 
-addAllowedEmailButton.addEventListener("click", async () => {
-  const email = newAllowedEmailInput.value.trim();
-  if (!email) return;
-  adminMessage.textContent = "追加中...";
-  try {
-    const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
-    const snap = await getDoc(ref);
-    if (snap.exists()) { adminMessage.textContent = "すでに追加されています。"; return; }
+const addAllowedEmailBtn = document.getElementById("addAllowedEmailButton");
+const newAllowedEmailInp = document.getElementById("newAllowedEmailInput");
+const adminMsgEl = document.getElementById("adminMessage");
 
-    await setDoc(ref, {
-      email: email,
-      addedBy: auth.currentUser.uid,
-      addedAt: serverTimestamp()
-    });
+if (addAllowedEmailBtn && newAllowedEmailInp) {
+  addAllowedEmailBtn.addEventListener("click", async () => {
+    const email = newAllowedEmailInp.value.trim();
+    if (!email) return;
+    if (adminMsgEl) adminMsgEl.textContent = "追加中...";
+    try {
+      const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
+      const snap = await getDoc(ref);
+      if (snap.exists()) { if (adminMsgEl) adminMsgEl.textContent = "すでに追加されています。"; return; }
 
-    await setDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig"), { active: true }, { merge: true });
+      await setDoc(ref, {
+        email: email,
+        addedBy: auth.currentUser.uid,
+        addedAt: serverTimestamp()
+      });
 
-    newAllowedEmailInput.value = "";
-    adminMessage.textContent = "追加しました。";
-  } catch (e) {
-    console.error(e);
-    adminMessage.textContent = "エラーが発生しました。";
-  }
-});
+      await setDoc(doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig"), { active: true }, { merge: true });
+
+      newAllowedEmailInp.value = "";
+      if (adminMsgEl) adminMsgEl.textContent = "追加しました。";
+    } catch (e) {
+      console.error(e);
+      if (adminMsgEl) adminMsgEl.textContent = "エラーが発生しました。";
+    }
+  });
+}
 
 async function removeAllowedEmail(email) {
   if (!await showCustomConfirm(`「${email}」を許可リストから削除しますか？`, "削除")) return;
-  adminMessage.textContent = "削除中...";
+  if (adminMsgEl) adminMsgEl.textContent = "削除中...";
   try {
     const ref = doc(db, `artifacts/${appId}/allowedEmails`, email);
     await deleteDoc(ref);
-    adminMessage.textContent = "削除しました。";
+    if (adminMsgEl) adminMsgEl.textContent = "削除しました。";
   } catch (e) {
     console.error(e);
-    adminMessage.textContent = "エラーが発生しました。";
+    if (adminMsgEl) adminMsgEl.textContent = "エラーが発生しました。";
   }
 }
 
 // 管理者リスト追加
-addAdminEmailButton.addEventListener("click", async () => {
-  const email = newAdminEmailInput.value.trim();
-  if (!email) return;
-  adminMessage.textContent = "追加中...";
-  try {
-    const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-    const snap = await getDoc(ref);
-    const emails = snap.exists() ? snap.data().emails || [] : [];
-    if (emails.includes(email)) { adminMessage.textContent = "すでに管理者です。"; return; }
-    emails.push(email);
-    await setDoc(ref, { emails }, { merge: true });
-    newAdminEmailInput.value = "";
-    renderAdminEmails(emails);
-    adminMessage.textContent = "追加しました。";
-  } catch (e) {
-    console.error(e);
-    adminMessage.textContent = "エラーが発生しました。";
-  }
-});
+const addAdminEmailBtn = document.getElementById("addAdminEmailButton");
+const newAdminEmailInp = document.getElementById("newAdminEmailInput");
+if (addAdminEmailBtn && newAdminEmailInp) {
+  addAdminEmailBtn.addEventListener("click", async () => {
+    const email = newAdminEmailInp.value.trim();
+    if (!email) return;
+    if (adminMsgEl) adminMsgEl.textContent = "追加中...";
+    try {
+      const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
+      const snap = await getDoc(ref);
+      const emails = snap.exists() ? snap.data().emails || [] : [];
+      if (emails.includes(email)) { if (adminMsgEl) adminMsgEl.textContent = "すでに管理者です。"; return; }
+      emails.push(email);
+      await setDoc(ref, { emails }, { merge: true });
+      newAdminEmailInp.value = "";
+      renderAdminEmails(emails);
+      if (adminMsgEl) adminMsgEl.textContent = "追加しました。";
+    } catch (e) {
+      console.error(e);
+      if (adminMsgEl) adminMsgEl.textContent = "エラーが発生しました。";
+    }
+  });
+}
 
 async function removeAdminEmail(email) {
   if (email === userAuthEmail) { adminMessage.textContent = "自分自身は削除できません。"; return; }
@@ -2024,161 +2046,201 @@ document.getElementById("serverListUserBtn").addEventListener("click", () => {
   openSettingsModal("profile");
 });
 
-userPanel.addEventListener("click", (e) => {
-  if (e.target.closest('#openSettingsBtn')) return;
-  // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
-  if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
-  openSettingsModal("profile");
-});
+const userPanelEl = document.getElementById("userPanel");
+const openSettingsBtnEl = document.getElementById("openSettingsBtn");
+const resetAvatarBtnEl = document.getElementById("resetAvatarButton");
+const closeSettingsBtnEl = document.getElementById("closeSettingsButton");
+const settingsModalEl = document.getElementById("settingsModal");
+const saveSettingsBtnEl = document.getElementById("saveSettingsButton");
+const logoutBtnInModalEl = document.getElementById("logoutButtonInModal");
+const setNicknameBtnEl = document.getElementById("setNicknameButton");
+const settingsNicknameInpEl = document.getElementById("settingsNicknameInput");
+const settingsMsgEl = document.getElementById("settingsMessage");
+const nicknameInpEl = document.getElementById("nicknameInput");
+const nicknameMsgEl = document.getElementById("nicknameMessage");
 
-document.getElementById("openSettingsBtn").addEventListener("click", (e) => {
-  e.stopPropagation();
-  // スマホでは PC用設定モーダルが非表示なので、スマホUIの「あなた」画面を開く
-  if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
-  openSettingsModal("settings");
-});
+if (userPanelEl) {
+  userPanelEl.addEventListener("click", (e) => {
+    if (e.target.closest('#openSettingsBtn')) return;
+    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    openSettingsModal("profile");
+  });
+}
+
+if (openSettingsBtnEl) {
+  openSettingsBtnEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (window.matchMedia('(max-width: 768px)').matches) { switchMobileTab('you'); return; }
+    openSettingsModal("settings");
+  });
+}
 
 // アイコンリセットボタン
-resetAvatarButton.addEventListener("click", async () => {
-  loadingOverlay.classList.remove("hidden");
-  try {
-    const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-    await updateDoc(userProfileRef, { avatarUrl: null });
-    // ★ ルートのusersにも同期
-    const userRef = doc(db, `artifacts/${appId}/users`, userId);
-    await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
-    userAvatarUrl = null;
-    pendingAvatarUrl = null;
-    settingsAvatarPreview.classList.add("hidden");
-    settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
-    resetAvatarButton.classList.add("hidden");
-    updateUserPanelUI();
-    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
-    settingsMessage.textContent = "アイコンをリセットしました";
-    settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
-  } catch (e) {
-    console.error(e);
-    settingsMessage.textContent = "リセットに失敗しました";
-    settingsMessage.className = "text-center mt-2 text-sm text-red-600";
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
-
-closeSettingsButton.addEventListener("click", () => {
-  settingsModal.classList.add("hidden");
-});
-
-// ★ モーダルの背景クリックで閉じる処理
-settingsModal.addEventListener("click", (e) => {
-  if (e.target === settingsModal) {
-    settingsModal.classList.add("hidden");
-    closeCropModal(); // 設定モーダルを閉じたらクロップモーダルも閉じる
-  }
-});
-
-saveSettingsButton.addEventListener("click", async () => {
-  const newName = settingsNicknameInput.value.trim();
-  if (newName.length < 1 || newName.length > 20) {
-    settingsMessage.textContent = "1〜20文字で入力してください。";
-    settingsMessage.className = "text-center mt-2 text-sm text-red-600";
-    return;
-  }
-  loadingOverlay.classList.remove("hidden");
-  try {
-    const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-    const updateData = { nickname: newName, createdAt: serverTimestamp() };
-    if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
-    await setDoc(userProfileRef, updateData, { merge: true });
-
-    // ★ ユーザー一覧・管理者画面用にルートのusersにも同期
-    const userRef = doc(db, `artifacts/${appId}/users`, userId);
-    await setDoc(userRef, {
-      email: userAuthEmail,
-      nickname: newName,
-      avatarUrl: pendingAvatarUrl || userAvatarUrl || null
-    }, { merge: true }).catch(console.error);
-
-    userNickname = newName;
-    if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
-
-    // ★ヘッダータイトルの更新
-    headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
-    updateUserPanelUI();
-
-    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
-
-    settingsMessage.textContent = "保存しました";
-    settingsMessage.className = "text-center mt-2 text-sm text-gray-600";
-    closeCropModal();
-    setTimeout(() => settingsModal.classList.add("hidden"), 1000);
-  } catch (e) {
-    settingsMessage.textContent = "エラーが発生しました";
-    settingsMessage.className = "text-center mt-2 text-sm text-red-600";
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
-
-logoutButtonInModal.addEventListener("click", async () => {
-  if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
-  closeCropModal();
-  settingsModal.classList.add("hidden");
-  loadingOverlay.classList.remove("hidden");
-  try {
-    await updateUserStatus('offline');
-    await signOut(auth);
-  } catch (error) {
-    console.error("Logout Error:", error);
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
-
-
-setNicknameButton.addEventListener("click", async () => {
-  const nickname = (nicknameInput.value || "").trim();
-  if (nickname.length < 1 || nickname.length > 20) {
-    nicknameMessage.textContent = "1〜20文字で入力してください。";
-    return;
-  }
-  loadingOverlay.classList.remove("hidden");
-  try {
-    const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-    await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
-
-    // ★ ユーザー一覧・管理者画面用にルートのusersにも同期
-    const userRef = doc(db, `artifacts/${appId}/users`, userId);
-    await setDoc(userRef, { email: userAuthEmail, nickname: nickname }, { merge: true }).catch(console.error);
-
-    userNickname = nickname;
-
-    // ★ヘッダータイトルの更新
-    headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
-    updateUserPanelUI();
-
-    document.body.classList.add("logged-in");
-    nicknameContainer.classList.add("hidden");
-    const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
-    if (isDiscordMode) {
-      const sls = document.getElementById("serverListScreen");
-      if (sls) sls.classList.add("hidden");
-      appContainer.classList.remove("hidden");
-      setDiscordUIMode(true);
-    } else {
-      appContainer.classList.add("hidden");
-      const sls = document.getElementById("serverListScreen");
-      if (sls) sls.classList.remove("hidden");
+if (resetAvatarBtnEl) {
+  resetAvatarBtnEl.addEventListener("click", async () => {
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+      await updateDoc(userProfileRef, { avatarUrl: null });
+      const userRef = doc(db, `artifacts/${appId}/users`, userId);
+      await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+      userAvatarUrl = null;
+      pendingAvatarUrl = null;
+      const previewEl = document.getElementById("settingsAvatarPreview");
+      const textEl = document.getElementById("settingsAvatarText");
+      if (previewEl) previewEl.classList.add("hidden");
+      if (textEl && userNickname) textEl.textContent = userNickname.charAt(0).toUpperCase();
+      resetAvatarBtnEl.classList.add("hidden");
+      updateUserPanelUI();
+      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+      if (settingsMsgEl) {
+        settingsMsgEl.textContent = "アイコンをリセットしました";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
+      }
+    } catch (e) {
+      console.error(e);
+      if (settingsMsgEl) {
+        settingsMsgEl.textContent = "リセットに失敗しました";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
     }
-    showServerList();
-    startPresenceSystem();
-    initializeFCM();
-  } catch (error) {
-    nicknameMessage.textContent = `エラー: ${error.message}`;
-  } finally {
-    loadingOverlay.classList.add("hidden");
-  }
-});
+  });
+}
+
+if (closeSettingsBtnEl && settingsModalEl) {
+  closeSettingsBtnEl.addEventListener("click", () => {
+    settingsModalEl.classList.add("hidden");
+  });
+}
+
+if (settingsModalEl) {
+  settingsModalEl.addEventListener("click", (e) => {
+    if (e.target === settingsModalEl) {
+      settingsModalEl.classList.add("hidden");
+      closeCropModal();
+    }
+  });
+}
+
+if (saveSettingsBtnEl && settingsNicknameInpEl) {
+  saveSettingsBtnEl.addEventListener("click", async () => {
+    const newName = settingsNicknameInpEl.value.trim();
+    if (newName.length < 1 || newName.length > 20) {
+      if (settingsMsgEl) {
+        settingsMsgEl.textContent = "1〜20文字で入力してください。";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+      return;
+    }
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+      const updateData = { nickname: newName, createdAt: serverTimestamp() };
+      if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
+      await setDoc(userProfileRef, updateData, { merge: true });
+
+      const userRef = doc(db, `artifacts/${appId}/users`, userId);
+      await setDoc(userRef, {
+        email: userAuthEmail,
+        nickname: newName,
+        avatarUrl: pendingAvatarUrl || userAvatarUrl || null
+      }, { merge: true }).catch(console.error);
+
+      userNickname = newName;
+      if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+
+      const hdrTitle = document.getElementById("headerTitle");
+      if (hdrTitle) hdrTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
+      updateUserPanelUI();
+
+      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+
+      if (settingsMsgEl) {
+        settingsMsgEl.textContent = "保存しました";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
+      }
+      closeCropModal();
+      setTimeout(() => { if (settingsModalEl) settingsModalEl.classList.add("hidden"); }, 1000);
+    } catch (e) {
+      if (settingsMsgEl) {
+        settingsMsgEl.textContent = "エラーが発生しました";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+    }
+  });
+}
+
+if (logoutBtnInModalEl) {
+  logoutBtnInModalEl.addEventListener("click", async () => {
+    if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
+    closeCropModal();
+    if (settingsModalEl) settingsModalEl.classList.add("hidden");
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      await updateUserStatus('offline');
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout Error:", error);
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+    }
+  });
+}
+
+if (setNicknameBtnEl && nicknameInpEl) {
+  setNicknameBtnEl.addEventListener("click", async () => {
+    const nickname = (nicknameInpEl.value || "").trim();
+    if (nickname.length < 1 || nickname.length > 20) {
+      if (nicknameMsgEl) nicknameMsgEl.textContent = "1〜20文字で入力してください。";
+      return;
+    }
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+      await setDoc(userProfileRef, { nickname: nickname, createdAt: serverTimestamp() });
+
+      const userRef = doc(db, `artifacts/${appId}/users`, userId);
+      await setDoc(userRef, { email: userAuthEmail, nickname: nickname }, { merge: true }).catch(console.error);
+
+      userNickname = nickname;
+
+      const hdrTitle = document.getElementById("headerTitle");
+      if (hdrTitle) hdrTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
+      updateUserPanelUI();
+
+      document.body.classList.add("logged-in");
+      const nicknameCont = document.getElementById("nicknameContainer");
+      const appCont = document.getElementById("appContainer");
+      const sls = document.getElementById("serverListScreen");
+      if (nicknameCont) nicknameCont.classList.add("hidden");
+      
+      const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+      if (isDiscordMode) {
+        if (sls) sls.classList.add("hidden");
+        if (appCont) appCont.classList.remove("hidden");
+        setDiscordUIMode(true);
+      } else {
+        if (appCont) appCont.classList.add("hidden");
+        if (sls) sls.classList.remove("hidden");
+      }
+      showServerList();
+      startPresenceSystem();
+      initializeFCM();
+    } catch (error) {
+      if (nicknameMsgEl) nicknameMsgEl.textContent = `エラー: ${error.message}`;
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+    }
+  });
+}
 
 // ================= MODULE: presence.js ================
 // ================= PRESENCE MODULE ================
@@ -3552,7 +3614,6 @@ window.switchSsTab = function (tab) {
 }
 
 
-window.openServerSettings = openServerSettings;
 window.openServerSettings = openServerSettings;
 async function openServerSettings() {
   if (!currentServerId) return;
