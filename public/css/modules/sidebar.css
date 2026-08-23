@@ -889,6 +889,10 @@
         height: 100% !important;
         flex: 1 1 0 !important;
       }
+      /* スマホ表示時は右側メンバーリストを非表示にしてメイン画面を全幅にする */
+      body.discord-ui-mode #discordHomeMembers {
+        display: none !important;
+      }
       /* #discordServerNavと#serverHeaderの天井高さを自然なSafe Areaで統一 */
       body.discord-ui-mode #discordServerNav {
         width: 56px !important;
@@ -954,13 +958,14 @@
         border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
         background: #162032 !important;
       }
-      /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応 */
+      /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応（全幅に最適化） */
       body.discord-ui-mode.discord-discover-view #sidebar {
         display: none !important;
       }
       body.discord-ui-mode.discord-discover-view #discordDiscoverView {
         flex: 1 1 auto !important;
-        width: auto !important;
+        width: calc(100% - 56px) !important;
+        max-width: calc(100% - 56px) !important;
         display: flex !important;
         padding: 1rem !important;
         min-width: 0 !important;
@@ -969,9 +974,14 @@
       body.discord-ui-mode.discord-dm-view #discordDmHomeView {
         display: none !important;
       }
-      body.discord-ui-mode.discord-dm-view #sidebar,
+      body.discord-ui-mode.discord-dm-view #sidebar {
+        display: flex !important;
+        width: calc(100% - 56px) !important;
+        max-width: calc(100% - 56px) !important;
+      }
       body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
         display: flex !important;
+        width: 100% !important;
       }
       /* チャット画面表示中：全画面表示 */
       body.discord-ui-mode.in-chat-view #chatArea {

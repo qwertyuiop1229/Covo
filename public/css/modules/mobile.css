@@ -119,20 +119,18 @@
     }
     #mobileBottomNav {
       display: none;
-      flex: 0 0 var(--mnav-total) !important;
       width: 100%;
-      height: var(--mnav-total) !important;
+      height: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
       padding-top: 0 !important;
       padding-left: var(--safe-left) !important;
       padding-right: var(--safe-right) !important;
-      padding-bottom: var(--safe-bottom) !important;
+      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
       margin: 0 !important;
-      background: #1f2937;
+      background: #0b0f19 !important;
       flex-direction: row;
       align-items: center;
       justify-content: space-around;
-      border-top: none !important;
-      box-shadow: 0 -1px 3px rgba(0,0,0,0.05) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
       box-sizing: border-box;
       transition: background 0.2s ease;
       z-index: 200 !important;
@@ -450,19 +448,24 @@
       #serverListNotifBtn {
         display: none !important;
       }
-      /* iOS PWA: body/htmlの背景をボトムナビと完全一致させ、Safe Area(端末下部のバー周辺)に不格好な黒帯が出るのを100%根絶 */
+      /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
       html, body {
-        background-color: #1f2937 !important;
+        background-color: #0b0f19 !important;
       }
-      /* DiscordUIモード(ライト)時は白背景に統一し、Safe Areaの最底面までシームレスな美しさを実現 */
-      body:not(.dark-server-theme).discord-ui-mode,
-      html:has(body:not(.dark-server-theme).discord-ui-mode) {
+      /* DiscordUIモード(ライト)時 */
+      body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode,
+      html:has(body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode) {
         background-color: #ffffff !important;
       }
-      /* ダークモード（ホーム）: 同じナビ色 */
+      /* ネイビーモード時 */
       body.dark-server-theme,
       html:has(body.dark-server-theme) {
-        background-color: #1f2937 !important;
+        background-color: #0b0f19 !important;
+      }
+      /* Discordダーク時 */
+      body.discord-dark-theme,
+      html:has(body.discord-dark-theme) {
+        background-color: #1e1f22 !important;
       }
       /* チャット画面時はチャット背景(白)と揃える */
       body.in-chat-view,

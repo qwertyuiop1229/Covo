@@ -11524,16 +11524,20 @@ window.closeWindow = function () {
   }
 };
 
-// 環境判定とタイトルバー / ダウンロードボタンの表示初期化
+// 環境判定とタイトルバー / ダウンロードボタンの表示初期化（PWA時は非表示）
 (function initDesktopAndWebUI() {
   if (window.__TAURI__) {
     // Windowsデスクトップアプリ: タイトルバーを表示
     const titleBar = document.getElementById('discordTitleBar');
     if (titleBar) titleBar.style.display = 'flex';
   } else {
-    // Web版: ダウンロードボタンを表示
+    // PWAスタンドアロン判定 (iOS & Android)
+    const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
     const dlBtn = document.getElementById('discordDownloadAppBtn');
-    if (dlBtn) dlBtn.style.display = 'flex';
+    if (dlBtn) {
+      // PWAとしてインストール済みで起動している場合はダウンロードボタンを表示しない
+      dlBtn.style.display = isStandalone ? 'none' : 'flex';
+    }
   }
 })();
 
