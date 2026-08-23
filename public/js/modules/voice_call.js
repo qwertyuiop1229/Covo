@@ -36,8 +36,23 @@ import {
   increment,
   documentId,
   collectionGroup,
-  deleteField
+  deleteField,
+  addDoc
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+const STUN_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+const STUN_ONLY_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 import {
   getMessaging,
   getToken,

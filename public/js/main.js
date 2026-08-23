@@ -36,12 +36,14 @@ import {
   limit,
   startAfter,
   startAt,
+  endAt,
   arrayUnion,
   arrayRemove,
   increment,
   documentId,
   collectionGroup,
-  deleteField
+  deleteField,
+  addDoc
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getMessaging,
@@ -55,7 +57,7 @@ import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFa
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine } from './debug_ui.js';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText } from './debug_ui.js';
 
 
 // === コンソールログの自動収集 ===
@@ -172,6 +174,12 @@ window.clearInspectHighlight = function (...args) { if (typeof __clearInspectHig
 function clearInspectHighlight(...args) { if (typeof __clearInspectHighlight === 'function') return __clearInspectHighlight(...args); }
 window.showInspectHighlight = function (...args) { if (typeof __showInspectHighlight === 'function') return __showInspectHighlight(...args); };
 function showInspectHighlight(...args) { if (typeof __showInspectHighlight === 'function') return __showInspectHighlight(...args); }
+window.setInspectMode = setInspectMode;
+window.toggleDevConsole = toggleDevConsole;
+window.clearDevConsole = clearDevConsole;
+window.copyDevConsole = copyDevConsole;
+window.copyDebugText = copyDebugText;
+
 
 // ファイルアップローダー
 function checkFileAllowed(file) { return _checkFileAllowed(file); }
@@ -2149,11 +2157,22 @@ setNicknameButton.addEventListener("click", async () => {
     headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
     updateUserPanelUI();
 
+    document.body.classList.add("logged-in");
     nicknameContainer.classList.add("hidden");
-    appContainer.classList.remove("hidden");
-    loadRooms();
+    const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+    if (isDiscordMode) {
+      const sls = document.getElementById("serverListScreen");
+      if (sls) sls.classList.add("hidden");
+      appContainer.classList.remove("hidden");
+      setDiscordUIMode(true);
+    } else {
+      appContainer.classList.add("hidden");
+      const sls = document.getElementById("serverListScreen");
+      if (sls) sls.classList.remove("hidden");
+    }
+    showServerList();
     startPresenceSystem();
-    // ★ initializeFCM() は onAuthStateChanged で既に呼ばれるためここからは削除
+    initializeFCM();
   } catch (error) {
     nicknameMessage.textContent = `エラー: ${error.message}`;
   } finally {
@@ -9213,6 +9232,19 @@ async function copyToClipboard(text) {
 }
 
 // --- P2P Voice Call ---
+const STUN_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+const STUN_ONLY_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 
 function renderCallAvatar(el, name, url) {
   __setAvatarImg(el, url, name, { style: '' });

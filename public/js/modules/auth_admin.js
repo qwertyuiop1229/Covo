@@ -1892,11 +1892,22 @@ setNicknameButton.addEventListener("click", async () => {
     headerTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
     updateUserPanelUI();
 
+    document.body.classList.add("logged-in");
     nicknameContainer.classList.add("hidden");
-    appContainer.classList.remove("hidden");
-    loadRooms();
+    const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+    if (isDiscordMode) {
+      const sls = document.getElementById("serverListScreen");
+      if (sls) sls.classList.add("hidden");
+      appContainer.classList.remove("hidden");
+      if (typeof setDiscordUIMode === 'function') setDiscordUIMode(true);
+    } else {
+      appContainer.classList.add("hidden");
+      const sls = document.getElementById("serverListScreen");
+      if (sls) sls.classList.remove("hidden");
+    }
+    showServerList();
     startPresenceSystem();
-    // ★ initializeFCM() は onAuthStateChanged で既に呼ばれるためここからは削除
+    initializeFCM();
   } catch (error) {
     nicknameMessage.textContent = `エラー: ${error.message}`;
   } finally {

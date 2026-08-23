@@ -1,3 +1,7 @@
+import { doc, getDoc, updateDoc, collection, onSnapshot, serverTimestamp, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getEmojiHtml, _twemojiParse } from '../text_formatter.js';
+import { alertMessage } from '../ui_helpers.js';
+
 // ================= STICKERS DATA MODULE ================
 /* =====================================================================
    スタンプ機能（Twemoji絵文字をLINE風スタンプとして送る）

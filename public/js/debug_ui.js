@@ -148,3 +148,48 @@ export function _appendConsoleLine(line) {
       body.appendChild(div);
     }
 
+let _inspectMode = false;
+export function setInspectMode(enabled) {
+  _inspectMode = !!enabled;
+  const bar = document.getElementById('inspectModeBar');
+  const pcCb = document.getElementById('pcToggleInspectMode');
+  const mobileCb = document.getElementById('toggleInspectMode');
+  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+  if (pcCb) pcCb.checked = _inspectMode;
+  if (mobileCb) mobileCb.checked = _inspectMode;
+  if (!_inspectMode) {
+    __clearInspectHighlight();
+  }
+}
+
+export function toggleDevConsole() {
+  const panel = document.getElementById('devConsolePanel');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? 'flex' : 'none';
+}
+
+export function clearDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  if (body) body.innerHTML = '';
+  window._covoLogs = [];
+}
+
+export function copyDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
+}
+
+export function copyDebugText(txt) {
+  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+
+if (typeof window !== 'undefined') {
+  window.setInspectMode = setInspectMode;
+  window.toggleDevConsole = toggleDevConsole;
+  window.clearDevConsole = clearDevConsole;
+  window.copyDevConsole = copyDevConsole;
+  window.copyDebugText = copyDebugText;
+}
+

@@ -130,7 +130,6 @@ async function getWorkerAuthToken(env) {
 
 // Firestore REST APIを使って allowedEmails ドキュメントを取得
 async function getAllowedEmails(idToken, env) {
-  if (idToken === "fake_token") return "test_sender";
   const projectId = env.FIREBASE_PROJECT_ID;
   const appId = env.FIREBASE_APP_ID;
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmails`;
@@ -983,7 +982,7 @@ async function handleUploadFile(request, env) {
 async function handleDeleteFile(request, env, url) {
   try {
     const key = url.pathname.replace('/api/file/', '');
-    if (!key || !env.FILES) return new Response('Not Found', { status: 404, headers: corsHeaders });
+    if (!key || !env.FILES) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const requesterId = url.searchParams.get('userId') || '';
     const idToken = url.searchParams.get('idToken') || '';
