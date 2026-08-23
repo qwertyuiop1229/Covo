@@ -211,13 +211,13 @@
         display: flex !important;
       }
 
-      /* スマホ入力欄: 余計な枠線・影・グレー帯を完全撤去し、チャット本文＆キーボードと完璧に一体化 */
+      /* スマホ入力欄: 余計な枠線・影・グレー帯を完全撤去し、キーボード直上にピッタリ吸い付くフラットデザイン */
       #messageInputArea {
         border: none !important;
         border-top: none !important;
         border-bottom: none !important;
-        padding-top: 0.35rem !important;
-        padding-bottom: max(6px, env(safe-area-inset-bottom, 6px)) !important;
+        padding-top: 0.25rem !important;
+        padding-bottom: 0 !important; /* キーボードとの間の余分な帯・影を完全除去 */
         margin-bottom: 0 !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
@@ -947,7 +947,7 @@
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 38px !important;
       }
-      /* メインカード（#sidebar）: Safe Area Topの直下から左上角丸28pxで始まり、外側から #f2f3f5 が透ける（添付画像9再現） */
+      /* メインカード（#sidebar）: Safe Area Topの直下から左上角丸28pxで始まり、外側のベース背景色(#f2f3f5)と一体化（添付画像9完全再現） */
       body.discord-ui-mode #sidebar {
         position: relative !important;
         left: auto !important;
@@ -957,8 +957,9 @@
         max-width: calc(100% - 70px) !important;
         display: flex !important;
         min-width: 0 !important;
-        margin-top: max(10px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        margin-top: max(8px, env(safe-area-inset-top, 8px)) !important;
         border-top-left-radius: 28px !important;
+        border-top-right-radius: 0 !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
         overflow: hidden !important;

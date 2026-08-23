@@ -192,17 +192,17 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      background: #ffffff;
-      border: 1.5px solid #e5e7eb;
+      background: #f3f4f6;
+      border: none !important;
       border-radius: 14px;
       padding: 0 0 0 10px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      transition: background-color 0.2s;
+      box-shadow: none !important; /* 入力欄周辺の影を完全排除 */
     }
 
     #messageInputInner:focus-within {
-      border-color: #9ca3af;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border-color: transparent !important;
+      box-shadow: none !important;
     }
 
     /* ===== スタンプ ===== */
@@ -277,28 +277,27 @@
     .sticker-cell.is-fav .sticker-fav-star { display: block; }
     .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
 
-    /* 独立アクションボタン（ファイル添付・メンション） */
+    /* 独立アクションボタン（ファイル添付・メンション・プラス） */
     .input-side-btn {
-      background: #ffffff;
-      border: 1.5px solid #e5e7eb;
+      background: #f3f4f6;
+      border: none !important;
       border-radius: 14px;
       width: 40px;
       height: 43px;
-      color: #9ca3af;
+      color: #6b7280;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       font-size: 1rem;
-      transition: color 0.15s, background-color 0.15s, border-color 0.15s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      transition: color 0.15s, background-color 0.15s;
+      box-shadow: none !important; /* 影を完全排除 */
     }
 
     .input-side-btn:hover:not(:disabled) {
-      color: #374151;
-      background-color: #f3f4f6;
-      border-color: #d1d5db;
+      color: #111827;
+      background-color: #e5e7eb;
     }
 
     .input-side-btn:disabled {

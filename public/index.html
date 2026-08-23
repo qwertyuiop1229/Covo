@@ -20,7 +20,7 @@
   <!-- ここにnoindexメタタグを追加してGoogle検索からのインデックス登録を防ぎます -->
   <meta name="robots" content="noindex, nofollow" />
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" id="metaThemeColor" content="#ffffff" />
+  <meta name="theme-color" id="metaThemeColor" content="#f2f3f5" />
   <link rel="icon" type="image/x-icon" href="img/favicon.ico?v=6" />
   <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32x32.png?v=6" />
   <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192x192.png?v=6" />
@@ -56,72 +56,45 @@
 </head>
 
 <body>
+  <!-- 初期起動スプラッシュ画面（ログイン済み時のログイン画面チラつきを完全防止） -->
+  <div id="appLoadingSplash" class="fixed inset-0 bg-[#f2f3f5] dark:bg-[#1e1f22] flex flex-col items-center justify-center z-[99999] transition-opacity duration-300">
+    <div class="w-16 h-16 bg-indigo-500/10 text-indigo-500 rounded-2xl flex items-center justify-center text-3xl mb-4 animate-pulse border border-indigo-500/20 shadow-inner">
+      <i class="fas fa-comments"></i>
+    </div>
+    <div class="flex items-center gap-2.5 text-sm font-bold text-gray-700 dark:text-gray-200">
+      <i class="fas fa-circle-notch fa-spin text-indigo-500 text-xs"></i>
+      <span>読み込み中...</span>
+    </div>
+  </div>
+
   <script>
-    // iPadのみ全体スクロールを完全に固定する
+    // iPad・タブレットの全体スクロールを固定
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
       document.documentElement.style.setProperty('overflow', 'hidden', 'important');
       document.body.style.setProperty('overflow', 'hidden', 'important');
     }
     
-    // meta theme-color と html の背景色を動的に完全同期させる最強システム
+    // ダイナミックアイランド・ステータスバー・PWA背景色を自由自在に完全制御
     function updateMetaThemeColor() {
-      const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const isDarkNavy = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const isDiscordDark = document.body.classList.contains('discord-dark-theme') || document.documentElement.classList.contains('discord-dark-theme');
       const inChat = document.body.classList.contains('in-chat-view');
-      
-      // 現在のベース背景色（Discord本家準拠: ライト時はサーバーナビと同じ #f2f3f5）
-      let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [11, 15, 25] : [242, 243, 245]);
-      let targetHex = isDark ? (inChat ? '#1a202c' : '#0b0f19') : (inChat ? '#ffffff' : '#f2f3f5');
-      let blendedHex = targetHex;
 
-      // 1. メンバー一覧（#membersSidebar）が開いているかどうかを検知
-      const membersSidebar = document.getElementById('membersSidebar');
-      const isMembersOpen = membersSidebar && membersSidebar.classList.contains('bottom-sheet-open');
+      // Discord本家完全一致: サーバー一覧/探索時は #f2f3f5、チャット表示時は #ffffff
+      let targetHex = '#f2f3f5'; // Discord Light（添付画像9準拠）
 
-      // 2. ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを検知
-      let activeOverlayBg = null;
-      let hasHigherModalOpen = false;
-
-      const overlays = document.querySelectorAll('.modal-overlay, [id*="Modal"], [id*="Preview"], [id*="Overlay"], [id*="Popup"], [class*="modal"], [class*="backdrop"], [class*="bg-black"], [class*="bg-gray-900"]');
-      for (let i = 0; i < overlays.length; i++) {
-        const el = overlays[i];
-        const style = window.getComputedStyle(el);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity > 0 && !el.classList.contains('hidden')) {
-          if (style.position === 'fixed' || style.position === 'absolute') {
-            const bg = style.backgroundColor;
-            if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-              if (el.id !== 'bottomSheetOverlay') {
-                activeOverlayBg = bg;
-                hasHigherModalOpen = true;
-                break;
-              } else if (!isMembersOpen) {
-                activeOverlayBg = bg;
-              }
-            }
-          }
-        }
+      if (isDiscordDark) {
+        targetHex = inChat ? '#313338' : '#1e1f22';
+      } else if (isDarkNavy) {
+        targetHex = inChat ? '#1a202c' : '#0b0f19';
+      } else if (inChat) {
+        targetHex = '#ffffff'; // チャット画面は完全な白
       }
 
-      // ★究極のステート優先順位判定：
-      // (A) メンバー一覧の上にさらにアイコンタップ等で別のポップアップ・プレビューが開いた場合 -> 半透明グレー（ブレンド色）
-      // (B) メンバー一覧だけが開いている場合 -> 下側の空白部分は絶対にメンバー一覧コンテナの背景色（ライトなら白色 #ffffff、ダークなら #1f2937）にする！
-      if (hasHigherModalOpen || (activeOverlayBg && !isMembersOpen)) {
-        const rgbaMatch = activeOverlayBg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-        if (rgbaMatch) {
-          const r = parseInt(rgbaMatch[1], 10);
-          const g = parseInt(rgbaMatch[2], 10);
-          const b = parseInt(rgbaMatch[3], 10);
-          const a = rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1;
-          
-          const blendedR = Math.round(r * a + baseRgb[0] * (1 - a));
-          const blendedG = Math.round(g * a + baseRgb[1] * (1 - a));
-          const blendedB = Math.round(b * a + baseRgb[2] * (1 - a));
-          
-          blendedHex = '#' + [blendedR, blendedG, blendedB].map(x => x.toString(16).padStart(2, '0')).join('');
-        } else {
-          blendedHex = '#71717a';
-        }
-      } else if (isMembersOpen) {
-        blendedHex = isDark ? '#1f2937' : '#ffffff';
+      // メンバー一覧などのボトムシートが開いている場合
+      const membersSidebar = document.getElementById('membersSidebar');
+      if (membersSidebar && membersSidebar.classList.contains('bottom-sheet-open')) {
+        targetHex = isDiscordDark ? '#2b2d31' : (isDarkNavy ? '#1f2937' : '#ffffff');
       }
 
       let metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
@@ -131,18 +104,21 @@
         metaTheme.id = 'metaThemeColor';
         document.head.appendChild(metaTheme);
       }
-      metaTheme.setAttribute('content', blendedHex);
+      metaTheme.setAttribute('content', targetHex);
       
-      document.documentElement.classList.toggle('dark-server-theme', isDark);
-      document.body.classList.toggle('dark-server-theme', isDark);
-      
-      // meta theme-color のみを安全に更新（html/bodyのインラインスタイル上書きによるツートン割れ・ブラー再発を防止）
+      // PWA・Safariのダイナミックアイランド/時計周り背景色を直接同期
+      document.documentElement.style.backgroundColor = targetHex;
+      document.body.style.backgroundColor = targetHex;
     }
 
-    // ダークテーマを最初のレンダリング前に適用
-    if (localStorage.getItem('covo_dark_server') === 'true') {
+    // 初期テーマの復元と適用
+    const savedTheme = localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server') === 'true' ? 'dark-navy' : 'light');
+    if (savedTheme === 'dark-navy') {
       document.body.classList.add('dark-server-theme');
       document.documentElement.classList.add('dark-server-theme');
+    } else if (savedTheme === 'discord-dark') {
+      document.body.classList.add('discord-dark-theme');
+      document.documentElement.classList.add('discord-dark-theme');
     }
     updateMetaThemeColor();
 
@@ -151,7 +127,7 @@
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: false });
 
-    // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
+    // iPhoneでの予期せぬズーム（ピンチ＆ダブルタップ）を防止
     document.addEventListener('touchmove', function(event) {
       if (event.scale !== undefined && event.scale !== 1) {
         event.preventDefault();
@@ -171,7 +147,7 @@
     }, { passive: false });
 
     // =========================================================================
-    // 🛡️ 最強フェイルセーフ：画面真っ白・起動フリーズを完全防止するシステムリカバリー＆ウォッチドッグ
+    // 🛡️ システムリカバリー＆ウォッチドッグ
     // =========================================================================
     window.__app_fully_loaded__ = false;
 
@@ -203,11 +179,11 @@
       }
     });
 
-    // 15秒間のウォッチドッグタイマー：タイムアウト時に強制的にリカバリーパネルを展開
+    // 15秒間のウォッチドッグタイマー
     setTimeout(function() {
       if (!window.__app_fully_loaded__) {
-        console.warn('[Watchdog Timer] 15秒以内にアプリ起動完了フラグが確認できませんでした。リカバリーパネルを展開します。');
-        showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（フリーズまたは通信遮断の可能性）', null);
+        console.warn('[Watchdog Timer] 15秒以内にアプリ起動完了フラグが確認できませんでした。');
+        showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（通信遮断の可能性）', null);
       }
     }, 15000);
   </script>
