@@ -211,17 +211,23 @@
         display: flex !important;
       }
 
-      /* スマホ入力欄: 下部Safe Area（ホームバー）を自然に吸収し、無駄な余白をゼロに */
+      /* スマホ入力欄: 余計な枠線・影・グレー帯を完全撤去し、チャット本文＆キーボードと完璧に一体化 */
       #messageInputArea {
-        border-top: 0 none !important;
-        border-top-width: 0 !important;
-        border-bottom: 0 none !important;
-        padding-top: 0.5rem !important;
-        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)) !important;
+        border: none !important;
+        border-top: none !important;
+        border-bottom: none !important;
+        padding-top: 0.35rem !important;
+        padding-bottom: max(6px, env(safe-area-inset-bottom, 6px)) !important;
         margin-bottom: 0 !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
         flex-shrink: 0 !important;
+      }
+      body.dark-server-theme #messageInputArea {
+        background-color: #1a202c !important;
+      }
+      body.discord-dark-theme #messageInputArea {
+        background-color: #313338 !important;
       }
       /* 入力欄とボトムナビの境目に出る影・線を完全に除去 */
       #messageInputArea::before,
@@ -885,17 +891,17 @@
       background: #0f172a;
     }
 
-    /* モバイルビューのDiscordレイアウト適応（添付画像0/1/5/6/7完全準拠） */
+    /* モバイルビューのDiscordレイアウト適応（添付画像0/1/5/7/9完全準拠） */
     @media (max-width: 768px) {
-      /* アプリ基盤背景色をサーバーナビ色と完全一致（時計周り・ステータスバー・角丸外側の一体化） */
-      html, body, .container {
-        background-color: #f2f3f5 !important;
+      /* ダイナミックアイランド・時計周り・サーバーナビ・角丸外側まで完全同一色で調和 */
+      html, body, .container, body.discord-ui-mode #appContainer {
+        background-color: #f2f3f5 !important; /* Discord Light */
       }
-      body.dark-server-theme, html:has(body.dark-server-theme), body.dark-server-theme .container {
-        background-color: #0b0f19 !important;
+      body.dark-server-theme, html:has(body.dark-server-theme), body.dark-server-theme .container, body.dark-server-theme.discord-ui-mode #appContainer {
+        background-color: #0b0f19 !important; /* Covo Dark Navy */
       }
-      body.discord-dark-theme, html:has(body.discord-dark-theme), body.discord-dark-theme .container {
-        background-color: #1e1f22 !important;
+      body.discord-dark-theme, html:has(body.discord-dark-theme), body.discord-dark-theme .container, body.discord-dark-theme.discord-ui-mode #appContainer {
+        background-color: #1e1f22 !important; /* Discord Dark */
       }
 
       body.discord-ui-mode #appContainer {
@@ -904,7 +910,6 @@
         width: 100% !important;
         height: 100% !important;
         flex: 1 1 0 !important;
-        background: transparent !important;
         box-shadow: none !important;
       }
 
@@ -912,26 +917,17 @@
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白80px） */
+      /* #discordServerNav（添付画像9準拠: 背景透明でダイナミックアイランド直下から綺麗に配置） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
-        padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: max(10px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
         padding-bottom: max(80px, calc(80px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
         z-index: 30;
         background: transparent !important;
         border-right: none !important;
         overflow-y: auto;
         overflow-x: hidden;
-      }
-      body.discord-ui-mode #serverHeader {
-        padding-top: max(8px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        min-height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        box-sizing: border-box;
-      }
-      body.discord-ui-mode.dark-server-theme #serverHeader {
-        border-bottom: 1px solid rgba(255,255,255,0.06);
       }
       /* サーバーアイコンサイズ（48px） */
       body.discord-ui-mode .discord-server-item {
@@ -951,7 +947,7 @@
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 38px !important;
       }
-      /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
+      /* メインカード（#sidebar）: Safe Area Topの直下から左上角丸28pxで始まり、外側から #f2f3f5 が透ける（添付画像9再現） */
       body.discord-ui-mode #sidebar {
         position: relative !important;
         left: auto !important;
@@ -961,9 +957,27 @@
         max-width: calc(100% - 70px) !important;
         display: flex !important;
         min-width: 0 !important;
+        margin-top: max(10px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
         border-top-left-radius: 28px !important;
-        box-shadow: none !important; /* 下部の余計な影を完全排除 */
+        background-color: #ffffff !important;
+        box-shadow: none !important;
         overflow: hidden !important;
+      }
+      body.discord-ui-mode.dark-server-theme #sidebar {
+        background-color: #111827 !important;
+      }
+      body.discord-ui-mode.discord-dark-theme #sidebar {
+        background-color: #2b2d31 !important;
+      }
+      body.discord-ui-mode #serverHeader {
+        padding-top: 12px !important;
+        min-height: 52px !important;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        background: transparent !important;
+        box-sizing: border-box;
+      }
+      body.discord-ui-mode.dark-server-theme #serverHeader {
+        border-bottom: 1px solid rgba(255,255,255,0.06);
       }
       body.discord-ui-mode.dark-server-theme #sidebar {
         box-shadow: none !important;
