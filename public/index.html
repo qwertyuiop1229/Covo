@@ -42,17 +42,18 @@
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <!-- Panzoom (画像拡大用) -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", "G-RY7DKH85XG");
+  </script>
 </head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag() {
-    dataLayer.push(arguments);
-  }
-  gtag("js", new Date());
-  gtag("config", "G-RY7DKH85XG");
-</script>
 
 <body>
   <script>
@@ -2513,17 +2514,6 @@
       <div id="mobileNotifList"></div>
     </div>
   </div>
-
-
-  <script>
-    if (!window.__TAURI__) {
-      const dNotif = document.getElementById('desktopNotifRow');
-      if (dNotif) { dNotif.style.display = 'none'; }
-    }
-  </script>
-
-      
-
 
 <div id="feedbackModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
     <div class="bg-[#313338] rounded-2xl shadow-2xl w-full max-w-sm modal-box confirm-box animate-pop-in overflow-hidden flex flex-col border border-[#1e1f22]" style="max-height: 90vh;">

@@ -1,9 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import url('./modules/base.css');
-@import url('./modules/layout.css');
 @import url('./modules/sidebar.css');
 @import url('./modules/chat.css');
 @import url('./modules/components.css');

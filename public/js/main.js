@@ -6673,76 +6673,99 @@ document.addEventListener('keydown', (e) => {
 
 
 
-messageInput.addEventListener("keydown", (e) => {
-  if (isMentionPopupOpen) {
-    if (e.key === "ArrowDown" || e.key === "Tab") {
-      e.preventDefault();
-      mentionSelectedIndex++;
-      renderMentionPopup();
-      return;
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      mentionSelectedIndex--;
-      renderMentionPopup();
-      return;
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (mentionUsers.length > 0) {
-        selectMention(mentionUsers[mentionSelectedIndex].nickname);
+const messageInpEl = document.getElementById("messageInput");
+
+if (messageInpEl) {
+  messageInpEl.addEventListener("keydown", (e) => {
+    if (isMentionPopupOpen) {
+      if (e.key === "ArrowDown" || e.key === "Tab") {
+        e.preventDefault();
+        mentionSelectedIndex++;
+        renderMentionPopup();
+        return;
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mentionSelectedIndex--;
+        renderMentionPopup();
+        return;
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (mentionUsers.length > 0) {
+          selectMention(mentionUsers[mentionSelectedIndex].nickname);
+        }
+        return;
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeMentionPopup();
+        return;
       }
-      return;
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      closeMentionPopup();
-      return;
     }
-  }
 
-  if (e.key === "Enter" && !e.shiftKey) {
-    if (e.isComposing || e.keyCode === 229) return;
-    e.preventDefault(); sendMessage();
-  }
-});
+    if (e.key === "Enter" && !e.shiftKey) {
+      if (e.isComposing || e.keyCode === 229) return;
+      e.preventDefault(); sendMessage();
+    }
+  });
 
-messageInput.addEventListener("input", (e) => {
-  // メンション機能の判定
-  const val = messageInput.value;
-  const pos = messageInput.selectionStart;
-  const beforeCursor = val.substring(0, pos);
-  const match = beforeCursor.match(/[@＠]([^\s]*)$/);
+  messageInpEl.addEventListener("input", (e) => {
+    // メンション機能の判定
+    const val = messageInpEl.value;
+    const pos = messageInpEl.selectionStart;
+    const beforeCursor = val.substring(0, pos);
+    const match = beforeCursor.match(/[@＠]([^\s]*)$/);
 
-  if (match) {
-    const isStartOfWord = match.index === 0 || /\s/.test(beforeCursor.charAt(match.index - 1)) || /^[^\w\s]/.test(beforeCursor.charAt(match.index - 1));
-    if (isStartOfWord) {
-      openMentionPopup(match[1]);
+    if (match) {
+      const isStartOfWord = match.index === 0 || /\s/.test(beforeCursor.charAt(match.index - 1)) || /^[^\w\s]/.test(beforeCursor.charAt(match.index - 1));
+      if (isStartOfWord) {
+        openMentionPopup(match[1]);
+      } else {
+        closeMentionPopup();
+      }
     } else {
       closeMentionPopup();
     }
-  } else {
-    closeMentionPopup();
-  }
 
-  // 入力欄の自動拡張とタイピング状態の管理
-  messageInput.style.height = "auto";
-  messageInput.style.height = messageInput.scrollHeight + "px";
-  if (!isCurrentlyTyping) {
-    isCurrentlyTyping = true;
-    setTypingStatus(true);
-  }
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    isCurrentlyTyping = false;
-    setTypingStatus(false);
-  }, 3000);
-});
+    // 入力欄の自動拡張とタイピング状態の管理
+    messageInpEl.style.height = "auto";
+    messageInpEl.style.height = messageInpEl.scrollHeight + "px";
+    if (!isCurrentlyTyping) {
+      isCurrentlyTyping = true;
+      setTypingStatus(true);
+    }
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      isCurrentlyTyping = false;
+      setTypingStatus(false);
+    }, 3000);
+  });
 
-messageInput.addEventListener("blur", () => {
-  clearTimeout(typingTimeout);
-  if (isCurrentlyTyping) {
-    isCurrentlyTyping = false;
-    setTypingStatus(false);
-  }
-});
+  messageInpEl.addEventListener("blur", () => {
+    clearTimeout(typingTimeout);
+    if (isCurrentlyTyping) {
+      isCurrentlyTyping = false;
+      setTypingStatus(false);
+    }
+  });
+
+  messageInpEl.addEventListener("paste", async (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        let f = items[i].getAsFile();
+        if (!f) return;
+        f = await processHeicFile(f);
+        if (!checkFileAllowed(f)) return;
+        // 上限を統一（動画100MB / その他ファイル25MB）
+        const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+        if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+        attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type || 'application/octet-stream', size: f.size };
+        updateFilePreview();
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+}
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && isCurrentlyTyping) {
@@ -6752,27 +6775,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-messageInput.addEventListener("paste", async (e) => {
-  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].kind === 'file') {
-      let f = items[i].getAsFile();
-      if (!f) return;
-      f = await processHeicFile(f);
-      if (!checkFileAllowed(f)) return;
-      const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは10MBまでです", "error"); return; }
-      attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type, size: f.size };
-      updateFilePreview();
-      e.preventDefault();
-      return;
-    }
-  }
-});
 function updateFilePreview() {
   const progressBar = document.getElementById("uploadProgressBar");
   const progressFill = document.getElementById("uploadProgressFill");
   const filePreviewImage = document.getElementById("filePreviewImage");
+  const filePreviewName = document.getElementById("filePreviewName");
+  const filePreviewContainer = document.getElementById("filePreviewContainer");
 
   if (filePreviewImage) {
     filePreviewImage.classList.add("hidden");
@@ -6786,28 +6794,28 @@ function updateFilePreview() {
     const sizeStr = attachedFile.size >= 1024 * 1024
       ? `${(attachedFile.size / (1024 * 1024)).toFixed(1)} MB`
       : `${(attachedFile.size / 1024).toFixed(1)} KB`;
-    filePreviewName.textContent = `${attachedFile.name} (${sizeStr})`;
+    if (filePreviewName) filePreviewName.textContent = `${attachedFile.name} (${sizeStr})`;
 
     if (filePreviewImage && attachedFile.type && attachedFile.type.startsWith("image/")) {
       filePreviewImage.src = URL.createObjectURL(attachedFile.file);
       filePreviewImage.classList.remove("hidden");
     }
 
-    filePreviewContainer.classList.remove("hidden");
-    progressBar.classList.add("hidden");
-    progressFill.style.width = "0%";
+    if (filePreviewContainer) filePreviewContainer.classList.remove("hidden");
+    if (progressBar) progressBar.classList.add("hidden");
+    if (progressFill) progressFill.style.width = "0%";
   } else if (attachedKvFile) {
     const sizeStr = attachedKvFile.size >= 1024 * 1024
       ? `${(attachedKvFile.size / (1024 * 1024)).toFixed(1)} MB`
       : `${(attachedKvFile.size / 1024).toFixed(1)} KB`;
-    filePreviewName.innerHTML = `<i class="fas fa-paperclip mr-1 text-gray-400"></i>${escapeHtml(attachedKvFile.name)} (${escapeHtml(sizeStr)})`;
-    filePreviewContainer.classList.remove("hidden");
-    progressBar.classList.add("hidden");
-    progressFill.style.width = "0%";
+    if (filePreviewName) filePreviewName.innerHTML = `<i class="fas fa-paperclip mr-1 text-gray-400"></i>${escapeHtml(attachedKvFile.name)} (${escapeHtml(sizeStr)})`;
+    if (filePreviewContainer) filePreviewContainer.classList.remove("hidden");
+    if (progressBar) progressBar.classList.add("hidden");
+    if (progressFill) progressFill.style.width = "0%";
   } else {
-    filePreviewContainer.classList.add("hidden");
-    progressBar.classList.add("hidden");
-    progressFill.style.width = "0%";
+    if (filePreviewContainer) filePreviewContainer.classList.add("hidden");
+    if (progressBar) progressBar.classList.add("hidden");
+    if (progressFill) progressFill.style.width = "0%";
   }
 }
 
@@ -7095,22 +7103,29 @@ async function sendMessage() {
     setTimeout(() => messageInput.focus(), 10);
   }
 }
-clearFileButton.addEventListener("click", clearAttachedFile);
+const clearFileBtn = document.getElementById("clearFileButton");
+if (clearFileBtn) {
+  clearFileBtn.addEventListener("click", clearAttachedFile);
+}
 function clearAttachedFile() { attachedFile = null; attachedKvFile = null; updateFilePreview(); }
 
 
 // --- 送信ボタン ---
-const sendMessageButton = document.getElementById("sendMessageButton");
-sendMessageButton.addEventListener("click", sendMessage);
+const sendMessageBtn = document.getElementById("sendMessageButton");
+if (sendMessageBtn) {
+  sendMessageBtn.addEventListener("click", sendMessage);
+}
 
-// --- ファイル添付ボタン（画像→Cloudinary添付 / それ以外→catbox.moe URLリンク化） ---
-const fileAttachButton = document.getElementById("fileAttachButton");
-const fileAttachInput = document.getElementById("fileAttachInput");
-fileAttachButton.disabled = true;
-fileAttachButton.addEventListener("click", () => {
-  if (!currentRoomId) return;
-  fileAttachInput.click();
-});
+// --- ファイル添付ボタン ---
+const fileAttachBtn = document.getElementById("fileAttachButton");
+const fileAttachInp = document.getElementById("fileAttachInput");
+if (fileAttachBtn && fileAttachInp) {
+  fileAttachBtn.disabled = true;
+  fileAttachBtn.addEventListener("click", () => {
+    if (!currentRoomId) return;
+    fileAttachInp.click();
+  });
+}
 
 fileAttachInput.addEventListener("change", async (e) => {
   let f = e.target.files[0];
@@ -8374,104 +8389,120 @@ document.addEventListener("click", (e) => {
   if (!messageContextMenu.contains(e.target)) messageContextMenu.classList.add("hidden");
 });
 
-replyMessageButton.addEventListener("click", (e) => {
-  if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-  if (selectedMessageForContext) {
-    replyingToMessage = selectedMessageForContext;
-    replyingToNickname.textContent = selectedMessageForContext.senderNickname;
-    replyingToText.textContent = selectedMessageForContext.text || (selectedMessageForContext.fileName ? "ファイル" : "...");
-    replyingToContainer.classList.remove("hidden");
-  }
-  messageContextMenu.classList.add("hidden");
-});
+const replyMsgBtn = document.getElementById("replyMessageButton");
+const downloadMsgBtn = document.getElementById("downloadMessageButton");
+const copyMsgBtn = document.getElementById("copyMessageButton");
+const deleteMsgBtn = document.getElementById("deleteMessageButton");
+const messageCtxMenu = document.getElementById("messageContextMenu");
 
-downloadMessageButton.addEventListener("click", async (e) => {
-  if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-  messageContextMenu.classList.add("hidden");
-  if (!selectedMessageForContext) return;
-  const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
-  if (fileUrl) {
-    try {
-      if (fileUrl.startsWith('blob:')) {
+if (replyMsgBtn) {
+  replyMsgBtn.addEventListener("click", (e) => {
+    if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+    if (selectedMessageForContext) {
+      replyingToMessage = selectedMessageForContext;
+      const nickEl = document.getElementById("replyingToNickname");
+      const textEl = document.getElementById("replyingToText");
+      const contEl = document.getElementById("replyingToContainer");
+      if (nickEl) nickEl.textContent = selectedMessageForContext.senderNickname;
+      if (textEl) textEl.textContent = selectedMessageForContext.text || (selectedMessageForContext.fileName ? "ファイル" : "...");
+      if (contEl) contEl.classList.remove("hidden");
+    }
+    if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
+  });
+}
+
+if (downloadMsgBtn) {
+  downloadMsgBtn.addEventListener("click", async (e) => {
+    if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+    if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
+    if (!selectedMessageForContext) return;
+    const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+    if (fileUrl) {
+      try {
+        if (fileUrl.startsWith('blob:')) {
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = selectedMessageForContext.fileName || 'download';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        } else {
+          const res = await fetch(fileUrl, { mode: 'cors' });
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = selectedMessageForContext.fileName || 'download';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        }
+      } catch (err) {
+        console.error("Direct download failed:", err);
         const a = document.createElement('a');
         a.href = fileUrl;
         a.download = selectedMessageForContext.fileName || 'download';
+        a.target = '_blank';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      } else {
+      }
+    }
+  });
+}
+
+if (copyMsgBtn) {
+  copyMsgBtn.addEventListener("click", async (e) => {
+    if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+    if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
+    if (!selectedMessageForContext) return;
+
+    const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
+    if (fileUrl && (fileUrl.startsWith('http') || fileUrl.startsWith('blob:'))) {
+      try {
         const res = await fetch(fileUrl, { mode: 'cors' });
         const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = selectedMessageForContext.fileName || 'download';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-      }
-    } catch (err) {
-      console.error("Direct download failed:", err);
-      const a = document.createElement('a');
-      a.href = fileUrl;
-      a.download = selectedMessageForContext.fileName || 'download';
-      a.target = '_blank';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }
-  }
-});
-
-copyMessageButton.addEventListener("click", async (e) => {
-  if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-  messageContextMenu.classList.add("hidden");
-  if (!selectedMessageForContext) return;
-
-  const fileUrl = selectedMessageForContext._decryptedFileUrl || selectedMessageForContext.fileData || selectedMessageForContext.kvFileUrl;
-  if (fileUrl && (fileUrl.startsWith('http') || fileUrl.startsWith('blob:'))) {
-    try {
-      const res = await fetch(fileUrl, { mode: 'cors' });
-      const blob = await res.blob();
-      if (navigator.clipboard && navigator.clipboard.write) {
-        try {
-          let copyBlob = blob;
-          let type = blob.type || selectedMessageForContext.fileType || 'application/octet-stream';
-          const item = new ClipboardItem({ [type]: copyBlob });
-          await navigator.clipboard.write([item]);
-          alertMessage("ファイルをクリップボードにコピーしました", "success");
-          return;
-        } catch (err) {
-          console.warn("ClipboardItem write failed, trying fallback...", err);
-        }
-      }
-      if (navigator.canShare && navigator.share) {
-        const file = new File([blob], selectedMessageForContext.fileName || "attachment", { type: blob.type || 'application/octet-stream' });
-        if (navigator.canShare({ files: [file] })) {
+        if (navigator.clipboard && navigator.clipboard.write) {
           try {
-            await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
+            let copyBlob = blob;
+            let type = blob.type || selectedMessageForContext.fileType || 'application/octet-stream';
+            const item = new ClipboardItem({ [type]: copyBlob });
+            await navigator.clipboard.write([item]);
+            alertMessage("ファイルをクリップボードにコピーしました", "success");
             return;
-          } catch (shareErr) {
-            if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
-              return; // ユーザーキャンセル時は後続のURLコピーを出さない
-            }
-            console.warn("Share failed with error:", shareErr);
+          } catch (err) {
+            console.warn("ClipboardItem write failed, trying fallback...", err);
           }
         }
+        if (navigator.canShare && navigator.share) {
+          const file = new File([blob], selectedMessageForContext.fileName || "attachment", { type: blob.type || 'application/octet-stream' });
+          if (navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
+              return;
+            } catch (shareErr) {
+              if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
+                return;
+              }
+              console.warn("Share failed with error:", shareErr);
+            }
+          }
+        }
+        copyToClipboard(fileUrl);
+        alertMessage("ファイルのURLをクリップボードにコピーしました（ブラウザ制限のためURLをコピーしました）", "success");
+      } catch (err) {
+        console.error("Copy file error:", err);
+        if (selectedMessageForContext.text) {
+          copyToClipboard(selectedMessageForContext.text);
+          alertMessage("テキストをコピーしました", "success");
+        } else {
+          alertMessage("コピーに失敗しました", "error");
+        }
       }
-      copyToClipboard(fileUrl);
-      alertMessage("ファイルのURLをクリップボードにコピーしました（ブラウザ制限のためURLをコピーしました）", "success");
-    } catch (err) {
-      console.error("Copy file error:", err);
-      if (selectedMessageForContext.text) {
-        copyToClipboard(selectedMessageForContext.text);
-        alertMessage("テキストをコピーしました", "success");
-      } else {
-        alertMessage("コピーに失敗しました", "error");
-      }
+    } else if (selectedMessageForContext.text) {
+      copyToClipboard(selectedMessageForContext.text);
+      alertMessage("コピーしました", "success");
     }
-  } else if (selectedMessageForContext.text) {
-    copyToClipboard(selectedMessageForContext.text);
-    alertMessage("コピーしました", "success");
-  }
-});
+  });
+}
 
-deleteMessageButton.addEventListener("click", async (e) => {
+if (deleteMsgBtn) {
+  deleteMsgBtn.addEventListener("click", async (e) => {
   if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
   messageContextMenu.classList.add("hidden");
   if (!selectedMessageForContext) return;
@@ -8584,6 +8615,7 @@ deleteMessageButton.addEventListener("click", async (e) => {
     alertMessage("削除に失敗しました", "error");
   }
 });
+}
 
 messagesDisplay.addEventListener("dblclick", (e) => {
   const bubble = e.target.closest(".message-bubble");
@@ -8600,8 +8632,15 @@ messagesDisplay.addEventListener("dblclick", (e) => {
     }
   }
 });
-cancelReplyButton.addEventListener("click", cancelReply);
-function cancelReply() { replyingToMessage = null; replyingToContainer.classList.add("hidden"); }
+const cancelReplyBtn = document.getElementById("cancelReplyButton");
+if (cancelReplyBtn) {
+  cancelReplyBtn.addEventListener("click", cancelReply);
+}
+function cancelReply() {
+  replyingToMessage = null;
+  const cont = document.getElementById("replyingToContainer");
+  if (cont) cont.classList.add("hidden");
+}
 messagesDisplay.addEventListener("click", (e) => {
   const q = e.target.closest(".reply-quote");
   if (q) {
@@ -9051,69 +9090,74 @@ function closeBottomSheet() {
   membersSidebar.style.transform = "";
 }
 
-currentRoomTitleText.addEventListener("click", openBottomSheet);
-bottomSheetOverlay.addEventListener("click", closeBottomSheet);
+const currentRoomTitleTextEl = document.getElementById("currentRoomTitleText");
+const bottomSheetOverlayEl = document.getElementById("bottomSheetOverlay");
+const membersSidebarEl = document.getElementById("membersSidebar");
+const membersListEl = document.getElementById("membersList");
+const pinMessageBtn = document.getElementById("pinMessageButton");
+
+if (currentRoomTitleTextEl) currentRoomTitleTextEl.addEventListener("click", openBottomSheet);
+if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", closeBottomSheet);
 
 // スワイプダウンで閉じる処理
 let touchStartY = 0;
 let touchCurrentY = 0;
 let isDraggingSheet = false;
 
-membersSidebar.addEventListener("touchstart", (e) => {
-  if (window.innerWidth >= 768) return;
-  // メンバーリストが一番上にある時だけスワイプを検知
-  if (membersList.scrollTop === 0) {
-    touchStartY = e.touches[0].clientY;
-    isDraggingSheet = true;
-    membersSidebar.style.transition = "none"; // ドラッグ中はアニメーションを切る
-  }
-}, { passive: true });
+if (membersSidebarEl) {
+  membersSidebarEl.addEventListener("touchstart", (e) => {
+    if (window.innerWidth >= 768) return;
+    if (membersListEl && membersListEl.scrollTop === 0) {
+      touchStartY = e.touches[0].clientY;
+      isDraggingSheet = true;
+      membersSidebarEl.style.transition = "none";
+    }
+  }, { passive: true });
 
-membersSidebar.addEventListener("touchmove", (e) => {
-  if (!isDraggingSheet) return;
-  e.preventDefault(); // ページ全体のスクロールを防ぐ
-  touchCurrentY = e.touches[0].clientY;
-  const deltaY = touchCurrentY - touchStartY;
-  if (deltaY > 0) {
-    // 下に引っ張っている時
-    membersSidebar.style.transform = `translateY(${deltaY}px)`;
-  }
-}, { passive: false });
+  membersSidebarEl.addEventListener("touchmove", (e) => {
+    if (!isDraggingSheet) return;
+    e.preventDefault();
+    touchCurrentY = e.touches[0].clientY;
+    const deltaY = touchCurrentY - touchStartY;
+    if (deltaY > 0) {
+      membersSidebarEl.style.transform = `translateY(${deltaY}px)`;
+    }
+  }, { passive: false });
 
-membersSidebar.addEventListener("touchend", () => {
-  if (!isDraggingSheet) return;
-  isDraggingSheet = false;
-  membersSidebar.style.transition = "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+  membersSidebarEl.addEventListener("touchend", () => {
+    if (!isDraggingSheet) return;
+    isDraggingSheet = false;
+    membersSidebarEl.style.transition = "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
 
-  const deltaY = touchCurrentY - touchStartY;
-  if (deltaY > 100) {
-    // 100px以上下にスワイプしたら閉じる
-    closeBottomSheet();
-  } else {
-    // 元に戻す
-    membersSidebar.style.transform = "translateY(0)";
-  }
-  touchStartY = 0;
-  touchCurrentY = 0;
-});
+    const deltaY = touchCurrentY - touchStartY;
+    if (deltaY > 100) {
+      closeBottomSheet();
+    } else {
+      membersSidebarEl.style.transform = "translateY(0)";
+    }
+    touchStartY = 0;
+    touchCurrentY = 0;
+  });
+}
 
 // --- ピン留め機能 ---
-pinMessageButton.addEventListener("click", async (e) => {
-  if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-  if (selectedMessageForContext) {
-
-    const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
-    const isPinned = !selectedMessageForContext.isPinned;
-    await updateDoc(msgRef, { isPinned: isPinned });
-    try {
-      const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
-    } catch (e) { console.error("RTDB Pin Failed", e); }
-    alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
-  }
-  messageContextMenu.classList.add("hidden");
-});
+if (pinMessageBtn) {
+  pinMessageBtn.addEventListener("click", async (e) => {
+    if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+    if (selectedMessageForContext) {
+      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
+      const isPinned = !selectedMessageForContext.isPinned;
+      await updateDoc(msgRef, { isPinned: isPinned });
+      try {
+        const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
+      } catch (e) { console.error("RTDB Pin Failed", e); }
+      alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
+    }
+    if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
+  });
+}
 
 let isPinnedMessagesExpanded = false;
 let isPinnedMessagesMinimized = false;
@@ -10610,7 +10654,13 @@ async function showNotification(title, body, roomId) {
     } else if (Notification.permission === 'granted') {
       const n = new Notification(title, { body: body });
       n.onclick = () => {
-        if (roomId) selectRoom(roomId);
+        if (roomId) {
+          if (typeof goToRoom === 'function') goToRoom(roomId);
+          else {
+            const roomItem = document.getElementById(`room-item-${roomId}`);
+            if (roomItem) roomItem.click();
+          }
+        }
         if (window.__TAURI__?.core?.invoke) {
           window.__TAURI__.core.invoke('show_main_window').catch(console.error);
         }
@@ -10620,13 +10670,16 @@ async function showNotification(title, body, roomId) {
     // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
     if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
       try {
-        const n = new Notification(title, { body, icon: '/icon-192x192.png?v=5' });
+        const n = new Notification(title, { body, icon: '/icon-192x192.png?v=6' });
         n.onclick = () => {
           window.focus();
           n.close();
           if (roomId) {
             if (typeof goToRoom === 'function') goToRoom(roomId);
-            else { const roomItem = document.getElementById(`room-item-${roomId}`); if (roomItem) roomItem.click(); }
+            else {
+              const roomItem = document.getElementById(`room-item-${roomId}`);
+              if (roomItem) roomItem.click();
+            }
           }
         };
       } catch (e) { }
@@ -11533,53 +11586,48 @@ window.submitFeedback = async function () {
 };
 
 // =========================================================================
-// Keyboard Shortcuts (Enter for Confirm, Shift for Cancel)
+// Keyboard Shortcuts (Enter for Confirm / Form Submit)
 // =========================================================================
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     if (e.isComposing || e.keyCode === 229) return;
-    if (
-      !authContainer.classList.contains("hidden") &&
-      (document.activeElement === emailInput || document.activeElement === passwordInput)
-    ) {
-      e.preventDefault(); authButton.click();
-    } else if (
-      !nicknameContainer.classList.contains("hidden") && document.activeElement === nicknameInput
-    ) {
-      e.preventDefault(); setNicknameButton.click();
-    } else if (
-      !createRoomPasswordModal.classList.contains("hidden") &&
-      (document.activeElement === document.getElementById("modalNewRoomNameInput") || document.activeElement === newRoomPasswordInput)
-    ) {
-      e.preventDefault(); confirmCreateRoomButton.click();
-    } else if (
-      !joinRoomPasswordModal.classList.contains("hidden") && document.activeElement === joinRoomPasswordInput
-    ) {
-      e.preventDefault(); confirmJoinRoomButton.click();
-    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
-      e.preventDefault(); confirmDeleteButton.click();
-    } else if (
-      !deleteRoomPasswordModal.classList.contains("hidden") && document.activeElement === deleteRoomPasswordInput
-    ) {
-      e.preventDefault(); confirmDeletePasswordButton.click();
-    } else if (
-      !settingsModal.classList.contains("hidden") && document.activeElement === settingsNicknameInput
-    ) {
-      e.preventDefault(); saveSettingsButton.click();
-    }
-  }
+    const authCont = document.getElementById("authContainer");
+    const emailInp = document.getElementById("emailInput");
+    const passInp = document.getElementById("passwordInput");
+    const authBtn = document.getElementById("authButton");
+    const nickCont = document.getElementById("nicknameContainer");
+    const nickInp = document.getElementById("nicknameInput");
+    const setNickBtn = document.getElementById("setNicknameButton");
+    const createRoomModal = document.getElementById("createRoomPasswordModal");
+    const modalNewRoomName = document.getElementById("modalNewRoomNameInput");
+    const newRoomPass = document.getElementById("newRoomPasswordInput");
+    const confirmCreateRoomBtn = document.getElementById("confirmCreateRoomButton");
+    const joinRoomModal = document.getElementById("joinRoomPasswordModal");
+    const joinRoomPass = document.getElementById("joinRoomPasswordInput");
+    const confirmJoinRoomBtn = document.getElementById("confirmJoinRoomButton");
+    const delRoomConfirmModal = document.getElementById("deleteRoomConfirmModal");
+    const confirmDelBtn = document.getElementById("confirmDeleteButton");
+    const delRoomPassModal = document.getElementById("deleteRoomPasswordModal");
+    const delRoomPassInp = document.getElementById("deleteRoomPasswordInput");
+    const confirmDelPassBtn = document.getElementById("confirmDeletePasswordButton");
+    const setModal = document.getElementById("settingsModal");
+    const setNickInp = document.getElementById("settingsNicknameInput");
+    const saveSetBtn = document.getElementById("saveSettingsButton");
 
-  if (e.key === "Shift") {
-    if (!createRoomPasswordModal.classList.contains("hidden")) {
-      cancelCreateRoomButton.click();
-    } else if (!joinRoomPasswordModal.classList.contains("hidden")) {
-      cancelJoinRoomButton.click();
-    } else if (!deleteRoomConfirmModal.classList.contains("hidden")) {
-      cancelDeleteButton.click();
-    } else if (!deleteRoomPasswordModal.classList.contains("hidden")) {
-      cancelDeletePasswordButton.click();
-    } else if (!settingsModal.classList.contains("hidden")) {
-      closeSettingsButton.click();
+    if (authCont && !authCont.classList.contains("hidden") && (document.activeElement === emailInp || document.activeElement === passInp)) {
+      e.preventDefault(); if (authBtn) authBtn.click();
+    } else if (nickCont && !nickCont.classList.contains("hidden") && document.activeElement === nickInp) {
+      e.preventDefault(); if (setNickBtn) setNickBtn.click();
+    } else if (createRoomModal && !createRoomModal.classList.contains("hidden") && (document.activeElement === modalNewRoomName || document.activeElement === newRoomPass)) {
+      e.preventDefault(); if (confirmCreateRoomBtn) confirmCreateRoomBtn.click();
+    } else if (joinRoomModal && !joinRoomModal.classList.contains("hidden") && document.activeElement === joinRoomPass) {
+      e.preventDefault(); if (confirmJoinRoomBtn) confirmJoinRoomBtn.click();
+    } else if (delRoomConfirmModal && !delRoomConfirmModal.classList.contains("hidden")) {
+      e.preventDefault(); if (confirmDelBtn) confirmDelBtn.click();
+    } else if (delRoomPassModal && !delRoomPassModal.classList.contains("hidden") && document.activeElement === delRoomPassInp) {
+      e.preventDefault(); if (confirmDelPassBtn) confirmDelPassBtn.click();
+    } else if (setModal && !setModal.classList.contains("hidden") && document.activeElement === setNickInp) {
+      e.preventDefault(); if (saveSetBtn) saveSetBtn.click();
     }
   }
 });
@@ -11626,7 +11674,7 @@ async function initializeFCM() {
       sendUserIdToSW();
       navigator.serviceWorker.addEventListener('controllerchange', sendUserIdToSW);
 
-      // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカス
+      // 通知クリック時: Tauri (Windows EXE) ではウィンドウをフォーカスし、該当ルームへ遷移
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
           if (window.__TAURI__) {
@@ -11636,8 +11684,22 @@ async function initializeFCM() {
               try { window.__TAURI__.invoke('tauri', { __tauriModule: 'Window', message: { cmd: 'setFocus' } }); } catch (_) { }
             }
           }
-          if (event.data.data?.type === 'incoming_call') {
-            handleCallNotificationClick(event.data.data);
+          const notifData = event.data.data;
+          if (notifData?.type === 'incoming_call') {
+            handleCallNotificationClick(notifData);
+          } else if (notifData?.roomId) {
+            if (notifData.serverId && notifData.serverId !== currentServerId) {
+              if (typeof goToServerRoom === 'function') {
+                goToServerRoom(notifData.serverId, notifData.roomId);
+              }
+            } else {
+              if (typeof goToRoom === 'function') {
+                goToRoom(notifData.roomId);
+              } else {
+                const roomItem = document.getElementById(`room-item-${notifData.roomId}`);
+                if (roomItem) roomItem.click();
+              }
+            }
           }
         }
         if (event.data && event.data.type === 'CALL_DECLINED_FROM_NOTIFICATION') {
@@ -12025,41 +12087,49 @@ function initSettings() {
   }
   // Web/PWA版: ブラウザ通知行はデフォルトで表示済み。他のTauri専用UIは hidden のまま。
 
-  // Event Listeners
-  toggleNotifSound.addEventListener('change', (e) => {
-    localStorage.setItem('simplechat_sound', e.target.checked);
-  });
+  // Event Listeners (nullガード付き安全登録)
+  if (toggleNotifSound) {
+    toggleNotifSound.addEventListener('change', (e) => {
+      localStorage.setItem('simplechat_sound', e.target.checked);
+    });
+  }
 
-  toggleBrowserNotif.addEventListener('change', (e) => {
-    localStorage.setItem('simplechat_browser_notif', e.target.checked);
-    setBrowserPushEnabled(e.target.checked).catch(console.error);
-  });
+  if (toggleBrowserNotif) {
+    toggleBrowserNotif.addEventListener('change', (e) => {
+      localStorage.setItem('simplechat_browser_notif', e.target.checked);
+      setBrowserPushEnabled(e.target.checked).catch(console.error);
+    });
+  }
 
-  toggleDesktopNotif.addEventListener('change', (e) => {
-    localStorage.setItem('simplechat_desktop_notif', e.target.checked);
-    if (isTauri && e.target.checked) {
-      const tauriNotif = window.__TAURI__?.notification;
-      if (tauriNotif && tauriNotif.requestPermission) {
-        tauriNotif.requestPermission();
-      } else if ('Notification' in window && Notification.permission !== 'granted') {
-        Notification.requestPermission();
+  if (toggleDesktopNotif) {
+    toggleDesktopNotif.addEventListener('change', (e) => {
+      localStorage.setItem('simplechat_desktop_notif', e.target.checked);
+      if (isTauri && e.target.checked) {
+        const tauriNotif = window.__TAURI__?.notification;
+        if (tauriNotif && tauriNotif.requestPermission) {
+          tauriNotif.requestPermission();
+        } else if ('Notification' in window && Notification.permission !== 'granted') {
+          Notification.requestPermission();
+        }
       }
-    }
-  });
+    });
+  }
 
-  toggleAutoStart.addEventListener('change', async (e) => {
-    if (!window.__TAURI__?.autostart) return;
-    try {
-      if (e.target.checked) {
-        await window.__TAURI__.autostart.enable();
-      } else {
-        await window.__TAURI__.autostart.disable();
+  if (toggleAutoStart) {
+    toggleAutoStart.addEventListener('change', async (e) => {
+      if (!window.__TAURI__?.autostart) return;
+      try {
+        if (e.target.checked) {
+          await window.__TAURI__.autostart.enable();
+        } else {
+          await window.__TAURI__.autostart.disable();
+        }
+      } catch (err) {
+        console.error("Autostart toggle failed", err);
+        e.target.checked = !e.target.checked;
       }
-    } catch (err) {
-      console.error("Autostart toggle failed", err);
-      e.target.checked = !e.target.checked;
-    }
-  });
+    });
+  }
 
   const closeBehaviorSelect = document.getElementById('closeBehaviorSelect');
   if (closeBehaviorSelect) {

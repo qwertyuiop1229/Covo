@@ -93,10 +93,15 @@
     .reaction-picker-bar.scrollable::-webkit-scrollbar {
       display: none;
     }
-    body.dark-server-theme .reaction-picker-bar {
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
       background: #1e293b;
       border-color: rgba(255,255,255,0.1);
       box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
     }
     .reaction-btn {
       width: 32px;
@@ -112,8 +117,12 @@
       transform: scale(1.2);
       background-color: #f3f4f6;
     }
-    body.dark-server-theme .reaction-btn:hover {
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
       background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
     }
     .reaction-btn img.emoji {
       width: 24px;
@@ -180,11 +189,18 @@
       transition: opacity 0.3s ease;
     }
     body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge {
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
       background-color: rgba(51, 65, 85, 0.85);
       color: #ffffff;
       border: none;
       box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
     }
     .reaction-modal-emoji img {
       width: 28px !important;
@@ -244,16 +260,26 @@
       transition: all 0.2s ease;
       border: 1px solid #f3f4f6;
     }
-    body.dark-server-theme .reaction-badge {
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
       background: #334155;
       color: #cbd5e1;
       border: 1px solid #475569;
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-    body.dark-server-theme .reaction-badge.reacted-by-me {
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
       background: transparent;
       border: none;
       color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
     }
     .reaction-badge:hover {
       transform: scale(1.1);
