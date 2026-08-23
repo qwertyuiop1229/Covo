@@ -354,13 +354,13 @@ function initializeFirebase() {
       // 再入防止: 前回の処理が終わっていない場合はスキップ
       if (_authHandlerBusy) return;
       _authHandlerBusy = true;
-      loadingOverlay.classList.add("hidden");
       try {
 
         if (user) {
           // 同一ユーザーIDで既に初期化済みならスキップ（FCM再登録等の無駄な処理を防止）
           if (_lastAuthUserId === user.uid && userNickname) {
             _authHandlerBusy = false;
+            loadingOverlay.classList.add("hidden");
             return;
           }
           userId = user.uid;
@@ -435,8 +435,6 @@ function initializeFirebase() {
             }
           }
 
-
-
           if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
             userNickname = userProfileSnap.data().nickname;
             userAvatarUrl = userProfileSnap.data().avatarUrl || null;
@@ -452,6 +450,7 @@ function initializeFirebase() {
             headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
             updateUserPanelUI();
 
+            document.body.classList.remove("auth-unauthenticated");
             document.body.classList.add("logged-in");
             authContainer.classList.add("hidden");
             nicknameContainer.classList.add("hidden");
@@ -471,33 +470,29 @@ function initializeFirebase() {
 
             startPresenceSystem();
             initializeFCM();
-            // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
-            // 続けて管理者ならエスクロー鍵（合鍵）も用意する
             ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => { });
             _lastAuthUserId = user.uid;
-            // SW にuserIdを通知（自分のメッセージへの通知バグ防止）
             if ('serviceWorker' in navigator) {
               navigator.serviceWorker.ready.then(reg => {
                 if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId, appId: appId, idToken: _cachedIdToken });
               }).catch(() => { });
             }
-            // FCMが有効な場合はFirestoreグローバルリスナーは不要（FCMが通知を担当）
-            // Tauriのみ或いはFCMトークン取得失敗時はFirestoreリスナーをフォールバック
             setTimeout(() => setupGlobalNotificationListeners(), 2000);
             initCallListener();
             initFileShareListener();
             initReadStatesSync();
             setupGlobalRtdbListener();
+            loadingOverlay.classList.add("hidden");
           } else {
             authContainer.classList.add("hidden");
             appContainer.classList.add("hidden");
             document.getElementById("serverListScreen").classList.add("hidden");
             nicknameContainer.classList.remove("hidden");
             nicknameInput.value = "";
+            loadingOverlay.classList.add("hidden");
           }
         } else {
-          // Cleanup on logout
-          // SW にuserIdクリアを通知
+          // 未ログイン確定時の処理
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready.then(reg => {
               if (reg.active) reg.active.postMessage({ type: 'CLEAR_USER_ID' });
@@ -507,6 +502,7 @@ function initializeFirebase() {
           userId = null; userNickname = null; isAdmin = false; isListAdmin = false; isAuthReady = false;
           currentRoomId = null; currentServerId = null; currentServerData = null;
           document.body.classList.remove("logged-in");
+          document.body.classList.add("auth-unauthenticated");
           const headerTitle = document.getElementById("headerTitle");
           if (headerTitle) headerTitle.textContent = "";
           const currentRoomHeader = document.getElementById("currentRoomHeader");
@@ -534,6 +530,7 @@ function initializeFirebase() {
           if (serverListScreen) serverListScreen.classList.add("hidden");
           if (nicknameContainer) nicknameContainer.classList.add("hidden");
           if (membersSidebar) membersSidebar.classList.add("hidden");
+          loadingOverlay.classList.add("hidden");
         }
       } catch (authErr) {
         console.error('[Auth] onAuthStateChanged handler error:', authErr);
@@ -9086,17 +9083,32 @@ document.addEventListener("contextmenu", (e) => {
 });
 
 // --- スマホ用メンバー一覧（ボトムシート） ---
+window.openBottomSheet = openBottomSheet;
+window.closeBottomSheet = closeBottomSheet;
+
 function openBottomSheet() {
-  if (window.innerWidth >= 768) return; // PCでは何もしない
-  bottomSheetOverlay.classList.add("show");
-  membersSidebar.classList.add("bottom-sheet-open");
-  membersSidebar.style.transform = ""; // JSのインラインスタイルをリセット
+  if (window.innerWidth >= 768) return;
+  const overlay = document.getElementById("bottomSheetOverlay");
+  const sidebar = document.getElementById("membersSidebar");
+  if (overlay) overlay.classList.add("show");
+  if (sidebar) {
+    sidebar.classList.remove("closing");
+    sidebar.classList.add("bottom-sheet-open");
+    sidebar.style.transform = "";
+  }
 }
 
 function closeBottomSheet() {
-  bottomSheetOverlay.classList.remove("show");
-  membersSidebar.classList.remove("bottom-sheet-open");
-  membersSidebar.style.transform = "";
+  const overlay = document.getElementById("bottomSheetOverlay");
+  const sidebar = document.getElementById("membersSidebar");
+  if (overlay) overlay.classList.remove("show");
+  if (sidebar) {
+    sidebar.classList.add("closing");
+    setTimeout(() => {
+      sidebar.classList.remove("bottom-sheet-open", "closing");
+      sidebar.style.transform = "";
+    }, 240);
+  }
 }
 
 const currentRoomTitleTextEl = document.getElementById("currentRoomTitleText");
@@ -9755,7 +9767,12 @@ async function openCallPicker() {
 }
 
 function closeCallPicker() {
-  document.getElementById('callPickerModal').classList.remove('show');
+  const modal = document.getElementById('callPickerModal');
+  if (!modal) return;
+  modal.classList.add('closing');
+  setTimeout(() => {
+    modal.classList.remove('show', 'closing');
+  }, 240);
 }
 
 /* =====================================================================

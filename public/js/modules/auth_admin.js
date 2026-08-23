@@ -112,7 +112,6 @@ function initializeFirebase() {
       // 再入防止: 前回の処理が終わっていない場合はスキップ
       if (_authHandlerBusy) return;
       _authHandlerBusy = true;
-      loadingOverlay.classList.add("hidden");
       try {
 
         if (user) {

@@ -497,7 +497,12 @@ async function openCallPicker() {
 }
 
 function closeCallPicker() {
-  document.getElementById('callPickerModal').classList.remove('show');
+  const modal = document.getElementById('callPickerModal');
+  if (!modal) return;
+  modal.classList.add('closing');
+  setTimeout(() => {
+    modal.classList.remove('show', 'closing');
+  }, 240);
 }
 
 /* =====================================================================

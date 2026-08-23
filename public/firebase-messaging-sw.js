@@ -188,7 +188,9 @@ self.addEventListener('notificationclick', (event) => {
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
         for (const client of clientList) {
           if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            try {
+              client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            } catch (_) {}
             return;
           }
         }
@@ -202,7 +204,9 @@ self.addEventListener('notificationclick', (event) => {
       // 既存のウィンドウがあればフォーカス
       for (const client of clientList) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          try {
+            client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          } catch (_) {}
           return client.focus();
         }
       }
@@ -210,8 +214,10 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen).then(client => {
           if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
+            try {
+              client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+            } catch (_) {}
+            return client.focus();
           }
         });
       }

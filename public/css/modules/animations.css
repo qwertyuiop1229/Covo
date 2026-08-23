@@ -540,3 +540,77 @@
       font-size: 0.85rem;
       color: #374151;
     }
+
+    /* ===== Discord風 共通ボトムシート (Bottom Sheet) システム ===== */
+    .bottom-sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 99px;
+      margin: 10px auto 6px;
+      flex-shrink: 0;
+    }
+
+    @keyframes bottomSheetSlideUp {
+      from { transform: translateY(100%); opacity: 0.9; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes bottomSheetSlideDown {
+      from { transform: translateY(0); opacity: 1; }
+      to { transform: translateY(100%); opacity: 0; }
+    }
+
+    @media (max-width: 768px) {
+      .modal-overlay {
+        display: flex !important;
+        align-items: flex-end !important;
+        justify-content: center !important;
+        background-color: rgba(0, 0, 0, 0.6) !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        padding: 0 !important;
+      }
+      .modal-box,
+      #serverSettingsModal .modal-box,
+      #mobileProfileScreen,
+      .mobile-settings-detail,
+      #callPickerModal .call-picker-box,
+      #addServerSelectModal .modal-box,
+      #createServerModal .modal-box,
+      #joinServerModal .modal-box,
+      #stampAdminModal .modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 24px 24px 0 0 !important;
+        max-height: calc(100dvh - 36px) !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25) !important;
+        animation: bottomSheetSlideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+        padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+      }
+      .modal-box.closing,
+      #mobileProfileScreen.closing,
+      .mobile-settings-detail.closing,
+      #callPickerModal.closing .call-picker-box {
+        animation: bottomSheetSlideDown 0.24s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+      }
+    }
+
+    /* PC版: 個チャ・探索・チャット画面の上部に上品な余白（天井くっつき解消） */
+    @media (min-width: 769px) {
+      #discordDmHeader,
+      #discordDiscoverHeader,
+      #currentRoomHeader {
+        margin-top: 6px;
+        border-radius: 12px 12px 0 0;
+      }
+      #discordDmHomeView,
+      #discordDiscoverView,
+      #chatArea {
+        margin-top: 6px;
+        border-radius: 12px;
+        margin-right: 6px;
+        margin-bottom: 6px;
+      }
+    }

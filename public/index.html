@@ -65,12 +65,23 @@
     
     // meta theme-color と html の背景色を動的に完全同期させる最強システム
     function updateMetaThemeColor() {
-      const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const isNavy = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const isDiscordDark = document.body.classList.contains('discord-dark-theme') || document.documentElement.classList.contains('discord-dark-theme');
       const inChat = document.body.classList.contains('in-chat-view');
       
-      // 現在のベース背景色（RGB配列）を特定
-      let baseRgb = inChat ? (isDark ? [26, 32, 44] : [255, 255, 255]) : (isDark ? [17, 24, 39] : [31, 41, 55]);
-      let targetHex = isDark ? (inChat ? '#1a202c' : '#111827') : (inChat ? '#ffffff' : '#1f2937');
+      // 現在のテーマに応じたベース背景色（RGB配列 & HEX）を特定
+      let baseRgb, targetHex;
+      if (isDiscordDark) {
+        baseRgb = inChat ? [49, 51, 56] : [30, 31, 34];
+        targetHex = inChat ? '#313338' : '#1e1f22';
+      } else if (isNavy) {
+        baseRgb = inChat ? [26, 32, 44] : [11, 15, 25];
+        targetHex = inChat ? '#1a202c' : '#0b0f19';
+      } else {
+        // ライトモード: ホーム画面は左サーバーナビ背景色 #f2f3f5、チャット画面は #ffffff
+        baseRgb = inChat ? [255, 255, 255] : [242, 243, 245];
+        targetHex = inChat ? '#ffffff' : '#f2f3f5';
+      }
       let blendedHex = targetHex;
 
       // 1. メンバー一覧（#membersSidebar）が開いているかどうかを検知
@@ -189,7 +200,26 @@
       }
     };
 
+    function isIgnorableError(msg, err) {
+      if (!msg && !err) return true;
+      const str = (String(msg || '') + ' ' + String(err?.message || '') + ' ' + String(err?.stack || '')).toLowerCase();
+      // ブラウザ拡張機能(background.js / extension)・切断ポート・内部警告のノイズを無視
+      if (str.includes('disconnected port') ||
+          str.includes('message port closed') ||
+          str.includes('receiving end does not exist') ||
+          str.includes('extension context invalidated') ||
+          str.includes('chrome-extension://') ||
+          str.includes('moz-extension://') ||
+          str.includes('safari-extension://') ||
+          str.includes('background.js') ||
+          str.includes('resizeobserver loop')) {
+        return true;
+      }
+      return false;
+    }
+
     window.addEventListener('error', function(e) {
+      if (isIgnorableError(e.message, e.error)) return;
       console.error('[Global Error Catcher]', e.message, e.error);
       if (!window.__app_fully_loaded__) {
         showEmergencyRecoveryPanel(e.message || 'JavaScript 実行エラー', e.error);
@@ -197,6 +227,7 @@
     });
 
     window.addEventListener('unhandledrejection', function(e) {
+      if (isIgnorableError(e.reason?.message, e.reason)) return;
       console.error('[Global Unhandled Rejection]', e.reason);
       if (!window.__app_fully_loaded__) {
         showEmergencyRecoveryPanel(e.reason?.message || '非同期処理エラー (Unhandled Rejection)', e.reason);
@@ -406,8 +437,15 @@
     <button class="pwa-banner-btn" id="pwaInstallButton">インストール</button>
     <button class="pwa-banner-close" id="pwaInstallClose"><i class="fas fa-times"></i></button>
   </div>
-  <div id="loadingOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
-    <div class="text-white text-xl">読み込み中...</div>
+  <!-- アプリ起動時のスプラッシュ・初期ローディング画面 (ログイン画面のチラつきを防止) -->
+  <div id="loadingOverlay" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-[999999] transition-opacity duration-300">
+    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-3xl flex items-center justify-center text-white text-3xl shadow-2xl mb-4 animate-pulse">
+      <i class="fas fa-layer-group"></i>
+    </div>
+    <div class="text-white text-base font-bold tracking-wider">Covo</div>
+    <div class="text-xs text-gray-400 mt-2 flex items-center gap-2">
+      <i class="fas fa-circle-notch fa-spin text-indigo-400"></i> 読み込み中...
+    </div>
   </div>
 
 
@@ -1226,9 +1264,10 @@
       </div>
 
       <!-- サーバー設定モーダル -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
-          <div class="settings-discord-layout">
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-2 sm:p-4">
+        <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in flex flex-col" style="height:min(720px,calc(100dvh - 3rem))">
+          <div class="bottom-sheet-handle md:hidden"></div>
+          <div class="settings-discord-layout flex-1 overflow-hidden">
             <!-- 左サイドバー -->
             <div class="settings-sidebar">
               <!-- サーバー情報 -->
@@ -1242,8 +1281,11 @@
               </div>
               <!-- ナビ -->
               <div class="settings-nav-label">サーバー設定</div>
-              <button class="settings-nav-item active" id="ssTabRooms" onclick="switchSsTab('rooms')">
-                <i class="fas fa-hashtag fa-fw"></i>ルーム
+              <button class="settings-nav-item active" id="ssTabOverview" onclick="switchSsTab('overview')">
+                <i class="fas fa-info-circle fa-fw"></i>概要
+              </button>
+              <button class="settings-nav-item" id="ssTabRooms" onclick="switchSsTab('rooms')">
+                <i class="fas fa-hashtag fa-fw"></i>チャンネル & カテゴリー
               </button>
               <button class="settings-nav-item" id="ssTabMembers" onclick="switchSsTab('members')">
                 <i class="fas fa-users fa-fw"></i>メンバー
@@ -1256,14 +1298,40 @@
               </button>
               <div class="settings-nav-divider"></div>
               <button class="settings-nav-item danger" id="ssTabDanger" onclick="switchSsTab('danger')">
-                <i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除
+                <i class="fas fa-trash-alt fa-fw"></i>サーバーを削除
               </button>
             </div>
             <!-- 右コンテンツエリア -->
-            <div class="settings-content relative">
-              <button class="settings-close-btn" id="closeServerSettingsBtn"><i class="fas fa-times"></i></button>
+            <div class="settings-content relative flex-1 overflow-y-auto">
+              <button class="settings-close-btn" id="closeServerSettingsBtn" title="閉じる (ESC)"><i class="fas fa-times"></i></button>
 
-              <div id="ssRoomsSection" class="settings-content-section active">
+              <!-- 概要セクション -->
+              <div id="ssOverviewSection" class="settings-content-section active space-y-6">
+                <div class="settings-section-title">サーバーの概要</div>
+                <div class="space-y-4 max-w-xl">
+                  <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">サーバー名</label>
+                    <div class="flex gap-2">
+                      <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
+                        class="flex-1 p-3 border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1e1f22] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <button id="renameServerBtn"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow">変更を保存</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">管理用パスワードを変更</label>
+                    <form class="space-y-2" onsubmit="event.preventDefault();">
+                      <input type="text" autocomplete="username" style="display:none;" />
+                      <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワードを入力" autocomplete="new-password"
+                        class="w-full p-3 border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1e1f22] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <button id="changeServerPasswordBtn"
+                        class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all mt-2">パスワードを変更する</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div id="ssRoomsSection" class="settings-content-section hidden space-y-6">
                 <div class="settings-section-title">ルーム管理</div>
                 <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
                   <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
@@ -1683,18 +1751,22 @@
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
             class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
-            <!-- 左側: 戻るボタン + ルーム名 -->
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <!-- 左側: 戻るボタン + サイドバー開閉ボタン (PC) + ルーム名 (タップでメンバー表示) -->
+            <div class="flex items-center gap-2 min-w-0 flex-1">
               <button id="mobileBackButton"
                 class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
                 style="display:none;"><i class="fas fa-arrow-left"></i></button>
-              <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
-                <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
+              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex mr-1" title="サイドバーの表示切替">
+                <i class="fas fa-bars"></i>
+              </button>
+              <div id="currentRoomTitleWrapper" class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate cursor-pointer hover:opacity-80 transition-opacity flex-1 min-w-0" onclick="if(window.innerWidth < 768 && typeof openBottomSheet === 'function') openBottomSheet()">
+                <i class="fas fa-hashtag text-gray-400 text-sm flex-shrink-0" id="currentRoomIcon"></i>
                 <span id="currentRoomTitleText" class="truncate"></span>
+                <i class="fas fa-chevron-down text-xs text-gray-400 md:hidden flex-shrink-0"></i>
               </div>
             </div>
 
-            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス) -->
+            <!-- 右側: アクション＆ツール (通話、ファイル共有、検索、受信ボックス、メンバーリスト開閉 (PC)) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
               <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
                 <i class="fas fa-phone"></i>
@@ -1708,6 +1780,9 @@
               <button onclick="openNotifModal()" class="topbar-btn relative" title="受信ボックス / 通知履歴">
                 <i class="fas fa-inbox text-base"></i>
                 <span class="header-notif-badge hidden"></span>
+              </button>
+              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバーリスト">
+                <i class="fas fa-users"></i>
               </button>
             </div>
           </div>
