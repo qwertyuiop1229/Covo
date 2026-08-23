@@ -3467,30 +3467,38 @@ function openAdminJoinModal() {
 // =========================================================================
 
 // サーバー一覧へ戻るボタン
-document.getElementById("backToServerListBtn").addEventListener("click", () => {
+document.getElementById("backToServerListBtn")?.addEventListener("click", () => {
   leaveServerView();
 });
 
 // サーバー作成ボタン
-document.getElementById("createServerBtn").addEventListener("click", () => {
-  document.getElementById("newServerName").value = "";
-  document.getElementById("newServerId").value = "";
-  document.getElementById("newServerPassword").value = "";
-  document.getElementById("newServerPasswordConfirm").value = "";
-  document.getElementById("createServerMessage").textContent = "";
-  document.getElementById("serverIdAvailability").textContent = "";
-  openModal(document.getElementById("createServerModal"));
+document.getElementById("createServerBtn")?.addEventListener("click", () => {
+  const nameEl = document.getElementById("newServerName");
+  const idEl = document.getElementById("newServerId");
+  const passEl = document.getElementById("newServerPassword");
+  const passConfEl = document.getElementById("newServerPasswordConfirm");
+  const msgEl = document.getElementById("createServerMessage");
+  const availEl = document.getElementById("serverIdAvailability");
+  const modalEl = document.getElementById("createServerModal");
+  if (nameEl) nameEl.value = "";
+  if (idEl) idEl.value = "";
+  if (passEl) passEl.value = "";
+  if (passConfEl) passConfEl.value = "";
+  if (msgEl) msgEl.textContent = "";
+  if (availEl) availEl.textContent = "";
+  if (modalEl) openModal(modalEl);
 });
 
-document.getElementById("cancelCreateServerBtn").addEventListener("click", () => {
-  document.getElementById("createServerModal").classList.add("hidden");
+document.getElementById("cancelCreateServerBtn")?.addEventListener("click", () => {
+  document.getElementById("createServerModal")?.classList.add("hidden");
 });
 
 // サーバーID リアルタイムバリデーション
 let serverIdCheckTimer = null;
-document.getElementById("newServerId").addEventListener("input", (e) => {
+document.getElementById("newServerId")?.addEventListener("input", (e) => {
   const val = e.target.value;
   const availEl = document.getElementById("serverIdAvailability");
+  if (!availEl) return;
   // 英数字・ハイフンのみ
   if (!/^[a-z0-9-]*$/i.test(val)) {
     availEl.textContent = "英数字とハイフンのみ使えます";
@@ -3515,20 +3523,21 @@ document.getElementById("newServerId").addEventListener("input", (e) => {
   }, 500);
 });
 
-document.getElementById("confirmCreateServerBtn").addEventListener("click", async () => {
-  const name = document.getElementById("newServerName").value.trim();
-  const rawId = document.getElementById("newServerId").value.trim().toLowerCase();
-  const pass = document.getElementById("newServerPassword").value;
-  const passConfirm = document.getElementById("newServerPasswordConfirm").value;
+document.getElementById("confirmCreateServerBtn")?.addEventListener("click", async () => {
+  const name = document.getElementById("newServerName")?.value.trim() || "";
+  const rawId = document.getElementById("newServerId")?.value.trim().toLowerCase() || "";
+  const pass = document.getElementById("newServerPassword")?.value || "";
+  const passConfirm = document.getElementById("newServerPasswordConfirm")?.value || "";
   const msgEl = document.getElementById("createServerMessage");
 
-  if (!name) { msgEl.textContent = "サーバー名を入力してください"; return; }
-  if (!rawId || rawId.length < 3) { msgEl.textContent = "サーバーID（3文字以上）を入力してください"; return; }
-  if (!/^[a-z0-9-]+$/.test(rawId)) { msgEl.textContent = "IDは英数字とハイフンのみ使えます"; return; }
-  if (!pass) { msgEl.textContent = "パスワードを入力してください"; return; }
-  if (pass !== passConfirm) { msgEl.textContent = "パスワードが一致しません"; return; }
+  if (!name) { if (msgEl) msgEl.textContent = "サーバー名を入力してください"; return; }
+  if (!rawId || rawId.length < 3) { if (msgEl) msgEl.textContent = "サーバーID（3文字以上）を入力してください"; return; }
+  if (!/^[a-z0-9-]+$/.test(rawId)) { if (msgEl) msgEl.textContent = "IDは英数字とハイフンのみ使えます"; return; }
+  if (!pass) { if (msgEl) msgEl.textContent = "パスワードを入力してください"; return; }
+  if (pass !== passConfirm) { if (msgEl) msgEl.textContent = "パスワードが一致しません"; return; }
 
-  loadingOverlay.classList.remove("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     // 作成上限チェック（全体管理者は無制限、それ以外は同時に2つまで）
     if (!isAdmin) {
@@ -3537,88 +3546,94 @@ document.getElementById("confirmCreateServerBtn").addEventListener("click", asyn
       );
       const myCreated = myServersSnap.docs.filter(d => d.data().createdBy === userId).length;
       if (myCreated >= 2) {
-        msgEl.textContent = "サーバーは同時に2つまで作成できます";
-        loadingOverlay.classList.add("hidden");
+        if (msgEl) msgEl.textContent = "サーバーは同時に2つまで作成できます";
+        if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
         return;
       }
     }
     const available = await checkServerIdAvailable(rawId);
-    if (!available) { msgEl.textContent = "このIDは既に使われています"; loadingOverlay.classList.add("hidden"); return; }
+    if (!available) { if (msgEl) msgEl.textContent = "このIDは既に使われています"; if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); return; }
     await createServer(name, rawId, pass);
-    document.getElementById("createServerModal").classList.add("hidden");
+    document.getElementById("createServerModal")?.classList.add("hidden");
   } catch (e) {
     console.error(e);
-    msgEl.textContent = "作成に失敗しました: " + e.message;
+    if (msgEl) msgEl.textContent = "作成に失敗しました: " + e.message;
   } finally {
-    loadingOverlay.classList.add("hidden");
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
   }
 });
 
 // サーバー参加ボタン
-document.getElementById("joinServerBtn").addEventListener("click", () => {
+document.getElementById("joinServerBtn")?.addEventListener("click", () => {
   if (isAdmin) {
     openAdminJoinModal();
     return;
   }
-  document.getElementById("joinServerId").value = "";
-  document.getElementById("joinServerPassword").value = "";
-  document.getElementById("joinInviteCode").value = "";
-  document.getElementById("joinServerMessage").textContent = "";
-  openModal(document.getElementById("joinServerModal"));
+  const idEl = document.getElementById("joinServerId");
+  const passEl = document.getElementById("joinServerPassword");
+  const codeEl = document.getElementById("joinInviteCode");
+  const msgEl = document.getElementById("joinServerMessage");
+  const modalEl = document.getElementById("joinServerModal");
+  if (idEl) idEl.value = "";
+  if (passEl) passEl.value = "";
+  if (codeEl) codeEl.value = "";
+  if (msgEl) msgEl.textContent = "";
+  if (modalEl) openModal(modalEl);
 });
 
-document.getElementById("cancelAdminJoinBtn").addEventListener("click", () => {
-  document.getElementById("adminJoinModal").classList.add("hidden");
+document.getElementById("cancelAdminJoinBtn")?.addEventListener("click", () => {
+  document.getElementById("adminJoinModal")?.classList.add("hidden");
 });
 
-document.getElementById("cancelJoinServerBtn").addEventListener("click", () => {
-  document.getElementById("joinServerModal").classList.add("hidden");
+document.getElementById("cancelJoinServerBtn")?.addEventListener("click", () => {
+  document.getElementById("joinServerModal")?.classList.add("hidden");
 });
 
 // 参加モーダルのタブ切り替え
-document.getElementById("joinTabPassword").addEventListener("click", () => {
-  document.getElementById("joinTabPassword").classList.add("active");
-  document.getElementById("joinTabCode").classList.remove("active");
-  document.getElementById("joinByPasswordSection").classList.remove("hidden");
-  document.getElementById("joinByCodeSection").classList.add("hidden");
+document.getElementById("joinTabPassword")?.addEventListener("click", () => {
+  document.getElementById("joinTabPassword")?.classList.add("active");
+  document.getElementById("joinTabCode")?.classList.remove("active");
+  document.getElementById("joinByPasswordSection")?.classList.remove("hidden");
+  document.getElementById("joinByCodeSection")?.classList.add("hidden");
 });
-document.getElementById("joinTabCode").addEventListener("click", () => {
-  document.getElementById("joinTabCode").classList.add("active");
-  document.getElementById("joinTabPassword").classList.remove("active");
-  document.getElementById("joinByCodeSection").classList.remove("hidden");
-  document.getElementById("joinByPasswordSection").classList.add("hidden");
+document.getElementById("joinTabCode")?.addEventListener("click", () => {
+  document.getElementById("joinTabCode")?.classList.add("active");
+  document.getElementById("joinTabPassword")?.classList.remove("active");
+  document.getElementById("joinByCodeSection")?.classList.remove("hidden");
+  document.getElementById("joinByPasswordSection")?.classList.add("hidden");
 });
 
-document.getElementById("confirmJoinServerBtn").addEventListener("click", async () => {
+document.getElementById("confirmJoinServerBtn")?.addEventListener("click", async () => {
   const msgEl = document.getElementById("joinServerMessage");
-  msgEl.textContent = "";
-  loadingOverlay.classList.remove("hidden");
+  if (msgEl) msgEl.textContent = "";
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
-    const isCodeTab = !document.getElementById("joinByCodeSection").classList.contains("hidden");
+    const isCodeTab = document.getElementById("joinByCodeSection") && !document.getElementById("joinByCodeSection").classList.contains("hidden");
     if (isCodeTab) {
-      const code = document.getElementById("joinInviteCode").value.trim();
-      if (!code) { msgEl.textContent = "招待コードを入力してください"; return; }
+      const code = document.getElementById("joinInviteCode")?.value.trim() || "";
+      if (!code) { if (msgEl) msgEl.textContent = "招待コードを入力してください"; return; }
       await joinServerByInviteCode(code);
     } else {
-      const serverId = document.getElementById("joinServerId").value.trim().toLowerCase();
-      const password = document.getElementById("joinServerPassword").value;
-      if (!serverId) { msgEl.textContent = "サーバーIDを入力してください"; return; }
-      if (!password) { msgEl.textContent = "パスワードを入力してください"; return; }
+      const serverId = document.getElementById("joinServerId")?.value.trim().toLowerCase() || "";
+      const password = document.getElementById("joinServerPassword")?.value || "";
+      if (!serverId) { if (msgEl) msgEl.textContent = "サーバーIDを入力してください"; return; }
+      if (!password) { if (msgEl) msgEl.textContent = "パスワードを入力してください"; return; }
       await joinServerByPassword(serverId, password);
     }
-    document.getElementById("joinServerModal").classList.add("hidden");
+    document.getElementById("joinServerModal")?.classList.add("hidden");
   } catch (e) {
     console.error(e);
-    msgEl.textContent = e.message || "参加に失敗しました";
+    if (msgEl) msgEl.textContent = e.message || "参加に失敗しました";
   } finally {
-    loadingOverlay.classList.add("hidden");
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
   }
 });
 
 // サーバー設定モーダル
 const serverSettingsModal = document.getElementById("serverSettingsModal");
-document.getElementById("serverSettingsBtn").addEventListener("click", openServerSettings);
-document.getElementById("closeServerSettingsBtn").addEventListener("click", () => serverSettingsModal.classList.add("hidden"));
+document.getElementById("serverSettingsBtn")?.addEventListener("click", openServerSettings);
+document.getElementById("closeServerSettingsBtn")?.addEventListener("click", () => serverSettingsModal?.classList.add("hidden"));
 
 // サーバー設定のタブ
 let currentSsTab = "rooms";
@@ -4073,11 +4088,12 @@ document.addEventListener('click', (e) => {
   }
 });
 
-document.getElementById("createRoomInServerBtn").addEventListener("click", async () => {
-  const name = document.getElementById("newRoomNameInput").value.trim();
-  const categoryId = document.getElementById("newRoomCategorySelect").value || null;
+document.getElementById("createRoomInServerBtn")?.addEventListener("click", async () => {
+  const name = document.getElementById("newRoomNameInput")?.value.trim() || "";
+  const categoryId = document.getElementById("newRoomCategorySelect")?.value || null;
   if (!name) return;
-  loadingOverlay.classList.remove("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
       name, categoryId, createdAt: serverTimestamp(), createdBy: userId
@@ -4086,18 +4102,19 @@ document.getElementById("createRoomInServerBtn").addEventListener("click", async
       const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
       await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
     } catch (e) { console.error("E2EE key gen failed", e); }
-    document.getElementById("newRoomNameInput").value = "";
+    const nameInp = document.getElementById("newRoomNameInput");
+    if (nameInp) nameInp.value = "";
     await loadServerSettingsRooms();
     alertMessage("ルームを作成しました", "success");
   } catch (e) { alertMessage("作成に失敗しました", "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
+  finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
 });
 
 // メンバー管理タブ
-document.getElementById("ssMembersSection").parentElement; // (reference check)
 async function loadServerSettingsMembers() {
   if (currentSsTab !== "members") return;
   const listEl = document.getElementById("serverMembersManageList");
+  if (!listEl) return;
   listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
   const serverData = serverSnap.data();
@@ -4181,10 +4198,10 @@ async function loadServerSettingsMembers() {
     });
   });
 }
-document.getElementById("ssTabMembers").addEventListener("click", loadServerSettingsMembers);
+document.getElementById("ssTabMembers")?.addEventListener("click", loadServerSettingsMembers);
 
 // 招待コードタブ
-document.getElementById("ssTabInvites").addEventListener("click", loadInviteCodes);
+document.getElementById("ssTabInvites")?.addEventListener("click", loadInviteCodes);
 async function loadInviteCodes() {
   if (currentSsTab !== "invites") return;
   const listEl = document.getElementById("inviteCodesList");
@@ -4582,9 +4599,9 @@ setTimeout(() => {
   });
 }, 1000);
 
-document.getElementById("createInviteCodeBtn").addEventListener("click", async () => {
-  const expiryDays = parseInt(document.getElementById("inviteExpiry").value);
-  const maxUses = parseInt(document.getElementById("inviteMaxUses").value);
+document.getElementById("createInviteCodeBtn")?.addEventListener("click", async () => {
+  const expiryDays = parseInt(document.getElementById("inviteExpiry")?.value || "0");
+  const maxUses = parseInt(document.getElementById("inviteMaxUses")?.value || "0");
   const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const _codeBytes = new Uint8Array(8);
   crypto.getRandomValues(_codeBytes);
@@ -4614,43 +4631,47 @@ document.getElementById("createInviteCodeBtn").addEventListener("click", async (
 });
 
 // その他タブ
-document.getElementById("renameServerBtn").addEventListener("click", async () => {
-  const name = document.getElementById("renameServerInput").value.trim();
+document.getElementById("renameServerBtn")?.addEventListener("click", async () => {
+  const name = document.getElementById("renameServerInput")?.value.trim() || "";
   if (!name) return;
   try {
     await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { name });
-    document.getElementById("serverNameDisplay").textContent = name;
-    document.getElementById("serverSettingsTitle").textContent = name;
+    const nameDisplay = document.getElementById("serverNameDisplay");
+    const settingsTitle = document.getElementById("serverSettingsTitle");
+    if (nameDisplay) nameDisplay.textContent = name;
+    if (settingsTitle) settingsTitle.textContent = name;
     currentServerData = { ...currentServerData, name };
     alertMessage("サーバー名を変更しました", "success");
   } catch (e) { alertMessage("変更に失敗しました", "error"); }
 });
 
-document.getElementById("changeServerPasswordBtn").addEventListener("click", async () => {
-  const newPass = document.getElementById("changeServerPasswordInput").value;
+document.getElementById("changeServerPasswordBtn")?.addEventListener("click", async () => {
+  const newPass = document.getElementById("changeServerPasswordInput")?.value || "";
   if (!newPass || newPass.length < 4) { alertMessage("パスワードは4文字以上にしてください", "error"); return; }
   try {
     const hash = await hashPassword(newPass, currentServerId);
     await setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/secrets`, 'auth'), { passwordHash: hash }, { merge: true });
     await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: deleteField() });
-    document.getElementById("changeServerPasswordInput").value = "";
+    const passInp = document.getElementById("changeServerPasswordInput");
+    if (passInp) passInp.value = "";
     alertMessage("パスワードを変更しました", "success");
   } catch (e) { alertMessage("変更に失敗しました", "error"); }
 });
 
-document.getElementById("deleteServerBtn").addEventListener("click", async () => {
+document.getElementById("deleteServerBtn")?.addEventListener("click", async () => {
   if (!await showCustomConfirm(`「${currentServerData?.name || currentServerId}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
   const canDelete = currentServerData?.createdBy === userId ||
     (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || isAdmin;
   if (!canDelete) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
-  loadingOverlay.classList.remove("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     await deleteServerCascade(currentServerId);
-    serverSettingsModal.classList.add("hidden");
+    serverSettingsModal?.classList.add("hidden");
     leaveServerView();
     alertMessage("サーバーを削除しました", "success");
   } catch (e) { console.error("deleteServer error:", e); alertMessage("削除に失敗しました", "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
+  finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
 });
 
 let isSendingMessage = false;
@@ -4660,14 +4681,18 @@ let serverCtxData = null;
 function showServerContextMenu(server, x, y) {
   serverCtxData = server;
   const menu = document.getElementById("serverContextMenu");
+  if (!menu) return;
   const isSvAdmin = server.serverAdmins && server.serverAdmins.includes(userId);
   const isOwner = server.createdBy === userId;
   const isJoined = server.joinedUsers && server.joinedUsers.includes(userId);
-  // 権限ごとに表示切り替え
-  document.getElementById("serverCtxSettings").style.display = (isAdmin || isSvAdmin) ? "" : "none";
-  document.getElementById("serverCtxLeave").style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
-  document.getElementById("serverCtxDeleteSep").style.display = (isAdmin || isOwner) ? "" : "none";
-  document.getElementById("serverCtxDelete").style.display = (isAdmin || isOwner) ? "" : "none";
+  const sSet = document.getElementById("serverCtxSettings");
+  const sLeave = document.getElementById("serverCtxLeave");
+  const sDelSep = document.getElementById("serverCtxDeleteSep");
+  const sDel = document.getElementById("serverCtxDelete");
+  if (sSet) sSet.style.display = (isAdmin || isSvAdmin) ? "" : "none";
+  if (sLeave) sLeave.style.display = (isJoined && !isOwner && !isAdmin) ? "" : "none";
+  if (sDelSep) sDelSep.style.display = (isAdmin || isOwner) ? "" : "none";
+  if (sDel) sDel.style.display = (isAdmin || isOwner) ? "" : "none";
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   menu.classList.remove("hidden");
@@ -4678,25 +4703,26 @@ function showServerContextMenu(server, x, y) {
   });
 }
 
-document.getElementById("serverCtxEnter").addEventListener("click", () => {
+document.getElementById("serverCtxEnter")?.addEventListener("click", () => {
   if (serverCtxData) enterServer(serverCtxData.id, serverCtxData);
-  document.getElementById("serverContextMenu").classList.add("hidden");
+  document.getElementById("serverContextMenu")?.classList.add("hidden");
 });
 
-document.getElementById("serverCtxSettings").addEventListener("click", async () => {
+document.getElementById("serverCtxSettings")?.addEventListener("click", async () => {
   const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
+  document.getElementById("serverContextMenu")?.classList.add("hidden");
   if (!sv) return;
   await enterServer(sv.id, sv);
   setTimeout(() => openServerSettings(), 600);
 });
 
-document.getElementById("serverCtxLeave").addEventListener("click", async () => {
+document.getElementById("serverCtxLeave")?.addEventListener("click", async () => {
   const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
+  document.getElementById("serverContextMenu")?.classList.add("hidden");
   if (!sv) return;
   if (!await showCustomConfirm(`「${sv.name || sv.id}」を退出しますか？`, "退出する", "キャンセル")) return;
-  loadingOverlay.classList.remove("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     await updateDoc(doc(db, `artifacts/${appId}/servers`, sv.id), {
       joinedUsers: arrayRemove(userId),
@@ -4710,20 +4736,21 @@ document.getElementById("serverCtxLeave").addEventListener("click", async () => 
     } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
     alertMessage("サーバーを退出しました", "success");
   } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
+  finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
 });
 
-document.getElementById("serverCtxDelete").addEventListener("click", async () => {
+document.getElementById("serverCtxDelete")?.addEventListener("click", async () => {
   const sv = serverCtxData;
-  document.getElementById("serverContextMenu").classList.add("hidden");
+  document.getElementById("serverContextMenu")?.classList.add("hidden");
   if (!sv) return;
   if (!await showCustomConfirm(`「${sv.name || sv.id}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
-  loadingOverlay.classList.remove("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     await deleteServerCascade(sv.id);
     alertMessage("サーバーを削除しました", "success");
   } catch (e) { alertMessage("削除に失敗しました: " + e.message, "error"); }
-  finally { loadingOverlay.classList.add("hidden"); }
+  finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
 });
 
 document.addEventListener("click", (e) => {
@@ -5166,13 +5193,15 @@ function handleSIconFileChange(e) {
     const scaleY = SICON_SIZE / sIconImage.naturalHeight;
     sIconMinScale = Math.max(scaleX, scaleY);
     sIconScale = sIconMinScale;
-    serverIconZoomSlider.min = sIconMinScale;
-    serverIconZoomSlider.max = sIconMinScale * 4;
-    serverIconZoomSlider.value = sIconScale;
+    if (serverIconZoomSlider) {
+      serverIconZoomSlider.min = sIconMinScale;
+      serverIconZoomSlider.max = sIconMinScale * 4;
+      serverIconZoomSlider.value = sIconScale;
+    }
     sIconOffsetX = (SICON_SIZE - sIconImage.naturalWidth * sIconScale) / 2;
     sIconOffsetY = (SICON_SIZE - sIconImage.naturalHeight * sIconScale) / 2;
-    document.getElementById('serverIconUploadProgress').classList.add('hidden');
-    serverIconCropModal.classList.remove('hidden');
+    document.getElementById('serverIconUploadProgress')?.classList.add('hidden');
+    serverIconCropModal?.classList.remove('hidden');
     drawSIconPreview();
   };
   e.target.value = '';
@@ -5193,18 +5222,45 @@ function clampSIconOffset() {
 }
 
 function drawSIconPreview() {
-  if (!sIconImage) return;
+  if (!sIconImage || !serverIconCropCanvas) return;
   const ctx = serverIconCropCanvas.getContext('2d');
+  if (!ctx) return;
   ctx.clearRect(0, 0, SICON_SIZE, SICON_SIZE);
   ctx.drawImage(sIconImage, sIconOffsetX, sIconOffsetY, sIconImage.naturalWidth * sIconScale, sIconImage.naturalHeight * sIconScale);
 }
 
-serverIconCropCanvas.addEventListener('mousedown', (e) => {
-  e.preventDefault(); sIconIsDragging = true;
-  sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
-  sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
-  serverIconCropCanvas.style.cursor = 'grabbing';
-});
+if (serverIconCropCanvas) {
+  serverIconCropCanvas.addEventListener('mousedown', (e) => {
+    e.preventDefault(); sIconIsDragging = true;
+    sIconDragStartX = e.clientX; sIconDragStartY = e.clientY;
+    sIconDragStartOffsetX = sIconOffsetX; sIconDragStartOffsetY = sIconOffsetY;
+    serverIconCropCanvas.style.cursor = 'grabbing';
+  });
+
+  serverIconCropCanvas.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // スクロール防止
+    if (e.touches.length !== 1) return;
+    sIconIsDragging = true;
+    sIconDragStartX = e.touches[0].clientX;
+    sIconDragStartY = e.touches[0].clientY;
+    sIconDragStartOffsetX = sIconOffsetX;
+    sIconDragStartOffsetY = sIconOffsetY;
+  }, { passive: false });
+
+  serverIconCropCanvas.addEventListener('touchmove', (e) => {
+    if (!sIconIsDragging || !sIconImage) return;
+    if (e.touches.length !== 1) return;
+    e.preventDefault(); // スクロール防止
+    sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
+    sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
+    clampSIconOffset(); drawSIconPreview();
+  }, { passive: false });
+
+  serverIconCropCanvas.addEventListener('touchend', () => {
+    if (sIconIsDragging) { sIconIsDragging = false; }
+  }, { passive: true });
+}
+
 document.addEventListener('mousemove', (e) => {
   if (!sIconIsDragging || !sIconImage) return;
   sIconOffsetX = sIconDragStartOffsetX + (e.clientX - sIconDragStartX);
@@ -5212,33 +5268,11 @@ document.addEventListener('mousemove', (e) => {
   clampSIconOffset(); drawSIconPreview();
 });
 document.addEventListener('mouseup', () => {
-  if (sIconIsDragging) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
+  if (sIconIsDragging && serverIconCropCanvas) { sIconIsDragging = false; serverIconCropCanvas.style.cursor = 'grab'; }
 });
 
-// タッチドラッグ対応（スマホ・タブレット）
-serverIconCropCanvas.addEventListener('touchstart', (e) => {
-  e.preventDefault(); // スクロール防止
-  if (e.touches.length !== 1) return;
-  sIconIsDragging = true;
-  sIconDragStartX = e.touches[0].clientX;
-  sIconDragStartY = e.touches[0].clientY;
-  sIconDragStartOffsetX = sIconOffsetX;
-  sIconDragStartOffsetY = sIconOffsetY;
-}, { passive: false });
-document.addEventListener('touchmove', (e) => {
-  if (!sIconIsDragging || !sIconImage) return;
-  if (e.touches.length !== 1) return;
-  e.preventDefault(); // スクロール防止
-  sIconOffsetX = sIconDragStartOffsetX + (e.touches[0].clientX - sIconDragStartX);
-  sIconOffsetY = sIconDragStartOffsetY + (e.touches[0].clientY - sIconDragStartY);
-  clampSIconOffset(); drawSIconPreview();
-}, { passive: false });
-document.addEventListener('touchend', () => {
-  if (sIconIsDragging) { sIconIsDragging = false; }
-}, { passive: true });
-
-serverIconZoomSlider.addEventListener('input', () => {
-  if (!sIconImage) return;
+serverIconZoomSlider?.addEventListener('input', () => {
+  if (!sIconImage || !serverIconZoomSlider) return;
   const newScale = parseFloat(serverIconZoomSlider.value);
   const cx = SICON_SIZE / 2, cy = SICON_SIZE / 2;
   sIconOffsetX = cx - (cx - sIconOffsetX) * (newScale / sIconScale);
@@ -5246,14 +5280,14 @@ serverIconZoomSlider.addEventListener('input', () => {
   sIconScale = newScale; clampSIconOffset(); drawSIconPreview();
 });
 
-document.getElementById('serverIconCropCancel').addEventListener('click', () => {
-  serverIconCropModal.classList.add('hidden'); sIconImage = null;
+document.getElementById('serverIconCropCancel')?.addEventListener('click', () => {
+  serverIconCropModal?.classList.add('hidden'); sIconImage = null;
   if (serverIconUploadInput) serverIconUploadInput.value = '';
   const newFileInput = document.getElementById("newServerIconUploadInput");
   if (newFileInput) newFileInput.value = '';
 });
 
-document.getElementById('serverIconCropConfirm').addEventListener('click', async () => {
+document.getElementById('serverIconCropConfirm')?.addEventListener('click', async () => {
   if (!sIconImage) return;
   if (!isNewServerIconCrop && !currentServerId) return;
 
