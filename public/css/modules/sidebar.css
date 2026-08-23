@@ -497,8 +497,10 @@
     body.discord-ui-mode.discord-home-view #serverHeader {
       display: none !important;
     }
-    body.discord-ui-mode.discord-home-view #discordHomeMembers {
-      display: flex !important;
+    @media (min-width: 1024px) {
+      body.discord-ui-mode.discord-home-view #discordHomeMembers {
+        display: flex !important;
+      }
     }
 
     /* 1. DM/フレンドビュー (吹き出しマーク) */

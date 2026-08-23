@@ -136,27 +136,20 @@
       document.documentElement.classList.toggle('dark-server-theme', isDark);
       document.body.classList.toggle('dark-server-theme', isDark);
       
-      if (hasHigherModalOpen || activeOverlayBg || isMembersOpen) {
-        document.documentElement.style.setProperty('background-color', blendedHex, 'important');
-        document.body.style.setProperty('background-color', blendedHex, 'important');
-      } else {
-        document.documentElement.style.removeProperty('background-color');
-        document.body.style.removeProperty('background-color');
-      }
+      // meta theme-color のみを安全に更新（html/bodyのインラインスタイル上書きによるツートン割れ・ブラー再発を防止）
     }
 
-    // ダークテーマを最初のレンダリング前に適用（window.onload 待ちだとつなぎ目が見える）
+    // ダークテーマを最初のレンダリング前に適用
     if (localStorage.getItem('covo_dark_server') === 'true') {
       document.body.classList.add('dark-server-theme');
       document.documentElement.classList.add('dark-server-theme');
     }
     updateMetaThemeColor();
 
-    // どんな手段でクラスやテーマ、モーダルが開閉されても自動追従する MutationObserver システム
     const themeObserver = new MutationObserver(() => {
       updateMetaThemeColor();
     });
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
+    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: false });
 
     // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
     document.addEventListener('touchmove', function(event) {
