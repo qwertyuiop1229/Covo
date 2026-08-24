@@ -401,11 +401,10 @@
     <button class="pwa-banner-btn" id="pwaInstallButton">インストール</button>
     <button class="pwa-banner-close" id="pwaInstallClose"><i class="fas fa-times"></i></button>
   </div>
-  <!-- 初期起動スプラッシュ画面（背景色は下記の style="background-color: #0f172a;" で自由に変更できます） -->
-  <div id="appLoadingSplash" class="fixed inset-0 flex flex-col items-center justify-center z-[99999] transition-opacity duration-300 ease-out select-none pointer-events-none" style="background-color: #0f172a;">
+  <!-- 初期起動スプラッシュ画面（LINE / Discord風の洗練された単色スプラッシュ演出） -->
+  <div id="appLoadingSplash" class="fixed inset-0 flex flex-col items-center justify-center z-[99999] transition-opacity duration-300 ease-out select-none pointer-events-none" style="background-color: #232B38;">
     <div class="flex items-center justify-center">
-      <!-- アプリアイコン（単色背景上にシンプルに表示） -->
-      <img src="img/icon-192x192.png?v=6" alt="Covo" class="w-20 h-20 sm:w-24 sm:h-24 rounded-[22px] shadow-lg object-cover" />
+      <img src="img/icon-512x512 transparent.png" alt="Covo" class="w-24 h-24 sm:w-28 sm:h-28 object-contain select-none" onerror="this.src='img/icon-512x512.png?v=6'" />
     </div>
   </div>
 
@@ -627,7 +626,8 @@
                       <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#0f172a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">デスクトップにショートカットを作成</button>
                       <span id="pcCreateShortcutStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
-                    <div class="flex justify-between items-center mt-2">
+                    <div class="flex justify-between items-center mt-2 gap-2">
+                      <button class="hover:bg-slate-700 transition-colors" onclick="showLatestAnnouncementModal(true)" style="padding:7px 16px;background:#334155;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">お知らせ・更新履歴</button>
                       <button class="hover:bg-red-600 transition-colors" onclick="window.openFeedbackModal && window.openFeedbackModal()" style="padding:7px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">バグを報告する</button>
                     </div>
                   </div>
@@ -771,6 +771,7 @@
       <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-gray-200 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
       <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
+      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-bullhorn mr-1.5 text-xs"></i>お知らせ配信</button>
     </div>
     
     <div class="pr-2">
@@ -797,6 +798,40 @@
           <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
+      </div>
+      <div id="adminTabAnnouncementsContent" class="space-y-4 hidden">
+        <p class="text-xs text-gray-400 leading-relaxed">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
+        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-200 dark:border-gray-700/60">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">バージョン</label>
+              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">カテゴリ</label>
+              <select id="announcementCategorySelect" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none">
+                <option value="update">🚀 新機能・改善 (UPDATE)</option>
+                <option value="bugfix">🐛 バグ修正 (BUG FIX)</option>
+                <option value="notice">⚠️ 重要なお知らせ (NOTICE)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">タイトル</label>
+            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">内容</label>
+            <textarea id="announcementContentInput" rows="4" placeholder="・新機能の概要&#10;・修正されたバグの内容&#10;・注意点など" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none resize-none"></textarea>
+          </div>
+          <button id="publishAnnouncementButton" onclick="publishAdminAnnouncement()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow transition-all flex items-center justify-center gap-2">
+            <i class="fas fa-paper-plane"></i> 全体に配信する
+          </button>
+        </div>
+        <div>
+          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">配信済みお知らせ一覧</h4>
+          <div id="adminAnnouncementsList" class="space-y-2"></div>
+        </div>
       </div>
 
 
@@ -1712,15 +1747,11 @@
           <!-- Discord完全一致 最上部トップバー (添付画像準拠) -->
           <div id="currentRoomHeader"
             class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none hidden">
-            <!-- 左側: 戻るボタン / PC用三本線ボタン + ルーム名 -->
+            <!-- 左側: 戻るボタン + ルーム名 -->
             <div class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer md:cursor-default" id="currentRoomTitleArea">
               <button id="mobileBackButton"
                 class="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white hidden items-center p-2 -ml-2 mr-1 rounded-full"
                 style="display:none;"><i class="fas fa-arrow-left"></i></button>
-              <!-- PC用三本線ボタン（左サイドバー開閉） -->
-              <button id="toggleLeftSidebarBtn" class="topbar-btn hidden md:flex mr-1" title="サイドバーの開閉">
-                <i class="fas fa-bars"></i>
-              </button>
               <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 truncate">
                 <i class="fas fa-hashtag text-gray-400 text-sm" id="currentRoomIcon"></i>
                 <span id="currentRoomTitleText" class="truncate"></span>
@@ -2548,6 +2579,84 @@
     <div style="padding:1rem">
       <p id="mobileNotifEmpty" style="text-align:center;color:#9ca3af;font-size:0.85rem;padding:2rem 0">通知はありません</p>
       <div id="mobileNotifList"></div>
+    </div>
+  </div>
+
+<!-- 全体お知らせ / What's New モーダル -->
+  <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
+    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
+      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-1">
+            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
+            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
+          </div>
+          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
+          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
+          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
+        </div>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
+      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
+        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
+        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+          確認しました
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全体お知らせ / What's New モーダル -->
+  <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
+    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
+      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-1">
+            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
+            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
+          </div>
+          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
+          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
+          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
+        </div>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
+      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
+        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
+        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+          確認しました
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全体お知らせ / What's New モーダル -->
+  <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
+    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
+      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-1">
+            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
+            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
+          </div>
+          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
+          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
+          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
+        </div>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
+      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
+        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
+        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+          確認しました
+        </button>
+      </div>
     </div>
   </div>
 

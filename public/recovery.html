@@ -330,12 +330,13 @@
 
     async function installPastVersion(url, tag) {
       if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
       const btn = document.getElementById(`btn-install-${tag}`);
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
       }
-      logMessage(`Downloading ${tag}...`);
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
 
       try {
         if (!invoke) throw new Error("Tauri API missing.");
