@@ -14,17 +14,27 @@
         },
         "servers": {
           "$serverId": {
-            ".read": "data.child('members').child(auth.uid).exists()",
+            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
             "members": {
               "$uid": {
                 ".write": "auth != null && auth.uid === $uid && !newData.exists()"
               }
             },
             "rooms": {
-              ".write": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+              ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
               "$roomId": {
                 "messages": {
                   ".indexOn": ["timestamp"]
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
                 }
               }
             }

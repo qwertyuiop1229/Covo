@@ -42,6 +42,9 @@ export default {
     if (url.pathname === "/api/shareFile" && request.method === "POST") {
       return await handleShareFile(request, env);
     }
+    if (url.pathname === "/api/download" && request.method === "GET") {
+      return await handleDownloadProxy(request, env, url);
+    }
     if (url.pathname.startsWith("/api/file/") && request.method === "GET") {
       return await handleServeFile(request, env, url);
     }
@@ -86,12 +89,14 @@ async function handleSignup(request, env) {
     // 2. Firestoreから許可リストを取得
     const result = await getAllowedEmails(workerToken, env);
     if (result.error) {
-       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 200, headers: corsHeaders });
+       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 500, headers: corsHeaders });
     }
-    const allowedEmails = result.emails.map(e => e.trim().toLowerCase());
     
-    if (!allowedEmails.includes(cleanEmail)) {
-      return new Response(JSON.stringify({ error: "招待されたメールアドレスではありません。管理者にお問い合わせください。" }), { status: 403, headers: corsHeaders });
+    if (result.isRestricted) {
+      const allowedEmails = result.emails.map(e => e.trim().toLowerCase());
+      if (!allowedEmails.includes(cleanEmail)) {
+        return new Response(JSON.stringify({ error: "招待されたメールアドレスではありません。管理者にお問い合わせください。" }), { status: 403, headers: corsHeaders });
+      }
     }
 
     // 3. 許可されている場合、Firebase Identity Toolkit APIでユーザーを作成
@@ -128,35 +133,50 @@ async function getWorkerAuthToken(env) {
   return data.idToken || null;
 }
 
-// Firestore REST APIを使って allowedEmails ドキュメントを取得
+// Firestore REST APIを使って allowedEmails を取得（設定ドキュメントおよびサブコレクション両対応）
 async function getAllowedEmails(idToken, env) {
   const projectId = env.FIREBASE_PROJECT_ID;
   const appId = env.FIREBASE_APP_ID;
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmails`;
   
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Authorization": `Bearer ${idToken}`
+  try {
+    // 1. allowedEmailsConfig を取得して制限が有効か確認
+    const configUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmailsConfig`;
+    const configRes = await fetch(configUrl, { headers: { "Authorization": `Bearer ${idToken}` } });
+    const configData = await configRes.json();
+    
+    // config がない、または active でない場合は誰でも登録可能
+    if (configData.error || !configData.fields || !configData.fields.active || !configData.fields.active.booleanValue) {
+      return { emails: [], isRestricted: false, error: null };
     }
-  });
 
-  const data = await res.json();
-  if (data.error) {
-    // ドキュメントが存在しない（まだ誰も許可されていない）場合はエラーにせず空配列を返す
-    if (data.error.code === 404 || data.error.status === "NOT_FOUND") {
-      return { emails: [], error: null };
+    // 2. 新形式: allowedEmails サブコレクションから一覧取得
+    const colUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/allowedEmails`;
+    const colRes = await fetch(colUrl, { headers: { "Authorization": `Bearer ${idToken}` } });
+    const colData = await colRes.json();
+
+    const emails = [];
+    if (colData.documents && Array.isArray(colData.documents)) {
+      for (const d of colData.documents) {
+        const emailId = d.name.split('/').pop();
+        if (emailId) emails.push(emailId);
+      }
     }
-    console.error("Firestore Error:", data.error);
-    return { emails: [], error: data.error.message || "Unknown Firestore Error" };
-  }
 
-  // Firestoreの配列データ構造のパース: data.fields.emails.arrayValue.values
-  if (data.fields && data.fields.emails && data.fields.emails.arrayValue && data.fields.emails.arrayValue.values) {
-    const emails = data.fields.emails.arrayValue.values.map(v => v.stringValue);
-    return { emails, error: null };
+    // 3. 旧形式 (settings/allowedEmails) もフォールバック確認
+    if (emails.length === 0) {
+      const oldUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmails`;
+      const oldRes = await fetch(oldUrl, { headers: { "Authorization": `Bearer ${idToken}` } });
+      const oldData = await oldRes.json();
+      if (!oldData.error && oldData.fields?.emails?.arrayValue?.values) {
+        emails.push(...oldData.fields.emails.arrayValue.values.map(v => v.stringValue));
+      }
+    }
+
+    return { emails, isRestricted: true, error: null };
+  } catch (e) {
+    console.error("getAllowedEmails Error:", e);
+    return { emails: [], isRestricted: false, error: e.message };
   }
-  return { emails: [], error: null };
 }
 
 // Identity Toolkit APIを使ってアカウント作成
@@ -658,12 +678,16 @@ async function handleSendNotification(request, env) {
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
-    // Service Account から FCM OAuth2 トークンを取得
+    // Service Account から FCM OAuth2 トークンおよび RTDB トークンを事前に1回のみ取得（ループ内多重フェッチを排除）
     if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 200, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
     }
-    const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
+    const [fcmAccessToken, rtdbToken] = await Promise.all([
+      getFCMToken(env.SERVICE_ACCOUNT_JSON),
+      getRTDBToken(env.SERVICE_ACCOUNT_JSON).catch(() => null)
+    ]);
 
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
     const results = [];
 
     // 各受信者について処理
@@ -673,13 +697,12 @@ async function handleSendNotification(request, env) {
         let shouldSend = true;
         try {
             // 1. 相手のステータスをRTDBから取得
-            const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-            const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
-            const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
-            const statusRes = await fetch(statusUrl);
-            const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
+            if (rtdbToken) {
+              const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
+              const statusRes = await fetch(statusUrl);
+              const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
             
-            if (statusData && !statusData.error) {
+              if (statusData && !statusData.error) {
                 const state = statusData.state || 'offline'; // RTDB形式
 
                 // オンラインかつ、今そのルームを見ているなら通知不要
@@ -702,6 +725,7 @@ async function handleSendNotification(request, env) {
                         shouldSend = false;
                     }
                 }
+              }
             }
         } catch (statusErr) {
             console.error("RTDB status check failed:", statusErr);
@@ -774,18 +798,10 @@ async function handleSendNotification(request, env) {
                                         }
                                     }
                                 },
-                                    // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起こす
+                                    // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起動（二重表示を防ぐため data 駆動）
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
-                                    },
-                                    notification: {
-                                        title: title,
-                                        body: body,
-                                        icon: "/icon-192x192.png?v=6",
-                                        badge: "/icon-192x192.png?v=6",
-                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`,
-                                        renotify: true
                                     },
                                     fcm_options: {
                                         link: "/"
@@ -975,6 +991,61 @@ async function handleUploadFile(request, env) {
   } catch (err) {
     return new Response(JSON.stringify({ error: 'アップロードエラー', details: err.toString() }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// 外部ファイル（Cloudinary等）のプロキシダウンロード＆インラインプレビュー
+// -------------------------------------------------------------
+async function handleDownloadProxy(request, env, url) {
+  try {
+    const targetUrl = url.searchParams.get('url');
+    const fileName = url.searchParams.get('name') || 'download';
+    const isPreview = url.searchParams.get('preview') === '1';
+
+    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+      return new Response(JSON.stringify({ error: 'Invalid URL' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Covo-Proxy/1.0',
+        'Accept': '*/*'
+      }
+    });
+
+    if (!response.ok) {
+      return new Response(JSON.stringify({ error: `Remote server returned HTTP ${response.status}` }), {
+        status: response.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+    const disposition = isPreview
+      ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
+      : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+
+    const newHeaders = new Headers(corsHeaders);
+    newHeaders.set('Content-Type', contentType);
+    newHeaders.set('Content-Disposition', disposition);
+    newHeaders.set('Cache-Control', 'public, max-age=86400');
+
+    const contentLength = response.headers.get('Content-Length');
+    if (contentLength) newHeaders.set('Content-Length', contentLength);
+
+    return new Response(response.body, {
+      status: 200,
+      headers: newHeaders
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: 'Download proxy error', details: err.toString() }), {
+      status: 502,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }

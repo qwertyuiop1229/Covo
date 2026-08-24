@@ -5,12 +5,14 @@ let _getDb = () => null;
 let _getUserId = () => null;
 let _getAppId = () => null;
 let _getAuth = () => null;
+let _getIsAdmin = () => (typeof window !== 'undefined' && window.isAdmin ? window.isAdmin : false);
 
 export function initCryptoContext(deps) {
   if (deps.getDb) _getDb = deps.getDb;
   if (deps.getUserId) _getUserId = deps.getUserId;
   if (deps.getAppId) _getAppId = deps.getAppId;
   if (deps.getAuth) _getAuth = deps.getAuth;
+  if (deps.getIsAdmin) _getIsAdmin = deps.getIsAdmin;
 }
 
 export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平文と区別する）
@@ -192,7 +194,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に保存。
     // 既に存在すれば何もしない。管理者以外・失敗時は黙ってスキップ（アプリは止めない）。
     export async function _ensureEscrowKey() {
-      if (!_subtleOK || !_getUserId() || !isAdmin) return;
+      if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return;
       try {
         
 
@@ -271,7 +273,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
           
           // 管理者エスクローからの復旧
-          if (!legacyKey && isAdmin) {
+          if (!legacyKey && _getIsAdmin()) {
              const escWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
              if (escWrapSnap.exists()) {
                try {

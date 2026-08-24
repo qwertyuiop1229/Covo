@@ -109,7 +109,8 @@ initCryptoContext({
   getDb: () => (typeof db !== 'undefined' ? db : null),
   getUserId: () => (typeof userId !== 'undefined' ? userId : null),
   getAppId: () => (typeof appId !== 'undefined' ? appId : null),
-  getAuth: () => (typeof auth !== 'undefined' ? auth : null)
+  getAuth: () => (typeof auth !== 'undefined' ? auth : null),
+  getIsAdmin: () => (typeof isAdmin !== 'undefined' ? isAdmin : false)
 });
 
 window._lsGet = function (...args) { return __lsGet(...args); };
@@ -8641,7 +8642,7 @@ if (deleteMsgBtn) {
     }
   }
 
-  // 3. Firestore / D1 メッセージ削除
+  // 3. Firestore / RTDB メッセージ削除
   try {
 
     await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
@@ -8649,12 +8650,7 @@ if (deleteMsgBtn) {
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
-    } catch (err) { console.error("RTDB Dual Delete Failed", err); }
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
-    } catch (e) { console.error("RTDB Delete Failed", e); }
+    } catch (err) { console.error("RTDB Delete Failed", err); }
 
     allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
     lastMessagesData = [...allLoadedMessages];
@@ -9944,18 +9940,32 @@ async function startFileShare(targetUid, targetName, file) {
 
     _fsShowProgress('send', file.name, '相手の応答を待っています…');
 
-    // answer + 受信側ICEを待つ
+    // answer + 受信側ICEを待つ（リモートDescription設定前のCandidateを確実にキューイング）
+    const pendingCandidates = [];
     _fsUnsub = onSnapshot(ref, async snap => {
       const d = snap.data();
       if (!d) return;
       if (d.status === 'declined') { _fsShowProgress('error', file.name, '相手が拒否しました'); setTimeout(_fsCloseProgress, 1500); _fsCleanup(); return; }
-      if (d.answer && !_fsPC.currentRemoteDescription) {
+      if (d.answer && _fsPC && !_fsPC.currentRemoteDescription) {
         await _fsPC.setRemoteDescription(new RTCSessionDescription(d.answer));
+        while (pendingCandidates.length > 0) {
+          const cand = pendingCandidates.shift();
+          try { await _fsPC.addIceCandidate(cand); } catch (e) { }
+        }
       }
     });
     const rcandCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'receiverCandidates');
     _fsCandUnsub = onSnapshot(rcandCol, snap => {
-      snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) { } } });
+      snap.docChanges().forEach(async ch => {
+        if (ch.type === 'added') {
+          const cand = new RTCIceCandidate(ch.doc.data());
+          if (_fsPC && _fsPC.currentRemoteDescription) {
+            try { await _fsPC.addIceCandidate(cand); } catch (e) { }
+          } else {
+            pendingCandidates.push(cand);
+          }
+        }
+      });
     });
   } catch (e) {
     console.error('[FileShare] 送信開始失敗:', e);
