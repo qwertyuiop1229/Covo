@@ -199,8 +199,7 @@ let userId = null;
 let userNickname = null;
 let isAdmin = false;
 let isListAdmin = false;
-const isTauri = window.__TAURI__ !== undefined;
-window.isTauri = isTauri;
+const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI__);
 
 let currentRoomId = null;
 let unsubscribeMessages = null;
