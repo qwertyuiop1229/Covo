@@ -842,16 +842,14 @@ function makeEmailListItem(email, isSelf, onRemove) {
   let iconUrl = userData?.iconUrl || userData?.avatarUrl || userData?.photoURL || null;
 
   const avatar = document.createElement("div");
-  avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors";
-  if (iconUrl) {
-    avatar.classList.add("bg-gray-300", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
-    avatar.innerHTML = `<img src="${iconUrl}" class="w-full h-full object-cover" />`;
+  avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300";
+  if (isUsableAvatarUrl(iconUrl)) {
+    __setAvatarImg(avatar, iconUrl, username || email, { className: "w-full h-full object-cover rounded-full" });
   } else {
     if (userData) {
-      avatar.classList.add("bg-gray-300", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
       avatar.textContent = emailInitial(email);
     } else {
-      avatar.classList.add("bg-gray-200", "dark:bg-gray-700/50", "text-gray-400", "dark:text-gray-500");
+      avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-200 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500";
       avatar.innerHTML = `<i class="fas fa-question"></i>`;
     }
   }
@@ -7395,8 +7393,8 @@ function renderMentionPopup() {
 
     const iconHTML = u.id === 'all'
       ? `<div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0"><i class="fas fa-users"></i></div>`
-      : (u.avatarUrl
-        ? `<img src="${u.avatarUrl}" class="w-6 h-6 rounded-full object-cover flex-shrink-0">`
+      : (isUsableAvatarUrl(u.avatarUrl)
+        ? `<img src="${escapeHtml(u.avatarUrl)}" class="w-6 h-6 rounded-full object-cover flex-shrink-0" onerror="this.remove()">`
         : `<div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 text-xs flex-shrink-0"><i class="fas fa-user"></i></div>`);
 
     const nameHTML = `<span class="font-medium">${escapeHtml(u.nickname)}</span>` +
