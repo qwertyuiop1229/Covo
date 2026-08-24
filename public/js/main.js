@@ -12236,34 +12236,31 @@ function initSettings() {
   }
 }
 
-// ===== テーマ切り替えロジック (Light, Dark Navy, Discord Dark) =====
+// ===== テーマ切り替えロジック (Light, Dark Navy) =====
 window.setAppTheme = function (theme) {
   document.body.classList.remove('dark-server-theme', 'discord-dark-theme');
-  localStorage.setItem('covo_app_theme', theme);
+  const validTheme = (theme === 'dark-navy' || theme === 'dark') ? 'dark-navy' : 'light';
+  localStorage.setItem('covo_app_theme', validTheme);
 
-  if (theme === 'dark-navy') {
+  if (validTheme === 'dark-navy') {
     document.body.classList.add('dark-server-theme');
-  } else if (theme === 'discord-dark') {
-    document.body.classList.add('discord-dark-theme');
   }
-  updateThemeSelectorUI(theme);
+  updateThemeSelectorUI(validTheme);
 };
 
 window.updateThemeSelectorUI = function (theme) {
-  const t = theme || localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server_theme') === 'true' ? 'dark-navy' : 'light');
+  let t = theme || localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server_theme') === 'true' ? 'dark-navy' : 'light');
+  if (t === 'discord-dark') t = 'dark-navy';
   const btnLight = document.getElementById('themeBtnLight');
   const btnNavy = document.getElementById('themeBtnDarkNavy');
-  const btnDiscord = document.getElementById('themeBtnDiscordDark');
 
-  [btnLight, btnNavy, btnDiscord].forEach(b => {
+  [btnLight, btnNavy].forEach(b => {
     if (b) {
       b.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
     }
   });
 
-  if (t === 'discord-dark' && btnDiscord) {
-    btnDiscord.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
-  } else if (t === 'dark-navy' && btnNavy) {
+  if (t === 'dark-navy' && btnNavy) {
     btnNavy.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
   } else if (btnLight) {
     btnLight.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
