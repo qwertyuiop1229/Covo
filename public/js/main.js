@@ -1447,8 +1447,31 @@ function requestScanAllUnread() {
 
 window.openNotifModal = function () {
   const pm = document.getElementById('pcNotifModal');
-  pm.style.display = pm.style.display === 'none' ? 'flex' : 'none';
-  if (pm.style.display !== 'none') requestScanAllUnread();
+  if (!pm) return;
+  pm.classList.remove('hidden');
+  pm.style.display = 'flex';
+  requestScanAllUnread();
+};
+
+window.closeNotifModal = function () {
+  const pm = document.getElementById('pcNotifModal');
+  if (pm) {
+    pm.classList.add('hidden');
+    pm.style.display = 'none';
+  }
+};
+
+window.clearAllNotifications = function () {
+  localStorage.setItem('covo_global_items', '[]');
+  const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+  Object.keys(unreadCounts).forEach(rid => {
+    unreadCounts[rid] = 0;
+    rm[rid] = Date.now() + 60000;
+  });
+  localStorage.setItem('covo_last_read', JSON.stringify(rm));
+  renderNotifList([]);
+  updateGlobalNotifUI();
+  alertMessage('すべての通知を既読にしました', 'success');
 };
 
 window.__globalRoomsCache = window.__globalRoomsCache || {};
@@ -1548,31 +1571,61 @@ async function scanAllUnreadAndRender() {
 }
 
 function renderNotifList(items) {
-  let html = '';
-  items.forEach(it => {
-    const sName = escapeHtml(it.serverName);
-    const rName = escapeHtml(it.roomName);
-    html += `<div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:shadow-md transition-shadow group" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
-           <div class="flex items-center gap-2 mb-1">
-             <div class="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-[10px] text-gray-500 font-bold flex-shrink-0">${sName.charAt(0).toUpperCase()}</div>
-             <div class="text-xs text-gray-500 dark:text-gray-400 font-medium truncate flex-1">${sName}</div>
-           </div>
-           <div class="text-sm font-bold text-gray-900 dark:text-gray-100"># ${rName}</div>
-           <div class="flex justify-between items-center mt-2">
-             <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">未読メッセージ</div>
-             <div class="text-xs font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">開く &rarr;</div>
-           </div>
-        </div>`;
-  });
-  const count = items.length;
   const mList = document.getElementById('mobileNotifList');
   const pList = document.getElementById('pcNotifList');
-  if (mList) mList.innerHTML = html;
-  if (pList) pList.innerHTML = html;
-  const me = document.getElementById('mobileNotifEmpty');
   const pe = document.getElementById('pcNotifEmpty');
-  if (me) me.style.display = count > 0 ? 'none' : 'block';
-  if (pe) pe.style.display = count > 0 ? 'none' : 'block';
+  const totalBadge = document.getElementById('notifTotalBadge');
+
+  const count = items.length;
+  if (totalBadge) {
+    totalBadge.textContent = count;
+    totalBadge.style.display = count > 0 ? 'inline-flex' : 'none';
+  }
+
+  if (count === 0) {
+    if (pList) pList.innerHTML = '';
+    if (mList) mList.innerHTML = '';
+    if (pe) pe.style.display = 'block';
+  } else {
+    if (pe) pe.style.display = 'none';
+    const maxItems = items.slice(0, 50);
+    let html = '';
+    maxItems.forEach(it => {
+      const sName = escapeHtml(it.serverName || 'サーバー');
+      const rName = escapeHtml(it.roomName || 'ルーム');
+      const timeStr = formatTimeAgo(it.lastAt);
+      const initial = sName.charAt(0).toUpperCase();
+
+      html += `
+        <div class="p-3 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-center justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <div class="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 dark:text-indigo-400 flex items-center justify-center font-bold text-sm flex-shrink-0">
+              ${initial}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[120px]">${sName}</span>
+                <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">${timeStr}</span>
+              </div>
+              <div class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate flex items-center gap-1 mt-0.5">
+                <span class="text-gray-400 font-normal">#</span> ${rName}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
+            <i class="fas fa-chevron-right text-xs text-gray-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all"></i>
+          </div>
+        </div>`;
+    });
+    if (items.length > 50) {
+      html += `<div class="text-center text-xs text-gray-400 py-2">他 ${items.length - 50} 件の未読メッセージがあります</div>`;
+    }
+    if (pList) pList.innerHTML = html;
+    if (mList) mList.innerHTML = html;
+  }
+
   // 通知タブのドット
   const mobileNotifTab = document.getElementById('mobileTabNotif');
   if (mobileNotifTab) {
@@ -1586,6 +1639,7 @@ function renderNotifList(items) {
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
   const headerBadges = document.querySelectorAll('.header-notif-badge');
   headerBadges.forEach(b => { b.style.display = count > 0 ? 'block' : 'none'; });
+
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
     document.title = 'Covo';
@@ -1593,8 +1647,8 @@ function renderNotifList(items) {
     document.title = count > 0 ? `(新着あり) Covo` : 'Covo';
   }
   if ('setAppBadge' in navigator) {
-    if (count > 0) navigator.setAppBadge(count).catch(e => console.warn('Badge error:', e));
-    else navigator.clearAppBadge().catch(e => console.warn('Badge clear error:', e));
+    if (count > 0) navigator.setAppBadge(count).catch(() => {});
+    else navigator.clearAppBadge().catch(() => {});
   }
   if (typeof updateServerCardDots === 'function') updateServerCardDots();
 }
@@ -3065,9 +3119,14 @@ async function enterServer(serverId, serverData) {
   currentServerId = serverId;
   currentServerData = serverData;
 
-  // Self-heal RTDB membership via Worker to bypass strict RTDB rules
+  // Self-heal RTDB membership directly & via Worker
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
     try {
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, set }) => {
+        _getOrInitRTDB().then(rtdb => {
+          set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+        });
+      });
       auth.currentUser.getIdToken().then(idToken => {
         fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
           method: 'POST',
@@ -4905,14 +4964,36 @@ function showCustomAlert(message) {
   });
 }
 
-// === Discord風UIモード制御JSロジック ===
+// === 旧UI（レガシー）切り替え時の注意書きハンドラ ===
+window.handleLegacyUIToggle = async function (enableLegacy) {
+  const pcToggle = document.getElementById('toggleLegacyUI');
+  const mobileToggle = document.getElementById('toggleLegacyUIMobile');
+
+  if (enableLegacy) {
+    const confirmed = await showCustomConfirm(
+      '旧UIは現在サポートされておらず、表示崩れや予期せぬ不具合が発生する可能性があります。本当に切り替えますか？',
+      '切り替える',
+      'キャンセル'
+    );
+    if (!confirmed) {
+      if (pcToggle) pcToggle.checked = false;
+      if (mobileToggle) mobileToggle.checked = false;
+      return;
+    }
+    setDiscordUIMode(false);
+  } else {
+    setDiscordUIMode(true);
+  }
+};
+
+// === モダンUIモード制御JSロジック (デフォルトON) ===
 window.setDiscordUIMode = function (enabled) {
   localStorage.setItem('covo_discord_ui_mode', enabled ? 'true' : 'false');
   document.body.classList.toggle('discord-ui-mode', enabled);
-  const pcToggle = document.getElementById('toggleDiscordUI');
-  const mobileToggle = document.getElementById('toggleDiscordUIMobile');
-  if (pcToggle) pcToggle.checked = enabled;
-  if (mobileToggle) mobileToggle.checked = enabled;
+  const pcToggle = document.getElementById('toggleLegacyUI');
+  const mobileToggle = document.getElementById('toggleLegacyUIMobile');
+  if (pcToggle) pcToggle.checked = !enabled;
+  if (mobileToggle) mobileToggle.checked = !enabled;
 
   if (enabled) {
     if (!currentServerId) {
@@ -5713,6 +5794,42 @@ async function subscribeToMessagesRTDB() {
   const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
   const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
 
+  // 初回直接一括取得（初期ロードの確実化 & サブ垢フォールバック）
+  get(q).then(async (snap) => {
+    if (snap.exists()) {
+      const data = snap.val();
+      const docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      docs.forEach(msg => {
+        const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+        if (idx >= 0) allLoadedMessages[idx] = msg;
+        else allLoadedMessages.push(msg);
+      });
+      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+      renderPinnedMessages();
+      renderMessagesWithReadReceipts();
+      updateReadReceiptForCurrentUser();
+    }
+  }).catch(async (err) => {
+    console.warn('[RTDB] 初期メッセージ取得エラー、Firestoreからフォールバック取得:', err);
+    try {
+      const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy('timestamp', 'desc'), limit(20)));
+      const docs = msgsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      allLoadedMessages = docs.reverse();
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+      renderPinnedMessages();
+      renderMessagesWithReadReceipts();
+    } catch (e) { console.error('[Firestore fallback] error:', e); }
+  });
+
   let initialLoadTimeout = null;
   let buffer = [];
   let isInitialPhase = true;
@@ -5866,13 +5983,18 @@ async function subscribeToMessagesRTDB() {
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
   // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
-  if (window.innerWidth < 768 && currentRoomId === roomId) {
-    sidebar.classList.add("mobile-hidden");
+  if (currentRoomId === roomId) {
+    document.body.classList.add('in-chat-view');
+    const sb = document.getElementById("sidebar");
+    if (sb) sb.classList.add("mobile-hidden");
     currentRoomHeader.classList.remove("hidden");
+    if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
     return;
   }
 
-  if (currentRoomId === roomId) return;
+  document.body.classList.add('in-chat-view');
+  const sb = document.getElementById("sidebar");
+  if (sb) sb.classList.add("mobile-hidden");
   currentRoomId = roomId;
   // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
   unreadBoundaryAt = 0;
@@ -9045,22 +9167,24 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
     }
   }
 
+  const isDark = document.body.classList.contains('dark-server-theme');
   const notif = document.createElement("div");
-  // ライトモード＆ダークモード両対応の最高峰リッチデザイン（エレガントなシャドウ＆ぼかし背景）
-  notif.className = "bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-700/80 overflow-hidden w-80 backdrop-blur-md transition-all";
+  notif.className = isDark
+    ? "bg-[#1e293b] border border-white/10 text-white rounded-2xl shadow-2xl overflow-hidden w-80 backdrop-blur-md transition-all"
+    : "bg-white border border-gray-200 text-gray-900 rounded-2xl shadow-xl overflow-hidden w-80 backdrop-blur-md transition-all";
   notif.style.cssText = "border-left:4px solid #6366f1; pointer-events:auto; animation:slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;";
   const meta = escapeHtml(`${serverName} · #${roomName}`);
   const body = escapeHtml(`${senderName}: ${displayBody}`);
   notif.innerHTML = `
-          <div class="notif-row flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-            <div class="w-10 h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 shadow-inner">
-              <i class="fas fa-bell text-indigo-500 dark:text-indigo-400 text-base animate-pulse"></i>
+          <div class="notif-row flex items-center gap-3.5 px-4 py-3.5 cursor-pointer ${isDark ? 'hover:bg-white/5 text-gray-100' : 'hover:bg-slate-50 text-gray-900'} transition-colors">
+            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 shadow-inner">
+              <i class="fas fa-bell text-indigo-400 text-base animate-pulse"></i>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-[11px] font-bold text-gray-400 dark:text-gray-400 truncate tracking-wide">${meta}</div>
-              <div class="text-sm text-slate-900 dark:text-slate-100 font-bold truncate leading-snug mt-0.5">${body}</div>
+              <div class="text-[11px] font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'} truncate tracking-wide">${meta}</div>
+              <div class="text-sm font-bold truncate leading-snug mt-0.5">${body}</div>
             </div>
-            <button class="notif-x w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 flex-shrink-0 transition-colors">
+            <button class="notif-x w-6 h-6 flex items-center justify-center ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-400 hover:text-gray-700'} flex-shrink-0 transition-colors">
               <i class="fas fa-times text-xs"></i>
             </button>
           </div>`;

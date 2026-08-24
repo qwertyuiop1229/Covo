@@ -17,7 +17,7 @@
             ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
             "members": {
               "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+                ".write": "auth != null && auth.uid === $uid"
               }
             },
             "rooms": {
