@@ -327,15 +327,13 @@ function initializeFirebase() {
       }
       try {
         db = initializeFirestore(app, {
-          localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({ forceOwnership: true }) }),
-          experimentalForceLongPolling: true
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
       } catch (e) {
         console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
         try {
           db = initializeFirestore(app, {
-            localCache: memoryLocalCache(),
-            experimentalForceLongPolling: true
+            localCache: memoryLocalCache()
           });
         } catch (e2) {
           db = getFirestore(app);
@@ -356,6 +354,10 @@ function initializeFirebase() {
       if (_authHandlerBusy) return;
       _authHandlerBusy = true;
       loadingOverlay.classList.add("hidden");
+      window.__app_fully_loaded__ = true;
+      if (window.__TAURI__?.core?.invoke) {
+        window.__TAURI__.core.invoke('notify_app_loaded').catch(() => {});
+      }
       const splash = document.getElementById("appLoadingSplash");
       try {
 
@@ -1783,6 +1785,7 @@ async function startPresenceSystem() {
         const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
         await updateUserStatus(currentState);
         if (currentState === 'away') startOfflineTimer();
+        if (currentRoomId) resyncActiveRoomMessages();
       }
     });
   } catch (e) {
@@ -2316,13 +2319,14 @@ function stopHeartbeat() {
 }
 
 
-// ネット復帰: ステータスをリセット（バックグラウンド復帰時は離席中）
+// ネット復帰: ステータスをリセットおよびアクティブチャットの即時再同期
 function _handleNetworkOnline() {
   _beaconSent = false;
   const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
   updateUserStatus(currentState);
   if (currentState === 'away') startOfflineTimer();
   refreshCachedIdToken();
+  if (currentRoomId) resyncActiveRoomMessages();
 }
 // ネット切断: 即座にofflineビーコンを送る
 function _handleNetworkOffline() {
@@ -2369,6 +2373,44 @@ function clearAppBadgeFull() {
   }
 }
 
+// アクティブなルームの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止）
+async function resyncActiveRoomMessages() {
+  if (!currentRoomId || !currentServerId || !userId) return;
+  try {
+    const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+    const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(25));
+    const snapshot = await get(q);
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      let changed = false;
+      docs.forEach(msg => {
+        const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+        if (idx >= 0) {
+          allLoadedMessages[idx] = msg;
+        } else {
+          allLoadedMessages.push(msg);
+          changed = true;
+        }
+      });
+      if (changed) {
+        allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        renderMessagesWithReadReceipts();
+        updateReadReceiptForCurrentUser();
+      }
+    }
+  } catch (e) {
+    console.warn('[RTDB] resyncActiveRoomMessages failed:', e);
+  }
+}
+
 const handleWindowFocus = () => {
   _beaconSent = false;
   stopOfflineTimer();
@@ -2384,6 +2426,7 @@ const handleWindowFocus = () => {
     const badge = document.getElementById(`unread-badge-${currentRoomId}`);
     if (badge) badge.style.display = 'none';
     updateGlobalNotifUI();
+    resyncActiveRoomMessages();
   }
   if (isTauri && window.__TAURI__?.core?.invoke) {
     let globalCount = 0;
@@ -2417,6 +2460,7 @@ const handleVisibilityChange = () => {
     clearAppBadgeFull();
     if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
     if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
+    if (currentRoomId) resyncActiveRoomMessages();
   }
 };
 
@@ -5497,6 +5541,11 @@ function loadServerRooms(serverId, _retry = 0) {
           const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
           const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
           const lastRead = rm[change.doc.id] || 0;
+          // 現在開いているルームで新しいメッセージが更新された場合、リアルタイムメッセージの同期を即座にキック（受信漏れ防止）
+          if (change.doc.id === currentRoomId && room.lastMessageSender !== userId) {
+            resyncActiveRoomMessages();
+          }
+
           const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
           if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
             updateGlobalNotifUI();
@@ -5758,27 +5807,14 @@ async function subscribeToMessagesRTDB() {
 
   const handleAdded = async (snapshot) => {
     const data = snapshot.val();
+    if (!data) return;
     data.id = snapshot.key;
 
-    // Notification logic
-    if (!isInitialPhase && data.senderId !== userId) {
-      let bodyText = data.text;
-      try {
-        if (isEncrypted(bodyText)) {
-          const _members = (currentServerData && currentServerData.joinedUsers) || [];
-          bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
-        }
-      } catch (e) { }
-      const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
-      if (isMentioned && document.hasFocus()) {
-        showMentionToast(data.senderNickname || "ユーザー");
-      }
-    }
-
-    buffer.push(data);
-    if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
-    initialLoadTimeout = setTimeout(() => {
-      if (isInitialPhase) {
+    // 初回一括ロードフェーズはバッファリング
+    if (isInitialPhase) {
+      buffer.push(data);
+      if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
+      initialLoadTimeout = setTimeout(() => {
         isInitialPhase = false;
         isInitialMessageLoad = true;
         processBuffer().then(() => {
@@ -5792,13 +5828,41 @@ async function subscribeToMessagesRTDB() {
             }
           }, 500);
         });
-      } else {
-        const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
-        processBuffer().then(() => {
-          if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
-        });
+      }, 100);
+      return;
+    }
+
+    // 会話中のリアルタイム受信はバッファを通さず即座に1件ずつ確実に復号・描画（メッセージ消失を根絶）
+    if (data.senderId !== userId) {
+      let bodyText = data.text;
+      try {
+        if (isEncrypted(bodyText)) {
+          const _members = (currentServerData && currentServerData.joinedUsers) || [];
+          bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
+        }
+      } catch (e) { }
+      const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
+      if (isMentioned && document.hasFocus()) {
+        showMentionToast(data.senderNickname || "ユーザー");
       }
-    }, 100);
+    }
+
+    const _members = (currentServerData && currentServerData.joinedUsers) || [];
+    await decryptMessagesInPlace([data], currentServerId, currentRoomId, _members).catch(() => { });
+
+    const idx = allLoadedMessages.findIndex(m => m.id === data.id);
+    if (idx >= 0) allLoadedMessages[idx] = data;
+    else allLoadedMessages.push(data);
+
+    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+    const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
+    renderMessagesWithReadReceipts();
+    if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
+    updateReadReceiptForCurrentUser();
   };
 
   const handleChanged = async (snapshot) => {
