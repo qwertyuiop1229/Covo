@@ -145,18 +145,23 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       } catch (e) {}
     }
 
-    // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き）。無ければnull。
+    // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き・ネガティブキャッシュ対応）。無ければnull。
     export async function __getUserPublicKey(uid) {
-      if (_e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
+      if (uid in _e2ee.pubKeyCache) return _e2ee.pubKeyCache[uid];
       
       try {
         const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`));
         const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
-        if (!jwk) return null;
+        if (!jwk) {
+          _e2ee.pubKeyCache[uid] = null; // ネガティブキャッシュ（毎回のgetDoc再試行を遮断）
+          return null;
+        }
         const key = await __importPub(jwk);
         _e2ee.pubKeyCache[uid] = key;
         return key;
-      } catch (e) { return null; }
+      } catch (e) { 
+        return null; 
+      }
     }
 
     // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
@@ -422,11 +427,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         } catch (e) {}
       }
-      if (isD1 && d1Keys.length > 0) {
-        await saveD1RoomKeys(serverId, roomId, d1Keys);
-      } else {
-        await Promise.all(writes);
-      }
+      await Promise.all(writes);
     }
 
 
@@ -457,9 +458,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               }
             } catch (e) { }
           }
-          if (isD1 && d1Keys.length > 0) {
-            await saveD1RoomKeys(serverId, roomId, d1Keys);
-          }
+          // Firestore へのキー配布完了
         }
       } catch (e) {}
     }

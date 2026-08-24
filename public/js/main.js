@@ -534,6 +534,7 @@ function initializeFirebase() {
           if (typeof stopPrewarmPC === 'function') stopPrewarmPC();
           if (_callId && typeof endCall === 'function') endCall(false);
           if (_callIncomingUnsub) { _callIncomingUnsub(); _callIncomingUnsub = null; }
+          if (_fsIncomingUnsub) { _fsIncomingUnsub(); _fsIncomingUnsub = null; }
           if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
           if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
@@ -2374,8 +2375,12 @@ function clearAppBadgeFull() {
 }
 
 // アクティブなルームの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止）
+let _lastResyncAt = 0;
 async function resyncActiveRoomMessages() {
   if (!currentRoomId || !currentServerId || !userId) return;
+  const now = Date.now();
+  if (now - _lastResyncAt < 3000) return; // 3秒以内の連続再取得通信をブロック
+  _lastResyncAt = now;
   try {
     const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -2568,7 +2573,7 @@ async function updateUserStatus(state) {
   _lastReportedStatusStr = currentStatusStr;
 
   try {
-    const { ref, set, serverTimestamp, onDisconnect: rtdbOnDisconnect } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     const statusRef = ref(rtdb, `status/${userId}`);
     _rtdbStatusRef = statusRef;
@@ -2583,19 +2588,6 @@ async function updateUserStatus(state) {
       payload.currentRoomId = currentRoomId || null;
     }
     await set(statusRef, payload);
-
-    // onDisconnectペイロードの動的更新
-    if (_rtdbOnDisconnect) {
-      try { await _rtdbOnDisconnect.cancel(); } catch (e) { }
-    }
-    _rtdbOnDisconnect = rtdbOnDisconnect(statusRef);
-    await _rtdbOnDisconnect.set({
-      state: state === 'online' ? 'offline' : state,
-      last_changed: serverTimestamp(),
-      nickname: userNickname,
-      avatarUrl: userAvatarUrl || null
-    });
-
   } catch (error) {
     console.error('[RTDB] Status update error:', error);
   }
@@ -2680,6 +2672,7 @@ window.prewarmPeerConnection = prewarmPeerConnection;
 window.stopPrewarmPC = stopPrewarmPC;
 
 let unsubscribeStatusArray = [];
+let _renderMembersDebounceTimer = null;
 
 function getTimestampMs(obj) {
   if (!obj || !obj.last_changed) return 0;
@@ -2688,11 +2681,19 @@ function getTimestampMs(obj) {
   return 0;
 }
 
+function requestRenderMembersList() {
+  if (_renderMembersDebounceTimer) clearTimeout(_renderMembersDebounceTimer);
+  _renderMembersDebounceTimer = setTimeout(() => {
+    renderMembersList(cachedUsers);
+  }, 80);
+}
+
 function subscribeToUserStatus() {
-  // 旧リスナーをクリーンアップ
+  // 旧リスナーを即座に同期クリーンアップ（メモリリーク防止）
   if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
-  unsubscribeStatusArray.forEach(unsub => unsub());
+  const oldUnsubs = unsubscribeStatusArray;
   unsubscribeStatusArray = [];
+  oldUnsubs.forEach(unsub => { try { unsub(); } catch (_) { } });
 
   const memberIds = currentServerData?.joinedUsers || [];
   if (memberIds.length === 0) {
@@ -2702,48 +2703,12 @@ function subscribeToUserStatus() {
   }
 
   const usersMap = new Map();
+  memberIds.forEach(uid => {
+    usersMap.set(uid, { id: uid, state: 'offline' });
+  });
+  cachedUsers = Array.from(usersMap.values());
 
-  // 1. Firestoreフォールバック（過去にログインしたユーザーや旧バージョンのステータス）
-  for (let i = 0; i < memberIds.length; i += 30) {
-    const chunk = memberIds.slice(i, i + 30);
-    const statusQuery = query(collection(db, `artifacts/${appId}/status`), where(documentId(), "in", chunk));
-    const unsub = onSnapshot(statusQuery, (snapshot) => {
-      let changed = false;
-      snapshot.forEach((doc) => {
-        const fsData = doc.data();
-        const existing = usersMap.get(doc.id) || { id: doc.id };
-
-        const fsTime = getTimestampMs(fsData);
-        const rtdbTime = existing._rtdbTime || 0;
-
-        if (fsTime >= rtdbTime) {
-          // Firestoreの方が新しい（旧アプリで更新を続けている場合）
-          usersMap.set(doc.id, {
-            ...existing,
-            ...fsData,
-            _fsTime: fsTime,
-            _fsData: fsData
-          });
-        } else {
-          // RTDBの方が新しい
-          usersMap.set(doc.id, {
-            ...fsData,
-            ...existing,
-            _fsTime: fsTime,
-            _fsData: fsData
-          });
-        }
-        changed = true;
-      });
-      if (changed) {
-        cachedUsers = Array.from(usersMap.values());
-        renderMembersList(cachedUsers);
-      }
-    });
-    unsubscribeStatusArray.push(unsub);
-  }
-
-  // 2. RTDBでリアルタイムなステータスを監視
+  // RTDBでメンバーのリアルタイムステータスを一元監視（Firestore二重クエリを撤廃して通信量削減）
   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
     _getOrInitRTDB().then(rtdb => {
       memberIds.forEach(uid => {
@@ -2753,23 +2718,12 @@ function subscribeToUserStatus() {
           const existing = usersMap.get(uid) || { id: uid };
 
           if (data) {
-            const rtdbTime = getTimestampMs(data);
-            const fsTime = existing._fsTime || 0;
-            const fsData = existing._fsData || {};
-
-            if (rtdbTime >= fsTime) {
-              // RTDBの方が新しい
-              usersMap.set(uid, { ...existing, ...data, _rtdbTime: rtdbTime });
-            } else {
-              // Firestoreの方が新しい（旧アプリを使っている）
-              usersMap.set(uid, { ...existing, ...data, ...fsData, _rtdbTime: rtdbTime });
-            }
+            usersMap.set(uid, { id: uid, ...existing, ...data });
           } else {
-            // RTDBにデータがない場合、Firestore(既存)のstateを優先。なければoffline
-            usersMap.set(uid, { id: uid, state: 'offline', ...existing, _rtdbTime: 0 });
+            usersMap.set(uid, { id: uid, state: 'offline', ...existing });
           }
           cachedUsers = Array.from(usersMap.values());
-          renderMembersList(cachedUsers);
+          requestRenderMembersList();
         };
         onValue(statusRef, callback);
         unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
@@ -3355,10 +3309,6 @@ async function createServer(name, customId, password) {
     createdAt: serverTimestamp(),
     createdBy: userId
   });
-  try {
-    const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
-    await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
-  } catch (e) { console.error("E2EE key gen failed", e); }
   try {
     const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
     await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
@@ -6044,34 +5994,7 @@ function selectRoom(roomId, roomName) {
     } catch (e) { }
   })();
 
-  const rrRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts`);
-  readReceiptsUnsubscribe = onSnapshot(rrRef, (snap) => {
-    roomReadReceipts = {};
-    snap.forEach(d => roomReadReceipts[d.id] = d.data());
-    renderMessagesWithReadReceipts();
-  });
-
-  const typingColRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing`);
-  typingUnsubscribe = onSnapshot(typingColRef, (snap) => {
-    const now = Date.now();
-    const others = snap.docs
-      .filter(d => d.id !== userId)
-      .filter(d => {
-        const t = d.data().t;
-        if (!t || !t.toDate) return true;
-        return (now - t.toDate().getTime()) < 10000;
-      })
-      .map(d => d.data().n)
-      .filter(Boolean);
-    const indicator = document.getElementById('typingIndicator');
-    if (others.length > 0) {
-      indicator.textContent = others.join(', ') + ' が入力中...';
-      indicator.classList.remove('hidden');
-    } else {
-      indicator.classList.add('hidden');
-    }
-  });
-
+  // 既読とタイピングは subscribeToMessagesRTDB() 内で RTDB リスニングされるため、ここでの不要な Firestore 重複 onSnapshot を排除
   membersSidebar.classList.remove("hidden");
 }
 
@@ -6674,11 +6597,10 @@ async function sendSticker(emoji) {
     });
     cancelReply();
     resetAwayTimer();
-    // 通知（スタンプ絵文字つき）
+    // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
     try {
-      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
-      if (serverSnap.exists()) {
-        const sd = serverSnap.data();
+      const sd = currentServerData;
+      if (sd) {
         const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
         if (receiverIds.length > 0) {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
@@ -7156,11 +7078,10 @@ async function sendMessage() {
     }
 
 
-    // FCMプッシュ通知（サーバーメンバー全員に送信）
+    // FCMプッシュ通知（キャッシュを活用して毎回のgetDoc通信を完全撤廃）
     try {
-      const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
-      if (serverSnap.exists()) {
-        const serverData = serverSnap.data();
+      const serverData = currentServerData;
+      if (serverData) {
         const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
         if (receiverIds.length > 0) {
           const serverName = serverData.name || 'Covo';
@@ -8268,8 +8189,9 @@ async function updateReadReceiptForCurrentUser() {
     } catch (e) { }
   }
   const lastMsgId = lastMessagesData.length ? lastMessagesData[lastMessagesData.length - 1].id : null;
-  if (lastMsgId === _lastSentReadMessageId) return;
-  _lastSentReadMessageId = lastMsgId;
+  const currentReadMsgKey = `${currentRoomId}_${lastMsgId || 'empty'}`;
+  if (currentReadMsgKey === _lastSentReadMessageId) return;
+  _lastSentReadMessageId = currentReadMsgKey;
   try {
     const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -9806,7 +9728,7 @@ async function initReadStatesSync() {
     });
     if (changed) {
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
-      if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
+      if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
     }
   });
   readStatesUnsub = () => off(rsRef, 'value', onRs);
@@ -10138,12 +10060,14 @@ async function _fsMarkComplete() {
   _fsCleanup();
 }
 
+let _fsIncomingUnsub = null;
 // 受信側: 着信を監視（ログイン時に開始）
 async function initFileShareListener() {
   if (!userId) return;
+  if (_fsIncomingUnsub) { _fsIncomingUnsub(); _fsIncomingUnsub = null; }
   const { collection, query, where, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
   const q = query(collection(db, 'artifacts', appId, 'fileshares'), where('receiverUid', '==', userId), where('status', '==', 'offering'));
-  onSnapshot(q, snap => {
+  _fsIncomingUnsub = onSnapshot(q, snap => {
     snap.docChanges().forEach(ch => {
       if (ch.type === 'added') {
         const d = ch.doc.data();
