@@ -63,9 +63,9 @@
       document.body.style.setProperty('overflow', 'hidden', 'important');
     }
     
-    // meta theme-color と html の背景色を動的に完全同期させる最強システム
+    // meta theme-color と html の背景色を動的に完全同期させるシステム
     function updateMetaThemeColor() {
-      const isDark = document.body.classList.contains('dark-server-theme') || document.documentElement.classList.contains('dark-server-theme');
+      const isDark = document.body.classList.contains('dark-server-theme');
       const inChat = document.body.classList.contains('in-chat-view');
       
       // 現在のベース背景色（Discord本家準拠: ライト時はサーバーナビと同じ #f2f3f5）
@@ -77,7 +77,7 @@
       const membersSidebar = document.getElementById('membersSidebar');
       const isMembersOpen = membersSidebar && membersSidebar.classList.contains('bottom-sheet-open');
 
-      // 2. ★アイコンタップ等で表示される「暗い背景のオーバーレイ・プレビュー・ポップアップ」がアクティブかどうかを検知
+      // 2. アイコンタップ等で表示される暗い背景のオーバーレイがアクティブかどうかを検知
       let activeOverlayBg = null;
       let hasHigherModalOpen = false;
 
@@ -101,9 +101,6 @@
         }
       }
 
-      // ★究極のステート優先順位判定：
-      // (A) メンバー一覧の上にさらにアイコンタップ等で別のポップアップ・プレビューが開いた場合 -> 半透明グレー（ブレンド色）
-      // (B) メンバー一覧だけが開いている場合 -> 下側の空白部分は絶対にメンバー一覧コンテナの背景色（ライトなら白色 #ffffff、ダークなら #1f2937）にする！
       if (hasHigherModalOpen || (activeOverlayBg && !isMembersOpen)) {
         const rgbaMatch = activeOverlayBg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
         if (rgbaMatch) {
@@ -134,13 +131,11 @@
       metaTheme.setAttribute('content', blendedHex);
       
       document.documentElement.classList.toggle('dark-server-theme', isDark);
-      document.body.classList.toggle('dark-server-theme', isDark);
-      
-      // meta theme-color のみを安全に更新（html/bodyのインラインスタイル上書きによるツートン割れ・ブラー再発を防止）
     }
 
     // ダークテーマを最初のレンダリング前に適用
-    if (localStorage.getItem('covo_dark_server') === 'true') {
+    const savedInitialTheme = localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server') === 'true' ? 'dark-navy' : 'light');
+    if (savedInitialTheme === 'dark-navy' || savedInitialTheme === 'dark' || localStorage.getItem('covo_dark_server') === 'true') {
       document.body.classList.add('dark-server-theme');
       document.documentElement.classList.add('dark-server-theme');
     }
@@ -1497,13 +1492,13 @@
         <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
         <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
           <!-- サーバーヘッダー (添付画像3準拠のシンプル・洗練デザイン) -->
-          <div id="serverHeader" class="h-12 border-b border-gray-100 dark:border-white/5 px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
+          <div id="serverHeader" class="h-12 border-b px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
             <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
             <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
-              <span id="serverNameDisplay" class="font-extrabold truncate text-base text-gray-900 dark:text-gray-100">サーバー</span>
-              <i class="fas fa-chevron-right text-[11px] text-gray-400"></i>
+              <span id="serverNameDisplay" class="font-extrabold truncate text-base">サーバー</span>
+              <i class="fas fa-chevron-right text-[11px]"></i>
             </div>
-            <button id="serverSettingsBtn" title="サーバー設定" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
+            <button id="serverSettingsBtn" title="サーバー設定" class="p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
           </div>
 
           <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->
@@ -1543,19 +1538,19 @@
           </div>
 
           <!-- ユーザー情報ミニバー (添付画像0/1完全準拠のフローティングカード) -->
-          <div id="userPanel" class="mt-auto m-2.5 p-2 bg-gray-50 dark:bg-[#161f2e] border border-gray-200/60 dark:border-white/5 rounded-2xl flex items-center justify-between shadow-sm cursor-pointer hover:bg-gray-100/80 dark:hover:bg-[#1e293b] transition-all">
+          <div id="userPanel" class="mt-auto m-2.5 p-2 rounded-2xl flex items-center justify-between cursor-pointer transition-all">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div class="avatar-placeholder relative w-9 h-9 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
                 <div class="status-indicator status-online" id="userPanelStatus"></div>
               </div>
               <div class="user-panel-info flex flex-col min-w-0 flex-1">
-                <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-gray-100 truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[10px] text-gray-400 font-medium truncate" id="userPanelId">オンライン</div>
+                <div class="user-panel-name text-xs font-bold truncate" id="userPanelName">User</div>
+                <div class="user-panel-id text-[10px] font-medium truncate" id="userPanelId">オンライン</div>
               </div>
             </div>
             <div class="flex items-center gap-1 flex-shrink-0">
               <button id="openSettingsBtn"
-                class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-2 rounded-xl transition-all" title="設定">
+                class="p-2 rounded-xl transition-all" title="設定">
                 <i class="fas fa-cog text-sm"></i>
               </button>
             </div>

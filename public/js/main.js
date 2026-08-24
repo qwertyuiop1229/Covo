@@ -2648,24 +2648,11 @@ window.toggleMute = toggleMute;
 
 // ダークサーバーリストテーマ
 function setDarkServerTheme(isDark) {
-  localStorage.setItem('covo_dark_server', isDark ? 'true' : 'false');
-  document.body.classList.toggle('dark-server-theme', isDark);
-  document.documentElement.classList.toggle('dark-server-theme', isDark);
-  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
-  const pcToggle = document.getElementById('toggleDarkServer');
-  const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle) pcToggle.checked = isDark;
-  if (mobileToggle) mobileToggle.checked = isDark;
+  setAppTheme(isDark ? 'dark-navy' : 'light');
 }
 function loadDarkServerTheme() {
-  const isDark = localStorage.getItem('covo_dark_server') === 'true';
-  document.body.classList.toggle('dark-server-theme', isDark);
-  document.documentElement.classList.toggle('dark-server-theme', isDark);
-  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
-  const pcToggle = document.getElementById('toggleDarkServer');
-  const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle) pcToggle.checked = isDark;
-  if (mobileToggle) mobileToggle.checked = isDark;
+  const savedTheme = localStorage.getItem('covo_app_theme') || (localStorage.getItem('covo_dark_server') === 'true' ? 'dark-navy' : 'light');
+  setAppTheme(savedTheme);
 }
 window.setDarkServerTheme = setDarkServerTheme;
 window.prewarmPeerConnection = prewarmPeerConnection;
@@ -12238,14 +12225,21 @@ function initSettings() {
 
 // ===== テーマ切り替えロジック (Light, Dark Navy) =====
 window.setAppTheme = function (theme) {
-  document.body.classList.remove('dark-server-theme', 'discord-dark-theme');
-  const validTheme = (theme === 'dark-navy' || theme === 'dark') ? 'dark-navy' : 'light';
+  const isDark = (theme === 'dark-navy' || theme === 'dark');
+  const validTheme = isDark ? 'dark-navy' : 'light';
   localStorage.setItem('covo_app_theme', validTheme);
+  localStorage.setItem('covo_dark_server', isDark ? 'true' : 'false');
 
-  if (validTheme === 'dark-navy') {
-    document.body.classList.add('dark-server-theme');
-  }
+  document.documentElement.classList.toggle('dark-server-theme', isDark);
+  document.body.classList.toggle('dark-server-theme', isDark);
+
+  const pcToggle = document.getElementById('toggleDarkServer');
+  const mobileToggle = document.getElementById('toggleDarkServerMobile');
+  if (pcToggle) pcToggle.checked = isDark;
+  if (mobileToggle) mobileToggle.checked = isDark;
+
   updateThemeSelectorUI(validTheme);
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 };
 
 window.updateThemeSelectorUI = function (theme) {

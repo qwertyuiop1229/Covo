@@ -111,41 +111,77 @@
       color: #6b7280;
     }
 
-    /* ユーザーパネル (Discord風マイページ) */
-    #userPanel {
-      background-color: #ebedef;
-      /* サイドバーより少し濃いグレー */
-      padding: 0.75rem;
-      display: flex;
-      align-items: center;
-      border-top: 1px solid #d1d5db;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
+    /* サーバーヘッダー */
+#serverHeader {
+background-color: #ffffff;
+border-bottom: 1px solid #e2e8f0;
+color: #0f172a;
+}
+#serverNameDisplay {
+color: #0f172a !important;
+font-weight: 800;
+}
+#serverHeader .fa-chevron-right {
+color: #94a3b8 !important;
+}
+#serverSettingsBtn {
+color: #64748b !important;
+}
+#serverSettingsBtn:hover {
+color: #0f172a !important;
+}
+/* ユーザーパネル (Discord風マイページ) */
+#userPanel {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  align-items: center;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-    #userPanel:hover {
-      background-color: #e5e7eb;
-    }
+#userPanel:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
 
-    .user-panel-info {
-      flex: 1;
-      overflow: hidden;
-      margin-right: 0.5rem;
-    }
+.user-panel-info {
+  flex: 1;
+  overflow: hidden;
+  margin-right: 0.5rem;
+  margin-left: 0.15rem;
+}
 
-    .user-panel-name {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: #1f2937;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+.user-panel-name {
+  font-size: 0.825rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
 
-    .user-panel-id {
-      font-size: 0.75rem;
-      color: #6b7280;
-    }
+.user-panel-id {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+#openSettingsBtn {
+  color: #64748b;
+  transition: all 0.15s ease;
+  border-radius: 0.5rem;
+}
+
+#openSettingsBtn:hover {
+  color: #0f172a;
+  background-color: rgba(0, 0, 0, 0.06);
+}
 
     /* スマホ対応CSS - LINE風UI（ブレークポイントを768pxに統一） */
     @media (max-width: 768px) {
@@ -624,6 +660,18 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
       color: #f8fafc !important;
     }
+    body.dark-server-theme #serverNameDisplay {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #serverHeader .fa-chevron-right {
+      color: #64748b !important;
+    }
+    body.dark-server-theme #serverSettingsBtn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #serverSettingsBtn:hover {
+      color: #f8fafc !important;
+    }
     body.dark-server-theme.discord-ui-mode #discordDmHomeView,
     body.dark-server-theme.discord-ui-mode #discordDiscoverView,
     body.dark-server-theme.discord-ui-mode #chatArea {
@@ -979,11 +1027,15 @@
         left: 8px !important;
         right: 8px !important;
         z-index: 50 !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
         margin: 0 !important;
       }
       body.discord-ui-mode.dark-server-theme #sidebar #userPanel {
-        box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+        background-color: #162032 !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
       }
       /* ルームリスト全体の余白とアイテムデザインをプロフェッショナル仕様に極上化 */
       body.discord-ui-mode #sidebar .overflow-y-auto {
@@ -994,16 +1046,6 @@
         padding: 11px 12px !important;
         margin-bottom: 6px !important;
         transition: all 0.15s ease !important;
-      }
-      body.discord-ui-mode #userPanel {
-        border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
-        padding: 12px 14px !important;
-        background: rgba(248, 250, 252, 0.95) !important;
-        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.02) !important;
-      }
-      body.discord-ui-mode.dark-server-theme #userPanel {
-        border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-        background: #162032 !important;
       }
       /* スマホ表示時の全体メンバーリスト非表示（画面幅240px占拠・探索画面押し潰れの完全防止） */
       body.discord-ui-mode #discordHomeMembers {

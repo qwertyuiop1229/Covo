@@ -349,17 +349,6 @@
       opacity: 0.8;
     }
 
-    /* サーバーヘッダー（チャットエリア上部） */
-    #serverHeader {
-      background: #111827;
-      color: white;
-      padding: calc(0.6rem + var(--safe-top, env(safe-area-inset-top, 0px))) 1rem 0.6rem 1rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-
     #backToServerListBtn {
       background: none;
       border: none;
@@ -369,33 +358,6 @@
       padding: 4px 8px;
       border-radius: 6px;
       transition: background 0.15s, color 0.15s;
-    }
-
-    #backToServerListBtn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-    }
-
-    #serverNameDisplay {
-      font-size: 0.95rem;
-      font-weight: 700;
-      flex: 1;
-    }
-
-    #serverSettingsBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    #serverSettingsBtn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
     }
 
     /* サーバー設定モーダル内のタブ */
