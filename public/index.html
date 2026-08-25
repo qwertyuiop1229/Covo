@@ -2299,9 +2299,13 @@
   <!-- 通話終了理由トースト -->
   <div id="callEndedToast"></div>
 
-  <!-- アプリ内通知スタック -->
-  <div id="notifStack" class="fixed bottom-5 right-5 z-[9997] flex flex-col gap-2 items-end"
-    style="pointer-events:none; bottom: max(32px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 12px))));"></div>
+  <!-- アプリ内通知スタック (PC: 右下スタック) -->
+  <div id="notifStack" class="fixed bottom-5 right-5 z-[9997] hidden md:flex flex-col gap-2 items-end pointer-events-none"
+    style="bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 12px))));"></div>
+
+  <!-- アプリ内通知バナー (モバイル: 上部スライドイン) -->
+  <div id="mobileNotifContainer" class="fixed top-0 left-0 right-0 z-[9997] flex flex-col items-center pointer-events-none md:hidden"
+    style="padding-top: max(10px, env(safe-area-inset-top, 10px)); padding-left: 10px; padding-right: 10px;"></div>
 
   <!-- サーバーカードコンテキストメニュー -->
   <div id="serverContextMenu" class="hidden fixed bg-white rounded-xl border border-gray-100 py-1.5 z-[9999] min-w-44 modal-box animate-pop-in"

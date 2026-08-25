@@ -1525,7 +1525,6 @@ window.goToRoom = function (rid) {
 };
 
 // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
-// DBへのgetDocsを完全撤廃し、window.__globalRoomsCacheのリアルタイムオンメモリーデータを参照。
 let _scanUnreadBusy = false;
 async function scanAllUnreadAndRender() {
   if (_scanUnreadBusy || !userId) return;
@@ -1546,7 +1545,6 @@ async function scanAllUnreadAndRender() {
 
       let roomsData = window.__globalRoomsCache[sv.id];
       if (!roomsData) {
-        // キャッシュが未登録の場合のみ初期1回取得し、以後はオンメモリ参照
         try {
           const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${sv.id}/rooms`));
           roomsData = {};
@@ -1555,17 +1553,41 @@ async function scanAllUnreadAndRender() {
         } catch (e) { continue; }
       }
 
-      Object.keys(roomsData).forEach(rmId => {
+      for (const rmId of Object.keys(roomsData)) {
         const room = roomsData[rmId];
         const lastAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
-        if (!lastAt) return;
+        if (!lastAt) continue;
         const lastRead = rm[rmId] || 0;
         const bySelf = room.lastMessageSender && room.lastMessageSender === userId;
         const isOpen = (sv.id === currentServerId && rmId === currentRoomId && document.hasFocus());
         if (lastAt > lastRead && !bySelf && !isOpen) {
-          items.push({ serverId: sv.id, serverName: sv.name || sv.id, roomId: rmId, roomName: room.name || rmId, lastAt });
+          let textBody = room.lastMessageText || '新着メッセージ';
+          let isMention = false;
+          // 暗号化メッセージの安全な復号
+          if (typeof isEncrypted === 'function' && isEncrypted(textBody)) {
+            try {
+              const _members = sv.joinedUsers || [];
+              textBody = await decryptText(textBody, sv.id, rmId, _members);
+            } catch (e) { textBody = '（暗号化されたメッセージ）'; }
+          }
+          if (typeof isEncrypted === 'function' && isEncrypted(textBody)) textBody = '（暗号化されたメッセージ）';
+          if (userNickname && textBody && (textBody.includes(`@${userNickname}`) || textBody.includes('@all'))) {
+            isMention = true;
+          }
+
+          items.push({
+            serverId: sv.id,
+            serverName: sv.name || sv.id,
+            serverIconUrl: sv.iconUrl || null,
+            roomId: rmId,
+            roomName: room.name || rmId,
+            senderName: room.lastMessageSenderNickname || 'メンバー',
+            lastText: textBody,
+            isMention: isMention,
+            lastAt
+          });
         }
-      });
+      }
     }
     items.sort((a, b) => b.lastAt - a.lastAt);
     localStorage.setItem('covo_global_items', JSON.stringify(items));
@@ -1585,6 +1607,8 @@ function renderNotifList(items) {
   const mList = document.getElementById('mobileNotifList');
   const pList = document.getElementById('pcNotifList');
   const pe = document.getElementById('pcNotifEmpty');
+  const mentionsList = document.getElementById('inboxMentionsList');
+  const mentionsEmpty = document.getElementById('inboxMentionsEmpty');
   const totalBadge = document.getElementById('notifTotalBadge');
 
   const count = items.length;
@@ -1593,6 +1617,7 @@ function renderNotifList(items) {
     totalBadge.style.display = count > 0 ? 'inline-flex' : 'none';
   }
 
+  // 1. 未読タブの描画
   if (count === 0) {
     if (pList) pList.innerHTML = '';
     if (mList) mList.innerHTML = '';
@@ -1606,27 +1631,30 @@ function renderNotifList(items) {
       const rName = escapeHtml(it.roomName || 'ルーム');
       const timeStr = formatTimeAgo(it.lastAt);
       const initial = sName.charAt(0).toUpperCase();
+      const bodyText = escapeHtml(it.lastText || '新着メッセージ');
+      const sender = escapeHtml(it.senderName || 'メンバー');
+      const iconHtml = it.serverIconUrl
+        ? `<img src="${escapeHtml(it.serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
+        : `<span class="w-full h-full bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-500 dark:text-indigo-400 flex items-center justify-center font-bold text-xs rounded-xl">${initial}</span>`;
 
       html += `
-        <div class="p-3 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-center justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div class="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 dark:text-indigo-400 flex items-center justify-center font-bold text-sm flex-shrink-0">
-              ${initial}
+        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+          <div class="w-9 h-9 rounded-xl flex-shrink-0 overflow-hidden shadow-inner mt-0.5">
+            ${iconHtml}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 leading-none mb-1">
+              <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[130px]">${sName}</span>
+              <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
+              <span class="text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 truncate">#${rName}</span>
+              <span class="text-[10px] text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">${timeStr}</span>
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5">
-                <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[120px]">${sName}</span>
-                <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
-                <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">${timeStr}</span>
-              </div>
-              <div class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate flex items-center gap-1 mt-0.5">
-                <span class="text-gray-400 font-normal">#</span> ${rName}
-              </div>
+            <div class="text-xs text-gray-800 dark:text-gray-200 font-medium truncate leading-tight">
+              <span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${sender}:</span>${bodyText}
             </div>
           </div>
-          <div class="flex items-center gap-2 flex-shrink-0">
+          <div class="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
             <span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
-            <i class="fas fa-chevron-right text-xs text-gray-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all"></i>
           </div>
         </div>`;
     });
@@ -1637,7 +1665,41 @@ function renderNotifList(items) {
     if (mList) mList.innerHTML = html;
   }
 
-  // 通知タブのドット
+  // 2. メンションタブの描画
+  const mentionItems = items.filter(it => it.isMention);
+  if (mentionsList) {
+    if (mentionItems.length === 0) {
+      mentionsList.innerHTML = '';
+      if (mentionsEmpty) mentionsEmpty.style.display = 'block';
+    } else {
+      if (mentionsEmpty) mentionsEmpty.style.display = 'none';
+      let mHtml = '';
+      mentionItems.forEach(it => {
+        const sName = escapeHtml(it.serverName || 'サーバー');
+        const rName = escapeHtml(it.roomName || 'ルーム');
+        const timeStr = formatTimeAgo(it.lastAt);
+        const bodyText = escapeHtml(it.lastText || 'メンションメッセージ');
+        const sender = escapeHtml(it.senderName || 'メンバー');
+
+        mHtml += `
+          <div class="p-3.5 bg-indigo-500/10 dark:bg-indigo-950/30 border border-indigo-500/30 rounded-2xl cursor-pointer hover:bg-indigo-500/20 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 leading-none mb-1">
+                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-indigo-600 text-white rounded">@メンション</span>
+                <span class="text-[11px] font-bold text-gray-600 dark:text-gray-300 truncate">${sName} › #${rName}</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">${timeStr}</span>
+              </div>
+              <div class="text-xs text-gray-900 dark:text-gray-100 font-medium truncate leading-tight mt-1">
+                <span class="font-bold mr-1">${sender}:</span>${bodyText}
+              </div>
+            </div>
+          </div>`;
+      });
+      mentionsList.innerHTML = mHtml;
+    }
+  }
+
+  // 通知バッジ・アイコン更新
   const mobileNotifTab = document.getElementById('mobileTabNotif');
   if (mobileNotifTab) {
     let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
@@ -9234,6 +9296,10 @@ async function deleteServerCascade(serverId) {
 
 // ===== アプリ内通知スタック =====
 
+// モバイル通知用キュー & 状態
+window._mobileNotifQueue = window._mobileNotifQueue || [];
+window._mobileNotifActive = window._mobileNotifActive || false;
+
 async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
   if (document.hasFocus() && roomId === currentRoomId) return;
 
@@ -9244,71 +9310,277 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
       text = await decryptText(text, serverId, roomId, memberIds);
     } catch (e) { text = '（暗号化されたメッセージ）'; }
   }
+  if (typeof isEncrypted === 'function' && isEncrypted(text)) {
+    text = '（暗号化されたメッセージ）';
+  }
 
-  // 2. スタンプおよび添付ファイル(画像・動画・外部ストレージ等)のスマートな表現へ変換
+  // 2. スタンプおよび添付ファイルの表現変換
   let displayBody = text;
   if (text.includes("firebase-storage") || text.includes("cloudinary") || text.includes("r2.cloudflarestorage") || text.match(/\.(jpg|jpeg|png|gif|webp|mp4|mov)/i)) {
-    displayBody = `📎 添付ファイルが送信されました`;
-  } else if (text.startsWith("[STAMP]") || text.includes("/stamps/")) {
-    displayBody = `🌟 スタンプが送信されました`;
+    displayBody = `📎 添付ファイル`;
+  } else if (text.startsWith("[STAMP]") || text.includes("/stamps/") || text.startsWith("covo:") || text.startsWith("covonew:") || text.startsWith("serverstamp:")) {
+    displayBody = `🌟 スタンプ`;
   }
 
-  // 3. 通知スタックの重複あふれガード（DOMメモリリークおよび画面圧迫の防止）
-  const stack = document.getElementById("notifStack");
-  if (stack && stack.children.length >= 4) {
-    try { stack.removeChild(stack.firstChild); } catch (e) { }
-  }
+  const isMention = displayBody && userNickname && (displayBody.includes(`@${userNickname}`) || displayBody.includes('@all'));
 
+  // 通知音の再生
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   if (soundEnabled) {
     playNotificationSound();
-    if (isTauri && window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
-    }
+  }
+  if (isTauri && window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
   }
 
-  const isDark = document.body.classList.contains('dark-server-theme');
-  const notif = document.createElement("div");
-  notif.className = isDark
-    ? "bg-[#1e293b] border border-white/10 text-white rounded-2xl shadow-2xl overflow-hidden w-80 backdrop-blur-md transition-all"
-    : "bg-white border border-gray-200 text-gray-900 rounded-2xl shadow-xl overflow-hidden w-80 backdrop-blur-md transition-all";
-  notif.style.cssText = "border-left:4px solid #6366f1; pointer-events:auto; animation:slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;";
-  const meta = escapeHtml(`${serverName} · #${roomName}`);
-  const body = escapeHtml(`${senderName}: ${displayBody}`);
-  notif.innerHTML = `
-          <div class="notif-row flex items-center gap-3.5 px-4 py-3.5 cursor-pointer ${isDark ? 'hover:bg-white/5 text-gray-100' : 'hover:bg-slate-50 text-gray-900'} transition-colors">
-            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 shadow-inner">
-              <i class="fas fa-bell text-indigo-400 text-base animate-pulse"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-[11px] font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'} truncate tracking-wide">${meta}</div>
-              <div class="text-sm font-bold truncate leading-snug mt-0.5">${body}</div>
-            </div>
-            <button class="notif-x w-6 h-6 flex items-center justify-center ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-400 hover:text-gray-700'} flex-shrink-0 transition-colors">
-              <i class="fas fa-times text-xs"></i>
-            </button>
-          </div>`;
-  const navData = { serverId, serverData, roomId, roomName };
-  function dismissNotif() {
-    notif.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => notif.remove(), 200);
-  }
-  notif.querySelector(".notif-row").addEventListener("click", async (e) => {
-    if (e.target.closest(".notif-x")) return;
-    dismissNotif();
-    if (currentServerId !== navData.serverId) {
-      await enterServer(navData.serverId, navData.serverData);
-      setTimeout(() => selectRoom(navData.roomId, navData.roomName), 600);
-    } else {
-      selectRoom(navData.roomId, navData.roomName);
+  const isMobile = window.innerWidth <= 768;
+
+  if (isMobile) {
+    // === スマホ版 (Discord Mobile風 バナー通知) ===
+    const notifItem = { serverName, roomName, senderName, text: displayBody, serverId, serverData, roomId, isMention };
+    window._mobileNotifQueue.push(notifItem);
+    if (!window._mobileNotifActive) {
+      _processNextMobileNotification();
     }
+  } else {
+    // === PC版 (Discord Desktop風 右下スタックトースト) ===
+    _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention);
+  }
+}
+
+// PC版 Discord風スタック通知
+function _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention) {
+  const stack = document.getElementById("notifStack");
+  if (!stack) return;
+
+  const serverIconUrl = serverData?.iconUrl || null;
+  const initial = (serverName || '?').charAt(0).toUpperCase();
+
+  // 同一サーバーの既存通知を探す（グループ化・スタック集約）
+  const existingCard = stack.querySelector(`.discord-notif-pc[data-server-id="${serverId}"]`);
+
+  if (existingCard) {
+    let count = parseInt(existingCard.dataset.msgCount || '1', 10) + 1;
+    existingCard.dataset.msgCount = count;
+    existingCard.dataset.roomId = roomId;
+
+    const countBadge = existingCard.querySelector('.notif-count-badge');
+    if (countBadge) {
+      countBadge.textContent = `+${count - 1}`;
+      countBadge.style.display = 'inline-flex';
+    }
+
+    const roomText = existingCard.querySelector('.notif-room-text');
+    if (roomText) roomText.textContent = `#${roomName}`;
+
+    const bodyText = existingCard.querySelector('.notif-body-text');
+    if (bodyText) bodyText.textContent = `${senderName}: ${displayBody}`;
+
+    // プログレスバーをリセット
+    const bar = existingCard.querySelector('.discord-notif-progress');
+    if (bar) {
+      bar.style.animation = 'none';
+      void bar.offsetWidth;
+      bar.style.animation = 'notifProgressLinear 5s linear forwards';
+    }
+
+    if (existingCard._timer) clearTimeout(existingCard._timer);
+    existingCard._timer = setTimeout(() => {
+      _dismissPcNotif(existingCard);
+    }, 5000);
+
+    existingCard.classList.remove('pop-update');
+    void existingCard.offsetWidth;
+    existingCard.classList.add('pop-update');
+    return;
+  }
+
+  // 新規トーストカードの作成（最大3件を超えたら古いものを消去）
+  if (stack.children.length >= 3) {
+    const oldest = stack.firstElementChild;
+    if (oldest) _dismissPcNotif(oldest);
+  }
+
+  const card = document.createElement("div");
+  card.className = "discord-notif-pc";
+  card.dataset.serverId = serverId;
+  card.dataset.roomId = roomId;
+  card.dataset.msgCount = '1';
+
+  const iconHtml = serverIconUrl
+    ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-lg" />`
+    : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-lg">${escapeHtml(initial)}</span>`;
+
+  card.innerHTML = `
+    <div class="discord-notif-progress" style="animation-duration: 5s;"></div>
+    <div class="p-3.5 flex items-start gap-3">
+      <div class="w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden shadow-inner">
+        ${iconHtml}
+      </div>
+      <div class="flex-1 min-w-0 pr-4">
+        <div class="flex items-center gap-1.5 leading-none mb-1">
+          <span class="text-[11px] font-bold opacity-75 truncate max-w-[130px]">${escapeHtml(serverName)}</span>
+          <span class="text-[11px] font-semibold text-indigo-400 notif-room-text truncate">#${escapeHtml(roomName)}</span>
+          <span class="notif-count-badge px-1.5 py-0.2 text-[9px] font-extrabold bg-indigo-500 text-white rounded-full hidden"></span>
+        </div>
+        <div class="text-xs font-bold truncate leading-snug notif-body-text">${escapeHtml(senderName)}: ${escapeHtml(displayBody)}</div>
+      </div>
+      <button class="notif-close-btn absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+        <i class="fas fa-times text-[10px]"></i>
+      </button>
+    </div>
+  `;
+
+  let remainingTime = 5000;
+  let startTime = Date.now();
+  let timerId = null;
+
+  const startCountdown = (duration) => {
+    startTime = Date.now();
+    remainingTime = duration;
+    timerId = setTimeout(() => {
+      _dismissPcNotif(card);
+    }, duration);
+    card._timer = timerId;
+  };
+
+  card.addEventListener('mouseenter', () => {
+    if (timerId) clearTimeout(timerId);
+    remainingTime -= (Date.now() - startTime);
+    const bar = card.querySelector('.discord-notif-progress');
+    if (bar) bar.style.animationPlayState = 'paused';
   });
-  notif.querySelector(".notif-x").addEventListener("click", (e) => {
+
+  card.addEventListener('mouseleave', () => {
+    const bar = card.querySelector('.discord-notif-progress');
+    if (bar) bar.style.animationPlayState = 'running';
+    startCountdown(Math.max(1000, remainingTime));
+  });
+
+  card.querySelector('.notif-close-btn').addEventListener('click', (e) => {
     e.stopPropagation();
-    dismissNotif();
+    _dismissPcNotif(card);
   });
-  stack.appendChild(notif);
-  setTimeout(dismissNotif, 6000);
+
+  card.addEventListener('click', () => {
+    _dismissPcNotif(card);
+    goToServerRoom(serverId, roomId);
+  });
+
+  stack.appendChild(card);
+  startCountdown(5000);
+}
+
+function _dismissPcNotif(card) {
+  if (!card || card.classList.contains('dismissing')) return;
+  card.classList.add('dismissing');
+  if (card._timer) clearTimeout(card._timer);
+  setTimeout(() => {
+    card.remove();
+  }, 260);
+}
+
+// スマホ版 Discord風スライドインバナー通知
+function _processNextMobileNotification() {
+  if (window._mobileNotifQueue.length === 0) {
+    window._mobileNotifActive = false;
+    return;
+  }
+  window._mobileNotifActive = true;
+  const item = window._mobileNotifQueue.shift();
+
+  const container = document.getElementById("mobileNotifContainer") || document.getElementById("notifStack");
+  if (!container) {
+    window._mobileNotifActive = false;
+    return;
+  }
+
+  const serverIconUrl = item.serverData?.iconUrl || null;
+  const initial = (item.serverName || '?').charAt(0).toUpperCase();
+
+  const banner = document.createElement("div");
+  banner.className = "discord-notif-mobile w-full";
+
+  const iconHtml = serverIconUrl
+    ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
+    : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-xl">${escapeHtml(initial)}</span>`;
+
+  banner.innerHTML = `
+    <div class="discord-notif-progress" style="animation-duration: 4.5s;"></div>
+    <div class="p-3.5 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden shadow-inner">
+        ${iconHtml}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-1.5 leading-tight mb-0.5">
+          <span class="text-xs font-bold truncate">${escapeHtml(item.serverName)}</span>
+          <span class="text-xs font-semibold text-indigo-400 truncate">#${escapeHtml(item.roomName)}</span>
+        </div>
+        <div class="text-xs font-medium truncate leading-tight opacity-90">${escapeHtml(item.senderName)}: ${escapeHtml(item.text)}</div>
+      </div>
+      <div class="text-gray-400 text-xs px-1">
+        <i class="fas fa-chevron-up text-[10px] opacity-60"></i>
+      </div>
+    </div>
+  `;
+
+  let timer = null;
+  const dismissBanner = () => {
+    if (banner.classList.contains('dismissing-up')) return;
+    if (timer) clearTimeout(timer);
+    banner.classList.add('dismissing-up');
+    setTimeout(() => {
+      banner.remove();
+      setTimeout(_processNextMobileNotification, 100);
+    }, 240);
+  };
+
+  // タッチスワイプ（上フリック）ジェスチャー
+  let startY = 0;
+  let currentY = 0;
+  let isSwiping = false;
+
+  banner.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startY = e.touches[0].clientY;
+    currentY = startY;
+    isSwiping = true;
+    banner.style.transition = 'none';
+    if (timer) clearTimeout(timer);
+  }, { passive: true });
+
+  banner.addEventListener('touchmove', (e) => {
+    if (!isSwiping || e.touches.length !== 1) return;
+    currentY = e.touches[0].clientY;
+    const diffY = currentY - startY;
+    if (diffY < 0) {
+      banner.style.transform = `translateY(${diffY}px)`;
+    } else {
+      banner.style.transform = `translateY(${diffY * 0.25}px)`;
+    }
+  }, { passive: true });
+
+  banner.addEventListener('touchend', () => {
+    if (!isSwiping) return;
+    isSwiping = false;
+    const diffY = currentY - startY;
+    banner.style.transition = 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+    if (diffY < -25) {
+      banner.style.transform = 'translateY(-120%)';
+      dismissBanner();
+    } else {
+      banner.style.transform = 'translateY(0)';
+      timer = setTimeout(dismissBanner, 3500);
+    }
+  }, { passive: true });
+
+  banner.addEventListener('click', () => {
+    dismissBanner();
+    goToServerRoom(item.serverId, item.roomId);
+  });
+
+  container.appendChild(banner);
+  timer = setTimeout(dismissBanner, 4500);
 }
 
 // ===== グローバル右クリック無効 =====
