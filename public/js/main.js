@@ -1436,7 +1436,27 @@ function requestScanAllUnread() {
   }, 500);
 }
 
-window.openNotifModal = function () {
+window.switchInboxTab = function (tab) {
+  const unreadBtn = document.getElementById('inboxTabUnreadBtn');
+  const mentionsBtn = document.getElementById('inboxTabMentionsBtn');
+  const unreadSec = document.getElementById('inboxUnreadSection');
+  const mentionsSec = document.getElementById('inboxMentionsSection');
+
+  if (tab === 'mentions') {
+    if (unreadBtn) unreadBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors";
+    if (mentionsBtn) mentionsBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 transition-colors";
+    if (unreadSec) unreadSec.classList.add('hidden');
+    if (mentionsSec) mentionsSec.classList.remove('hidden');
+  } else {
+    if (unreadBtn) unreadBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 transition-colors";
+    if (mentionsBtn) mentionsBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors";
+    if (unreadSec) unreadSec.classList.remove('hidden');
+    if (mentionsSec) mentionsSec.classList.add('hidden');
+  }
+};
+
+window.openNotifModal = function (e) {
+  if (e && e.stopPropagation) e.stopPropagation();
   const pm = document.getElementById('pcNotifModal');
   if (!pm) return;
   pm.classList.remove('hidden');
@@ -3163,6 +3183,11 @@ async function enterServer(serverId, serverData) {
   const settingsBtn = document.getElementById("serverSettingsBtn");
   settingsBtn.classList.remove("hidden");
 
+  // タイトルバー中央コンテキスト更新
+  if (typeof updateTitleBarContext === 'function') {
+    updateTitleBarContext('server', serverData);
+  }
+
   // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
   try {
     const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
@@ -3235,6 +3260,9 @@ window.openDmHomeView = function () {
   if (serverListScreen) serverListScreen.classList.add("hidden");
 
   document.getElementById("globalAppHeader")?.classList.remove("server-mode");
+  if (typeof updateTitleBarContext === 'function') {
+    updateTitleBarContext('dm');
+  }
   if (window.renderServerList) window.renderServerList();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 };
@@ -3283,6 +3311,9 @@ window.openDiscoverView = function () {
   if (serverListScreen) serverListScreen.classList.add("hidden");
 
   document.getElementById("globalAppHeader")?.classList.remove("server-mode");
+  if (typeof updateTitleBarContext === 'function') {
+    updateTitleBarContext('discover');
+  }
   if (window.renderServerList) window.renderServerList();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 };
@@ -4673,6 +4704,9 @@ document.getElementById("renameServerBtn")?.addEventListener("click", async () =
     if (nameDisplay) nameDisplay.textContent = name;
     if (settingsTitle) settingsTitle.textContent = name;
     currentServerData = { ...currentServerData, name };
+    if (typeof updateTitleBarContext === 'function') {
+      updateTitleBarContext('server', currentServerData);
+    }
     alertMessage("サーバー名を変更しました", "success");
   } catch (e) { alertMessage("変更に失敗しました", "error"); }
 });
@@ -5403,6 +5437,9 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
       if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
         window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
       }
+      if (typeof updateTitleBarContext === 'function') {
+        updateTitleBarContext('server', currentServerData);
+      }
       const iconPreview = document.getElementById("serverIconSettingsPreview");
       if (iconPreview) {
         iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
@@ -5616,10 +5653,6 @@ function loadServerRooms(serverId, _retry = 0) {
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".dropdown-container")) {
       document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
-    }
-    if (!e.target.closest("#pcNotifModal") && !e.target.closest("#serverListNotifBtn")) {
-      const pm = document.getElementById('pcNotifModal');
-      if (pm) pm.style.display = 'none';
     }
   });
 }
@@ -12104,6 +12137,34 @@ window.downloadLatestWindowsApp = async function (triggerBtn) {
   }
 };
 
+// ===== タイトルバー中央コンテキスト更新 =====
+window.updateTitleBarContext = function (type, data) {
+  const iconEl = document.getElementById('titleBarContextIcon');
+  const textEl = document.getElementById('titleBarContextText');
+  if (!iconEl || !textEl) return;
+
+  if (type === 'server' && data) {
+    const sName = data.name || data.id || 'サーバー';
+    textEl.textContent = sName;
+    if (data.iconUrl) {
+      iconEl.innerHTML = `<img src="${escapeHtml(data.iconUrl)}" class="w-full h-full object-cover rounded" />`;
+    } else {
+      const initial = sName.charAt(0).toUpperCase();
+      iconEl.innerHTML = `<span class="w-full h-full bg-slate-600 dark:bg-slate-700 text-white flex items-center justify-center font-bold text-[9px] rounded">${escapeHtml(initial)}</span>`;
+    }
+  } else if (type === 'dm' || type === 'home') {
+    textEl.textContent = 'フレンド';
+    iconEl.innerHTML = '<i class="fas fa-user-friends text-xs"></i>';
+  } else if (type === 'discover') {
+    textEl.textContent = 'サーバーを探す';
+    iconEl.innerHTML = '<i class="fas fa-compass text-xs"></i>';
+  } else {
+    textEl.textContent = 'Covo';
+    iconEl.innerHTML = '<i class="fas fa-comments text-xs"></i>';
+  }
+};
+function updateTitleBarContext(...args) { return window.updateTitleBarContext(...args); }
+
 // ===== Windows版 (Tauri) Discord風 カスタムタイトルバー ウィンドウ操作 =====
 window.minimizeWindow = function () {
   if (window.__TAURI__?.core?.invoke) {
@@ -12139,19 +12200,33 @@ window.closeWindow = function () {
   }
 };
 
-// 環境判定とタイトルバー / ダウンロードボタンの表示初期化（PWA時は非表示）
+// 環境判定とタイトルバー / ダウンロードボタンの表示初期化
 (function initDesktopAndWebUI() {
+  const titleBar = document.getElementById('discordTitleBar');
+  const winControls = document.getElementById('windowControlsGroup');
+  const titleBarDlBtn = document.getElementById('titleBarDownloadAppBtn');
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
   if (window.__TAURI__) {
-    // Windowsデスクトップアプリ: タイトルバーを表示
-    const titleBar = document.getElementById('discordTitleBar');
+    // Windowsデスクトップアプリ (Tauri): ウィンドウ操作ボタンを表示
     if (titleBar) titleBar.style.display = 'flex';
+    if (winControls) winControls.style.display = 'flex';
+    if (titleBarDlBtn) titleBarDlBtn.style.display = 'none';
   } else {
-    // PWAスタンドアロン判定 (iOS & Android)
-    const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-    const dlBtn = document.getElementById('discordDownloadAppBtn');
-    if (dlBtn) {
-      // PWAとしてインストール済みで起動している場合はダウンロードボタンを表示しない
-      dlBtn.style.display = isStandalone ? 'none' : 'flex';
+    // Web版 / PWA: タイトルバーを表示（ウィンドウ操作ボタンは非表示）
+    if (titleBar) titleBar.style.display = 'flex';
+    if (winControls) winControls.style.display = 'none';
+    if (titleBarDlBtn) titleBarDlBtn.style.display = isStandalone ? 'none' : 'flex';
+  }
+
+  // 初期コンテキストのセット
+  if (typeof updateTitleBarContext === 'function') {
+    if (typeof currentServerId !== 'undefined' && currentServerId && typeof currentServerData !== 'undefined' && currentServerData) {
+      updateTitleBarContext('server', currentServerData);
+    } else if (typeof currentHomeViewMode !== 'undefined' && currentHomeViewMode === 'discover') {
+      updateTitleBarContext('discover');
+    } else {
+      updateTitleBarContext('dm');
     }
   }
 })();

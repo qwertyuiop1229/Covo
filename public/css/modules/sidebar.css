@@ -111,24 +111,47 @@
       color: #6b7280;
     }
 
-    /* サーバーヘッダー */
+    /* サーバーヘッダー & ルームタイトル */
 #serverHeader {
-background-color: #ffffff;
-border-bottom: 1px solid #e2e8f0;
-color: #0f172a;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
 }
 #serverNameDisplay {
-color: #0f172a !important;
-font-weight: 800;
+  color: #0f172a !important;
+  font-weight: 800;
 }
 #serverHeader .fa-chevron-right {
-color: #94a3b8 !important;
+  color: #94a3b8 !important;
 }
 #serverSettingsBtn {
-color: #64748b !important;
+  color: #64748b !important;
 }
 #serverSettingsBtn:hover {
-color: #0f172a !important;
+  color: #0f172a !important;
+}
+
+/* ルームヘッダー タイトル視認性向上 */
+#currentRoomTitleText {
+  color: #0f172a;
+}
+#currentRoomIcon {
+  color: #64748b;
+}
+
+body.dark-server-theme #currentRoomTitleText,
+body.discord-dark-theme #currentRoomTitleText {
+  color: #f8fafc !important;
+}
+body.dark-server-theme #currentRoomIcon,
+body.discord-dark-theme #currentRoomIcon {
+  color: #94a3b8 !important;
+}
+body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomTitleText {
+  color: #0f172a !important;
+}
+body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
+  color: #64748b !important;
 }
 /* ユーザーパネル (Discord風マイページ) */
 #userPanel {
@@ -642,7 +665,132 @@ color: #0f172a !important;
       pointer-events: none;
     }
 
+    /* =========================================================================
+       Discord風 タイトルバー / トップバー (Windows版 & Web版 共通)
+       ========================================================================= */
+    #discordTitleBar {
+      display: flex !important;
+      width: 100%;
+      height: 30px;
+      min-height: 30px;
+      user-select: none;
+      -webkit-user-select: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 50;
+      flex-shrink: 0;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      position: relative;
+    }
+
+    /* タイトルバー内のアクションボタン (受信ボックス・ヘルプなど) */
+    .titlebar-action-btn {
+      height: 100%;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      font-size: 13px;
+      position: relative;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .titlebar-action-btn:hover {
+      background-color: rgba(0, 0, 0, 0.08);
+      color: #0f172a;
+    }
+    body.dark-server-theme .titlebar-action-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #f8fafc;
+    }
+    body.discord-dark-theme .titlebar-action-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #f2f3f5;
+    }
+
+    /* ウィンドウコントロールボタン (最小化・最大化・閉じる) */
+    .titlebar-win-btn {
+      height: 100%;
+      width: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      font-size: 11px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .titlebar-win-btn:hover {
+      background-color: rgba(0, 0, 0, 0.08);
+      color: #0f172a;
+    }
+    body.dark-server-theme .titlebar-win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+    body.discord-dark-theme .titlebar-win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+    .titlebar-win-btn.close-btn:hover {
+      background-color: #ef4444 !important;
+      color: #ffffff !important;
+    }
+
+    /* タイトルバー中央のコンテキスト表示 */
+    .titlebar-center-context {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: inherit;
+      pointer-events: none;
+      max-width: calc(100% - 240px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .titlebar-context-icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      font-size: 10px;
+    }
+    .titlebar-context-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
     /* --- 1. ダークネイビー (Covoピュアネイビー: body.dark-server-theme) --- */
+    body.dark-server-theme #discordTitleBar {
+      background-color: #0b0f19 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #discordTitleBar .header-notif-badge {
+      border-color: #0b0f19 !important;
+    }
+    body.dark-server-theme .titlebar-center-context {
+      color: #f8fafc !important;
+    }
     body.dark-server-theme.discord-ui-mode #discordServerNav {
       background: #0b0f19 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
@@ -766,6 +914,18 @@ color: #0f172a !important;
     }
 
     /* --- 2. Discordダーク (body.discord-dark-theme) --- */
+    body.discord-dark-theme #discordTitleBar {
+      background-color: #1e1f22 !important;
+      border-bottom: 1px solid #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #discordTitleBar .header-notif-badge {
+      border-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme .titlebar-center-context {
+      color: #f2f3f5 !important;
+    }
+
     body.discord-dark-theme.discord-ui-mode #discordServerNav {
       background: #1e1f22 !important;
       border-right: 1px solid #1f2023 !important;
@@ -830,6 +990,18 @@ color: #0f172a !important;
     }
 
     /* --- 3. ライトモード (body:not(.dark-server-theme):not(.discord-dark-theme)) --- */
+    body:not(.dark-server-theme):not(.discord-dark-theme) #discordTitleBar {
+      background-color: #e2e8f0 !important;
+      border-bottom: 1px solid #cbd5e1 !important;
+      color: #475569 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #discordTitleBar .header-notif-badge {
+      border-color: #e2e8f0 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .titlebar-center-context {
+      color: #1e293b !important;
+    }
+
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordServerNav {
       background: #e2e8f0 !important;
       border-right: 1px solid #cbd5e1 !important;
@@ -935,6 +1107,9 @@ color: #0f172a !important;
 
     /* モバイルビューのDiscordレイアウト適応（添付画像0/1/5/6/7完全準拠） */
     @media (max-width: 768px) {
+      #discordTitleBar {
+        display: none !important;
+      }
       /* アプリ基盤背景色をサーバーナビ色と完全一致（時計周り・ステータスバー・角丸外側の一体化） */
       html, body, .container {
         background-color: #f2f3f5 !important;
