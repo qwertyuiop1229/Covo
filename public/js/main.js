@@ -3238,14 +3238,9 @@ async function enterServer(serverId, serverData) {
   currentServerId = serverId;
   currentServerData = serverData;
 
-  // Self-heal RTDB membership directly & via Worker
+  // Sync RTDB membership securely via Worker
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
     try {
-      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, set }) => {
-        _getOrInitRTDB().then(rtdb => {
-          set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-        });
-      });
       auth.currentUser.getIdToken().then(idToken => {
         fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
           method: 'POST',
