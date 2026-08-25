@@ -210,6 +210,43 @@ fn show_main_window(app_handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn minimize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.minimize();
+    }
+}
+
+#[tauri::command]
+fn toggle_maximize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Ok(is_max) = window.is_maximized() {
+            if is_max {
+                let _ = window.unmaximize();
+            } else {
+                let _ = window.maximize();
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let behavior = {
+            let state_lock = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner());
+            state_lock.clone()
+        };
+        if behavior == "quit" {
+            let _ = window.close();
+        } else if behavior == "hide" {
+            let _ = window.hide();
+        } else {
+            let _ = window.minimize();
+        }
+    }
+}
+
+#[tauri::command]
 fn set_close_behavior(
     behavior: String,
     state: tauri::State<'_, NotificationState>,
@@ -808,6 +845,9 @@ pub fn run() {
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
             show_main_window,
+            minimize_window,
+            toggle_maximize_window,
+            close_window,
             set_close_behavior,
             container_loaded,
             hide_notif_container,

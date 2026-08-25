@@ -303,11 +303,13 @@ function initializeFirebase() {
     if (!app) {
       app = initializeApp(firebaseConfig);
       try {
-        initializeAppCheck(app, {
-          provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-          isTokenAutoRefreshEnabled: true
-        });
-        console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+        if (!isTauri) {
+          initializeAppCheck(app, {
+            provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
+            isTokenAutoRefreshEnabled: true
+          });
+          console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+        }
       } catch (e) {
         console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカーの可能性)", e);
         setTimeout(() => {
@@ -4229,12 +4231,22 @@ async function loadServerSettingsMembers() {
           const rtdb = await _getOrInitRTDB();
           await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/members/${targetUid}`));
         } catch (rtdbErr) { console.warn("RTDB kick sync failed:", rtdbErr); }
+        
+        // キックされたメンバーの roomKeys を各ルームから削除
+        try {
+          const roomsSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+          for (const rDoc of roomsSnap.docs) {
+            deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${rDoc.id}/roomKeys/${targetUid}`)).catch(() => {});
+          }
+        } catch (_) {}
+
         await loadServerSettingsMembers();
         // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
         if (typeof rotateAllRoomKeys === 'function') {
           const svSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
           if (svSnap.exists() && svSnap.data().joinedUsers) {
-            await rotateAllRoomKeys(currentServerId, svSnap.data().joinedUsers);
+            const remaining = (svSnap.data().joinedUsers || []).filter(u => u !== targetUid);
+            await rotateAllRoomKeys(currentServerId, remaining);
           }
         }
       } catch (e) { alertMessage("キックに失敗しました", "error"); }
@@ -4777,6 +4789,18 @@ document.getElementById("serverCtxLeave")?.addEventListener("click", async () =>
       const rtdb = await _getOrInitRTDB();
       await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
     } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
+
+    // Forward Secrecy: サーバー退出時に残ったメンバー用に全ルーム鍵をローテーション
+    try {
+      const updatedSvSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, sv.id));
+      if (updatedSvSnap.exists()) {
+        const remaining = (updatedSvSnap.data().joinedUsers || []).filter(u => u !== userId);
+        if (remaining.length > 0 && typeof rotateAllRoomKeys === 'function') {
+          await rotateAllRoomKeys(sv.id, remaining);
+        }
+      }
+    } catch (rotErr) { console.warn("Room key rotation after leave skipped:", rotErr); }
+
     alertMessage("サーバーを退出しました", "success");
   } catch (e) { alertMessage("退出に失敗しました: " + e.message, "error"); }
   finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
@@ -5776,7 +5800,7 @@ async function loadOlderMessages() {
   allowPagination = true;
 }
 
-function subscribeToMessages() {
+function subscribeToMessages(startFromUnread = false) {
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
 
@@ -5787,50 +5811,90 @@ function subscribeToMessages() {
   const spinner = document.getElementById('topLoadingSpinner');
   if (spinner) spinner.style.display = 'none';
 
-  subscribeToMessagesRTDB();
+  subscribeToMessagesRTDB(startFromUnread);
 }
 
-async function subscribeToMessagesRTDB() {
-  const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, orderByChild, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+async function subscribeToMessagesRTDB(startFromUnread = false) {
+  const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, limitToFirst, startAt, endAt, orderByChild, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   const rtdb = await _getOrInitRTDB();
   const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
   const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
 
-  // 初回直接一括取得（初期ロードの確実化 & サブ垢フォールバック）
-  get(q).then(async (snap) => {
-    if (snap.exists()) {
-      const data = snap.val();
-      const docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
-      docs.forEach(msg => {
-        const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
-        if (idx >= 0) allLoadedMessages[idx] = msg;
-        else allLoadedMessages.push(msg);
-      });
-      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-      renderPinnedMessages();
-      renderMessagesWithReadReceipts();
-      updateReadReceiptForCurrentUser();
-    }
-  }).catch(async (err) => {
-    console.warn('[RTDB] 初期メッセージ取得エラー、Firestoreからフォールバック取得:', err);
+  // 初回取得
+  (async () => {
     try {
-      const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy('timestamp', 'desc'), limit(20)));
-      const docs = msgsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
-      allLoadedMessages = docs.reverse();
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-      renderPinnedMessages();
-      renderMessagesWithReadReceipts();
-    } catch (e) { console.error('[Firestore fallback] error:', e); }
-  });
+      let docs = [];
+      if (startFromUnread && unreadBoundaryAt > 0) {
+        // 未読起点モード: 未読先頭メッセージ以降と直前の既読メッセージを取得
+        const qUnread = rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(unreadBoundaryAt), limitToFirst(30));
+        const qContext = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(unreadBoundaryAt), limitToLast(5));
+        const [snapUnread, snapContext] = await Promise.all([get(qUnread), get(qContext)]);
+        
+        const map = new Map();
+        if (snapContext.exists()) {
+          const cData = snapContext.val();
+          Object.keys(cData).forEach(k => map.set(k, { ...cData[k], id: k }));
+        }
+        if (snapUnread.exists()) {
+          const uData = snapUnread.val();
+          Object.keys(uData).forEach(k => map.set(k, { ...uData[k], id: k }));
+        }
+        docs = Array.from(map.values());
+        isJumpView = true;
+        jumpViewMessages = docs;
+        hasMoreJumpOlder = true;
+        hasMoreJumpNewer = true;
+      } else {
+        const snap = await get(q);
+        if (snap.exists()) {
+          const data = snap.val();
+          docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+        }
+      }
+
+      if (docs.length > 0) {
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+        docs.forEach(msg => {
+          const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+          if (idx >= 0) allLoadedMessages[idx] = msg;
+          else allLoadedMessages.push(msg);
+        });
+        allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        renderPinnedMessages();
+        renderMessagesWithReadReceipts();
+        updateReadReceiptForCurrentUser();
+
+        // 未読起点の場合、未読先頭メッセージへ自動スクロール
+        if (startFromUnread && unreadBoundaryMessageId) {
+          setTimeout(() => {
+            const boundaryEl = messagesDisplay.querySelector(`.message-bubble[data-message-id="${unreadBoundaryMessageId}"]`);
+            if (boundaryEl) {
+              const row = boundaryEl.closest('.message-row') || boundaryEl;
+              row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 150);
+        }
+      }
+    } catch (err) {
+      console.warn('[RTDB] 初期メッセージ取得エラー、Firestoreからフォールバック取得:', err);
+      try {
+        const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy('timestamp', 'desc'), limit(20)));
+        const fallbackDocs = msgsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(fallbackDocs, currentServerId, currentRoomId, _members).catch(() => {});
+        allLoadedMessages = fallbackDocs.reverse();
+        lastMessagesData = [...allLoadedMessages];
+        messagesIndexMap = {};
+        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+        renderPinnedMessages();
+        renderMessagesWithReadReceipts();
+      } catch (e) { console.error('[Firestore fallback] error:', e); }
+    }
+  })();
 
   let initialLoadTimeout = null;
   let buffer = [];
@@ -6001,12 +6065,18 @@ function selectRoom(roomId, roomName) {
   // 未読境界をリセットし、上書き前の「前回までの最終既読時刻」を捕まえる
   unreadBoundaryAt = 0;
   unreadBoundaryMessageId = null;
+  let hasUnreadMessages = false;
   try {
     const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
     // covo_last_read には「+60000/+10000」した先読み値が入るので、その分を引いて実際の既読時刻に戻す
     const prevRead = rm[roomId];
     if (typeof prevRead === 'number' && prevRead > 0) {
       unreadBoundaryAt = prevRead - 60000;
+    }
+    const roomCachedData = window.__globalRoomsCache?.[currentServerId]?.[roomId];
+    const roomLastMsgAt = roomCachedData ? (typeof roomCachedData.lastMessageAt === 'number' ? roomCachedData.lastMessageAt : (roomCachedData.lastMessageAt?.toMillis?.() || 0)) : 0;
+    if (roomLastMsgAt > unreadBoundaryAt && unreadBoundaryAt > 0 && roomCachedData?.lastMessageSender !== userId) {
+      hasUnreadMessages = true;
     }
     if (typeof updateLocalAndRemoteReadState === 'function') {
       updateLocalAndRemoteReadState(roomId, Date.now() + 60000);
@@ -6066,7 +6136,7 @@ function selectRoom(roomId, roomName) {
   hasMoreOlderMessages = true;
   isLoadingOlderMessages = false;
 
-  subscribeToMessages();
+  subscribeToMessages(hasUnreadMessages);
 
 
   // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
@@ -6230,28 +6300,43 @@ messagesDisplay.addEventListener("scroll", async () => {
 });
 
 async function loadJumpOlderMessages() {
-  if (isLoadingJumpOlder || !hasMoreJumpOlder || !jumpViewMessages.length) return;
+  if (isLoadingJumpOlder || !hasMoreJumpOlder || !allLoadedMessages.length) return;
   isLoadingJumpOlder = true;
   try {
-    const oldestMsg = jumpViewMessages[0];
-    if (!oldestMsg || !oldestMsg.timestamp) { hasMoreJumpOlder = false; return; }
-    const q = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "desc"),
-      startAfter(oldestMsg.timestamp),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty || snap.docs.length < 20) hasMoreJumpOlder = false;
-    if (!snap.empty) {
-      const fetched = [];
-      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+    const oldestMsg = allLoadedMessages[0];
+    const oldestTime = getMsgTimestamp(oldestMsg);
+    let fetched = [];
+
+    if (window.globalUseRtdb) {
+      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+      const qSnap = await get(rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMsg.id), limitToLast(21)));
+      if (qSnap.exists()) {
+        const data = qSnap.val();
+        fetched = Object.keys(data).map(k => ({ ...data[k], id: k })).filter(d => d.id !== oldestMsg.id);
+      }
+    } else {
+      const q = query(
+        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+        orderBy("timestamp", "desc"),
+        startAfter(oldestMsg.timestamp),
+        limit(20)
+      );
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => fetched.push({ id: docSnap.id, ...docSnap.data() }));
       fetched.reverse();
+    }
+
+    if (fetched.length < 20) hasMoreJumpOlder = false;
+    if (fetched.length > 0) {
       const _members = (currentServerData && currentServerData.joinedUsers) || [];
       await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
 
-      jumpViewMessages = [...fetched, ...jumpViewMessages];
-      allLoadedMessages = [...jumpViewMessages];
+      const seen = new Set(allLoadedMessages.map(m => m.id));
+      const newItems = fetched.filter(m => !seen.has(m.id));
+      allLoadedMessages = [...newItems, ...allLoadedMessages];
+      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
       messagesIndexMap = {};
       lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -6262,30 +6347,51 @@ async function loadJumpOlderMessages() {
 }
 
 async function loadJumpNewerMessages() {
-  if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
+  if (isLoadingJumpNewer || !hasMoreJumpNewer || !allLoadedMessages.length) return;
   isLoadingJumpNewer = true;
   try {
-    const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
-    if (!newestMsg || !newestMsg.timestamp) { hasMoreJumpNewer = false; return; }
-    const q = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "asc"),
-      startAfter(newestMsg.timestamp),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty || snap.docs.length < 20) hasMoreJumpNewer = false;
-    if (!snap.empty) {
-      const fetched = [];
-      snap.forEach(doc => fetched.push({ id: doc.id, ...doc.data() }));
+    const newestMsg = allLoadedMessages[allLoadedMessages.length - 1];
+    const newestTime = getMsgTimestamp(newestMsg);
+    let fetched = [];
+
+    if (window.globalUseRtdb) {
+      const { ref, get, query: rtdbQuery, limitToFirst, orderByChild, startAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+      const qSnap = await get(rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(newestTime, newestMsg.id), limitToFirst(21)));
+      if (qSnap.exists()) {
+        const data = qSnap.val();
+        fetched = Object.keys(data).map(k => ({ ...data[k], id: k })).filter(d => d.id !== newestMsg.id);
+      }
+    } else {
+      const q = query(
+        collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
+        orderBy("timestamp", "asc"),
+        startAfter(newestMsg.timestamp),
+        limit(20)
+      );
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => fetched.push({ id: docSnap.id, ...docSnap.data() }));
+    }
+
+    if (fetched.length < 20) {
+      hasMoreJumpNewer = false;
+      // 最新部に到達したら通常リアルタイムモードへ自動合流
+      if (messagesDisplay.scrollTop <= 30) {
+        isJumpView = false;
+      }
+    }
+    if (fetched.length > 0) {
       const _members = (currentServerData && currentServerData.joinedUsers) || [];
       await decryptMessagesInPlace(fetched, currentServerId, currentRoomId, _members).catch(() => { });
 
       const oldScrollHeight = messagesDisplay.scrollHeight;
       const oldScrollTop = messagesDisplay.scrollTop;
 
-      jumpViewMessages = [...jumpViewMessages, ...fetched];
-      allLoadedMessages = [...jumpViewMessages];
+      const seen = new Set(allLoadedMessages.map(m => m.id));
+      const newItems = fetched.filter(m => !seen.has(m.id));
+      allLoadedMessages = [...allLoadedMessages, ...newItems];
+      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
       messagesIndexMap = {};
       lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -6341,7 +6447,8 @@ messagesDisplay.addEventListener("wheel", (e) => {
 function handleDeleteRoomClick(id, name) {
   pendingRoomDelete = { roomId: id, roomName: name };
   deleteRoomConfirmModal.classList.remove("hidden");
-  roomToDeleteNameSpan.textContent = name;
+  const nameEl = document.getElementById("roomToDeleteName");
+  if (nameEl) nameEl.textContent = name;
 }
 confirmDeleteButton.addEventListener("click", async () => {
   deleteRoomConfirmModal.classList.add("hidden");
@@ -12041,40 +12148,45 @@ window.downloadLatestWindowsApp = async function (triggerBtn) {
 
 // ===== Windows版 (Tauri) Discord風 カスタムタイトルバー ウィンドウ操作 =====
 window.minimizeWindow = function () {
-  if (window.__TAURI__?.window?.getCurrentWindow) {
+  if (window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('minimize_window').catch(() => {
+      window.__TAURI__?.window?.getCurrentWindow?.()?.minimize?.().catch(console.error);
+    });
+  } else if (window.__TAURI__?.window?.getCurrentWindow) {
     window.__TAURI__.window.getCurrentWindow().minimize().catch(console.error);
-  } else if (window.__TAURI__?.core) {
-    window.__TAURI__.core.invoke('plugin:window|minimize').catch(console.error);
   }
 };
 
 window.toggleMaximizeWindow = async function () {
-  if (window.__TAURI__?.window?.getCurrentWindow) {
+  if (window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('toggle_maximize_window').catch(() => {
+      window.__TAURI__?.window?.getCurrentWindow?.()?.toggleMaximize?.().catch(console.error);
+    });
+  } else if (window.__TAURI__?.window?.getCurrentWindow) {
     const win = window.__TAURI__.window.getCurrentWindow();
     const isMax = await win.isMaximized().catch(() => false);
     if (isMax) win.unmaximize().catch(console.error);
     else win.maximize().catch(console.error);
-  } else if (window.__TAURI__?.core) {
-    window.__TAURI__.core.invoke('plugin:window|toggle_maximize').catch(console.error);
   }
 };
 
 window.closeWindow = function () {
   const closeBehavior = localStorage.getItem('covo_close_behavior') || 'minimize';
-  if (closeBehavior === 'quit') {
-    if (window.__TAURI__?.window?.getCurrentWindow) {
-      window.__TAURI__.window.getCurrentWindow().close().catch(console.error);
-    } else if (window.__TAURI__?.core) {
-      window.__TAURI__.core.invoke('plugin:process|exit', { code: 0 }).catch(console.error);
-    }
+  if (window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('close_window').catch(() => {
+      if (closeBehavior === 'quit') {
+        window.__TAURI__?.window?.getCurrentWindow?.()?.close?.().catch(console.error);
+      } else if (closeBehavior === 'hide') {
+        window.__TAURI__?.window?.getCurrentWindow?.()?.hide?.().catch(console.error);
+      } else {
+        window.minimizeWindow();
+      }
+    });
+  } else if (closeBehavior === 'quit') {
+    window.__TAURI__?.window?.getCurrentWindow?.()?.close?.().catch(console.error);
   } else if (closeBehavior === 'hide') {
-    if (window.__TAURI__?.window?.getCurrentWindow) {
-      window.__TAURI__.window.getCurrentWindow().hide().catch(console.error);
-    } else if (window.__TAURI__?.core) {
-      window.__TAURI__.core.invoke('plugin:window|hide').catch(console.error);
-    }
+    window.__TAURI__?.window?.getCurrentWindow?.()?.hide?.().catch(console.error);
   } else {
-    // minimize
     window.minimizeWindow();
   }
 };
@@ -12793,24 +12905,84 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ===== グローバル Esc キーでモーダルを閉じる =====
+// ===== グローバル Esc キーでモーダル・ピッカー・ポップアップを確実に閉じる =====
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    // ドロップダウンが開いていればまず閉じる
-    const openSelects = document.querySelectorAll('.covo-custom-select.open');
-    if (openSelects.length > 0) {
-      openSelects.forEach(s => s.classList.remove('open'));
+    // 1. スタンプピッカー
+    const stickerPicker = document.getElementById('stickerPicker');
+    if (stickerPicker && stickerPicker.classList.contains('show')) {
+      stickerPicker.classList.remove('show');
+      window._reactionTargetMessageId = null;
       return;
     }
-    const openModals = document.querySelectorAll('.modal:not(.hidden), [id$="Modal"]:not(.hidden), #avatarLightbox[style*="flex"], #imageLightbox[style*="flex"]');
+    // 2. 拡張メニュー・メンションポップアップ
+    const plusPopup = document.getElementById('plusMenuPopup');
+    if (plusPopup && !plusPopup.classList.contains('hidden')) {
+      plusPopup.classList.add('hidden');
+      return;
+    }
+    if (typeof isMentionPopupOpen !== 'undefined' && isMentionPopupOpen) {
+      closeMentionPopup();
+      return;
+    }
+    // 3. コンテキストメニュー
+    const ctxMenu = document.getElementById('messageContextMenu');
+    if (ctxMenu && !ctxMenu.classList.contains('hidden')) {
+      ctxMenu.classList.add('hidden');
+      return;
+    }
+    const srvCtxMenu = document.getElementById('serverContextMenu');
+    if (srvCtxMenu && !srvCtxMenu.classList.contains('hidden')) {
+      srvCtxMenu.classList.add('hidden');
+      return;
+    }
+    // 4. カスタムドロップダウン
+    const openSelects = document.querySelectorAll('.covo-custom-select.open, .room-cat-dropdown:not(.hidden)');
+    if (openSelects.length > 0) {
+      openSelects.forEach(s => {
+        s.classList.remove('open');
+        if (s.classList.contains('room-cat-dropdown')) s.classList.add('hidden');
+      });
+      return;
+    }
+    // 5. ライトボックス・オーバーレイ
+    const avatarLb = document.getElementById('avatarLightbox');
+    if (avatarLb && avatarLb.style.display === 'flex') {
+      avatarLb.style.display = 'none';
+      return;
+    }
+    const imgLb = document.getElementById('imageLightbox');
+    if (imgLb && imgLb.style.display === 'flex') {
+      imgLb.style.display = 'none';
+      return;
+    }
+    const pdfLb = document.getElementById('pdfLightbox');
+    if (pdfLb && pdfLb.style.display === 'flex') {
+      closePdfLightbox();
+      return;
+    }
+    const inAppBrowser = document.getElementById('inAppBrowserModal');
+    if (inAppBrowser && !inAppBrowser.classList.contains('hidden')) {
+      closeInAppBrowser();
+      return;
+    }
+    // 6. モバイル設定詳細スライドイン
+    const openDetail = document.querySelector('.mobile-settings-detail.active');
+    if (openDetail) {
+      closeMobileDetail(openDetail.id);
+      return;
+    }
+    const mobileProf = document.getElementById('mobileProfileScreen');
+    if (mobileProf && mobileProf.classList.contains('active')) {
+      closeMobileProfileScreen();
+      return;
+    }
+    // 7. 各種モーダルダイアログ
+    const openModals = Array.from(document.querySelectorAll('.modal:not(.hidden), [id$="Modal"]:not(.hidden)'));
     if (openModals.length > 0) {
       const topModal = openModals[openModals.length - 1];
-      if (topModal.id === 'avatarLightbox' || topModal.id === 'imageLightbox') {
-        topModal.style.display = 'none';
-      } else {
-        topModal.classList.add('hidden');
-        if (topModal.style.display === 'flex') topModal.style.display = 'none';
-      }
+      topModal.classList.add('hidden');
+      if (topModal.style.display === 'flex') topModal.style.display = 'none';
     }
   }
 });

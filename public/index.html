@@ -419,8 +419,34 @@
       <h1 id="headerTitle"></h1>
     </div>
 
+    <div class="container">
+    <!-- Windows版専用: Discord風 カスタムタイトルバー (Tauri環境のみ表示、最上部に固定) -->
+    <div id="discordTitleBar" class="w-full h-[28px] bg-white dark:bg-[#1e1f22] border-b border-gray-200 dark:border-[#1e1f22] select-none flex items-center justify-between z-50 flex-shrink-0" style="display: none;" data-tauri-drag-region ondblclick="window.toggleMaximizeWindow()">
+      <!-- 左側: ナビゲーション & ロゴ -->
+      <div class="flex items-center h-full px-2 gap-1 pointer-events-none" data-tauri-drag-region>
+        <span class="text-[11px] font-bold text-gray-400 dark:text-gray-400 px-2 tracking-wider">Covo</span>
+      </div>
+      <!-- 右側: ウィンドウコントロール (最小化 / 最大化 / 閉じる) -->
+      <div class="flex items-center h-full flex-shrink-0">
+        <button onclick="window.minimizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最小化">
+          <i class="fas fa-minus text-[10px]"></i>
+        </button>
+        <button onclick="window.toggleMaximizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最大化 / 元に戻す">
+          <i class="far fa-square text-[10px]"></i>
+        </button>
+        <button onclick="window.closeWindow()" class="h-full w-11 flex items-center justify-center text-gray-500 hover:text-white dark:text-gray-400 dark:hover:text-white hover:bg-red-500 transition-colors" title="閉じる">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- サーバービュー時のニックネームヘッダー -->
+    <div id="globalAppHeader">
+      <h1 id="headerTitle"></h1>
+    </div>
+
     <!-- メインコンテンツエリア -->
-    <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
+    <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row w-full h-full min-h-0">
       <!-- 認証フォーム -->
       <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
         <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md modal-box animate-pop-in">
@@ -475,8 +501,26 @@
         </div>
       </div>
 
-      <!-- 設定モーダル (PC: Discord風2カラム・大画面/WQHDレスポンシブ拡張) -->
-      <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-2 sm:p-4">
+      <!-- サーバー一覧画面 -->
+      <div id="serverListScreen" class="hidden">
+        <div class="server-list-header">
+          <div class="server-list-title"><i class="fas fa-layer-group mr-2"></i>Covo</div>
+          <div class="server-list-actions">
+            <button class="" id="joinServerBtn"><i class="fas fa-sign-in-alt sm:mr-1"></i><span class="btn-text">参加</span></button>
+            <button class="" id="createServerBtn"><i class="fas fa-plus sm:mr-1"></i><span class="btn-text">新規作成</span></button>
+            <button class="" id="viewToggleBtn" title="表示切り替え"><i class="fas fa-list"></i></button>
+            <button id="serverListNotifBtn" class="server-list-user-btn" title="通知" onclick="openNotifModal()" style="margin-right: 8px; position: relative;"><i class="fas fa-bell"></i><span id="globalUnreadBadge" class="flex items-center justify-center text-white bg-red-500 font-bold" style="display:none;position:absolute;top:-4px;right:-4px;width:16px;height:16px;font-size:9px;border-radius:50%;padding:0;line-height:1;">0</span></button>
+            <button id="serverListUserBtn" class="server-list-user-btn" title="プロフィール・設定"></button>
+          </div>
+        </div>
+        <div id="serverGrid" class="server-grid">
+          <div class="server-list-empty" id="serverListEmpty" style="grid-column:1/-1">
+            <i class="fas fa-server" style="display:block"></i>
+            <p class="font-bold text-gray-500 mt-2">サーバーがありません</p>
+            <p class="text-sm mt-1">「参加」または「新規作成」からサーバーに参加しましょう</p>
+          </div>
+        </div>
+      </div>
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden modal-box animate-pop-in" style="height:min(850px,calc(100dvh - 2.5rem)); width:min(1100px,calc(100vw - 2rem));">
           <div class="settings-discord-layout">
             <!-- 左サイドバー -->
@@ -1482,28 +1526,8 @@
     </div>
   </div>
 
-  <!-- Windows版専用: Discord風 カスタムタイトルバー (Tauri環境のみ表示) -->
-  <div id="discordTitleBar" class="w-full h-[28px] bg-white dark:bg-[#1e1f22] border-b border-gray-200 dark:border-[#1e1f22] select-none flex items-center justify-between z-50 flex-shrink-0" style="display: none;" data-tauri-drag-region>
-    <!-- 左側: ナビゲーション & ロゴ -->
-    <div class="flex items-center h-full px-2 gap-1 pointer-events-none" data-tauri-drag-region>
-      <span class="text-[11px] font-bold text-gray-400 dark:text-gray-400 px-2 tracking-wider">Covo</span>
-    </div>
-    <!-- 右側: ウィンドウコントロール (最小化 / 最大化 / 閉じる) -->
-    <div class="flex items-center h-full flex-shrink-0">
-      <button onclick="window.minimizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最小化">
-        <i class="fas fa-minus text-[10px]"></i>
-      </button>
-      <button onclick="window.toggleMaximizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最大化">
-        <i class="far fa-square text-[10px]"></i>
-      </button>
-      <button onclick="window.closeWindow()" class="h-full w-11 flex items-center justify-center text-gray-500 hover:text-white dark:text-gray-400 dark:hover:text-white hover:bg-red-500 transition-colors" title="閉じる">
-        <i class="fas fa-times text-xs"></i>
-      </button>
-    </div>
-  </div>
-
   <!-- チャットアプリ本体 -->
-  <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full min-h-0">
+      <div id="appContainer" class="flex flex-1 hidden flex-col md:flex-row w-full h-full min-h-0">
         <!-- Discord風 左側サーバーナビゲーションバー -->
         <div id="discordServerNav" class="w-[72px] hidden flex-col items-center flex-shrink-0 z-20 select-none border-r">
           <!-- DM/フレンドホームアイコン（吹き出しマーク）-->
@@ -1907,9 +1931,9 @@
             <!-- メンバーはここに動的に追加されます -->
           </div>
         </div>
-
       </div>
     </div>
+
     <!-- ===== Mobile Bottom Navigation (コンテナ内flex子要素として配置) ===== -->
     <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
       <button class="mobile-nav-tab active" id="mobileTabHome" onclick="switchMobileTab('home')" aria-label="ホーム">
@@ -1926,6 +1950,9 @@
       </button>
     </nav>
   </div>
+
+  <!-- 設定モーダル (PC: Discord風2カラム・大画面/WQHDレスポンシブ拡張) -->
+  <div id="settingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-2 sm:p-4">
 
   <!-- カスタム確認ダイアログ -->
   <div id="customConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
@@ -2583,58 +2610,6 @@
   </div>
 
 <!-- 全体お知らせ / What's New モーダル -->
-  <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
-    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
-      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
-        <div class="relative z-10">
-          <div class="flex items-center gap-2 mb-1">
-            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
-            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
-          </div>
-          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
-          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
-        </div>
-        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
-          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
-        </div>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
-      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
-        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
-        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
-          確認しました
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 全体お知らせ / What's New モーダル -->
-  <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
-    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
-      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
-        <div class="relative z-10">
-          <div class="flex items-center gap-2 mb-1">
-            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
-            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
-          </div>
-          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
-          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
-        </div>
-        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
-          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
-        </div>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
-      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
-        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
-        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
-          確認しました
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 全体お知らせ / What's New モーダル -->
   <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
     <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
       <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
