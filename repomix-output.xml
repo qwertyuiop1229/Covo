@@ -3391,6 +3391,43 @@ iPhone等で開発者コンソールが無くてもデバッグできるよう�
 - `server/src/index.js` は **UTF-16LE** で保存されています（通常のエディタで文字化けする場合あり）。
 </file>
 
+<file path="tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: 'class',
+  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
+  theme: {
+    extend: {
+      transitionTimingFunction: {
+        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
+      },
+      keyframes: {
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-down': {
+          '0%': { opacity: '0', transform: 'translateY(-10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        }
+      },
+      animation: {
+        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+      }
+    },
+  },
+  plugins: [],
+}
+</file>
+
 <file path="public/js/text_formatter.js">
 /**
  * テキストフォーマット・パース処理 (text_formatter.js)
@@ -3432,6 +3469,8 @@ export function getEmojiHtml(emoji, spanClass = 'sk-em') {
   }
   if (emoji.startsWith('serverstamp:')) {
     const url = emoji.substring(12);
+    const isSafe = /^https?:\/\//i.test(url) || url.startsWith('/');
+    if (!isSafe) return '';
     return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }
   return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
@@ -3510,10 +3549,10 @@ export function escapeHtmlAndLinkUrls(text) {
 
   // 7. コードブロック・インラインコードの復元
   inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, html);
+    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
   });
   codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, html);
+    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, () => html);
   });
 
   return escapedText;
@@ -3525,43 +3564,6 @@ if (typeof window !== 'undefined') {
   window.getEmojiHtml = getEmojiHtml;
   window._twemojiParse = _twemojiParse;
   window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
-</file>
-
-<file path="tailwind.config.js">
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: 'class',
-  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
-  theme: {
-    extend: {
-      transitionTimingFunction: {
-        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
-      },
-      keyframes: {
-        'fade-in-up': {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'fade-in-down': {
-          '0%': { opacity: '0', transform: 'translateY(-10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'pop-in': {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
-        }
-      },
-      animation: {
-        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-      }
-    },
-  },
-  plugins: [],
 }
 </file>
 
@@ -6294,1051 +6296,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="src-tauri/src/lib.rs">
-use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
-use tauri::WebviewWindowBuilder;
-use std::sync::Mutex;
-
-const CONTAINER_LABEL: &str = "notif_container";
-const PICKER_LABEL: &str = "notif_pos_picker";
-
-const CONTAINER_W: i32 = 360;
-#[allow(dead_code)]
-const CONTAINER_H_INITIAL: i32 = 100;       // 初期は1枚分の高さだけ
-const CONTAINER_H_DEFAULT: i32 = 600;       // 「右下」デフォルト計算用の見込み高さ
-const CONTAINER_H_MIN: i32 = 90;            // カードなしのとき
-const CONTAINER_H_MAX_RATIO: f64 = 0.85;    // モニター高さの比率上限
-const PICKER_W: i32 = 360;
-const PICKER_H: i32 = 200;
-const SCREEN_MARGIN: i32 = 20;
-const OFFSCREEN_X: i32 = -8000;
-const OFFSCREEN_Y: i32 = -8000;
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-struct SavedPosition {
-    monitor_index: Option<usize>,
-    x_in_monitor: i32,
-    y_in_monitor: i32,
-    stack_direction: String, // "up" (新着が下、古いのが上) | "down" (新着が上、古いのが下)
-}
-
-#[derive(Clone)]
-struct PendingNotif {
-    id: String,
-    title: String,
-    body: String,
-    room_id: String,
-    stack_dir: String,
-}
-
-#[derive(Default)]
-struct NotificationState {
-    saved_position: Mutex<Option<SavedPosition>>,
-    container_ready: Mutex<bool>,
-    pending: Mutex<Vec<PendingNotif>>,
-    close_behavior: Mutex<String>,
-    app_loaded: Mutex<bool>,
-}
-
-#[derive(serde::Serialize)]
-struct MonitorInfo {
-    index: usize,
-    name: String,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    is_primary: bool,
-    scale_factor: f64,
-}
-
-// ===========================================================================
-// 位置計算ヘルパー
-// ===========================================================================
-
-fn pick_monitor(
-    app_handle: &tauri::AppHandle,
-    monitor_index: Option<usize>,
-) -> Option<tauri::Monitor> {
-    let win = app_handle.get_webview_window("main")?;
-    let monitors = win.available_monitors().ok()?;
-    if let Some(idx) = monitor_index {
-        if let Some(m) = monitors.get(idx) {
-            return Some(m.clone());
-        }
-    }
-    if let Ok(Some(m)) = win.primary_monitor() {
-        return Some(m);
-    }
-    monitors.into_iter().next()
-}
-
-fn container_height_for_monitor(monitor: &tauri::Monitor) -> i32 {
-    let mh = monitor.size().height as f64;
-    (mh * 0.8).min(CONTAINER_H_DEFAULT as f64).max(200.0) as i32
-}
-
-// 保存位置 (None なら primary 右下デフォルト) を実際の物理座標に解決
-// 戻り値: (window_x, window_y, stack_direction)
-fn resolve_window_position(
-    app_handle: &tauri::AppHandle,
-    saved: Option<&SavedPosition>,
-) -> Option<(i32, i32, String)> {
-    let monitor = pick_monitor(app_handle, saved.and_then(|s| s.monitor_index))?;
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let mw = ms.width as i32;
-    let mh = ms.height as i32;
-
-    if let Some(s) = saved {
-        let wx = mp.x + s.x_in_monitor;
-        let wy = mp.y + s.y_in_monitor;
-        Some((wx, wy, s.stack_direction.clone()))
-    } else {
-        // デフォルト: 右下
-        let container_h = container_height_for_monitor(&monitor);
-        let wx = mp.x + mw - CONTAINER_W - SCREEN_MARGIN;
-        let wy = mp.y + mh - container_h - SCREEN_MARGIN;
-        Some((wx, wy, "up".to_string()))
-    }
-}
-
-// ===========================================================================
-// コンテナウィンドウ生成・取得（現在は使用していない: WebView2 でのハング問題により
-// Windows ネイティブのトースト通知に切り替えた。将来カスタム UI を再開する際の
-// ためにコードは残してある）
-// ===========================================================================
-
-#[allow(dead_code)]
-fn ensure_container_window(
-    app_handle: &tauri::AppHandle,
-) -> Result<(tauri::WebviewWindow, bool), String> {
-    log::info!("[ensure] step 1: checking existing container");
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        log::info!("[ensure] step 1.5: existing container found, reusing");
-        return Ok((win, false));
-    }
-    log::error!("[ensure] step 2: container should have been pre-created in setup()! Falling back...");
-    // フォールバック: setup() で作られていなかった場合に build を試みる
-    // ただしハングする可能性あり
-    let win = WebviewWindowBuilder::new(
-        app_handle,
-        CONTAINER_LABEL,
-        tauri::WebviewUrl::App("/notification-container.html".into()),
-    )
-    .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
-    .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
-    .build()
-    .map_err(|e| format!("fallback build failed: {}", e))?;
-
-    let _ = win.set_decorations(false);
-    let _ = win.set_skip_taskbar(true);
-    let _ = win.set_always_on_top(true);
-    let _ = win.set_resizable(false);
-
-    log::info!("[ensure] step 6: container window setup complete (fallback)");
-    Ok((win, true))
-}
-
-// JS から呼ばれるコンテナリサイズ。
-// stack_direction によってアンカー（top or bottom）を維持する
-#[tauri::command]
-fn resize_notif_container(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-    height: u32,
-) -> Result<(), String> {
-    let win = app_handle
-        .get_webview_window(CONTAINER_LABEL)
-        .ok_or_else(|| "container not found".to_string())?;
-
-    // モニターから最大高を計算
-    let monitor = pick_monitor(&app_handle, None);
-    let max_h = monitor
-        .as_ref()
-        .map(|m| (m.size().height as f64 * CONTAINER_H_MAX_RATIO) as i32)
-        .unwrap_or(CONTAINER_H_DEFAULT);
-    let new_h = height.max(CONTAINER_H_MIN as u32).min(max_h as u32);
-
-    let saved = state.saved_position.lock().unwrap().clone();
-    let stack_dir = saved
-        .as_ref()
-        .map(|s| s.stack_direction.clone())
-        .unwrap_or_else(|| "up".to_string());
-
-    let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
-    let cur_size = win.outer_size().map_err(|e| e.to_string())?;
-
-    if stack_dir == "up" {
-        // 「up」(下から積む): bottom anchor を維持。top を新しい高さに合わせて上下調整
-        let bottom = cur_pos.y + cur_size.height as i32;
-        let new_top = bottom - new_h as i32;
-        win.set_size(tauri::PhysicalSize {
-            width: cur_size.width,
-            height: new_h,
-        })
-        .map_err(|e| format!("set_size failed: {}", e))?;
-        win.set_position(tauri::PhysicalPosition {
-            x: cur_pos.x,
-            y: new_top,
-        })
-        .map_err(|e| format!("set_position failed: {}", e))?;
-    } else {
-        // 「down」(上から積む): top anchor 維持。サイズだけ変える
-        win.set_size(tauri::PhysicalSize {
-            width: cur_size.width,
-            height: new_h,
-        })
-        .map_err(|e| format!("set_size failed: {}", e))?;
-    }
-
-    Ok(())
-}
-
-// ===========================================================================
-
-#[tauri::command]
-fn show_main_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
-#[tauri::command]
-fn minimize_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.minimize();
-    }
-}
-
-#[tauri::command]
-fn toggle_maximize_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        if let Ok(is_max) = window.is_maximized() {
-            if is_max {
-                let _ = window.unmaximize();
-            } else {
-                let _ = window.maximize();
-            }
-        }
-    }
-}
-
-#[tauri::command]
-fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let behavior = {
-            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            b
-        };
-        if behavior == "quit" {
-            let _ = window.close();
-            app_handle.exit(0);
-        } else if behavior == "hide" {
-            let _ = window.hide();
-        } else {
-            let _ = window.minimize();
-        }
-    }
-}
-
-#[tauri::command]
-fn set_close_behavior(
-    behavior: String,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    if let Ok(mut b) = state.close_behavior.lock() {
-        *b = behavior;
-    }
-    Ok(())
-}
-
-// コンテナの JS が起動完了したときに呼ばれる
-#[tauri::command]
-fn container_loaded(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    log::info!("container_loaded called");
-    *state.container_ready.lock().unwrap() = true;
-
-    // 溜まっている notifications をすべて flush
-    let pending: Vec<PendingNotif> = std::mem::take(&mut *state.pending.lock().unwrap());
-    log::info!("Flushing {} pending notifications", pending.len());
-
-    let window = app_handle
-        .get_webview_window(CONTAINER_LABEL)
-        .ok_or_else(|| "container not found".to_string())?;
-
-    for p in pending {
-        let payload = serde_json::json!({
-            "id": p.id,
-            "title": p.title,
-            "body": p.body,
-            "roomId": p.room_id,
-            "stackDir": p.stack_dir,
-        });
-        if let Err(e) = window.emit("new-notif", payload) {
-            log::error!("flush emit failed: {}", e);
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn hide_notif_container(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        // hide() バグ回避のため画面外に移動して実質非表示にする
-        let _ = win.set_position(tauri::PhysicalPosition {
-            x: OFFSCREEN_X,
-            y: OFFSCREEN_Y,
-        });
-    }
-}
-
-#[tauri::command]
-fn close_notification(_app_handle: tauri::AppHandle, _label: String) {
-    // 互換性のため残すがコンテナ方式では使わない
-}
-
-// ===========================================================================
-// コマンド: 位置ピッカー
-// ===========================================================================
-
-#[tauri::command]
-fn open_position_picker(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        let _ = win.close();
-    }
-
-    let saved = state.saved_position.lock().unwrap().clone();
-    let (initial_x, initial_y) = resolve_window_position(&app_handle, saved.as_ref())
-        .map(|(x, y, _)| (x, y))
-        .unwrap_or((100, 100));
-
-    let win = WebviewWindowBuilder::new(
-        &app_handle,
-        PICKER_LABEL,
-        tauri::WebviewUrl::App("/notification-picker.html".into()),
-    )
-    .inner_size(PICKER_W as f64, PICKER_H as f64)
-    .position(initial_x as f64, initial_y as f64)
-    .always_on_top(true)
-    .decorations(false)
-    .skip_taskbar(true)
-    .resizable(false)
-    .build()
-    .map_err(|e| format!("picker build failed: {}", e))?;
-
-    let _ = win.set_position(tauri::PhysicalPosition {
-        x: initial_x,
-        y: initial_y,
-    });
-
-    // F12 で開閉可能（devtools feature 有効）
-    Ok(())
-}
-
-#[tauri::command]
-fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        win.open_devtools();
-    }
-}
-
-#[tauri::command]
-fn open_devtools_for_container(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        win.open_devtools();
-    }
-}
-
-// デスクトップにショートカットを作成
-#[tauri::command]
-fn create_desktop_shortcut() -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("current_exe failed: {}", e))?;
-    let exe_str = exe.to_string_lossy().to_string();
-    let exe_escaped = exe_str.replace('\'', "''");
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let ps_script = format!(
-            "$t='{}';$s=New-Object -COM WScript.Shell;$sc=$s.CreateShortcut(\"$env:USERPROFILE\\Desktop\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
-            exe_escaped
-        );
-        let status = std::process::Command::new("powershell")
-            .args(["-NonInteractive", "-NoProfile", "-Command", &ps_script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .map_err(|e| format!("powershell failed: {}", e))?;
-        if !status.success() {
-            return Err("shortcut creation failed".to_string());
-        }
-    }
-
-    Ok(())
-}
-
-// ログディレクトリをエクスプローラーで開く
-#[tauri::command]
-fn open_log_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let path = app_handle
-        .path()
-        .app_log_dir()
-        .map_err(|e| format!("app_log_dir failed: {}", e))?;
-    // ディレクトリがまだ作られていなければ作る
-    if !path.exists() {
-        std::fs::create_dir_all(&path).map_err(|e| format!("create_dir_all failed: {}", e))?;
-    }
-    // ログファイルが空でも何か書いておく
-    let log_marker = path.join("opened_at.txt");
-    let _ = std::fs::write(
-        &log_marker,
-        format!("Log dir opened: {:?}\n", std::time::SystemTime::now()),
-    );
-
-    let path_str = path.to_string_lossy().to_string();
-    log::info!("Opening log dir: {}", path_str);
-    // explorer で開く
-    std::process::Command::new("explorer")
-        .arg(&path_str)
-        .spawn()
-        .map_err(|e| format!("spawn explorer failed: {}", e))?;
-    Ok(path_str)
-}
-
-#[tauri::command]
-fn save_notification_position(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<SavedPosition, String> {
-    let win = app_handle
-        .get_webview_window(PICKER_LABEL)
-        .ok_or_else(|| "picker window not found".to_string())?;
-
-    let pos = win
-        .outer_position()
-        .map_err(|e| format!("outer_position failed: {}", e))?;
-
-    let main = app_handle
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = main
-        .available_monitors()
-        .map_err(|e| format!("monitors failed: {}", e))?;
-
-    // ピッカー位置 (左上) から所属モニターを判定
-    let found = monitors.iter().enumerate().find(|(_, m)| {
-        let mp = m.position();
-        let ms = m.size();
-        pos.x >= mp.x
-            && pos.x < mp.x + ms.width as i32
-            && pos.y >= mp.y
-            && pos.y < mp.y + ms.height as i32
-    });
-
-    let (monitor_idx, monitor) = match found {
-        Some((i, m)) => (Some(i), m.clone()),
-        None => {
-            let m = monitors.first().cloned().ok_or_else(|| "no monitors".to_string())?;
-            (Some(0), m)
-        }
-    };
-
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let x_in_monitor = pos.x - mp.x;
-    let y_in_monitor = pos.y - mp.y;
-
-    // y がモニター高の 1/3 未満なら下方向にスタック (top stack)、それ以外は上方向
-    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
-        "down".to_string()
-    } else {
-        "up".to_string()
-    };
-
-    let saved = SavedPosition {
-        monitor_index: monitor_idx,
-        x_in_monitor,
-        y_in_monitor,
-        stack_direction: stack_direction.clone(),
-    };
-
-    {
-        let mut lock = state.saved_position.lock().unwrap();
-        *lock = Some(saved.clone());
-    }
-
-    let _ = win.close();
-
-    if let Some(main) = app_handle.get_webview_window("main") {
-        let _ = main.emit("position-saved", &saved);
-    }
-
-    // 既存コンテナがあれば即時再配置
-    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
-            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
-        }
-    }
-
-    Ok(saved)
-}
-
-#[tauri::command]
-fn cancel_position_picker(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        let _ = win.close();
-    }
-}
-
-// メインウィンドウ内で完結する位置設定: 絶対物理ピクセル座標を受け取って保存
-#[tauri::command]
-fn save_position_absolute(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-    x: i32,
-    y: i32,
-) -> Result<SavedPosition, String> {
-    log::info!("save_position_absolute called: x={}, y={}", x, y);
-
-    let main = app_handle
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = main
-        .available_monitors()
-        .map_err(|e| format!("monitors failed: {}", e))?;
-
-    // 与えられた座標を含むモニターを判定
-    let found = monitors.iter().enumerate().find(|(_, m)| {
-        let mp = m.position();
-        let ms = m.size();
-        x >= mp.x && x < mp.x + ms.width as i32
-            && y >= mp.y && y < mp.y + ms.height as i32
-    });
-
-    let (monitor_idx, monitor) = match found {
-        Some((i, m)) => (Some(i), m.clone()),
-        None => {
-            // 座標がどのモニターにも含まれない場合は primary または 1 番目
-            let m = main.primary_monitor().ok().flatten()
-                .or_else(|| monitors.first().cloned())
-                .ok_or_else(|| "no monitors".to_string())?;
-            (Some(0), m)
-        }
-    };
-
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let x_in_monitor = x - mp.x;
-    let y_in_monitor = y - mp.y;
-
-    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
-        "down".to_string()
-    } else {
-        "up".to_string()
-    };
-
-    let saved = SavedPosition {
-        monitor_index: monitor_idx,
-        x_in_monitor,
-        y_in_monitor,
-        stack_direction,
-    };
-
-    {
-        let mut lock = state.saved_position.lock().unwrap();
-        *lock = Some(saved.clone());
-    }
-
-    log::info!("Saved position: {:?}", serde_json::to_string(&saved).ok());
-
-    // 既存コンテナがあれば即時再配置
-    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
-            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
-        }
-    }
-
-    Ok(saved)
-}
-
-#[tauri::command]
-fn set_saved_position(state: tauri::State<'_, NotificationState>, saved: SavedPosition) {
-    let mut lock = state.saved_position.lock().unwrap();
-    *lock = Some(saved);
-}
-
-#[tauri::command]
-fn get_saved_position(state: tauri::State<'_, NotificationState>) -> Option<SavedPosition> {
-    state.saved_position.lock().unwrap().clone()
-}
-
-#[tauri::command]
-fn get_available_monitors(app_handle: tauri::AppHandle) -> Vec<MonitorInfo> {
-    let Some(win) = app_handle.get_webview_window("main") else {
-        return vec![];
-    };
-    let monitors = match win.available_monitors() {
-        Ok(m) => m,
-        Err(_) => return vec![],
-    };
-    let primary = win.primary_monitor().ok().flatten();
-    let primary_pos = primary.as_ref().map(|m| {
-        let p = m.position();
-        (p.x, p.y)
-    });
-
-    monitors
-        .iter()
-        .enumerate()
-        .map(|(idx, m)| {
-            let s = m.size();
-            let p = m.position();
-            let is_primary = primary_pos.map_or(false, |(px, py)| px == p.x && py == p.y);
-            MonitorInfo {
-                index: idx,
-                name: m.name().cloned().unwrap_or_else(|| format!("Display {}", idx + 1)),
-                x: p.x,
-                y: p.y,
-                width: s.width,
-                height: s.height,
-                is_primary,
-                scale_factor: m.scale_factor(),
-            }
-        })
-        .collect()
-}
-
-// ===========================================================================
-// グローバルショートカット
-// ===========================================================================
-
-fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
-    use tauri_plugin_global_shortcut::Code;
-    match key.to_uppercase().as_str() {
-        "A" => Some(Code::KeyA), "B" => Some(Code::KeyB), "C" => Some(Code::KeyC),
-        "D" => Some(Code::KeyD), "E" => Some(Code::KeyE), "F" => Some(Code::KeyF),
-        "G" => Some(Code::KeyG), "H" => Some(Code::KeyH), "I" => Some(Code::KeyI),
-        "J" => Some(Code::KeyJ), "K" => Some(Code::KeyK), "L" => Some(Code::KeyL),
-        "M" => Some(Code::KeyM), "N" => Some(Code::KeyN), "O" => Some(Code::KeyO),
-        "P" => Some(Code::KeyP), "Q" => Some(Code::KeyQ), "R" => Some(Code::KeyR),
-        "S" => Some(Code::KeyS), "T" => Some(Code::KeyT), "U" => Some(Code::KeyU),
-        "V" => Some(Code::KeyV), "W" => Some(Code::KeyW), "X" => Some(Code::KeyX),
-        "Y" => Some(Code::KeyY), "Z" => Some(Code::KeyZ),
-        _ => None,
-    }
-}
-
-#[tauri::command]
-fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
-    let _ = app_handle.global_shortcut().unregister_all();
-    if let Some(code) = char_to_code(&key) {
-        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
-        let _ = app_handle.global_shortcut().register(shortcut);
-    }
-}
-
-
-#[tauri::command]
-fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
-    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
-    if let Some(window) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
-            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-            use windows::Win32::Foundation::HWND;
-            if let Ok(hwnd_ptr) = window.hwnd() {
-                let hwnd = HWND(hwnd_ptr.0 as _);
-                unsafe {
-                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
-                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
-                        if taskbar.HrInit().is_ok() {
-                            if has_unread {
-                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
-                                let ico_bytes = include_bytes!("../icons/badge.ico");
-                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
-                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
-                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
-                                    let icon = CreateIconFromResourceEx(&ico_bytes[offset..], true, 0x00030000, 16, 16, LR_DEFAULTCOLOR).unwrap_or_default();
-                                    icon.0 as isize
-                                });
-                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
-                                if !icon.is_invalid() {
-                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
-                                }
-                            } else {
-                                use windows::Win32::UI::WindowsAndMessaging::HICON;
-                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        let icon_bytes = if has_unread {
-            include_bytes!("../icons/icon-unread.png").to_vec()
-        } else {
-            include_bytes!("../icons/icon.png").to_vec()
-        };
-        
-        match image::load_from_memory(&icon_bytes) {
-            Ok(img) => {
-                let rgba = img.into_rgba8();
-                let width = rgba.width();
-                let height = rgba.height();
-                let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
-                // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
-                // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
-                if let Err(e) = window.set_icon(tauri_image.clone()) {
-                    log::error!("[DEBUG] window.set_icon failed: {}", e);
-                } else {
-                    log::info!("[DEBUG] window.set_icon succeeded");
-                }
-                
-                if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                    if let Err(e) = tray.set_icon(Some(tauri_image)) {
-                        log::error!("[DEBUG] tray.set_icon failed: {}", e);
-                    } else {
-                        log::info!("[DEBUG] tray.set_icon succeeded");
-                    }
-                } else {
-                    log::warn!("[DEBUG] main-tray not found");
-                }
-            },
-            Err(e) => {
-                log::error!("[DEBUG] failed to load icon from memory: {}", e);
-            }
-        }
-    } else {
-        log::error!("[DEBUG] get_webview_window('main') returned None");
-    }
-}
-
-use tauri_plugin_notification::NotificationExt;
-
-#[tauri::command]
-fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
-    let _ = app.notification().builder()
-        .title(title)
-        .body(body)
-        .show();
-}
-
-#[tauri::command]
-async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
-    log::info!("silent_install_past_version called: {} -> {}", tag, url);
-    let temp_dir = std::env::temp_dir();
-    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", tag));
-
-    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
-    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
-    let total = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-
-    let mut file = std::fs::File::create(&exe_path)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-
-    let mut stream = response;
-    loop {
-        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
-        match chunk {
-            None => break,
-            Some(bytes) => {
-                use std::io::Write;
-                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
-                downloaded += bytes.len() as u64;
-                let progress = if total > 0 {
-                    ((downloaded as f64 / total as f64) * 100.0) as u32
-                } else {
-                    0
-                };
-                let _ = app_handle.emit("download-progress", serde_json::json!({
-                    "tag": tag,
-                    "downloaded": downloaded,
-                    "total": total,
-                    "progress": progress
-                }));
-            }
-        }
-    }
-    drop(file);
-
-    log::info!("Downloaded installer to: {:?} ({} bytes)", exe_path, downloaded);
-
-    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-        let covo_exe = std::env::current_exe()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "Covo.exe".to_string());
-
-        let installer_path = exe_path.to_string_lossy().to_string();
-
-        // PowerShell スクリプト:
-        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
-        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
-        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
-        //   4. Covo.exe を再起動
-        let ps_script = format!(
-            "Start-Sleep -Seconds 5; \
-             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{covo}'",
-            installer = installer_path.replace('\'', "''"),
-            covo = covo_exe.replace('\'', "''"),
-        );
-
-        std::process::Command::new("powershell")
-            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
-
-        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
-
-        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
-            app_handle.exit(0);
-        });
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
-    if let Ok(mut loaded) = state.app_loaded.lock() {
-        *loaded = true;
-        log::info!("Received notify_app_loaded signal from frontend. Cancelling recovery popup.");
-    }
-}
-
-
-// ===========================================================================
-// run()
-// ===========================================================================
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
-        .manage(NotificationState::default())
-        .invoke_handler(tauri::generate_handler![
-            show_main_window,
-            minimize_window,
-            toggle_maximize_window,
-            close_window,
-            set_close_behavior,
-            container_loaded,
-            hide_notif_container,
-            resize_notif_container,
-            close_notification,
-            open_position_picker,
-            save_notification_position,
-            cancel_position_picker,
-            save_position_absolute,
-            set_saved_position,
-            get_saved_position,
-            get_available_monitors,
-            update_shortcut_key,
-            open_devtools_for_picker,
-            open_devtools_for_container,
-            open_log_dir,
-            create_desktop_shortcut,
-            set_badge,
-            send_desktop_notification,
-            silent_install_past_version,
-            notify_app_loaded,
-        ])
-        .setup(|app| {
-            let _handle = app.handle().clone();
-
-            // アップデート後にショートカット・タスクバーのアイコンキャッシュを更新する
-            // ie4uinit.exe -show は Windows シェルにアイコン再読み込みを要求する標準的な方法
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                let _ = std::process::Command::new("ie4uinit.exe")
-                    .arg("-show")
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn();
-            }
-
-            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState, ShortcutEvent};
-
-            let ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
-
-            let shortcut_plugin = {
-                let h = app.handle().clone();
-                tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |_app, _sc, event: ShortcutEvent| {
-                        if event.state() == ShortcutState::Pressed {
-                            if let Some(window) = h.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
-                            }
-                        }
-                    })
-                    .build()
-            };
-            app.handle().plugin(shortcut_plugin)?;
-
-            let _ = app.global_shortcut().register(ctrl_shift_s);
-
-            // 正常起動の非同期監視タスク (30秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
-            let monitor_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                let loaded = {
-                    let state = monitor_handle.state::<NotificationState>();
-                    let val = *state.app_loaded.lock().unwrap();
-                    val
-                };
-                if !loaded {
-                    log::warn!("App loaded signal not received within 30 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
-                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
-                        let _ = main_win.hide();
-                    }
-                    if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
-                        &monitor_handle,
-                        "recovery-engine",
-                        tauri::WebviewUrl::App("recovery.html".into())
-                    )
-                    .title("Covo - リカバリーパネル")
-                    .inner_size(840.0, 680.0)
-                    .resizable(true)
-                    .center()
-                    .build() {
-                        let _ = recovery_win.show();
-                    }
-                }
-            });
-
-            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
-            let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
-
-            let _tray = TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => { app.exit(0); }
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "recovery" => {
-                        // トレイメニューからいつでもリカバリー画面を呼び出せる
-                        if let Some(existing) = app.get_webview_window("recovery-engine") {
-                            let _ = existing.show();
-                            let _ = existing.set_focus();
-                        } else {
-                            if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
-                                app,
-                                "recovery-engine",
-                                tauri::WebviewUrl::App("recovery.html".into())
-                            )
-                            .title("Covo - リカバリーパネル")
-                            .inner_size(840.0, 680.0)
-                            .resizable(true)
-                            .center()
-                            .build() {
-                                let _ = recovery_win.show();
-                            }
-                        }
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
-
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    use tauri::Manager;
-                    let behavior = {
-                        let state = window.app_handle().state::<NotificationState>();
-                        let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                        b
-                    };
-                    if behavior == "quit" {
-                        // 完全に終了する場合は何もしない (そのまま閉じる)
-                    } else if behavior == "hide" {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    } else {
-                        // デフォルト: タスクバーに最小化
-                        api.prevent_close();
-                        let _ = window.minimize();
-                    }
-                }
-            }
-        })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
-        .plugin(
-            tauri_plugin_log::Builder::default()
-                .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                ])
-                .level(log::LevelFilter::Debug)
-                .build(),
-        )
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-</file>
-
 <file path="database.rules.json">
 {
   "rules": {
@@ -8487,6 +7444,1063 @@ function showLoading(show) {
 }
 </file>
 
+<file path="src-tauri/src/lib.rs">
+use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
+use tauri::WebviewWindowBuilder;
+use std::sync::Mutex;
+
+const CONTAINER_LABEL: &str = "notif_container";
+const PICKER_LABEL: &str = "notif_pos_picker";
+
+const CONTAINER_W: i32 = 360;
+#[allow(dead_code)]
+const CONTAINER_H_INITIAL: i32 = 100;       // 初期は1枚分の高さだけ
+const CONTAINER_H_DEFAULT: i32 = 600;       // 「右下」デフォルト計算用の見込み高さ
+const CONTAINER_H_MIN: i32 = 90;            // カードなしのとき
+const CONTAINER_H_MAX_RATIO: f64 = 0.85;    // モニター高さの比率上限
+const PICKER_W: i32 = 360;
+const PICKER_H: i32 = 200;
+const SCREEN_MARGIN: i32 = 20;
+const OFFSCREEN_X: i32 = -8000;
+const OFFSCREEN_Y: i32 = -8000;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SavedPosition {
+    monitor_index: Option<usize>,
+    x_in_monitor: i32,
+    y_in_monitor: i32,
+    stack_direction: String, // "up" (新着が下、古いのが上) | "down" (新着が上、古いのが下)
+}
+
+#[derive(Clone)]
+struct PendingNotif {
+    id: String,
+    title: String,
+    body: String,
+    room_id: String,
+    stack_dir: String,
+}
+
+#[derive(Default)]
+struct NotificationState {
+    saved_position: Mutex<Option<SavedPosition>>,
+    container_ready: Mutex<bool>,
+    pending: Mutex<Vec<PendingNotif>>,
+    close_behavior: Mutex<String>,
+    app_loaded: Mutex<bool>,
+}
+
+#[derive(serde::Serialize)]
+struct MonitorInfo {
+    index: usize,
+    name: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    is_primary: bool,
+    scale_factor: f64,
+}
+
+// ===========================================================================
+// 位置計算ヘルパー
+// ===========================================================================
+
+fn pick_monitor(
+    app_handle: &tauri::AppHandle,
+    monitor_index: Option<usize>,
+) -> Option<tauri::Monitor> {
+    let win = app_handle.get_webview_window("main")?;
+    let monitors = win.available_monitors().ok()?;
+    if let Some(idx) = monitor_index {
+        if let Some(m) = monitors.get(idx) {
+            return Some(m.clone());
+        }
+    }
+    if let Ok(Some(m)) = win.primary_monitor() {
+        return Some(m);
+    }
+    monitors.into_iter().next()
+}
+
+fn container_height_for_monitor(monitor: &tauri::Monitor) -> i32 {
+    let mh = monitor.size().height as f64;
+    (mh * 0.8).min(CONTAINER_H_DEFAULT as f64).max(200.0) as i32
+}
+
+// 保存位置 (None なら primary 右下デフォルト) を実際の物理座標に解決
+// 戻り値: (window_x, window_y, stack_direction)
+fn resolve_window_position(
+    app_handle: &tauri::AppHandle,
+    saved: Option<&SavedPosition>,
+) -> Option<(i32, i32, String)> {
+    let monitor = pick_monitor(app_handle, saved.and_then(|s| s.monitor_index))?;
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let mw = ms.width as i32;
+    let mh = ms.height as i32;
+
+    if let Some(s) = saved {
+        let wx = mp.x + s.x_in_monitor;
+        let wy = mp.y + s.y_in_monitor;
+        Some((wx, wy, s.stack_direction.clone()))
+    } else {
+        // デフォルト: 右下
+        let container_h = container_height_for_monitor(&monitor);
+        let wx = mp.x + mw - CONTAINER_W - SCREEN_MARGIN;
+        let wy = mp.y + mh - container_h - SCREEN_MARGIN;
+        Some((wx, wy, "up".to_string()))
+    }
+}
+
+// ===========================================================================
+// コンテナウィンドウ生成・取得（現在は使用していない: WebView2 でのハング問題により
+// Windows ネイティブのトースト通知に切り替えた。将来カスタム UI を再開する際の
+// ためにコードは残してある）
+// ===========================================================================
+
+#[allow(dead_code)]
+fn ensure_container_window(
+    app_handle: &tauri::AppHandle,
+) -> Result<(tauri::WebviewWindow, bool), String> {
+    log::info!("[ensure] step 1: checking existing container");
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        log::info!("[ensure] step 1.5: existing container found, reusing");
+        return Ok((win, false));
+    }
+    log::error!("[ensure] step 2: container should have been pre-created in setup()! Falling back...");
+    // フォールバック: setup() で作られていなかった場合に build を試みる
+    // ただしハングする可能性あり
+    let win = WebviewWindowBuilder::new(
+        app_handle,
+        CONTAINER_LABEL,
+        tauri::WebviewUrl::App("/notification-container.html".into()),
+    )
+    .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
+    .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
+    .build()
+    .map_err(|e| format!("fallback build failed: {}", e))?;
+
+    let _ = win.set_decorations(false);
+    let _ = win.set_skip_taskbar(true);
+    let _ = win.set_always_on_top(true);
+    let _ = win.set_resizable(false);
+
+    log::info!("[ensure] step 6: container window setup complete (fallback)");
+    Ok((win, true))
+}
+
+// JS から呼ばれるコンテナリサイズ。
+// stack_direction によってアンカー（top or bottom）を維持する
+#[tauri::command]
+fn resize_notif_container(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    height: u32,
+) -> Result<(), String> {
+    let win = app_handle
+        .get_webview_window(CONTAINER_LABEL)
+        .ok_or_else(|| "container not found".to_string())?;
+
+    // モニターから最大高を計算
+    let monitor = pick_monitor(&app_handle, None);
+    let max_h = monitor
+        .as_ref()
+        .map(|m| (m.size().height as f64 * CONTAINER_H_MAX_RATIO) as i32)
+        .unwrap_or(CONTAINER_H_DEFAULT);
+    let new_h = height.max(CONTAINER_H_MIN as u32).min(max_h as u32);
+
+    let saved = state.saved_position.lock().unwrap().clone();
+    let stack_dir = saved
+        .as_ref()
+        .map(|s| s.stack_direction.clone())
+        .unwrap_or_else(|| "up".to_string());
+
+    let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
+    let cur_size = win.outer_size().map_err(|e| e.to_string())?;
+
+    if stack_dir == "up" {
+        // 「up」(下から積む): bottom anchor を維持。top を新しい高さに合わせて上下調整
+        let bottom = cur_pos.y + cur_size.height as i32;
+        let new_top = bottom - new_h as i32;
+        win.set_size(tauri::PhysicalSize {
+            width: cur_size.width,
+            height: new_h,
+        })
+        .map_err(|e| format!("set_size failed: {}", e))?;
+        win.set_position(tauri::PhysicalPosition {
+            x: cur_pos.x,
+            y: new_top,
+        })
+        .map_err(|e| format!("set_position failed: {}", e))?;
+    } else {
+        // 「down」(上から積む): top anchor 維持。サイズだけ変える
+        win.set_size(tauri::PhysicalSize {
+            width: cur_size.width,
+            height: new_h,
+        })
+        .map_err(|e| format!("set_size failed: {}", e))?;
+    }
+
+    Ok(())
+}
+
+// ===========================================================================
+
+#[tauri::command]
+fn show_main_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
+fn minimize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.minimize();
+    }
+}
+
+#[tauri::command]
+fn toggle_maximize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Ok(is_max) = window.is_maximized() {
+            if is_max {
+                let _ = window.unmaximize();
+            } else {
+                let _ = window.maximize();
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let behavior = {
+            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            b
+        };
+        if behavior == "quit" {
+            let _ = window.close();
+            app_handle.exit(0);
+        } else if behavior == "hide" {
+            let _ = window.hide();
+        } else {
+            let _ = window.minimize();
+        }
+    }
+}
+
+#[tauri::command]
+fn set_close_behavior(
+    behavior: String,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    if let Ok(mut b) = state.close_behavior.lock() {
+        *b = behavior;
+    }
+    Ok(())
+}
+
+// コンテナの JS が起動完了したときに呼ばれる
+#[tauri::command]
+fn container_loaded(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    log::info!("container_loaded called");
+    *state.container_ready.lock().unwrap() = true;
+
+    // 溜まっている notifications をすべて flush
+    let pending: Vec<PendingNotif> = std::mem::take(&mut *state.pending.lock().unwrap());
+    log::info!("Flushing {} pending notifications", pending.len());
+
+    let window = app_handle
+        .get_webview_window(CONTAINER_LABEL)
+        .ok_or_else(|| "container not found".to_string())?;
+
+    for p in pending {
+        let payload = serde_json::json!({
+            "id": p.id,
+            "title": p.title,
+            "body": p.body,
+            "roomId": p.room_id,
+            "stackDir": p.stack_dir,
+        });
+        if let Err(e) = window.emit("new-notif", payload) {
+            log::error!("flush emit failed: {}", e);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_notif_container(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        // hide() バグ回避のため画面外に移動して実質非表示にする
+        let _ = win.set_position(tauri::PhysicalPosition {
+            x: OFFSCREEN_X,
+            y: OFFSCREEN_Y,
+        });
+    }
+}
+
+#[tauri::command]
+fn close_notification(_app_handle: tauri::AppHandle, _label: String) {
+    // 互換性のため残すがコンテナ方式では使わない
+}
+
+// ===========================================================================
+// コマンド: 位置ピッカー
+// ===========================================================================
+
+#[tauri::command]
+fn open_position_picker(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        let _ = win.close();
+    }
+
+    let saved = state.saved_position.lock().unwrap().clone();
+    let (initial_x, initial_y) = resolve_window_position(&app_handle, saved.as_ref())
+        .map(|(x, y, _)| (x, y))
+        .unwrap_or((100, 100));
+
+    let win = WebviewWindowBuilder::new(
+        &app_handle,
+        PICKER_LABEL,
+        tauri::WebviewUrl::App("/notification-picker.html".into()),
+    )
+    .inner_size(PICKER_W as f64, PICKER_H as f64)
+    .position(initial_x as f64, initial_y as f64)
+    .always_on_top(true)
+    .decorations(false)
+    .skip_taskbar(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| format!("picker build failed: {}", e))?;
+
+    let _ = win.set_position(tauri::PhysicalPosition {
+        x: initial_x,
+        y: initial_y,
+    });
+
+    // F12 で開閉可能（devtools feature 有効）
+    Ok(())
+}
+
+#[tauri::command]
+fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        win.open_devtools();
+    }
+}
+
+#[tauri::command]
+fn open_devtools_for_container(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        win.open_devtools();
+    }
+}
+
+// デスクトップにショートカットを作成
+#[tauri::command]
+fn create_desktop_shortcut() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe failed: {}", e))?;
+    let exe_str = exe.to_string_lossy().to_string();
+    let exe_escaped = exe_str.replace('\'', "''");
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let ps_script = format!(
+            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut(\"$dp\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
+            exe_escaped
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("powershell failed: {}", e))?;
+        if !status.success() {
+            return Err("shortcut creation failed".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+// ログディレクトリをエクスプローラーで開く
+#[tauri::command]
+fn open_log_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let path = app_handle
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("app_log_dir failed: {}", e))?;
+    // ディレクトリがまだ作られていなければ作る
+    if !path.exists() {
+        std::fs::create_dir_all(&path).map_err(|e| format!("create_dir_all failed: {}", e))?;
+    }
+    // ログファイルが空でも何か書いておく
+    let log_marker = path.join("opened_at.txt");
+    let _ = std::fs::write(
+        &log_marker,
+        format!("Log dir opened: {:?}\n", std::time::SystemTime::now()),
+    );
+
+    let path_str = path.to_string_lossy().to_string();
+    log::info!("Opening log dir: {}", path_str);
+    // explorer で開く
+    std::process::Command::new("explorer")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("spawn explorer failed: {}", e))?;
+    Ok(path_str)
+}
+
+#[tauri::command]
+fn save_notification_position(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<SavedPosition, String> {
+    let win = app_handle
+        .get_webview_window(PICKER_LABEL)
+        .ok_or_else(|| "picker window not found".to_string())?;
+
+    let pos = win
+        .outer_position()
+        .map_err(|e| format!("outer_position failed: {}", e))?;
+
+    let main = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitors = main
+        .available_monitors()
+        .map_err(|e| format!("monitors failed: {}", e))?;
+
+    // ピッカー位置 (左上) から所属モニターを判定
+    let found = monitors.iter().enumerate().find(|(_, m)| {
+        let mp = m.position();
+        let ms = m.size();
+        pos.x >= mp.x
+            && pos.x < mp.x + ms.width as i32
+            && pos.y >= mp.y
+            && pos.y < mp.y + ms.height as i32
+    });
+
+    let (monitor_idx, monitor) = match found {
+        Some((i, m)) => (Some(i), m.clone()),
+        None => {
+            let m = monitors.first().cloned().ok_or_else(|| "no monitors".to_string())?;
+            (Some(0), m)
+        }
+    };
+
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let x_in_monitor = pos.x - mp.x;
+    let y_in_monitor = pos.y - mp.y;
+
+    // y がモニター高の 1/3 未満なら下方向にスタック (top stack)、それ以外は上方向
+    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
+        "down".to_string()
+    } else {
+        "up".to_string()
+    };
+
+    let saved = SavedPosition {
+        monitor_index: monitor_idx,
+        x_in_monitor,
+        y_in_monitor,
+        stack_direction: stack_direction.clone(),
+    };
+
+    {
+        let mut lock = state.saved_position.lock().unwrap();
+        *lock = Some(saved.clone());
+    }
+
+    let _ = win.close();
+
+    if let Some(main) = app_handle.get_webview_window("main") {
+        let _ = main.emit("position-saved", &saved);
+    }
+
+    // 既存コンテナがあれば即時再配置
+    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
+            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
+        }
+    }
+
+    Ok(saved)
+}
+
+#[tauri::command]
+fn cancel_position_picker(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        let _ = win.close();
+    }
+}
+
+// メインウィンドウ内で完結する位置設定: 絶対物理ピクセル座標を受け取って保存
+#[tauri::command]
+fn save_position_absolute(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    x: i32,
+    y: i32,
+) -> Result<SavedPosition, String> {
+    log::info!("save_position_absolute called: x={}, y={}", x, y);
+
+    let main = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitors = main
+        .available_monitors()
+        .map_err(|e| format!("monitors failed: {}", e))?;
+
+    // 与えられた座標を含むモニターを判定
+    let found = monitors.iter().enumerate().find(|(_, m)| {
+        let mp = m.position();
+        let ms = m.size();
+        x >= mp.x && x < mp.x + ms.width as i32
+            && y >= mp.y && y < mp.y + ms.height as i32
+    });
+
+    let (monitor_idx, monitor) = match found {
+        Some((i, m)) => (Some(i), m.clone()),
+        None => {
+            // 座標がどのモニターにも含まれない場合は primary または 1 番目
+            let m = main.primary_monitor().ok().flatten()
+                .or_else(|| monitors.first().cloned())
+                .ok_or_else(|| "no monitors".to_string())?;
+            (Some(0), m)
+        }
+    };
+
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let x_in_monitor = x - mp.x;
+    let y_in_monitor = y - mp.y;
+
+    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
+        "down".to_string()
+    } else {
+        "up".to_string()
+    };
+
+    let saved = SavedPosition {
+        monitor_index: monitor_idx,
+        x_in_monitor,
+        y_in_monitor,
+        stack_direction,
+    };
+
+    {
+        let mut lock = state.saved_position.lock().unwrap();
+        *lock = Some(saved.clone());
+    }
+
+    log::info!("Saved position: {:?}", serde_json::to_string(&saved).ok());
+
+    // 既存コンテナがあれば即時再配置
+    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
+            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
+        }
+    }
+
+    Ok(saved)
+}
+
+#[tauri::command]
+fn set_saved_position(state: tauri::State<'_, NotificationState>, saved: SavedPosition) {
+    let mut lock = state.saved_position.lock().unwrap();
+    *lock = Some(saved);
+}
+
+#[tauri::command]
+fn get_saved_position(state: tauri::State<'_, NotificationState>) -> Option<SavedPosition> {
+    state.saved_position.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_available_monitors(app_handle: tauri::AppHandle) -> Vec<MonitorInfo> {
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return vec![];
+    };
+    let monitors = match win.available_monitors() {
+        Ok(m) => m,
+        Err(_) => return vec![],
+    };
+    let primary = win.primary_monitor().ok().flatten();
+    let primary_pos = primary.as_ref().map(|m| {
+        let p = m.position();
+        (p.x, p.y)
+    });
+
+    monitors
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| {
+            let s = m.size();
+            let p = m.position();
+            let is_primary = primary_pos.map_or(false, |(px, py)| px == p.x && py == p.y);
+            MonitorInfo {
+                index: idx,
+                name: m.name().cloned().unwrap_or_else(|| format!("Display {}", idx + 1)),
+                x: p.x,
+                y: p.y,
+                width: s.width,
+                height: s.height,
+                is_primary,
+                scale_factor: m.scale_factor(),
+            }
+        })
+        .collect()
+}
+
+// ===========================================================================
+// グローバルショートカット
+// ===========================================================================
+
+fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
+    use tauri_plugin_global_shortcut::Code;
+    match key.to_uppercase().as_str() {
+        "A" => Some(Code::KeyA), "B" => Some(Code::KeyB), "C" => Some(Code::KeyC),
+        "D" => Some(Code::KeyD), "E" => Some(Code::KeyE), "F" => Some(Code::KeyF),
+        "G" => Some(Code::KeyG), "H" => Some(Code::KeyH), "I" => Some(Code::KeyI),
+        "J" => Some(Code::KeyJ), "K" => Some(Code::KeyK), "L" => Some(Code::KeyL),
+        "M" => Some(Code::KeyM), "N" => Some(Code::KeyN), "O" => Some(Code::KeyO),
+        "P" => Some(Code::KeyP), "Q" => Some(Code::KeyQ), "R" => Some(Code::KeyR),
+        "S" => Some(Code::KeyS), "T" => Some(Code::KeyT), "U" => Some(Code::KeyU),
+        "V" => Some(Code::KeyV), "W" => Some(Code::KeyW), "X" => Some(Code::KeyX),
+        "Y" => Some(Code::KeyY), "Z" => Some(Code::KeyZ),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
+    let _ = app_handle.global_shortcut().unregister_all();
+    if let Some(code) = char_to_code(&key) {
+        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
+        let _ = app_handle.global_shortcut().register(shortcut);
+    }
+}
+
+
+#[tauri::command]
+fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
+    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
+    if let Some(window) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+            use windows::Win32::Foundation::HWND;
+            if let Ok(hwnd_ptr) = window.hwnd() {
+                let hwnd = HWND(hwnd_ptr.0 as _);
+                unsafe {
+                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
+                        if taskbar.HrInit().is_ok() {
+                            if has_unread {
+                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+                                let ico_bytes = include_bytes!("../icons/badge.ico");
+                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
+                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
+                                    let icon = CreateIconFromResourceEx(&ico_bytes[offset..], true, 0x00030000, 16, 16, LR_DEFAULTCOLOR).unwrap_or_default();
+                                    icon.0 as isize
+                                });
+                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
+                                if !icon.is_invalid() {
+                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                                }
+                            } else {
+                                use windows::Win32::UI::WindowsAndMessaging::HICON;
+                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        let icon_bytes = if has_unread {
+            include_bytes!("../icons/icon-unread.png").to_vec()
+        } else {
+            include_bytes!("../icons/icon.png").to_vec()
+        };
+        
+        match image::load_from_memory(&icon_bytes) {
+            Ok(img) => {
+                let rgba = img.into_rgba8();
+                let width = rgba.width();
+                let height = rgba.height();
+                let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+                // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
+                // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
+                if let Err(e) = window.set_icon(tauri_image.clone()) {
+                    log::error!("[DEBUG] window.set_icon failed: {}", e);
+                } else {
+                    log::info!("[DEBUG] window.set_icon succeeded");
+                }
+                
+                if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                    if let Err(e) = tray.set_icon(Some(tauri_image)) {
+                        log::error!("[DEBUG] tray.set_icon failed: {}", e);
+                    } else {
+                        log::info!("[DEBUG] tray.set_icon succeeded");
+                    }
+                } else {
+                    log::warn!("[DEBUG] main-tray not found");
+                }
+            },
+            Err(e) => {
+                log::error!("[DEBUG] failed to load icon from memory: {}", e);
+            }
+        }
+    } else {
+        log::error!("[DEBUG] get_webview_window('main') returned None");
+    }
+}
+
+use tauri_plugin_notification::NotificationExt;
+
+#[tauri::command]
+fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
+    let _ = app.notification().builder()
+        .title(title)
+        .body(body)
+        .show();
+}
+
+#[tauri::command]
+async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
+    log::info!("silent_install_past_version called: {} -> {}", tag, url);
+
+    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        return Err("Invalid tag format".to_string());
+    }
+
+    let is_valid_url = url.starts_with("https://github.com/qwertyuiop1229/Covo/releases/download/")
+        || url.starts_with("https://objects.githubusercontent.com/");
+    if !is_valid_url {
+        return Err("Invalid download URL: must be from official repository".to_string());
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
+    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
+
+    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
+    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
+    let total = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    let mut file = std::fs::File::create(&exe_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    let mut stream = response;
+    loop {
+        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
+        match chunk {
+            None => break,
+            Some(bytes) => {
+                use std::io::Write;
+                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
+                downloaded += bytes.len() as u64;
+                let progress = if total > 0 {
+                    ((downloaded as f64 / total as f64) * 100.0) as u32
+                } else {
+                    0
+                };
+                let _ = app_handle.emit("download-progress", serde_json::json!({
+                    "tag": tag,
+                    "downloaded": downloaded,
+                    "total": total,
+                    "progress": progress
+                }));
+            }
+        }
+    }
+    drop(file);
+
+    log::info!("Downloaded installer to: {:?} ({} bytes)", exe_path, downloaded);
+
+    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let covo_exe = std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "Covo.exe".to_string());
+
+        let installer_path = exe_path.to_string_lossy().to_string();
+
+        // PowerShell スクリプト:
+        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
+        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
+        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
+        //   4. Covo.exe を再起動
+        let ps_script = format!(
+            "Start-Sleep -Seconds 5; \
+             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{covo}'",
+            installer = installer_path.replace('\'', "''"),
+            covo = covo_exe.replace('\'', "''"),
+        );
+
+        std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
+
+        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
+
+        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
+            app_handle.exit(0);
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
+    if let Ok(mut loaded) = state.app_loaded.lock() {
+        *loaded = true;
+        log::info!("Received notify_app_loaded signal from frontend. Cancelling recovery popup.");
+    }
+}
+
+
+// ===========================================================================
+// run()
+// ===========================================================================
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .manage(NotificationState::default())
+        .invoke_handler(tauri::generate_handler![
+            show_main_window,
+            minimize_window,
+            toggle_maximize_window,
+            close_window,
+            set_close_behavior,
+            container_loaded,
+            hide_notif_container,
+            resize_notif_container,
+            close_notification,
+            open_position_picker,
+            save_notification_position,
+            cancel_position_picker,
+            save_position_absolute,
+            set_saved_position,
+            get_saved_position,
+            get_available_monitors,
+            update_shortcut_key,
+            open_devtools_for_picker,
+            open_devtools_for_container,
+            open_log_dir,
+            create_desktop_shortcut,
+            set_badge,
+            send_desktop_notification,
+            silent_install_past_version,
+            notify_app_loaded,
+        ])
+        .setup(|app| {
+            let _handle = app.handle().clone();
+
+            // アップデート後にショートカット・タスクバーのアイコンキャッシュを更新する
+            // ie4uinit.exe -show は Windows シェルにアイコン再読み込みを要求する標準的な方法
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                let _ = std::process::Command::new("ie4uinit.exe")
+                    .arg("-show")
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+            }
+
+            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState, ShortcutEvent};
+
+            let ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
+
+            let shortcut_plugin = {
+                let h = app.handle().clone();
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |_app, _sc, event: ShortcutEvent| {
+                        if event.state() == ShortcutState::Pressed {
+                            if let Some(window) = h.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                                let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
+                            }
+                        }
+                    })
+                    .build()
+            };
+            app.handle().plugin(shortcut_plugin)?;
+
+            let _ = app.global_shortcut().register(ctrl_shift_s);
+
+            // 正常起動の非同期監視タスク (30秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
+            let monitor_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                let loaded = {
+                    let state = monitor_handle.state::<NotificationState>();
+                    let val = *state.app_loaded.lock().unwrap();
+                    val
+                };
+                if !loaded {
+                    log::warn!("App loaded signal not received within 30 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
+                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
+                        let _ = main_win.hide();
+                    }
+                    if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                        &monitor_handle,
+                        "recovery-engine",
+                        tauri::WebviewUrl::App("recovery.html".into())
+                    )
+                    .title("Covo - リカバリーパネル")
+                    .inner_size(840.0, 680.0)
+                    .resizable(true)
+                    .center()
+                    .build() {
+                        let _ = recovery_win.show();
+                    }
+                }
+            });
+
+            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
+            let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => { app.exit(0); }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "recovery" => {
+                        // トレイメニューからいつでもリカバリー画面を呼び出せる
+                        if let Some(existing) = app.get_webview_window("recovery-engine") {
+                            let _ = existing.show();
+                            let _ = existing.set_focus();
+                        } else {
+                            if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                                app,
+                                "recovery-engine",
+                                tauri::WebviewUrl::App("recovery.html".into())
+                            )
+                            .title("Covo - リカバリーパネル")
+                            .inner_size(840.0, 680.0)
+                            .resizable(true)
+                            .center()
+                            .build() {
+                                let _ = recovery_win.show();
+                            }
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    use tauri::Manager;
+                    let behavior = {
+                        let state = window.app_handle().state::<NotificationState>();
+                        let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                        b
+                    };
+                    if behavior == "quit" {
+                        // 完全に終了する場合は何もしない (そのまま閉じる)
+                    } else if behavior == "hide" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // デフォルト: タスクバーに最小化
+                        api.prevent_close();
+                        let _ = window.minimize();
+                    }
+                }
+            }
+        })
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Debug)
+                .build(),
+        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+</file>
+
 <file path="server/src/index.js">
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9488,20 +9502,53 @@ async function handleUploadFile(request, env) {
 // -------------------------------------------------------------
 // 外部ファイル（Cloudinary等）のプロキシダウンロード＆インラインプレビュー
 // -------------------------------------------------------------
+const ALLOWED_PROXY_DOMAINS = [
+  "res.cloudinary.com",
+  "firebasestorage.googleapis.com",
+  "files.catbox.moe",
+  "0x0.st"
+];
+
 async function handleDownloadProxy(request, env, url) {
   try {
-    const targetUrl = url.searchParams.get('url');
+    const targetUrlStr = url.searchParams.get('url');
     const fileName = url.searchParams.get('name') || 'download';
     const isPreview = url.searchParams.get('preview') === '1';
 
-    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
-      return new Response(JSON.stringify({ error: 'Invalid URL' }), {
+    if (!targetUrlStr) {
+      return new Response(JSON.stringify({ error: 'Missing URL parameter' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const response = await fetch(targetUrl, {
+    let parsedTarget;
+    try {
+      parsedTarget = new URL(targetUrlStr);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Malformed URL' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+      return new Response(JSON.stringify({ error: 'Invalid protocol' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const hostname = parsedTarget.hostname.toLowerCase();
+    const isAllowed = ALLOWED_PROXY_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+    if (!isAllowed) {
+      return new Response(JSON.stringify({ error: 'Domain not allowed for proxy' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const response = await fetch(targetUrlStr, {
       headers: {
         'User-Agent': 'Covo-Proxy/1.0',
         'Accept': '*/*'
@@ -9523,6 +9570,7 @@ async function handleDownloadProxy(request, env, url) {
     const newHeaders = new Headers(corsHeaders);
     newHeaders.set('Content-Type', contentType);
     newHeaders.set('Content-Disposition', disposition);
+    newHeaders.set('X-Content-Type-Options', 'nosniff');
     newHeaders.set('Cache-Control', 'public, max-age=86400');
 
     const contentLength = response.headers.get('Content-Length');
@@ -9566,14 +9614,21 @@ async function handleDeleteFile(request, env, url) {
 
     const meta = fileEntry.metadata;
     const forceDelete = url.searchParams.get('forceDelete') === '1';
-
-    // forceDelete is allowed if they provide the ADMIN_SECRET_KEY in the request OR if a valid Firebase user is authenticated (as client handles serverAdmin/admin logic)
     const adminKey = url.searchParams.get('adminKey') || '';
+
+    let isPrivilegedAdmin = false;
+    if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
+      isPrivilegedAdmin = true;
+    } else if (env.DB) {
+      const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+      isPrivilegedAdmin = await isD1Admin(appId, verifiedUser, env);
+    }
+
     if (forceDelete) {
-      if (!verifiedUser && (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY)) {
+      if (!isPrivilegedAdmin) {
         return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId) {
+    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: '削除権限がありません' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -9585,7 +9640,7 @@ async function handleDeleteFile(request, env, url) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -9603,20 +9658,31 @@ async function handleServeFile(request, env, url) {
     const fileName = (metadata && metadata.name) ? metadata.name : key;
     const isPreview = url.searchParams.get('preview') === '1';
 
+    const headers = {
+      ...corsHeaders,
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'public, max-age=31536000',
+    };
+
+    if (contentType === 'image/svg+xml' || contentType.includes('html')) {
+      headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+      headers['Content-Disposition'] = isPreview
+        ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
+        : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    } else {
+      headers['Content-Disposition'] = isPreview
+        ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
+        : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    }
+
     return new Response(value, {
       status: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': contentType,
-        'Content-Disposition': isPreview
-          ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
-          : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        'Cache-Control': 'public, max-age=31536000',
-      }
+      headers
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -10829,8 +10895,10 @@ async function handleD1Api(request, env, url) {
       right: 0 !important;
       padding: 0 !important;
     }
-    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
-    input, textarea, select, button {
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
       font-size: 16px !important;
     }
     .stamp-jump-anim {
@@ -11317,107 +11385,74 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
 
       try {
-        // 1) 共有ルームキー (Shared Room Key) がすでにルームドキュメントに存在するかチェック
         const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`));
-        let roomData = null;
-        if (rSnap.exists()) {
-          roomData = rSnap.data();
-          if (roomData.sharedKey) {
-             try {
-                // 共有キーが存在する場合はインポートして利用
-                const raw = _b64ToAb(roomData.sharedKey);
-                const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                const keysObj = { "1": key, latest: key, latestVersion: "1" };
-                _e2ee.roomKeyCache[roomId] = keysObj;
-                return keysObj;
-             } catch(e) {
-                console.warn("[SharedKey] 共有キーのインポートに失敗:", e);
-             }
+        let roomData = rSnap.exists() ? rSnap.data() : null;
+        const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
+        let keysObj = {};
+
+        // 1) 共有キーがある場合は v1 用としてインポート
+        if (roomData && roomData.sharedKey) {
+          try {
+            const raw = _b64ToAb(roomData.sharedKey);
+            const v1Key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+            keysObj["1"] = v1Key;
+            if (currentVer === "1") {
+              keysObj.latest = v1Key;
+              keysObj.latestVersion = "1";
+              _e2ee.roomKeyCache[roomId] = keysObj;
+              return keysObj;
+            }
+          } catch (e) {
+            console.warn("[SharedKey] v1共有キーのインポートに失敗:", e);
           }
         }
 
-        // 2) 共有ルームキーが存在しない場合、過去のE2EE（レガシー）鍵を探す
+        // 2) 鍵ローテーション済み（currentKeyVersion > 1）または個別の roomKeys から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
-          let legacyKey = null;
           const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`));
           if (myWrapSnap.exists()) {
             const data = myWrapSnap.data();
-            let wrappedStr = data.wrappedKey;
-            if (data.versions && data.latestVersion && data.versions[data.latestVersion]) {
-              wrappedStr = data.versions[data.latestVersion];
-            } else if (data[`versions.${data.latestVersion}`]) {
-              wrappedStr = data[`versions.${data.latestVersion}`];
+            if (data.versions && typeof data.versions === 'object') {
+              for (const ver in data.versions) {
+                try {
+                  const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(data.versions[ver]));
+                  keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                } catch (_) {}
+              }
             }
-            if (wrappedStr) {
-               try {
-                 const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(wrappedStr));
-                 legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-               } catch(e) {}
+            const activeVer = data.latestVersion ? String(data.latestVersion) : currentVer;
+            if (keysObj[activeVer]) {
+              keysObj.latest = keysObj[activeVer];
+              keysObj.latestVersion = activeVer;
+              _e2ee.roomKeyCache[roomId] = keysObj;
+              return keysObj;
             }
-          }
-          
-          // 管理者エスクローからの復旧
-          if (!legacyKey && _getIsAdmin()) {
-             const escWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
-             if (escWrapSnap.exists()) {
-               try {
-                 const escPrivSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`));
-                 if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) {
-                   const escrowPrivKey = await __importPriv(escPrivSnap.data().privateKeyJwk);
-                   const data = escWrapSnap.data();
-                   let wrappedStr = data.wrappedKey;
-                   if (data.versions && data.latestVersion && data.versions[data.latestVersion]) wrappedStr = data.versions[data.latestVersion];
-                   else if (data[`versions.${data.latestVersion}`]) wrappedStr = data[`versions.${data.latestVersion}`];
-                   if (wrappedStr) {
-                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(wrappedStr));
-                     legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                   }
-                 }
-               } catch(e) {}
-             }
-          }
-
-          // レガシーキーが復元できた場合、それを共有キーとして保存してアップグレード
-          if (legacyKey) {
-             console.log(`[SharedKey] レガシーE2EEキーを復元しました。共有キーとしてアップグレードします (room=${roomId})`);
-             try {
-                const raw = await window.crypto.subtle.exportKey("raw", legacyKey);
-                const b64 = _abToB64(raw);
-                await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
-                const keysObj = { "1": legacyKey, latest: legacyKey, latestVersion: "1" };
-                _e2ee.roomKeyCache[roomId] = keysObj;
-                return keysObj;
-             } catch(e) {
-                console.warn("[SharedKey] 共有キーへのアップグレードに失敗:", e);
-             }
           }
         }
 
-        // 3) それでもキーがない場合、もし過去メッセージが存在するなら上書きを避けるためブロック
-        let hasExistingData = false;
-        if (roomData && roomData.currentKeyVersion > 1) hasExistingData = true;
+        // 3) それでも鍵がなく、過去メッセージが存在する場合は上書き防止のためレスキュー発行
         const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
-        if (!msgsSnap.empty) hasExistingData = true;
-        
-        if (hasExistingData) {
-          console.warn(`[SharedKey] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。`);
+        if (!msgsSnap.empty && Object.keys(keysObj).length === 0) {
+          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。自動修復を待機します。`);
           await _requestEscrowRescue(serverId, roomId);
           return null;
         }
 
-        // 4) 完全に新規の場合、新しい共有ルームキーを生成してドキュメントに保存
+        // 4) 完全新規ルームの場合、新しいルーム鍵を生成
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
         const b64 = _abToB64(raw);
-        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
-        
-        const keysObj = { "1": key, latest: key, latestVersion: "1" };
+        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 }).catch(() => {});
+
+        keysObj["1"] = key;
+        keysObj.latest = key;
+        keysObj.latestVersion = "1";
         _e2ee.roomKeyCache[roomId] = keysObj;
         return keysObj;
 
       } catch (e) {
-        console.error(`[SharedKey] ルーム鍵の取得・生成処理に失敗 (room=${roomId}):`, e);
+        console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
         return null;
       }
     }
@@ -11649,14 +11684,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
       const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
-      if (data.length === 0) throw new Error("Empty buffer");
+      if (data.length < 14) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
+        if (data.length < 14) throw new Error("Invalid payload length for v1-v254");
         version = firstByte.toString();
         iv = data.subarray(1, 13);
         ciphertext = data.subarray(13);
       } else {
+        if (data.length < 22) throw new Error("Invalid payload length for extended version");
         const headerBuf = data.subarray(1, 9);
         const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();
@@ -11707,342 +11744,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         set('準備中…', '#d97706');
       }
     }
-</file>
-
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // --- ユーティリティ関数 ---
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          || isGlobalAdmin(appId));
-    }
-
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          || isGlobalAdmin(appId));
-    }
-
-    // --- 各コレクションのルール ---
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定
-      match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
-      match /allowedEmails/{emailId} {
-        // 全体管理者はフルアクセス。
-        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
-        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
-        allow get: if isGlobalAdmin(appId) ||
-                   (isAuthenticated() && request.auth.token.email == emailId) ||
-                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000;
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報
-      match /users/{userId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // サーバー作成クォータ（本人のみ読み書き）
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 3. グローバルオンライン状態
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 4. P2P音声通話シグナリング
-      match /calls/{callId} {
-        allow read: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.caller.uid == request.auth.uid;
-        match /callerCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-        match /calleeCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
-      match /fileshares/{shareId} {
-        allow read: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.sender.uid == request.auth.uid;
-        allow delete: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
-        match /senderCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-        match /receiverCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-      }
-
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
-
-      match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
-        allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
-
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
-
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
-
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]) &&
-          request.resource.data.memberCount == resource.data.memberCount - 1;
-
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
-
-        // サーバー内の秘密情報（管理者のみ）
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
-          );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-
-          // ルーム内メッセージ
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
-            allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
-            );
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
-          }
-
-          // 既読レシート
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId);
-            allow update, delete: if isServerAdmin(appId, serverId);
-          }
-
-          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
-          match /rescueRequests/{reqUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
-            allow delete: if isJoinedServer(appId, serverId);
-          }
-
-          // タイピングインジケーター（サーバー参加者のみ）
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-          }
-        }
-
-        // サーバー別プロフィール
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string &&
-            request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ（古い形式 / 拡張形式）
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-    }
-
-  }
-}
 </file>
 
 <file path="public/css/modules/mobile.css">
@@ -12945,6 +12646,341 @@ service cloud.firestore {
         background: rgba(255, 255, 255, 0.28) !important;
       }
     }
+</file>
+
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- ユーティリティ関数 ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isGlobalAdmin(appId));
+    }
+
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          || isGlobalAdmin(appId));
+    }
+
+    // --- 各コレクションのルール ---
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定
+      match /settings/{docId} {
+        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
+      match /allowedEmails/{emailId} {
+        // 全体管理者はフルアクセス。
+        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
+        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
+        allow get: if isGlobalAdmin(appId) ||
+                   (isAuthenticated() && request.auth.token.email == emailId) ||
+                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000;
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // 招待コードインデックス（コード→サーバーID の逆引き）
+      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報
+      match /users/{userId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // サーバー作成クォータ（本人のみ読み書き）
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == qUserId;
+        allow write: if false; // クライアントからの直接更新を禁止
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 3. グローバルオンライン状態
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 4. P2P音声通話シグナリング
+      match /calls/{callId} {
+        allow read, delete: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.caller.uid == request.auth.uid;
+        match /callerCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+        match /calleeCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      match /fileshares/{shareId} {
+        allow read, delete: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.sender.uid == request.auth.uid;
+        match /senderCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+        match /receiverCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+      }
+
+      // ============================================================
+      // サーバーベース構造
+      // ============================================================
+
+      match /servers/{serverId} {
+        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
+        allow get: if isAuthenticated();
+        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
+
+        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.serverAdmins == [request.auth.uid] &&
+          request.resource.data.joinedUsers == [request.auth.uid];
+
+        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+
+        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]) &&
+          request.resource.data.memberCount == resource.data.memberCount - 1;
+
+        // サーバー削除: グローバル管理者またはサーバー管理者
+        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+
+        // サーバー内の秘密情報（管理者のみ）
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId);
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
+              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
+            )
+          );
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+
+          // ルーム内メッセージ
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              request.resource.data.senderId == request.auth.uid;
+            allow update: if isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
+              || (isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+            );
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          }
+
+          // 既読レシート
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              request.auth.uid == receiptUserId;
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
+          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
+          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId);
+          }
+
+          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow delete: if isJoinedServer(appId, serverId);
+          }
+
+          // タイピングインジケーター（サーバー参加者のみ）
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+          }
+        }
+
+        // サーバー別プロフィール
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            request.auth.uid == profileUserId;
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string &&
+            request.resource.data.url is string;
+          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
+          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ（古い形式 / 拡張形式）
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+    }
+
+  }
+}
 </file>
 
 <file path="public/css/modules/sidebar.css">
@@ -23120,7 +23156,7 @@ function renderUnreadDivider(boundaryMessageId) {
   const divider = document.createElement('div');
   divider.className = 'unread-divider flipped';
   divider.innerHTML = '<span>ここから未読</span>';
-  messagesDisplay.insertBefore(divider, boundaryRow.nextSibling);
+  messagesDisplay.insertBefore(divider, boundaryRow);
 }
 
 function computeReadByCount(message, msgIndex) {
@@ -30802,7 +30838,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.53",
+  "version": "1.1.54",
   "force": false
 }
 </file>
@@ -30811,7 +30847,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.53",
+  "version": "1.1.54",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

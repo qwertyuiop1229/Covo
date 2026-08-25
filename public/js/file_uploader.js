@@ -12,6 +12,7 @@ const BLOCKED_EXTENSIONS = new Set([
  * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
  */
 export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (BLOCKED_EXTENSIONS.has(ext)) {
     alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");

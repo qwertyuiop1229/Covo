@@ -50,7 +50,7 @@ export function openAvatarLightbox(url) {
 let audioCtx = null;
 export function playNotificationSound() {
   try {
-    if (!audioCtx) {
+    if (!audioCtx || audioCtx.state === 'closed') {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
     const play = () => {

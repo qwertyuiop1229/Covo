@@ -45,11 +45,11 @@ export function _b64ToAb(b64) {
  * @returns {string} フォーマットされた文字列
  */
 export function formatBytes(bytes, decimals = 2) {
-  if (bytes === 0) return '0 Bytes';
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
@@ -59,14 +59,20 @@ export function formatBytes(bytes, decimals = 2) {
  * @returns {number} タイムスタンプ(ミリ秒)
  */
 export function getMsgTimestamp(msg) {
-  if (msg.createdAt && msg.createdAt.toMillis) {
-    return msg.createdAt.toMillis();
-  }
-  if (msg.createdAt && typeof msg.createdAt === 'number') {
-    return msg.createdAt;
+  if (!msg) return Date.now();
+  if (msg.createdAt) {
+    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
+    if (typeof msg.createdAt === 'number') return msg.createdAt;
+    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
+      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
+    }
   }
   if (msg.timestamp) {
-    return typeof msg.timestamp === 'number' ? msg.timestamp : (msg.timestamp.toMillis ? msg.timestamp.toMillis() : Date.now());
+    if (typeof msg.timestamp === 'number') return msg.timestamp;
+    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
+    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
+      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
   }
   return Date.now();
 }

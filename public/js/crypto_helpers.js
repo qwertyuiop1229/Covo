@@ -259,24 +259,43 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
 
-        // 2) 鍵ローテーション済み（currentKeyVersion > 1）または個別の roomKeys から最新鍵を取得
+        // 2) 鍵ローテーション済み（または個別の roomKeys）から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
           const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`));
           if (myWrapSnap.exists()) {
-            const data = myWrapSnap.data();
+            const data = myWrapSnap.data() || {};
+            const versionsMap = {};
             if (data.versions && typeof data.versions === 'object') {
-              for (const ver in data.versions) {
-                try {
-                  const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(data.versions[ver]));
-                  keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                } catch (_) {}
+              Object.assign(versionsMap, data.versions);
+            }
+            for (const key of Object.keys(data)) {
+              if (key.startsWith('versions.')) {
+                versionsMap[key.slice(9)] = data[key];
               }
             }
+            if (Object.keys(versionsMap).length === 0 && data.wrappedKey) {
+              versionsMap[currentVer || "1"] = data.wrappedKey;
+            }
+
+            for (const ver in versionsMap) {
+              try {
+                const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(versionsMap[ver]));
+                keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+              } catch (_) {}
+            }
+
             const activeVer = data.latestVersion ? String(data.latestVersion) : currentVer;
             if (keysObj[activeVer]) {
               keysObj.latest = keysObj[activeVer];
               keysObj.latestVersion = activeVer;
+            } else if (Object.keys(keysObj).length > 0) {
+              const sortedVers = Object.keys(keysObj).sort((a, b) => Number(b) - Number(a));
+              keysObj.latest = keysObj[sortedVers[0]];
+              keysObj.latestVersion = sortedVers[0];
+            }
+
+            if (keysObj.latest) {
               _e2ee.roomKeyCache[roomId] = keysObj;
               return keysObj;
             }
@@ -351,51 +370,45 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function __distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
-      const ids = Array.from(new Set([...(memberIds || []), _getUserId()]));
-      const isD1 = false;
-      const writes = [];
-      const d1Keys = [];
-      for (const uid of ids) {
-        const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
-        if (!pub) continue; 
-        try {
-          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
-          if (isD1) {
-            d1Keys.push({ userId: uid, keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
-          } else {
-            writes.push(setDoc(
-              doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-              { 
-                 [`versions.${version}`]: _abToB64(wrapped),
-                 latestVersion: version,
-                 wrappedKey: _abToB64(wrapped), // fallback
-                 updatedAt: serverTimestamp() 
-              }, { merge: true }
-            ));
-          }
-        } catch (e) {}
-      }
-      const escrowPub = await __getEscrowPublicKey();
-      if (escrowPub) {
-        try {
-          const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
-          if (isD1) {
-            d1Keys.push({ userId: "__escrow__", keyData: { [`versions.${version}`]: _abToB64(wrapped), latestVersion: version, wrappedKey: _abToB64(wrapped), updatedAt: Date.now() } });
-          } else {
-            writes.push(setDoc(
-              doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
-              { 
-                 [`versions.${version}`]: _abToB64(wrapped),
-                 latestVersion: version,
-                 wrappedKey: _abToB64(wrapped),
-                 updatedAt: serverTimestamp() 
-              }, { merge: true }
-            ));
-          }
-        } catch (e) {}
-      }
-      await Promise.all(writes);
-    }
+  const ids = Array.from(new Set([...(memberIds || []), _getUserId()]));
+  const writes = [];
+  for (const uid of ids) {
+    const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
+    if (!pub) continue; 
+    try {
+      const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+      const b64Wrapped = _abToB64(wrapped);
+      writes.push(setDoc(
+        doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+        { 
+          versions: { [version]: b64Wrapped },
+          [`versions.${version}`]: b64Wrapped,
+          latestVersion: version,
+          wrappedKey: b64Wrapped,
+          updatedAt: serverTimestamp() 
+        }, { merge: true }
+      ));
+    } catch (e) {}
+  }
+  const escrowPub = await __getEscrowPublicKey();
+  if (escrowPub) {
+    try {
+      const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
+      const b64Wrapped = _abToB64(wrapped);
+      writes.push(setDoc(
+        doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
+        { 
+          versions: { [version]: b64Wrapped },
+          [`versions.${version}`]: b64Wrapped,
+          latestVersion: version,
+          wrappedKey: b64Wrapped,
+          updatedAt: serverTimestamp() 
+        }, { merge: true }
+      ));
+    } catch (e) {}
+  }
+  await Promise.all(writes);
+}
 
 
     export async function _backfillRoomKeysForMembers(serverId, roomId, memberIds) {

@@ -529,3 +529,12 @@ function showLoading(show) {
     el.classList.add('hidden');
   }
 }
+
+if (typeof window !== 'undefined') {
+  window.openGeoStudy = openGeoStudy;
+  window.closeGeoStudy = closeGeoStudy;
+  window.toggleMapSwap = toggleMapSwap;
+  window.startNewLocation = startNewLocation;
+  window.submitGuess = submitGuess;
+  window.closeResultOverlay = closeResultOverlay;
+}

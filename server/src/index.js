@@ -1,18 +1,29 @@
+function getCorsHeaders(request) {
+  const origin = request.headers.get("Origin");
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  };
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  } else {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  return headers;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
 };
 
 export default {
   async fetch(request, env, ctx) {
+    const cors = getCorsHeaders(request);
     if (request.method === "OPTIONS") {
-      const origin = request.headers.get("Origin") || "*";
-      return new Response(null, { headers: {
-        ...corsHeaders,
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true",
-      }});
+      return new Response(null, { status: 204, headers: cors });
     }
 
     const url = new URL(request.url);
@@ -83,7 +94,7 @@ async function handleSignup(request, env) {
     // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得
     const workerToken = await getWorkerAuthToken(env);
     if (!workerToken) {
-      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: corsHeaders });
     }
 
     // 2. Firestoreから許可リストを取得
@@ -113,7 +124,7 @@ async function handleSignup(request, env) {
 
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 500, headers: corsHeaders });
   }
 }
 
@@ -261,7 +272,7 @@ async function handleJoinServer(request, env) {
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -428,7 +439,7 @@ async function handleJoinServer(request, env) {
     const updateData = await updateRes.json();
     if (updateData.error) {
        console.error("Firestore Update Error:", updateData.error);
-       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 200, headers: corsHeaders });
+       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 500, headers: corsHeaders });
     }
 
     if (rtdbUrl) {

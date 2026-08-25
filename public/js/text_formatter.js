@@ -59,7 +59,7 @@ export function _twemojiParse(el) {
  * - コードブロック (```...```)
  * - インラインコード (`...`)
  * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（末尾の記号巻き込み防止）
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
  * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
  * @param {string} text - 変換元のプレーンテキスト
  * @returns {string} 表示用HTML文字列
@@ -88,27 +88,55 @@ export function escapeHtmlAndLinkUrls(text) {
     return id;
   });
 
-  // 3. 基本テキストのエスケープ
+  // 3. URL退避（HTMLエスケープ前に抽出することで & や クエリパラメータの切断を防止）
+  const urls = [];
+  const rawUrlRegex = /https?:\/\/[^\s<>"']+/g;
+  processedText = processedText.replace(rawUrlRegex, (rawUrl) => {
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    const id = `__URL_${tokenNonce}_${urls.length}__`;
+    const escapedHref = escapeHtml(cleanUrl);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+
+  // 4. 基本テキストのエスケープ
   let escapedText = escapeHtml(processedText);
   
-  // 4. 書式装飾
+  // 5. 書式装飾
   escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
   escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
   escapedText = escapedText.replace(/\n/g, '<br>');
-
-  // 5. URL自動リンク化（末尾の記号 . , ! ? ) ] をリンクから正しく除外）
-  const urlRegex = /(https?:\/\/[^\s"'<>&]+)/g;
-  escapedText = escapedText.replace(urlRegex, (matchedUrl) => {
-    let cleanUrl = matchedUrl;
-    let trailing = "";
-    // 末尾の記号を切り離す
-    while (/[.,!?:;)\]]$/.test(cleanUrl)) {
-      trailing = cleanUrl.slice(-1) + trailing;
-      cleanUrl = cleanUrl.slice(0, -1);
-    }
-    return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${cleanUrl}</a>${trailing}`;
-  });
 
   // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
   const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
@@ -116,7 +144,10 @@ export function escapeHtmlAndLinkUrls(text) {
     return `${prefix}<span class="mention-text">@${username}</span>`;
   });
 
-  // 7. コードブロック・インラインコードの復元
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`__URL_${tokenNonce}_${index}__`, () => html);
+  });
   inlineCodes.forEach((html, index) => {
     escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
   });

@@ -63,19 +63,19 @@ export function _runShadowHunter() {
     }
 
 export function _updateLayoutDebugUI() {
-      const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
-      if (!els.length) return;
-      const txt = runShadowHunter();
-      const n = txt.split('\n').length;
-      els.forEach(el => {
-        el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
-        el.style.cursor = 'pointer';
-        el.style.textDecoration = 'underline';
-        el.style.whiteSpace = 'normal';
-        el.title = 'タップでコピー';
-        el.onclick = () => copyDebugText(txt, el);
-      });
-    }
+  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+  if (!els.length) return;
+  const txt = _runShadowHunter();
+  const n = txt.split('\n').length;
+  els.forEach(el => {
+    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+    el.style.cursor = 'pointer';
+    el.style.textDecoration = 'underline';
+    el.style.whiteSpace = 'normal';
+    el.title = 'タップでコピー';
+    el.onclick = () => copyDebugText(txt, el);
+  });
+}
 
 let _inspectHL = null;
 
