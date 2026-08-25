@@ -1443,13 +1443,13 @@ window.switchInboxTab = function (tab) {
   const mentionsSec = document.getElementById('inboxMentionsSection');
 
   if (tab === 'mentions') {
-    if (unreadBtn) unreadBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors";
-    if (mentionsBtn) mentionsBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 transition-colors";
+    if (unreadBtn) unreadBtn.classList.remove('active');
+    if (mentionsBtn) mentionsBtn.classList.add('active');
     if (unreadSec) unreadSec.classList.add('hidden');
     if (mentionsSec) mentionsSec.classList.remove('hidden');
   } else {
-    if (unreadBtn) unreadBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 transition-colors";
-    if (mentionsBtn) mentionsBtn.className = "py-2.5 px-4 text-xs font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors";
+    if (unreadBtn) unreadBtn.classList.add('active');
+    if (mentionsBtn) mentionsBtn.classList.remove('active');
     if (unreadSec) unreadSec.classList.remove('hidden');
     if (mentionsSec) mentionsSec.classList.add('hidden');
   }

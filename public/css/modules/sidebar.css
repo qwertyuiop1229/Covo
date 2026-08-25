@@ -777,6 +777,162 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     }
 
     /* =========================================================================
+       Discord風 受信ボックス (Inbox Popover) トレイスタイル
+       ========================================================================= */
+
+    /* ポップオーバー本体 */
+    .inbox-popover-box {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .inbox-header {
+      background-color: #ffffff;
+      border-bottom: 1px solid #f1f5f9;
+      color: #0f172a;
+    }
+
+    .inbox-tabs {
+      background-color: #ffffff;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .inbox-tab-btn {
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #64748b;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .inbox-tab-btn:hover {
+      color: #0f172a;
+    }
+    .inbox-tab-btn.active {
+      color: #4f46e5;
+      border-bottom-color: #4f46e5;
+    }
+
+    .inbox-header-icon-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .inbox-header-icon-btn:hover {
+      background-color: rgba(0, 0, 0, 0.06);
+      color: #0f172a;
+    }
+
+    /* ダークネイビー (body.dark-server-theme) */
+    body.dark-server-theme .inbox-popover-box {
+      background-color: #111827 !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55) !important;
+    }
+    body.dark-server-theme .inbox-header {
+      background-color: #111827 !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .inbox-tabs {
+      background-color: #111827 !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .inbox-tab-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .inbox-tab-btn:hover {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .inbox-tab-btn.active {
+      color: #818cf8 !important;
+      border-bottom-color: #818cf8 !important;
+    }
+    body.dark-server-theme .inbox-header-icon-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .inbox-header-icon-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: #ffffff !important;
+    }
+
+    /* Discordダーク (body.discord-dark-theme) */
+    body.discord-dark-theme .inbox-popover-box {
+      background-color: #2b2d31 !important;
+      border: 1px solid #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55) !important;
+    }
+    body.discord-dark-theme .inbox-header {
+      background-color: #2b2d31 !important;
+      border-bottom-color: #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .inbox-tabs {
+      background-color: #2b2d31 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .inbox-tab-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .inbox-tab-btn:hover {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .inbox-tab-btn.active {
+      color: #5865f2 !important;
+      border-bottom-color: #5865f2 !important;
+    }
+    body.discord-dark-theme .inbox-header-icon-btn {
+      color: #b5bac1 !important;
+    }
+    body.discord-dark-theme .inbox-header-icon-btn:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: #ffffff !important;
+    }
+
+    /* =========================================================================
+       スピナー (#topLoadingSpinner) ダークモード対応
+       ========================================================================= */
+    #topLoadingSpinner > div {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+    }
+    body.dark-server-theme #topLoadingSpinner > div {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+    }
+    body.dark-server-theme #topLoadingSpinner span {
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme #topLoadingSpinner > div {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+    }
+    body.discord-dark-theme #topLoadingSpinner span {
+      color: #dbdee1 !important;
+    }
+
+    /* =========================================================================
        Discord風 タイトルバー / トップバー (Windows版 & Web版 共通)
        ========================================================================= */
     #discordTitleBar {

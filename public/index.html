@@ -1147,51 +1147,55 @@
 
       
       <!-- 受信ボックス / 通知モーダル (Discord本家風 ポップオーバートレイ) -->
-      <div id="pcNotifModal" class="fixed inset-0 z-[99998] hidden items-end sm:items-start sm:justify-end p-0 sm:p-2 select-none" style="background: rgba(0,0,0,0.3);" onclick="if(event.target===this) closeNotifModal()">
-        <div class="inbox-popover-box bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-white/10 w-full sm:w-[480px] max-h-[85vh] sm:max-h-[580px] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden sm:mt-9 sm:mr-2 modal-box animate-pop-in text-gray-800 dark:text-gray-200" onclick="event.stopPropagation()">
+      <div id="pcNotifModal" class="fixed inset-0 z-[99998] hidden items-end sm:items-start sm:justify-end p-0 sm:p-2 select-none" style="background: rgba(0,0,0,0.35);" onclick="if(event.target===this) closeNotifModal()">
+        <div class="inbox-popover-box w-full sm:w-[460px] max-h-[85vh] sm:max-h-[580px] rounded-t-3xl sm:rounded-2xl flex flex-col overflow-hidden sm:mt-9 sm:mr-2 modal-box animate-pop-in" onclick="event.stopPropagation()">
           <!-- ヘッダー (Discord完全準拠) -->
-          <div class="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/90 dark:bg-[#1e1f22]/90 flex-shrink-0">
+          <div class="inbox-header px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div class="flex items-center gap-2">
-              <i class="fas fa-inbox text-indigo-500 text-base"></i>
-              <h2 class="text-base font-bold text-gray-900 dark:text-gray-100">受信ボックス</h2>
+              <i class="fas fa-inbox text-base text-indigo-500"></i>
+              <h2 class="text-base font-extrabold tracking-tight">受信ボックス</h2>
               <span id="notifTotalBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500 text-white hidden">0</span>
             </div>
-            <div class="flex items-center gap-1">
-              <button onclick="clearAllNotifications()" class="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5 rounded-lg transition-colors" title="すべて既読にする">
+            <div class="flex items-center gap-1.5">
+              <button onclick="clearAllNotifications()" class="inbox-header-icon-btn" title="すべて既読にする">
                 <i class="fas fa-check-double text-xs"></i>
               </button>
-              <button onclick="closeNotifModal()" class="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5 rounded-lg transition-colors" title="閉じる">
+              <button onclick="closeNotifModal()" class="inbox-header-icon-btn" title="閉じる">
                 <i class="fas fa-times text-xs"></i>
               </button>
             </div>
           </div>
 
-          <!-- タブ切り替えバー (未読 / メンション) -->
-          <div class="flex border-b border-gray-200 dark:border-white/5 px-4 bg-gray-50/50 dark:bg-[#2b2d31] flex-shrink-0">
-            <button id="inboxTabUnreadBtn" onclick="switchInboxTab('unread')" class="py-2.5 px-4 text-xs font-bold border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 transition-colors">
+          <!-- タブバー (未読 / メンション) -->
+          <div class="inbox-tabs flex px-3 flex-shrink-0 gap-1">
+            <button id="inboxTabUnreadBtn" onclick="switchInboxTab('unread')" class="inbox-tab-btn active">
               未読
             </button>
-            <button id="inboxTabMentionsBtn" onclick="switchInboxTab('mentions')" class="py-2.5 px-4 text-xs font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <button id="inboxTabMentionsBtn" onclick="switchInboxTab('mentions')" class="inbox-tab-btn">
               メンション
             </button>
           </div>
 
-          <!-- 通知リストエリア (未読タブ) -->
+          <!-- 未読リストエリア -->
           <div class="flex-1 overflow-y-auto p-3 space-y-2" id="inboxUnreadSection">
-            <div id="pcNotifEmpty" class="py-12 text-center text-gray-400 dark:text-gray-500 space-y-2">
-              <i class="fas fa-check-circle text-3xl opacity-40"></i>
-              <p class="text-xs font-bold">未読のメッセージはありません</p>
-              <p class="text-[11px] opacity-75">新しいメッセージが届くとここに表示されます</p>
+            <div id="pcNotifEmpty" class="py-14 text-center text-gray-400 dark:text-gray-500 space-y-2.5">
+              <div class="w-14 h-14 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-2xl mx-auto mb-2">
+                <i class="fas fa-check"></i>
+              </div>
+              <p class="text-sm font-bold text-gray-700 dark:text-gray-200">未読のメッセージはありません</p>
+              <p class="text-xs opacity-75 text-gray-400 dark:text-gray-500">新しいメッセージが届くとここに表示されます</p>
             </div>
             <div id="pcNotifList" class="space-y-2"></div>
           </div>
 
-          <!-- メンションタブ -->
+          <!-- メンションリストエリア -->
           <div class="flex-1 overflow-y-auto p-3 space-y-2 hidden" id="inboxMentionsSection">
-            <div id="inboxMentionsEmpty" class="py-12 text-center text-gray-400 dark:text-gray-500 space-y-2">
-              <i class="fas fa-at text-3xl opacity-40"></i>
-              <p class="text-xs font-bold">メンションはありません</p>
-              <p class="text-[11px] opacity-75">あなた宛てのメンションが届くとここに表示されます</p>
+            <div id="inboxMentionsEmpty" class="py-14 text-center text-gray-400 dark:text-gray-500 space-y-2.5">
+              <div class="w-14 h-14 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-2xl mx-auto mb-2">
+                <i class="fas fa-at"></i>
+              </div>
+              <p class="text-sm font-bold text-gray-700 dark:text-gray-200">メンションはありません</p>
+              <p class="text-xs opacity-75 text-gray-400 dark:text-gray-500">あなた宛てのメンションが届くとここに表示されます</p>
             </div>
             <div id="inboxMentionsList" class="space-y-2"></div>
           </div>
@@ -1814,9 +1818,9 @@
                     <div class="relative flex-1 flex flex-col min-h-0">
             <!-- 過去メッセージ読み込み用スピナー (中央上固定) -->
             <div id="topLoadingSpinner" class="absolute left-0 right-0 flex justify-center z-20 pointer-events-none" style="top: 1rem; display: none;">
-              <div class="bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-md flex items-center justify-center border border-gray-100 dark:border-gray-700">
+              <div class="px-4 py-2 rounded-full shadow-md flex items-center justify-center">
                 <i class="fas fa-circle-notch fa-spin text-indigo-500 dark:text-indigo-400 text-xs"></i>
-                <span id="topLoadingSpinnerText" class="text-xs text-gray-500 dark:text-gray-400 ml-2 font-medium">読み込み中...</span>
+                <span id="topLoadingSpinnerText" class="text-xs ml-2 font-medium">読み込み中...</span>
               </div>
             </div>
             <!-- フローティング日付ヘッダー -->
