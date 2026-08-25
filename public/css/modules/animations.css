@@ -1,4 +1,18 @@
-    /* === サーバーリスト画面 === */
+    /* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
+.splash-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .splash-icon-container {
+    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
+  }
+}
+
+/* === サーバーリスト画面 === */
     #serverListScreen {
       flex: 1;
       display: flex;
