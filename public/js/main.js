@@ -1455,10 +1455,48 @@ window.switchInboxTab = function (tab) {
   }
 };
 
-window.openNotifModal = function (e) {
+window.openNotifModal = function (triggerEl, e) {
   if (e && e.stopPropagation) e.stopPropagation();
   const pm = document.getElementById('pcNotifModal');
-  if (!pm) return;
+  const popover = document.getElementById('inboxPopoverBox');
+  if (!pm || !popover) return;
+
+  // すでに開いていれば閉じる（トグル）
+  if (!pm.classList.contains('hidden') && pm.style.display !== 'none') {
+    closeNotifModal();
+    return;
+  }
+
+  let btn = triggerEl instanceof HTMLElement ? triggerEl : (e && e.currentTarget instanceof HTMLElement ? e.currentTarget : null);
+  if (!btn) {
+    btn = document.getElementById('titlebarInboxBtn') || document.querySelector('.titlebar-action-btn') || document.getElementById('serverListNotifBtn');
+  }
+
+  // アイコンボタンを白くする（activeクラス付与）
+  document.querySelectorAll('.titlebar-action-btn, #serverListNotifBtn').forEach(b => {
+    if (b.title?.includes('受信ボックス') || b.id === 'titlebarInboxBtn' || b.id === 'serverListNotifBtn') {
+      b.classList.add('active');
+    }
+  });
+
+  // 受信ボックスの右上角がアイコンの位置に来るように配置
+  if (window.innerWidth >= 640 && btn) {
+    const rect = btn.getBoundingClientRect();
+    const topPos = Math.round(rect.bottom + 6);
+    const rightPos = Math.max(8, Math.round(window.innerWidth - rect.right));
+    popover.style.position = 'fixed';
+    popover.style.top = `${topPos}px`;
+    popover.style.right = `${rightPos}px`;
+    popover.style.left = 'auto';
+    popover.style.bottom = 'auto';
+  } else {
+    popover.style.position = '';
+    popover.style.top = '';
+    popover.style.right = '';
+    popover.style.left = '';
+    popover.style.bottom = '';
+  }
+
   pm.classList.remove('hidden');
   pm.style.display = 'flex';
   requestScanAllUnread();
@@ -1470,6 +1508,14 @@ window.closeNotifModal = function () {
     pm.classList.add('hidden');
     pm.style.display = 'none';
   }
+  // アイコンボタンを元のグレーに戻す（activeクラス解除）
+  document.querySelectorAll('.titlebar-action-btn.active, #serverListNotifBtn.active').forEach(b => {
+    b.classList.remove('active');
+  });
+};
+
+window.toggleNotifModal = function (triggerEl, e) {
+  window.openNotifModal(triggerEl, e);
 };
 
 window.clearAllNotifications = function () {
@@ -13200,9 +13246,33 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ===== グローバル Esc キーでモーダル・ピッカーを閉じる =====
+// ===== ショートカットキー & グローバル Esc キー =====
 document.addEventListener("keydown", (e) => {
+  // Ctrl+I / Cmd+I で受信ボックスの開閉トグル
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i' && !e.shiftKey && !e.altKey) {
+    const activeEl = document.activeElement;
+    const isEditing = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+    if (!isEditing || (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      window.toggleNotifModal();
+      return;
+    }
+  }
+
+  // Ctrl+Shift+E / Cmd+Shift+E で受信ボックスの全通知を既読にする
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
+    e.preventDefault();
+    window.clearAllNotifications();
+    return;
+  }
+
   if (e.key === "Escape") {
+    // 0. 受信ボックスポップオーバー
+    const pcNotif = document.getElementById('pcNotifModal');
+    if (pcNotif && !pcNotif.classList.contains('hidden') && pcNotif.style.display !== 'none') {
+      window.closeNotifModal();
+      return;
+    }
     // 1. スタンプピッカー
     const stickerPicker = document.getElementById('stickerPicker');
     if (stickerPicker && stickerPicker.classList.contains('show')) {

@@ -89,11 +89,11 @@
           if (style.position === 'fixed' || style.position === 'absolute') {
             const bg = style.backgroundColor;
             if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-              if (el.id !== 'bottomSheetOverlay') {
+              if (el.id !== 'bottomSheetOverlay' && el.id !== 'pcNotifModal') {
                 activeOverlayBg = bg;
                 hasHigherModalOpen = true;
                 break;
-              } else if (!isMembersOpen) {
+              } else if (!isMembersOpen && el.id !== 'pcNotifModal') {
                 activeOverlayBg = bg;
               }
             }
@@ -430,7 +430,7 @@
       <!-- 右側: ツール (受信ボックス / ヘルプ) & ウィンドウコントロール -->
       <div class="flex items-center h-full flex-shrink-0">
         <!-- 受信ボックスボタン (常に最上部バーに配置) -->
-        <button onclick="openNotifModal()" class="titlebar-action-btn relative" title="受信ボックス / 通知履歴">
+        <button id="titlebarInboxBtn" onclick="toggleNotifModal(this, event)" class="titlebar-action-btn relative" title="受信ボックス / 通知履歴">
           <i class="fas fa-inbox"></i>
           <span class="header-notif-badge hidden"></span>
         </button>
@@ -1147,27 +1147,27 @@
 
       
       <!-- 受信ボックス / 通知モーダル (Discord本家風 ポップオーバートレイ) -->
-      <div id="pcNotifModal" class="fixed inset-0 z-[99998] hidden items-end sm:items-start sm:justify-end p-0 sm:p-2 select-none" style="background: rgba(0,0,0,0.35);" onclick="if(event.target===this) closeNotifModal()">
-        <div class="inbox-popover-box w-full sm:w-[460px] max-h-[85vh] sm:max-h-[580px] rounded-t-3xl sm:rounded-2xl flex flex-col overflow-hidden sm:mt-9 sm:mr-2 modal-box animate-pop-in" onclick="event.stopPropagation()">
+      <div id="pcNotifModal" class="fixed inset-0 z-[99998] hidden pointer-events-auto select-none" style="background: transparent;" onclick="if(event.target===this) closeNotifModal()">
+        <div id="inboxPopoverBox" class="inbox-popover-box w-full sm:w-[480px] max-h-[85vh] sm:max-h-[520px] rounded-t-3xl sm:rounded-2xl flex flex-col overflow-hidden modal-box animate-pop-in shadow-2xl" onclick="event.stopPropagation()">
           <!-- ヘッダー (Discord完全準拠) -->
           <div class="inbox-header px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div class="flex items-center gap-2">
               <i class="fas fa-inbox text-base text-indigo-500"></i>
-              <h2 class="text-base font-extrabold tracking-tight">受信ボックス</h2>
-              <span id="notifTotalBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500 text-white hidden">0</span>
+              <h2 class="text-base font-bold text-gray-900 dark:text-white">受信ボックス</h2>
             </div>
-            <div class="flex items-center gap-1.5">
-              <button onclick="clearAllNotifications()" class="inbox-header-icon-btn" title="すべて既読にする">
-                <i class="fas fa-check-double text-xs"></i>
+            <div class="flex items-center gap-2">
+              <button onclick="clearAllNotifications()" class="inbox-header-icon-btn" title="すべて既読にする (Ctrl+Shift+E)">
+                <i class="fas fa-check text-xs"></i>
               </button>
-              <button onclick="closeNotifModal()" class="inbox-header-icon-btn" title="閉じる">
-                <i class="fas fa-times text-xs"></i>
-              </button>
+              <div id="inboxHeaderUnreadBadge" class="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-bold rounded-md cursor-default" title="未読件数">
+                <i class="fas fa-bell text-[10px]"></i>
+                <span id="notifTotalBadge">0</span>
+              </div>
             </div>
           </div>
 
-          <!-- タブバー (未読 / メンション) -->
-          <div class="inbox-tabs flex px-3 flex-shrink-0 gap-1">
+          <!-- タブバー (未読 / メンション: 50%均等幅) -->
+          <div class="inbox-tabs flex w-full flex-shrink-0">
             <button id="inboxTabUnreadBtn" onclick="switchInboxTab('unread')" class="inbox-tab-btn active">
               未読
             </button>
@@ -1178,24 +1178,35 @@
 
           <!-- 未読リストエリア -->
           <div class="flex-1 overflow-y-auto p-3 space-y-2" id="inboxUnreadSection">
-            <div id="pcNotifEmpty" class="py-14 text-center text-gray-400 dark:text-gray-500 space-y-2.5">
-              <div class="w-14 h-14 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-2xl mx-auto mb-2">
-                <i class="fas fa-check"></i>
+            <div id="pcNotifEmpty" class="py-12 px-4 text-center space-y-3 flex flex-col items-center justify-center">
+              <div class="relative w-20 h-20 flex items-center justify-center mb-1">
+                <div class="w-16 h-16 rounded-full bg-gray-200 dark:bg-[#1e1f22] border border-gray-300 dark:border-[#2b2d31] flex items-center justify-center text-gray-500 dark:text-gray-400 text-2xl shadow-inner">
+                  <i class="fas fa-inbox"></i>
+                </div>
+                <i class="fas fa-sparkle text-cyan-400 text-xs absolute top-2 right-2 animate-pulse"></i>
+                <i class="fas fa-star text-amber-400 text-sm absolute bottom-2 left-2 animate-pulse" style="animation-delay: 0.5s;"></i>
               </div>
-              <p class="text-sm font-bold text-gray-700 dark:text-gray-200">未読のメッセージはありません</p>
-              <p class="text-xs opacity-75 text-gray-400 dark:text-gray-500">新しいメッセージが届くとここに表示されます</p>
+              <h3 class="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">追いつきましたよ！</h3>
+              <p class="text-xs leading-relaxed max-w-sm text-gray-500 dark:text-gray-400">
+                <span class="text-emerald-500 dark:text-emerald-400 font-bold">アドバイス:</span> <kbd class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-[10px] border border-gray-200 dark:border-gray-700">Ctrl+I</kbd> を押して受信ボックスを開きます。<kbd class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-[10px] border border-gray-200 dark:border-gray-700">Ctrl+Shift+E</kbd> でトップメッセージを既読にします。
+              </p>
             </div>
             <div id="pcNotifList" class="space-y-2"></div>
           </div>
 
           <!-- メンションリストエリア -->
           <div class="flex-1 overflow-y-auto p-3 space-y-2 hidden" id="inboxMentionsSection">
-            <div id="inboxMentionsEmpty" class="py-14 text-center text-gray-400 dark:text-gray-500 space-y-2.5">
-              <div class="w-14 h-14 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-2xl mx-auto mb-2">
-                <i class="fas fa-at"></i>
+            <div id="inboxMentionsEmpty" class="py-12 px-4 text-center space-y-3 flex flex-col items-center justify-center">
+              <div class="relative w-20 h-20 flex items-center justify-center mb-1">
+                <div class="w-16 h-16 rounded-full bg-gray-200 dark:bg-[#1e1f22] border border-gray-300 dark:border-[#2b2d31] flex items-center justify-center text-gray-500 dark:text-gray-400 text-2xl shadow-inner">
+                  <i class="fas fa-at"></i>
+                </div>
+                <i class="fas fa-sparkle text-indigo-400 text-xs absolute top-2 right-2 animate-pulse"></i>
               </div>
-              <p class="text-sm font-bold text-gray-700 dark:text-gray-200">メンションはありません</p>
-              <p class="text-xs opacity-75 text-gray-400 dark:text-gray-500">あなた宛てのメンションが届くとここに表示されます</p>
+              <h3 class="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">メンションはありません</h3>
+              <p class="text-xs leading-relaxed max-w-sm text-gray-500 dark:text-gray-400">
+                あなた宛てのメンションが届くとここに表示されます。
+              </p>
             </div>
             <div id="inboxMentionsList" class="space-y-2"></div>
           </div>

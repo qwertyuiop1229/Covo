@@ -780,12 +780,13 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
        Discord風 受信ボックス (Inbox Popover) トレイスタイル
        ========================================================================= */
 
-    /* ポップオーバー本体 */
+    /* ポップオーバー本体（影を自然で控えめに調整） */
     .inbox-popover-box {
       background-color: #ffffff;
       border: 1px solid #e2e8f0;
       color: #1e293b;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+      border-radius: 14px !important;
       transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
     }
 
@@ -795,14 +796,20 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       color: #0f172a;
     }
 
+    /* タブバー: 横幅50%ずつ均等に広がり、下線が全幅に */
     .inbox-tabs {
+      display: flex;
+      width: 100%;
+      padding: 0;
       background-color: #ffffff;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid #e5e7eb;
     }
 
     .inbox-tab-btn {
-      padding: 10px 16px;
-      font-size: 13px;
+      flex: 1;
+      text-align: center;
+      padding: 10px 0;
+      font-size: 14px;
       font-weight: 700;
       color: #64748b;
       border: none;
@@ -815,8 +822,8 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       color: #0f172a;
     }
     .inbox-tab-btn.active {
-      color: #4f46e5;
-      border-bottom-color: #4f46e5;
+      color: #5865f2 !important;
+      border-bottom-color: #5865f2 !important;
     }
 
     .inbox-header-icon-btn {
@@ -837,12 +844,26 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       color: #0f172a;
     }
 
+    /* ボタンのアクティブ状態（白くなる） */
+    .titlebar-action-btn.active {
+      background-color: rgba(255, 255, 255, 0.15) !important;
+      color: #ffffff !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .titlebar-action-btn.active {
+      background-color: rgba(0, 0, 0, 0.1) !important;
+      color: #0f172a !important;
+    }
+    .server-list-user-btn.active {
+      background: rgba(255, 255, 255, 0.35) !important;
+      color: #ffffff !important;
+    }
+
     /* ダークネイビー (body.dark-server-theme) */
     body.dark-server-theme .inbox-popover-box {
       background-color: #111827 !important;
       border: 1px solid rgba(255, 255, 255, 0.08) !important;
       color: #f8fafc !important;
-      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55) !important;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28) !important;
     }
     body.dark-server-theme .inbox-header {
       background-color: #111827 !important;
@@ -851,7 +872,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     }
     body.dark-server-theme .inbox-tabs {
       background-color: #111827 !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
     }
     body.dark-server-theme .inbox-tab-btn {
       color: #94a3b8 !important;
@@ -860,8 +881,8 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       color: #f8fafc !important;
     }
     body.dark-server-theme .inbox-tab-btn.active {
-      color: #818cf8 !important;
-      border-bottom-color: #818cf8 !important;
+      color: #5865f2 !important;
+      border-bottom-color: #5865f2 !important;
     }
     body.dark-server-theme .inbox-header-icon-btn {
       color: #94a3b8 !important;
@@ -876,7 +897,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       background-color: #2b2d31 !important;
       border: 1px solid #383a40 !important;
       color: #f2f3f5 !important;
-      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55) !important;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28) !important;
     }
     body.discord-dark-theme .inbox-header {
       background-color: #2b2d31 !important;

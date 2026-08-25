@@ -77,9 +77,13 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // バグ報告・フィードバック
+      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
       match /feedbacks/{docId} {
-        allow create: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000;
         allow read, update, delete: if isGlobalAdmin(appId);
       }
 
@@ -267,6 +271,13 @@ service cloud.firestore {
             allow read: if isJoinedServer(appId, serverId);
             allow create: if isJoinedServer(appId, serverId);
             allow update, delete: if isServerAdmin(appId, serverId);
+          }
+
+          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow delete: if isJoinedServer(appId, serverId);
           }
 
           // タイピングインジケーター（サーバー参加者のみ）
