@@ -8471,7 +8471,7 @@ function renderUnreadDivider(boundaryMessageId) {
   const divider = document.createElement('div');
   divider.className = 'unread-divider flipped';
   divider.innerHTML = '<span>ここから未読</span>';
-  messagesDisplay.insertBefore(divider, boundaryRow.nextSibling);
+  messagesDisplay.insertBefore(divider, boundaryRow);
 }
 
 function computeReadByCount(message, msgIndex) {

@@ -998,20 +998,53 @@ async function handleUploadFile(request, env) {
 // -------------------------------------------------------------
 // 外部ファイル（Cloudinary等）のプロキシダウンロード＆インラインプレビュー
 // -------------------------------------------------------------
+const ALLOWED_PROXY_DOMAINS = [
+  "res.cloudinary.com",
+  "firebasestorage.googleapis.com",
+  "files.catbox.moe",
+  "0x0.st"
+];
+
 async function handleDownloadProxy(request, env, url) {
   try {
-    const targetUrl = url.searchParams.get('url');
+    const targetUrlStr = url.searchParams.get('url');
     const fileName = url.searchParams.get('name') || 'download';
     const isPreview = url.searchParams.get('preview') === '1';
 
-    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
-      return new Response(JSON.stringify({ error: 'Invalid URL' }), {
+    if (!targetUrlStr) {
+      return new Response(JSON.stringify({ error: 'Missing URL parameter' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const response = await fetch(targetUrl, {
+    let parsedTarget;
+    try {
+      parsedTarget = new URL(targetUrlStr);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Malformed URL' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+      return new Response(JSON.stringify({ error: 'Invalid protocol' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const hostname = parsedTarget.hostname.toLowerCase();
+    const isAllowed = ALLOWED_PROXY_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+    if (!isAllowed) {
+      return new Response(JSON.stringify({ error: 'Domain not allowed for proxy' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const response = await fetch(targetUrlStr, {
       headers: {
         'User-Agent': 'Covo-Proxy/1.0',
         'Accept': '*/*'
@@ -1033,6 +1066,7 @@ async function handleDownloadProxy(request, env, url) {
     const newHeaders = new Headers(corsHeaders);
     newHeaders.set('Content-Type', contentType);
     newHeaders.set('Content-Disposition', disposition);
+    newHeaders.set('X-Content-Type-Options', 'nosniff');
     newHeaders.set('Cache-Control', 'public, max-age=86400');
 
     const contentLength = response.headers.get('Content-Length');
@@ -1076,14 +1110,21 @@ async function handleDeleteFile(request, env, url) {
 
     const meta = fileEntry.metadata;
     const forceDelete = url.searchParams.get('forceDelete') === '1';
-
-    // forceDelete is allowed if they provide the ADMIN_SECRET_KEY in the request OR if a valid Firebase user is authenticated (as client handles serverAdmin/admin logic)
     const adminKey = url.searchParams.get('adminKey') || '';
+
+    let isPrivilegedAdmin = false;
+    if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
+      isPrivilegedAdmin = true;
+    } else if (env.DB) {
+      const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+      isPrivilegedAdmin = await isD1Admin(appId, verifiedUser, env);
+    }
+
     if (forceDelete) {
-      if (!verifiedUser && (!env.ADMIN_SECRET_KEY || adminKey !== env.ADMIN_SECRET_KEY)) {
+      if (!isPrivilegedAdmin) {
         return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId) {
+    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: '削除権限がありません' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -1095,7 +1136,7 @@ async function handleDeleteFile(request, env, url) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1113,20 +1154,31 @@ async function handleServeFile(request, env, url) {
     const fileName = (metadata && metadata.name) ? metadata.name : key;
     const isPreview = url.searchParams.get('preview') === '1';
 
+    const headers = {
+      ...corsHeaders,
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'public, max-age=31536000',
+    };
+
+    if (contentType === 'image/svg+xml' || contentType.includes('html')) {
+      headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+      headers['Content-Disposition'] = isPreview
+        ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
+        : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    } else {
+      headers['Content-Disposition'] = isPreview
+        ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
+        : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    }
+
     return new Response(value, {
       status: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': contentType,
-        'Content-Disposition': isPreview
-          ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
-          : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        'Cache-Control': 'public, max-age=31536000',
-      }
+      headers
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 }

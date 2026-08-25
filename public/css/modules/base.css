@@ -58,8 +58,10 @@
       right: 0 !important;
       padding: 0 !important;
     }
-    /* iOSでのタップ時強制ズーム回避のため、フォーム要素は16px以上に完全固定 */
-    input, textarea, select, button {
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
       font-size: 16px !important;
     }
     .stamp-jump-anim {

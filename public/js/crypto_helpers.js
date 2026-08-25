@@ -237,107 +237,74 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
 
       try {
-        // 1) 共有ルームキー (Shared Room Key) がすでにルームドキュメントに存在するかチェック
         const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`));
-        let roomData = null;
-        if (rSnap.exists()) {
-          roomData = rSnap.data();
-          if (roomData.sharedKey) {
-             try {
-                // 共有キーが存在する場合はインポートして利用
-                const raw = _b64ToAb(roomData.sharedKey);
-                const key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                const keysObj = { "1": key, latest: key, latestVersion: "1" };
-                _e2ee.roomKeyCache[roomId] = keysObj;
-                return keysObj;
-             } catch(e) {
-                console.warn("[SharedKey] 共有キーのインポートに失敗:", e);
-             }
+        let roomData = rSnap.exists() ? rSnap.data() : null;
+        const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
+        let keysObj = {};
+
+        // 1) 共有キーがある場合は v1 用としてインポート
+        if (roomData && roomData.sharedKey) {
+          try {
+            const raw = _b64ToAb(roomData.sharedKey);
+            const v1Key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+            keysObj["1"] = v1Key;
+            if (currentVer === "1") {
+              keysObj.latest = v1Key;
+              keysObj.latestVersion = "1";
+              _e2ee.roomKeyCache[roomId] = keysObj;
+              return keysObj;
+            }
+          } catch (e) {
+            console.warn("[SharedKey] v1共有キーのインポートに失敗:", e);
           }
         }
 
-        // 2) 共有ルームキーが存在しない場合、過去のE2EE（レガシー）鍵を探す
+        // 2) 鍵ローテーション済み（currentKeyVersion > 1）または個別の roomKeys から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
-          let legacyKey = null;
           const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`));
           if (myWrapSnap.exists()) {
             const data = myWrapSnap.data();
-            let wrappedStr = data.wrappedKey;
-            if (data.versions && data.latestVersion && data.versions[data.latestVersion]) {
-              wrappedStr = data.versions[data.latestVersion];
-            } else if (data[`versions.${data.latestVersion}`]) {
-              wrappedStr = data[`versions.${data.latestVersion}`];
+            if (data.versions && typeof data.versions === 'object') {
+              for (const ver in data.versions) {
+                try {
+                  const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(data.versions[ver]));
+                  keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                } catch (_) {}
+              }
             }
-            if (wrappedStr) {
-               try {
-                 const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(wrappedStr));
-                 legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-               } catch(e) {}
+            const activeVer = data.latestVersion ? String(data.latestVersion) : currentVer;
+            if (keysObj[activeVer]) {
+              keysObj.latest = keysObj[activeVer];
+              keysObj.latestVersion = activeVer;
+              _e2ee.roomKeyCache[roomId] = keysObj;
+              return keysObj;
             }
-          }
-          
-          // 管理者エスクローからの復旧
-          if (!legacyKey && _getIsAdmin()) {
-             const escWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`));
-             if (escWrapSnap.exists()) {
-               try {
-                 const escPrivSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`));
-                 if (escPrivSnap.exists() && escPrivSnap.data().privateKeyJwk) {
-                   const escrowPrivKey = await __importPriv(escPrivSnap.data().privateKeyJwk);
-                   const data = escWrapSnap.data();
-                   let wrappedStr = data.wrappedKey;
-                   if (data.versions && data.latestVersion && data.versions[data.latestVersion]) wrappedStr = data.versions[data.latestVersion];
-                   else if (data[`versions.${data.latestVersion}`]) wrappedStr = data[`versions.${data.latestVersion}`];
-                   if (wrappedStr) {
-                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPrivKey, _b64ToAb(wrappedStr));
-                     legacyKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-                   }
-                 }
-               } catch(e) {}
-             }
-          }
-
-          // レガシーキーが復元できた場合、それを共有キーとして保存してアップグレード
-          if (legacyKey) {
-             console.log(`[SharedKey] レガシーE2EEキーを復元しました。共有キーとしてアップグレードします (room=${roomId})`);
-             try {
-                const raw = await window.crypto.subtle.exportKey("raw", legacyKey);
-                const b64 = _abToB64(raw);
-                await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
-                const keysObj = { "1": legacyKey, latest: legacyKey, latestVersion: "1" };
-                _e2ee.roomKeyCache[roomId] = keysObj;
-                return keysObj;
-             } catch(e) {
-                console.warn("[SharedKey] 共有キーへのアップグレードに失敗:", e);
-             }
           }
         }
 
-        // 3) それでもキーがない場合、もし過去メッセージが存在するなら上書きを避けるためブロック
-        let hasExistingData = false;
-        if (roomData && roomData.currentKeyVersion > 1) hasExistingData = true;
+        // 3) それでも鍵がなく、過去メッセージが存在する場合は上書き防止のためレスキュー発行
         const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
-        if (!msgsSnap.empty) hasExistingData = true;
-        
-        if (hasExistingData) {
-          console.warn(`[SharedKey] ルーム(room=${roomId})には既に過去ログが存在します。手元に鍵がないため、新規生成による上書き破壊をブロックしました。`);
+        if (!msgsSnap.empty && Object.keys(keysObj).length === 0) {
+          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。自動修復を待機します。`);
           await _requestEscrowRescue(serverId, roomId);
           return null;
         }
 
-        // 4) 完全に新規の場合、新しい共有ルームキーを生成してドキュメントに保存
+        // 4) 完全新規ルームの場合、新しいルーム鍵を生成
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
         const b64 = _abToB64(raw);
-        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 });
-        
-        const keysObj = { "1": key, latest: key, latestVersion: "1" };
+        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 }).catch(() => {});
+
+        keysObj["1"] = key;
+        keysObj.latest = key;
+        keysObj.latestVersion = "1";
         _e2ee.roomKeyCache[roomId] = keysObj;
         return keysObj;
 
       } catch (e) {
-        console.error(`[SharedKey] ルーム鍵の取得・生成処理に失敗 (room=${roomId}):`, e);
+        console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
         return null;
       }
     }
@@ -569,14 +536,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
       const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
-      if (data.length === 0) throw new Error("Empty buffer");
+      if (data.length < 14) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
+        if (data.length < 14) throw new Error("Invalid payload length for v1-v254");
         version = firstByte.toString();
         iv = data.subarray(1, 13);
         ciphertext = data.subarray(13);
       } else {
+        if (data.length < 22) throw new Error("Invalid payload length for extended version");
         const headerBuf = data.subarray(1, 9);
         const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();

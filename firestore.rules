@@ -139,7 +139,7 @@ service cloud.firestore {
 
       // 4. P2P音声通話シグナリング
       match /calls/{callId} {
-        allow read: if isAuthenticated() &&
+        allow read, delete: if isAuthenticated() &&
           (resource.data.caller.uid == request.auth.uid ||
            resource.data.callee.uid == request.auth.uid ||
            resource.data.calleeUid == request.auth.uid);
@@ -151,12 +151,12 @@ service cloud.firestore {
         allow create: if isAuthenticated() &&
           request.resource.data.caller.uid == request.auth.uid;
         match /callerCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
+          allow read, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
              get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
         }
         match /calleeCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
+          allow read, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
              get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
         }
@@ -164,7 +164,7 @@ service cloud.firestore {
 
       // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
       match /fileshares/{shareId} {
-        allow read: if isAuthenticated() &&
+        allow read, delete: if isAuthenticated() &&
           (resource.data.sender.uid == request.auth.uid ||
            resource.data.receiverUid == request.auth.uid);
         allow update: if isAuthenticated() &&
@@ -173,16 +173,13 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
         allow create: if isAuthenticated() &&
           request.resource.data.sender.uid == request.auth.uid;
-        allow delete: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
         match /senderCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
+          allow read, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
              get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
         }
         match /receiverCandidates/{candId} {
-          allow read, create: if isAuthenticated() &&
+          allow read, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
              get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
         }
@@ -232,8 +229,10 @@ service cloud.firestore {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
           allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
+            isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
+              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
+            )
           );
           allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
 

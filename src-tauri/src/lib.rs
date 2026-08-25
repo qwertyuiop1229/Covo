@@ -374,7 +374,7 @@ fn create_desktop_shortcut() -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let ps_script = format!(
-            "$t='{}';$s=New-Object -COM WScript.Shell;$sc=$s.CreateShortcut(\"$env:USERPROFILE\\Desktop\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
+            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut(\"$dp\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
             exe_escaped
         );
         let status = std::process::Command::new("powershell")
@@ -742,8 +742,20 @@ fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String)
 #[tauri::command]
 async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
     log::info!("silent_install_past_version called: {} -> {}", tag, url);
+
+    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        return Err("Invalid tag format".to_string());
+    }
+
+    let is_valid_url = url.starts_with("https://github.com/qwertyuiop1229/Covo/releases/download/")
+        || url.starts_with("https://objects.githubusercontent.com/");
+    if !is_valid_url {
+        return Err("Invalid download URL: must be from official repository".to_string());
+    }
+
     let temp_dir = std::env::temp_dir();
-    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", tag));
+    let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
+    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
 
     // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
     let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;

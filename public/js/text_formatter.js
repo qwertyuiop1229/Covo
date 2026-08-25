@@ -38,6 +38,8 @@ export function getEmojiHtml(emoji, spanClass = 'sk-em') {
   }
   if (emoji.startsWith('serverstamp:')) {
     const url = emoji.substring(12);
+    const isSafe = /^https?:\/\//i.test(url) || url.startsWith('/');
+    if (!isSafe) return '';
     return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }
   return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
@@ -116,10 +118,10 @@ export function escapeHtmlAndLinkUrls(text) {
 
   // 7. コードブロック・インラインコードの復元
   inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, html);
+    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
   });
   codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, html);
+    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, () => html);
   });
 
   return escapedText;
