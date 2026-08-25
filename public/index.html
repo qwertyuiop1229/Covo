@@ -414,6 +414,26 @@
 
 
   <div class="container">
+    <!-- Windows版専用: Discord風 カスタムタイトルバー (Tauri環境のみ表示) -->
+    <div id="discordTitleBar" class="w-full h-[28px] bg-white dark:bg-[#1e1f22] border-b border-gray-200 dark:border-[#1e1f22] select-none flex items-center justify-between z-50 flex-shrink-0" style="display: none;" data-tauri-drag-region>
+      <!-- 左側: ナビゲーション & ロゴ -->
+      <div class="flex items-center h-full px-2 gap-1 pointer-events-none" data-tauri-drag-region>
+        <span class="text-[11px] font-bold text-gray-400 dark:text-gray-400 px-2 tracking-wider">Covo</span>
+      </div>
+      <!-- 右側: ウィンドウコントロール (最小化 / 最大化 / 閉じる) -->
+      <div class="flex items-center h-full flex-shrink-0">
+        <button onclick="window.minimizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最小化">
+          <i class="fas fa-minus text-[10px]"></i>
+        </button>
+        <button onclick="window.toggleMaximizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最大化">
+          <i class="far fa-square text-[10px]"></i>
+        </button>
+        <button onclick="window.closeWindow()" class="h-full w-11 flex items-center justify-center text-gray-500 hover:text-white dark:text-gray-400 dark:hover:text-white hover:bg-red-500 transition-colors" title="閉じる">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+    </div>
+
     <!-- サーバービュー時のニックネームヘッダー -->
     <div id="globalAppHeader">
       <h1 id="headerTitle"></h1>
@@ -1478,26 +1498,6 @@
 
       <button onclick="document.getElementById('iosPwaGuideModal').classList.add('hidden')" class="w-full py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-bold text-sm rounded-xl transition-all">
         閉じる
-      </button>
-    </div>
-  </div>
-
-  <!-- Windows版専用: Discord風 カスタムタイトルバー (Tauri環境のみ表示) -->
-  <div id="discordTitleBar" class="w-full h-[28px] bg-white dark:bg-[#1e1f22] border-b border-gray-200 dark:border-[#1e1f22] select-none flex items-center justify-between z-50 flex-shrink-0" style="display: none;" data-tauri-drag-region>
-    <!-- 左側: ナビゲーション & ロゴ -->
-    <div class="flex items-center h-full px-2 gap-1 pointer-events-none" data-tauri-drag-region>
-      <span class="text-[11px] font-bold text-gray-400 dark:text-gray-400 px-2 tracking-wider">Covo</span>
-    </div>
-    <!-- 右側: ウィンドウコントロール (最小化 / 最大化 / 閉じる) -->
-    <div class="flex items-center h-full flex-shrink-0">
-      <button onclick="window.minimizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最小化">
-        <i class="fas fa-minus text-[10px]"></i>
-      </button>
-      <button onclick="window.toggleMaximizeWindow()" class="h-full w-10 flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#35373c] transition-colors" title="最大化">
-        <i class="far fa-square text-[10px]"></i>
-      </button>
-      <button onclick="window.closeWindow()" class="h-full w-11 flex items-center justify-center text-gray-500 hover:text-white dark:text-gray-400 dark:hover:text-white hover:bg-red-500 transition-colors" title="閉じる">
-        <i class="fas fa-times text-xs"></i>
       </button>
     </div>
   </div>
