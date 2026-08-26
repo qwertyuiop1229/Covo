@@ -60,11 +60,27 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText } from './debug_ui.js';
 
 
-// === コンソールログの自動収集 ===
+// === コンソールログの自動収集 & ネットワーク一時エラーのフィルタリング ===
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
+
+function isTransientNetworkError(args) {
+  try {
+    const str = Array.from(args).map(a => (a instanceof Error ? (a.message + ' ' + (a.stack || '')) : String(a))).join(' ');
+    return str.includes('QUIC_PROTOCOL_ERROR') ||
+           str.includes('QUIC_PUBLIC_RESET') ||
+           str.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
+           str.includes('beforeinstallpromptevent.preventDefault') ||
+           str.includes('WebChannel') ||
+           str.includes('FetchStream');
+  } catch (_) {
+    return false;
+  }
+}
+
 const _pushLog = (type, args) => {
   try {
+    if (isTransientNetworkError(args)) return;
     const msg = Array.from(args).map(a => {
       if (a instanceof Error) return a.stack || a.message;
       if (typeof a === 'object') {
@@ -77,8 +93,16 @@ const _pushLog = (type, args) => {
   } catch (e) { }
 };
 console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
-console.warn = function (...args) { _pushLog('WARN', args); _orgWarn.apply(console, args); };
-console.error = function (...args) { _pushLog('ERR', args); _orgErr.apply(console, args); };
+console.warn = function (...args) {
+  if (isTransientNetworkError(args)) return;
+  _pushLog('WARN', args);
+  _orgWarn.apply(console, args);
+};
+console.error = function (...args) {
+  if (isTransientNetworkError(args)) return;
+  _pushLog('ERR', args);
+  _orgErr.apply(console, args);
+};
 
 // ========= Cloudflare Worker ベースURL =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
@@ -353,13 +377,17 @@ function initializeFirebase() {
       }
       try {
         db = initializeFirestore(app, {
-          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+          experimentalForceLongPolling: true,
+          useFetchStreams: false
         });
       } catch (e) {
         console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
         try {
           db = initializeFirestore(app, {
-            localCache: memoryLocalCache()
+            localCache: memoryLocalCache(),
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
           });
         } catch (e2) {
           db = getFirestore(app);
@@ -1028,6 +1056,8 @@ async function reloadAllowedEmailsList() {
       snap.forEach(d => emails.add(d.id));
       await fetchAllAdminData();
       renderAllowedEmails(Array.from(emails));
+    }, (err) => {
+      console.warn('[AllowedEmails onSnapshot] connection state updated:', err?.message || err);
     });
   } catch (e) {
     console.error("Failed to load allowed emails:", e);
@@ -1044,11 +1074,15 @@ async function loadAdminPanelData() {
       if (unsubAdminList) unsubAdminList();
       unsubAdminList = onSnapshot(doc(db, `artifacts/${appId}/settings`, "adminList"), (snap) => {
         renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+      }, (err) => {
+        console.warn('[AdminList onSnapshot] connection state updated:', err?.message || err);
       });
 
       if (unsubListAdmin) unsubListAdmin();
       unsubListAdmin = onSnapshot(doc(db, `artifacts/${appId}/settings`, "listAdminList"), (snap) => {
         renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
+      }, (err) => {
+        console.warn('[ListAdminList onSnapshot] connection state updated:', err?.message || err);
       });
     } else if (isListAdmin) {
       await reloadAllowedEmailsList();
@@ -3269,6 +3303,8 @@ async function showServerList() {
         }
       }
     }
+  }, (err) => {
+    console.warn('[ServerList onSnapshot] connection state updated:', err?.message || err);
   });
 }
 
@@ -5086,6 +5122,8 @@ async function setupGlobalNotificationListeners() {
             scanAllUnreadAndRender();
           }
         }
+      }, (err) => {
+        console.warn(`[GlobalNotif sv=${svId}] connection state updated:`, err?.message || err);
       });
       globalNotifListeners[svId] = unsub;
     }
@@ -6324,35 +6362,48 @@ function selectRoom(roomId, roomName) {
 
 
   // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
+  if (window._activeRoomKeyCheckTimer) {
+    clearInterval(window._activeRoomKeyCheckTimer);
+    window._activeRoomKeyCheckTimer = null;
+  }
   (async () => {
     try {
       if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
+      const activeServerId = currentServerId;
+      const activeRoomId = currentRoomId;
       const members = (currentServerData && currentServerData.joinedUsers) || [];
-      const key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+      const key = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
       if (key) {
-        await backfillRoomKeysForMembers(currentServerId, currentRoomId, members);
+        await backfillRoomKeysForMembers(activeServerId, activeRoomId, members);
         // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
 
-        const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/rescueRequests`));
+        const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/rescueRequests`));
         if (!resSnap.empty) {
           const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
           for (const resDoc of resSnap.docs) {
             const reqUserId = resDoc.id;
-            await _distributeRoomKeyVersion(currentServerId, currentRoomId, rawKey, [reqUserId], key.latestVersion);
-            await deleteDoc(resDoc.ref);
+            await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], key.latestVersion);
+            await deleteDoc(resDoc.ref).catch(() => {});
           }
         }
 
       } else {
         // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
         let retryCount = 0;
-        const checkTimer = setInterval(async () => {
+        window._activeRoomKeyCheckTimer = setInterval(async () => {
           retryCount++;
-          if (retryCount > 15 || _e2ee.roomKeyCache[currentRoomId]) { clearInterval(checkTimer); return; }
-          const arrived = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+          if (retryCount > 15 || currentRoomId !== activeRoomId || _e2ee.roomKeyCache[activeRoomId]) {
+            clearInterval(window._activeRoomKeyCheckTimer);
+            window._activeRoomKeyCheckTimer = null;
+            return;
+          }
+          const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
           if (arrived) {
-            clearInterval(checkTimer);
-            if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+            clearInterval(window._activeRoomKeyCheckTimer);
+            window._activeRoomKeyCheckTimer = null;
+            if (currentRoomId === activeRoomId && typeof renderMessagesWithReadReceipts === 'function') {
+              renderMessagesWithReadReceipts();
+            }
           }
         }, 2000);
       }
@@ -6857,11 +6908,15 @@ async function loadCurrentServerStamps() {
     currentServerStampsUnsub = onSnapshot(stampsRef, (snap) => {
       stampsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
+    }, (err) => {
+      console.warn('[Stamps onSnapshot] connection state updated:', err?.message || err);
     });
 
     currentServerStampGroupsUnsub = onSnapshot(groupsRef, (snap) => {
       groupsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
+    }, (err) => {
+      console.warn('[StampGroups onSnapshot] connection state updated:', err?.message || err);
     });
 
   } catch (e) {
@@ -10347,6 +10402,8 @@ async function listenForRemoteCandidates(role) {
         } catch (_) { }
       }
     });
+  }, (err) => {
+    console.warn('[Call candidates onSnapshot] connection state updated:', err?.message || err);
   });
   return unsub;
 }
@@ -10419,8 +10476,10 @@ function initCallListener() {
           }
         }
       });
+    }, (err) => {
+      console.warn('[CallIncoming onSnapshot] connection state updated:', err?.message || err);
     });
-  });
+  }).catch(() => {});
 }
 
 async function openCallPicker() {
@@ -10588,6 +10647,8 @@ async function startFileShare(targetUid, targetName, file) {
           try { await _fsPC.addIceCandidate(cand); } catch (e) { }
         }
       }
+    }, (err) => {
+      console.warn('[FileShare ref onSnapshot] connection state updated:', err?.message || err);
     });
     const rcandCol = collection(db, 'artifacts', appId, 'fileshares', _fsId, 'receiverCandidates');
     _fsCandUnsub = onSnapshot(rcandCol, snap => {
@@ -10601,6 +10662,8 @@ async function startFileShare(targetUid, targetName, file) {
           }
         }
       });
+    }, (err) => {
+      console.warn('[FileShare receiverCandidates onSnapshot] connection state updated:', err?.message || err);
     });
   } catch (e) {
     console.error('[FileShare] 送信開始失敗:', e);
@@ -10724,6 +10787,8 @@ async function initFileShareListener() {
         _fsShowIncoming(ch.doc.id, d);
       }
     });
+  }, (err) => {
+    console.warn('[FileShare incoming onSnapshot] connection state updated:', err?.message || err);
   });
 }
 
@@ -10776,6 +10841,8 @@ async function acceptFileShare(id, d) {
     const scandCol = collection(db, 'artifacts', appId, 'fileshares', id, 'senderCandidates');
     _fsCandUnsub = onSnapshot(scandCol, snap => {
       snap.docChanges().forEach(ch => { if (ch.type === 'added') { try { _fsPC.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) { } } });
+    }, (err) => {
+      console.warn('[FileShare senderCandidates onSnapshot] connection state updated:', err?.message || err);
     });
     _fsShowProgress('recv', d.fileName, '接続中…');
   } catch (e) {
@@ -11041,9 +11108,13 @@ async function startCall(uid, name, avatar) {
               });
             }
           }
+        }, (err) => {
+          console.warn('[CallEnd caller onSnapshot] connection state updated:', err?.message || err);
         });
       }
     }
+  }, (err) => {
+    console.warn('[CallAnswer onSnapshot] connection state updated:', err?.message || err);
   });
   _callUnsubOffer = unsubAnswer;
 
@@ -11075,6 +11146,8 @@ async function handleIncomingCall(callId, callerData) {
       stopCallRingSound();
       endCall(true, 'callerCancelled');
     }
+  }, (err) => {
+    console.warn('[IncomingCall onSnapshot] connection state updated:', err?.message || err);
   });
   _callUnsubOffer = unsub;
 }
@@ -11159,6 +11232,8 @@ async function acceptCall() {
         // callee側でanswerに失敗した場合、callerのタイムアウトを待つ（endCallはcallerが制御）
       }
     }
+  }, (err) => {
+    console.warn('[CallEnd callee onSnapshot] connection state updated:', err?.message || err);
   });
 }
 
@@ -12294,13 +12369,8 @@ document.addEventListener('click', (e) => {
 });
 
 // ===== Web版専用: Windowsインストーラー自動取得＆ダウンロード =====
-// PWAインストールプロンプトの捕捉
+// PWAインストールプロンプトの変数定義
 let deferredPwaPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPwaPrompt = e;
-  window.__deferredPwaPrompt = e;
-});
 
 // ===== デバイス判定＆ダウンロード / インストール分岐 =====
 window.openWindowsDownloadModal = function () {
@@ -12319,13 +12389,15 @@ window.openWindowsDownloadModal = function () {
   }
 
   // 2. Android の場合: ワンタップでPWAインストールプロンプトを起動
-  if (isAndroid && deferredPwaPrompt) {
-    deferredPwaPrompt.prompt();
-    deferredPwaPrompt.userChoice.then((choiceResult) => {
+  if (isAndroid && (deferredPwaPrompt || window.__deferredPwaPrompt)) {
+    const promptEvent = deferredPwaPrompt || window.__deferredPwaPrompt;
+    promptEvent.prompt();
+    promptEvent.userChoice.then((choiceResult) => {
       if (choiceResult.outcome === 'accepted') {
         alertMessage('ホーム画面に追加しました！', 'success');
       }
       deferredPwaPrompt = null;
+      window.__deferredPwaPrompt = null;
     });
     return;
   }
@@ -12910,7 +12982,6 @@ function initializeResizer() {
 // PWA & Settings Management
 // =========================================================================
 
-let deferredPrompt;
 const pwaBanner = document.getElementById('pwaInstallBanner');
 const pwaInstallBtn = document.getElementById('pwaInstallButton');
 const pwaCloseBtn = document.getElementById('pwaInstallClose');
@@ -12920,27 +12991,33 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera
 
 window.addEventListener('beforeinstallprompt', (e) => {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  // スマホのみバナー表示
-  if (!isStandalone && !isTauri && isMobileDevice) {
+  // スマホ端末またはインストール可能な環境のみキャプチャ
+  if (!isStandalone && !isTauri) {
     e.preventDefault();
-    deferredPrompt = e;
-    pwaBanner.classList.add('show');
+    deferredPwaPrompt = e;
+    window.__deferredPwaPrompt = e;
+    if (isMobileDevice && pwaBanner) {
+      pwaBanner.classList.add('show');
+    }
   }
 });
 
-pwaInstallBtn.addEventListener('click', async () => {
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      pwaBanner.classList.remove('show');
+if (pwaInstallBtn) {
+  pwaInstallBtn.addEventListener('click', async () => {
+    if (deferredPwaPrompt) {
+      deferredPwaPrompt.prompt();
+      const { outcome } = await deferredPwaPrompt.userChoice;
+      if (outcome === 'accepted') {
+        pwaBanner?.classList.remove('show');
+      }
+      deferredPwaPrompt = null;
+      window.__deferredPwaPrompt = null;
+    } else if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+      // iOS Safariの場合
+      showCustomAlert("Safariの「共有」ボタンから「ホーム画面に追加」を選択してください。\n追加すると通知を受け取れるようになります。");
     }
-    deferredPrompt = null;
-  } else if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
-    // iOS Safariの場合
-    showCustomAlert("Safariの「共有」ボタンから「ホーム画面に追加」を選択してください。\n追加すると通知を受け取れるようになります。");
-  }
-});
+  });
+}
 
 pwaCloseBtn.addEventListener('click', () => {
   pwaBanner.classList.remove('show');
