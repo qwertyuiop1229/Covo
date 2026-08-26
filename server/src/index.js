@@ -430,7 +430,7 @@ async function handleJoinServer(request, env) {
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
   }
 }
 
@@ -450,7 +450,7 @@ async function handleSyncRtdb(request, env) {
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -637,8 +637,8 @@ async function handleSendNotification(request, env) {
 
   try {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
-    if (!receiverIds || !title || !appId || !senderId || !idToken) {
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: dynamicCors });
+    if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
+      return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
@@ -651,13 +651,13 @@ async function handleSendNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: dynamicCors });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
     // Service Account から FCM OAuth2 トークンおよび RTDB トークンを事前に1回のみ取得（ループ内多重フェッチを排除）
     if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: dynamicCors });
     }
     const [fcmAccessToken, rtdbToken] = await Promise.all([
       getFCMToken(env.SERVICE_ACCOUNT_JSON),
@@ -979,7 +979,8 @@ const ALLOWED_PROXY_DOMAINS = [
   "res.cloudinary.com",
   "firebasestorage.googleapis.com",
   "files.catbox.moe",
-  "0x0.st"
+  "0x0.st",
+  "workers.dev"
 ];
 
 async function handleDownloadProxy(request, env, url) {
@@ -2102,6 +2103,7 @@ async function handleD1Api(request, env, url) {
     // 7. WebRTC シグナリング (webrtc)
     if (subpath.startsWith("webrtc")) {
       if (request.method === "GET") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const appId = url.searchParams.get("appId");
         const id = url.searchParams.get("id"); // callId or fsId
         const type = url.searchParams.get("type"); // 'call' or 'fs' or 'candidates'

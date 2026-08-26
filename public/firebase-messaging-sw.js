@@ -66,9 +66,17 @@ self.addEventListener('message', (event) => {
 function _updateBadge() {
   try {
     if (self._badgeCount > 0) {
-      navigator.setAppBadge(self._badgeCount).catch(() => {});
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
     } else {
-      navigator.clearAppBadge().catch(() => {});
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
     }
   } catch (_) {}
 }

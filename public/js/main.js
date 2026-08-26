@@ -3081,15 +3081,22 @@ function formatTimeAgo(timestamp) {
   let past;
   if (typeof timestamp === 'number') {
     past = new Date(timestamp);
-  } else if (timestamp.toDate) {
+  } else if (typeof timestamp.toDate === 'function') {
     past = timestamp.toDate();
+  } else if (typeof timestamp === 'object' && timestamp.seconds != null) {
+    past = new Date(timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000));
+  } else if (typeof timestamp === 'string') {
+    past = new Date(timestamp);
   } else {
     return "";
   }
 
+  if (isNaN(past.getTime())) return "";
+
   const now = new Date();
   const diffInSeconds = Math.floor((now - past) / 1000);
 
+  if (diffInSeconds < 0) return `たった今`;
   if (diffInSeconds < 60) return `数秒前`;
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes}分前`;
@@ -13283,9 +13290,7 @@ window.setAppTheme = function (theme) {
   document.documentElement.classList.toggle('dark-server-theme', isDark);
   document.body.classList.toggle('dark-server-theme', isDark);
 
-  const pcToggle = document.getElementById('toggleDarkServer');
   const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle && 'checked' in pcToggle) pcToggle.checked = isDark;
   if (mobileToggle && 'checked' in mobileToggle) mobileToggle.checked = isDark;
 
   updateThemeSelectorUI(validTheme);

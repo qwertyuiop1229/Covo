@@ -380,7 +380,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
           versions: { [version]: b64Wrapped },
-          [`versions.${version}`]: b64Wrapped,
           latestVersion: version,
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
@@ -397,7 +396,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
         { 
           versions: { [version]: b64Wrapped },
-          [`versions.${version}`]: b64Wrapped,
           latestVersion: version,
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 

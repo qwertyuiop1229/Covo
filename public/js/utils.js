@@ -69,12 +69,20 @@ export function getMsgTimestamp(msg) {
     if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
       return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
     }
+    if (typeof msg.createdAt === 'string') {
+      const parsed = new Date(msg.createdAt).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
   }
   if (msg.timestamp) {
     if (typeof msg.timestamp === 'number') return msg.timestamp;
     if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
     if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
       return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.timestamp === 'string') {
+      const parsed = new Date(msg.timestamp).getTime();
+      if (!isNaN(parsed)) return parsed;
     }
   }
   return Date.now();
