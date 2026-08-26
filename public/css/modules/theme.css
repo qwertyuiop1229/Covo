@@ -360,7 +360,7 @@
       background: #1e293b !important;
       border-color: rgba(255, 255, 255, 0.12) !important;
       color: #818cf8 !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
     }
     body.dark-server-theme .minimized-pin-badge {
       border-color: #1e293b !important;
@@ -421,7 +421,7 @@
       background: #2b2d31 !important;
       border-color: #383a40 !important;
       color: #5865f2 !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
     }
     body.discord-dark-theme .minimized-pin-badge {
       border-color: #2b2d31 !important;

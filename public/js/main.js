@@ -10043,6 +10043,10 @@ window.minimizePinnedAnnouncement = function() {
 
 window.restorePinnedAnnouncement = function() {
   sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+  if (currentPinnedMessages && currentPinnedMessages.length > 0) {
+    const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
+    localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+  }
   renderPinnedMessages();
 };
 
@@ -10100,6 +10104,11 @@ function renderPinnedMessages() {
     return;
   }
 
+  // 最新（直近）のピン留めメッセージ
+  const latestMsg = pinnedMessages[pinnedMessages.length - 1];
+  const count = pinnedMessages.length;
+  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${currentRoomId}`);
+
   // セッションから最小化状態を復元
   const isMinimized = sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true";
 
@@ -10122,13 +10131,29 @@ function renderPinnedMessages() {
       }
     }
 
-    const badgeCount = pinnedMessages.length;
+    // 未確認のピン留め（新しいピン留め）がある場合のみバッジを表示
+    let unseenCount = 0;
+    if (!lastSeenPinId) {
+      unseenCount = pinnedMessages.length;
+    } else {
+      const lastSeenIndex = pinnedMessages.findIndex(m => m.id === lastSeenPinId);
+      if (lastSeenIndex === -1) {
+        unseenCount = pinnedMessages.length;
+      } else {
+        unseenCount = pinnedMessages.length - 1 - lastSeenIndex;
+      }
+    }
+
     floatIcon.innerHTML = `
       <i class="fas fa-bullhorn"></i>
-      ${badgeCount > 1 ? `<div class="minimized-pin-badge">${badgeCount}</div>` : ''}
+      ${unseenCount > 0 ? `<div class="minimized-pin-badge">${unseenCount}</div>` : ''}
     `;
     return;
   } else {
+    // 最小化されていない（バーが表示されている）状態 = ユーザーが確認したとみなし、lastSeenPinId を更新
+    if (latestMsg) {
+      localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+    }
     // 最小化されていない場合はフローティングアイコンを消去
     if (floatIcon) floatIcon.remove();
   }
@@ -10138,10 +10163,6 @@ function renderPinnedMessages() {
   // LINE完全準拠 アナウンスコンテナ
   const container = document.createElement("div");
   container.className = "pinned-announcement-container";
-
-  // 最新（直近）のピン留めメッセージ
-  const latestMsg = pinnedMessages[pinnedMessages.length - 1];
-  const count = pinnedMessages.length;
 
   const headerRow = document.createElement("div");
   headerRow.className = "pinned-announcement-header";
@@ -10198,16 +10219,16 @@ function renderPinnedMessages() {
   headerRow.appendChild(actionsWrap);
   container.appendChild(headerRow);
 
-  // 複数件のアナウンス展開アコーディオンリスト
+  // 複数件のアナウンス展開アコーディオンリスト（一番上に latestMsg があるため、過去ピンのみ表示して二重表示を解消）
   if (isPinnedMessagesExpanded && count > 1) {
     const listWrap = document.createElement("div");
     listWrap.className = "pinned-announcement-list";
 
-    // 新しい順（最新が上）で一覧表示
-    const reversedPins = [...pinnedMessages].reverse();
-    reversedPins.forEach((msg) => {
+    // 最新以外の過去ピン留めメッセージを新しい順（直近が上）で一覧表示
+    const pastPins = [...pinnedMessages].reverse().filter(msg => msg.id !== latestMsg.id);
+    pastPins.forEach((msg) => {
       const itemRow = document.createElement("div");
-      itemRow.className = "pinned-announcement-item" + (msg.id === latestMsg.id ? " active-latest" : "");
+      itemRow.className = "pinned-announcement-item";
 
       const itemIcon = document.createElement("div");
       itemIcon.className = "announcement-item-icon";
