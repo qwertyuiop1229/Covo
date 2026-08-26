@@ -182,17 +182,37 @@
       background-color: #f0f0f0;
     }
 
-    /* サイドバーリサイズ用ハンドル */
+    /* サイドバーリサイズ用ハンドル (PC & iPad/タブレット対応) */
     #resizer, #resizerRight {
       width: 2px;
       cursor: col-resize;
       background-color: #e5e7eb;
-      transition: background-color 0.2s;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
       flex-shrink: 0;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 25;
     }
 
-    #resizer:hover, #resizerRight:hover {
-      background-color: #d1d5db;
+    /* 見た目は2pxの細い線のまま、タッチ/クリックの判定領域を左右10pxずつ（計22px）に拡張 */
+    #resizer::before, #resizerRight::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -10px;
+      right: -10px;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 30;
+    }
+
+    #resizer:hover, #resizerRight:hover,
+    #resizer.is-resizing, #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: 0 0 6px rgba(88, 101, 242, 0.45);
     }
 
     /* リプライ機能用CSS (Discord風L字ライン) - merged above */
@@ -378,9 +398,24 @@
     body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
     body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
 
-    /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
+    /* リサイザー / スクロールバー (ダークテーマ) */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
+    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #818cf8;
+      box-shadow: 0 0 8px rgba(129, 140, 248, 0.5);
+    }
+
+    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight {
+      background-color: #1f2023;
+    }
+    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
+    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: 0 0 8px rgba(88, 101, 242, 0.5);
+    }
     body.dark-server-theme * {
       scrollbar-color: rgba(255,255,255,0.18) transparent;
     }

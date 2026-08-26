@@ -12877,30 +12877,72 @@ function initializeResizer() {
     sidebar.classList.remove("md:flex");
   }
 
+  // Pointer Events API (マウス・タッチ・Apple Pencil 完全対応)
   let isResizingLeft = false;
+  let activePointerIdLeft = null;
+
   if (resizer) {
-    resizer.addEventListener("mousedown", (e) => {
-      isResizingLeft = true;
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleLeftMouseMove);
-      document.addEventListener("mouseup", handleLeftMouseUp);
-    });
-  }
+    const onLeftPointerMove = (e) => {
+      if (!isResizingLeft || !sidebar) return;
+      if (e.pointerId !== activePointerIdLeft) return;
+      e.preventDefault();
 
-  function handleLeftMouseMove(e) {
-    if (isResizingLeft && sidebar) {
-      const maxAllowed = Math.min(600, window.innerWidth - 120);
-      const newWidth = Math.max(180, Math.min(maxAllowed, e.clientX));
+      // 左端の Discord サーバーナビゲーションバーの幅を考慮
+      let navWidth = 0;
+      const nav = document.getElementById("discordServerNav");
+      if (nav && window.getComputedStyle(nav).display !== "none") {
+        navWidth = nav.getBoundingClientRect().width || 72;
+      }
+
+      const clientX = e.clientX;
+      const maxAllowed = Math.min(500, Math.max(220, window.innerWidth - 300));
+      const targetWidth = clientX - navWidth;
+      const newWidth = Math.max(180, Math.min(maxAllowed, targetWidth));
       sidebar.style.width = `${newWidth}px`;
-    }
-  }
+    };
 
-  function handleLeftMouseUp() {
-    isResizingLeft = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleLeftMouseMove);
-    document.removeEventListener("mouseup", handleLeftMouseUp);
-    if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+    const onLeftPointerUp = (e) => {
+      if (!isResizingLeft) return;
+      if (activePointerIdLeft !== null && e.pointerId !== activePointerIdLeft) return;
+      isResizingLeft = false;
+      activePointerIdLeft = null;
+
+      try {
+        resizer.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+
+      resizer.classList.remove("is-resizing");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+
+      window.removeEventListener("pointermove", onLeftPointerMove);
+      window.removeEventListener("pointerup", onLeftPointerUp);
+      window.removeEventListener("pointercancel", onLeftPointerUp);
+
+      if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+    };
+
+    resizer.addEventListener("pointerdown", (e) => {
+      // マウス時は左クリックのみ許可
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (!sidebar || window.getComputedStyle(sidebar).display === "none") return;
+
+      e.preventDefault();
+      isResizingLeft = true;
+      activePointerIdLeft = e.pointerId;
+
+      try {
+        resizer.setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      resizer.classList.add("is-resizing");
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+
+      window.addEventListener("pointermove", onLeftPointerMove, { passive: false });
+      window.addEventListener("pointerup", onLeftPointerUp);
+      window.addEventListener("pointercancel", onLeftPointerUp);
+    });
   }
 
   if (toggleLeftBtn && sidebar) {
@@ -12936,28 +12978,61 @@ function initializeResizer() {
   }
 
   let isResizingRight = false;
+  let activePointerIdRight = null;
+
   if (resizerRight) {
-    resizerRight.addEventListener("mousedown", (e) => {
-      isResizingRight = true;
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleRightMouseMove);
-      document.addEventListener("mouseup", handleRightMouseUp);
-    });
-  }
+    const onRightPointerMove = (e) => {
+      if (!isResizingRight || !membersSidebar) return;
+      if (e.pointerId !== activePointerIdRight) return;
+      e.preventDefault();
 
-  function handleRightMouseMove(e) {
-    if (isResizingRight && membersSidebar) {
-      const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
+      const maxAllowed = Math.min(450, Math.max(200, window.innerWidth - 350));
+      const targetWidth = window.innerWidth - e.clientX;
+      const newWidth = Math.max(180, Math.min(maxAllowed, targetWidth));
       membersSidebar.style.width = `${newWidth}px`;
-    }
-  }
+    };
 
-  function handleRightMouseUp() {
-    isResizingRight = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleRightMouseMove);
-    document.removeEventListener("mouseup", handleRightMouseUp);
-    if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+    const onRightPointerUp = (e) => {
+      if (!isResizingRight) return;
+      if (activePointerIdRight !== null && e.pointerId !== activePointerIdRight) return;
+      isResizingRight = false;
+      activePointerIdRight = null;
+
+      try {
+        resizerRight.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+
+      resizerRight.classList.remove("is-resizing");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+
+      window.removeEventListener("pointermove", onRightPointerMove);
+      window.removeEventListener("pointerup", onRightPointerUp);
+      window.removeEventListener("pointercancel", onRightPointerUp);
+
+      if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+    };
+
+    resizerRight.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (!membersSidebar || membersSidebar.style.display === "none" || membersSidebar.classList.contains("hidden")) return;
+
+      e.preventDefault();
+      isResizingRight = true;
+      activePointerIdRight = e.pointerId;
+
+      try {
+        resizerRight.setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      resizerRight.classList.add("is-resizing");
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+
+      window.addEventListener("pointermove", onRightPointerMove, { passive: false });
+      window.addEventListener("pointerup", onRightPointerUp);
+      window.addEventListener("pointercancel", onRightPointerUp);
+    });
   }
 
   if (toggleMembersBtn && membersSidebar) {
@@ -12976,6 +13051,21 @@ function initializeResizer() {
       }
     });
   }
+
+  // 画面リサイズ（iPadの画面回転など）時にチャットが押し潰されないよう自動クランプ
+  window.addEventListener("resize", () => {
+    if (window.innerWidth < 768) return;
+    if (sidebar && sidebar.style.width) {
+      const curW = parseFloat(sidebar.style.width);
+      const maxW = Math.min(500, Math.max(220, window.innerWidth - 300));
+      if (curW > maxW) sidebar.style.width = `${maxW}px`;
+    }
+    if (membersSidebar && membersSidebar.style.width) {
+      const curW = parseFloat(membersSidebar.style.width);
+      const maxW = Math.min(450, Math.max(200, window.innerWidth - 350));
+      if (curW > maxW) membersSidebar.style.width = `${maxW}px`;
+    }
+  });
 }
 
 // =========================================================================
