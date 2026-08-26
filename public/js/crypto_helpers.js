@@ -367,9 +367,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function __distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
-  const ids = Array.from(new Set([...(memberIds || []), _getUserId()]));
+  const ids = Array.from(new Set([...(memberIds || []), _getUserId()].filter(Boolean)));
   const writes = [];
   for (const uid of ids) {
+    if (!uid) continue;
     const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
     if (!pub) continue; 
     try {
@@ -453,7 +454,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export function _isEncrypted(text) {
-      return typeof text === "string" && text.startsWith(E2EE_PREFIX);
+      if (typeof text !== "string" || !text.startsWith(E2EE_PREFIX)) return false;
+      const parts = text.split("::");
+      return parts.length === 4 && /^v\d+$/.test(parts[1]) && parts[2].length > 0 && parts[3].length > 0;
     }
 
     export async function _decryptText(text, serverId, roomId, memberIds) {
@@ -545,7 +548,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     export async function _decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
-      const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
+      let data;
+      if (encryptedBuffer instanceof Uint8Array) {
+        data = encryptedBuffer;
+      } else if (encryptedBuffer instanceof ArrayBuffer) {
+        data = new Uint8Array(encryptedBuffer);
+      } else if (ArrayBuffer.isView(encryptedBuffer)) {
+        data = new Uint8Array(encryptedBuffer.buffer, encryptedBuffer.byteOffset, encryptedBuffer.byteLength);
+      } else {
+        throw new Error("Invalid buffer type for decryption");
+      }
       if (data.length < 13) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;

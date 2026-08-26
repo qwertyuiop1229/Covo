@@ -29,16 +29,18 @@ export function escapeHtml(s) {
 export function getEmojiHtml(emoji, spanClass = 'sk-em') {
   if (!emoji || typeof emoji !== 'string') return '';
   if (emoji.startsWith('covo:')) {
-    const name = emoji.substring(5);
-    return `<img src="/covo-stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }
   if (emoji.startsWith('covonew:')) {
-    const name = emoji.substring(8);
-    return `<img src="/assets/covo_stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }
   if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12);
-    const isSafe = /^https?:\/\//i.test(url) || (url.startsWith('/') && !url.startsWith('//'));
+    const url = emoji.substring(12).trim();
+    const isSafe = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
     if (!isSafe) return '';
     return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }

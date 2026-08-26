@@ -211,7 +211,7 @@ service cloud.firestore {
             .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
           request.auth.uid in resource.data.joinedUsers &&
           request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) || request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid])) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
           request.resource.data.memberCount == resource.data.memberCount - 1;
 
         // サーバー削除: グローバル管理者またはサーバー管理者

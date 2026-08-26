@@ -6240,6 +6240,10 @@ function selectRoom(roomId, roomName) {
     if (sb) sb.classList.add("mobile-hidden");
     currentRoomHeader.classList.remove("hidden");
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+    unreadCounts[roomId] = 0;
+    const badgeElem = document.getElementById(`unread-badge-${roomId}`);
+    if (badgeElem) badgeElem.style.display = 'none';
+    updateGlobalNotifUI();
     return;
   }
 
@@ -10467,6 +10471,11 @@ let _fsRecv = null; // { name, type, size, received, chunks[] }
 let _fsAckResolve = null; // 受信完了ACK待ちのresolver
 
 function _fsCleanup() {
+  if (_fsAckResolve) {
+    const r = _fsAckResolve;
+    _fsAckResolve = null;
+    r(false);
+  }
   try { if (_fsUnsub) _fsUnsub(); } catch (e) { }
   try { if (_fsCandUnsub) _fsCandUnsub(); } catch (e) { }
   try { if (_fsChannel) _fsChannel.close(); } catch (e) { }

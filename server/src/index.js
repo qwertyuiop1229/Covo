@@ -19,6 +19,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
 };
 
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+function isFileExtensionBlocked(fileName) {
+  if (!fileName || typeof fileName !== 'string') return false;
+  const cleanName = fileName.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  return BLOCKED_EXTENSIONS.has(ext);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const cors = getCorsHeaders(request);
@@ -929,11 +944,9 @@ async function handleUploadFile(request, env) {
       });
     }
 
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    const blockedExts = ['exe', 'bat', 'cmd', 'sh', 'vbs', 'scr', 'msi', 'js', 'html', 'htm'];
-    if (blockedExts.includes(ext)) {
+    if (isFileExtensionBlocked(file.name)) {
       return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 403, headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' }
       });
     }
 
@@ -1412,13 +1425,7 @@ async function isD1Admin(appId, verifiedUser, env) {
 }
 
 async function handleSetOffline(request, env) {
-  // sendBeaconはcredentials=includeで送るためAccess-Control-Allow-Origin: *が使えない
-  const origin = request.headers.get("Origin") || "*";
-  const corsSetOffline = {
-    ...corsHeaders,
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-  };
+  const corsSetOffline = getCorsHeaders(request);
 
   try {
     const bodyText = await request.text();
