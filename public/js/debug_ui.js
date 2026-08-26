@@ -133,9 +133,10 @@ export function _inspectPoint(x, y) {
     }
 
 export function _lineColor(line) {
-      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]')) return '#f87171';
-      if (line.includes('[warn]')) return '#fbbf24';
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
+      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
       if (line.includes('[E2EE]')) return '#34d399';
+      if (line.includes('[INFO]')) return '#60a5fa';
       return '#cbd5e1';
     }
 
@@ -145,7 +146,10 @@ export function _appendConsoleLine(line) {
       const div = document.createElement('div');
       div.textContent = line;
       div.style.color = _lineColor(line);
+      div.style.padding = '2px 0';
+      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
       body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
     }
 
 let _inspectMode = false;
@@ -167,6 +171,18 @@ export function toggleDevConsole() {
   if (!panel) return;
   const isHidden = panel.style.display === 'none' || !panel.style.display;
   panel.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    const body = document.getElementById('devConsoleBody');
+    if (body) {
+      body.innerHTML = '';
+      const logs = window._covoLogs || [];
+      if (logs.length === 0) {
+        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
+      } else {
+        logs.forEach(line => _appendConsoleLine(line));
+      }
+    }
+  }
 }
 
 export function clearDevConsole() {

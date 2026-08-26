@@ -88,8 +88,15 @@ const _pushLog = (type, args) => {
       }
       return String(a);
     }).join(' ');
-    window._covoLogs.push(`[${type}] ${msg}`);
-    if (window._covoLogs.length > 50) window._covoLogs.shift();
+    const line = `[${type}] ${msg}`;
+    window._covoLogs.push(line);
+    if (window._covoLogs.length > 200) window._covoLogs.shift();
+    const panel = document.getElementById('devConsolePanel');
+    if (panel && panel.style.display === 'flex') {
+      if (typeof __appendConsoleLine === 'function') {
+        __appendConsoleLine(line);
+      }
+    }
   } catch (e) { }
 };
 console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
@@ -6370,6 +6377,7 @@ function selectRoom(roomId, roomName) {
   isLoadingOlderMessages = false;
 
   subscribeToMessages();
+  subscribeToPinnedMessages(currentServerId, roomId);
 
 
   // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
@@ -9119,6 +9127,7 @@ if (deleteMsgBtn) {
     } catch (err) { console.error("RTDB Delete Failed", err); }
 
     allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+    currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -9821,7 +9830,82 @@ document.addEventListener("contextmenu", (e) => {
   }
 });
 
-// --- 汎用ボトムシート（Drawer）管理 ---
+// --- 汎用ボトムシート（Drawer）管理 & ネイティブ風弾力ジェスチャー ---
+function initBottomSheetGestures(sheetEl, overlayEl, closeFn, scrollContainerEl) {
+  if (!sheetEl) return;
+  let startY = 0;
+  let currentY = 0;
+  let isDragging = false;
+  let isHandleTouch = false;
+  let startTime = 0;
+
+  const getScrollTop = () => scrollContainerEl ? scrollContainerEl.scrollTop : 0;
+
+  sheetEl.addEventListener('touchstart', (e) => {
+    if (window.innerWidth >= 768) return;
+    if (e.touches.length !== 1) return;
+    const handle = e.target.closest('.bottom-sheet-handle, .call-picker-handle, #bottomSheetHandle');
+    isHandleTouch = !!handle;
+
+    if (isHandleTouch || getScrollTop() <= 0) {
+      startY = e.touches[0].clientY;
+      currentY = startY;
+      startTime = Date.now();
+      isDragging = true;
+      sheetEl.style.transition = 'none';
+    } else {
+      isDragging = false;
+    }
+  }, { passive: true });
+
+  sheetEl.addEventListener('touchmove', (e) => {
+    if (!isDragging || e.touches.length !== 1) return;
+    const clientY = e.touches[0].clientY;
+    const deltaY = clientY - startY;
+
+    if (deltaY < 0) {
+      // 上方向のラバーバンド（弾力抵抗）
+      if (isHandleTouch || getScrollTop() <= 0) {
+        if (e.cancelable) e.preventDefault();
+        const rubber = -Math.min(60, Math.pow(-deltaY, 0.75));
+        sheetEl.style.transform = `translateY(${rubber}px)`;
+      }
+    } else if (deltaY > 0) {
+      // 下方向へのドラッグ
+      if (isHandleTouch || getScrollTop() <= 0) {
+        if (e.cancelable) e.preventDefault();
+        sheetEl.style.transform = `translateY(${deltaY}px)`;
+        if (overlayEl) {
+          const progress = Math.max(0, 1 - deltaY / 350);
+          overlayEl.style.opacity = progress.toString();
+        }
+      } else {
+        isDragging = false;
+        sheetEl.style.transform = 'translateY(0)';
+      }
+    }
+  }, { passive: false });
+
+  sheetEl.addEventListener('touchend', (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    isHandleTouch = false;
+    const deltaY = (e.changedTouches[0]?.clientY || currentY) - startY;
+    const elapsed = Date.now() - startTime;
+    const velocity = deltaY / (elapsed || 1); // px/ms
+
+    sheetEl.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease';
+    if (overlayEl) overlayEl.style.transition = 'opacity 0.35s ease';
+
+    if (deltaY > 80 || velocity > 0.45) {
+      closeFn();
+    } else {
+      sheetEl.style.transform = 'translateY(0)';
+      if (overlayEl) overlayEl.style.opacity = '1';
+    }
+  }, { passive: true });
+}
+
 window.openBottomSheet = function (sheetId) {
   if (window.innerWidth >= 768) return; // PCでは何もしない
   const overlay = document.getElementById("bottomSheetOverlay");
@@ -9864,7 +9948,6 @@ const membersSidebarEl = document.getElementById("membersSidebar");
 const membersListEl = document.getElementById("membersList");
 const pinMessageBtn = document.getElementById("pinMessageButton");
 
-// チャット画面で上部ヘッダー（タイトル領域）をタップするとメンバー一覧ボトムシートが開く
 if (currentRoomTitleAreaEl) {
   currentRoomTitleAreaEl.addEventListener("click", (e) => {
     if (e.target.closest('#mobileBackButton') || e.target.closest('#toggleLeftSidebarBtn')) return;
@@ -9875,68 +9958,77 @@ if (currentRoomTitleAreaEl) {
 }
 if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", () => closeBottomSheet());
 
-// スワイプダウンで閉じる処理（リストスクロールと競合しないスマートジェスチャー）
-let touchStartY = 0;
-let isDraggingSheet = false;
-let isHandleDrag = false;
-
 if (membersSidebarEl) {
-  membersSidebarEl.addEventListener("touchstart", (e) => {
-    if (window.innerWidth >= 768) return;
-    const handle = e.target.closest("#bottomSheetHandle, .bottom-sheet-handle, .bottom-sheet-handle-bar");
-    isHandleDrag = !!handle;
-    if (isHandleDrag || (membersListEl && membersListEl.scrollTop <= 0)) {
-      touchStartY = e.touches[0].clientY;
-      isDraggingSheet = true;
-      membersSidebarEl.style.transition = "none";
-    } else {
-      isDraggingSheet = false;
-    }
-  }, { passive: true });
+  initBottomSheetGestures(membersSidebarEl, bottomSheetOverlayEl, () => closeBottomSheet('membersSidebar'), membersListEl);
+}
 
-  membersSidebarEl.addEventListener("touchmove", (e) => {
-    if (!isDraggingSheet) return;
-    const currentY = e.touches[0].clientY;
-    const deltaY = currentY - touchStartY;
-    if (deltaY > 0) {
-      if (e.cancelable) e.preventDefault();
-      membersSidebarEl.style.transform = `translateY(${deltaY}px)`;
-    } else {
-      // 指が上方向に動いた場合は通常のリストスクロールを優先
-      isDraggingSheet = false;
-      membersSidebarEl.style.transform = "translateY(0)";
-    }
-  }, { passive: false });
-
-  membersSidebarEl.addEventListener("touchend", () => {
-    if (!isDraggingSheet && membersSidebarEl.style.transform === "translateY(0)") return;
-    isDraggingSheet = false;
-    isHandleDrag = false;
-    membersSidebarEl.style.transition = "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)";
-    const currentTransform = membersSidebarEl.style.transform || "";
-    const match = currentTransform.match(/translateY\((\d+(?:\.\d+)?)px\)/);
-    const deltaY = match ? parseFloat(match[1]) : 0;
-    if (deltaY > 100) {
-      closeBottomSheet();
-    } else {
-      membersSidebarEl.style.transform = "translateY(0)";
-    }
-    touchStartY = 0;
-  });
+const callPickerModalEl = document.getElementById('callPickerModal');
+const callPickerBoxEl = callPickerModalEl ? callPickerModalEl.querySelector('.call-picker-box') : null;
+const callPickerListEl = document.getElementById('callPickerList');
+if (callPickerBoxEl) {
+  initBottomSheetGestures(callPickerBoxEl, callPickerModalEl, () => closeCallPicker(), callPickerListEl);
 }
 
 // --- ピン留め機能 ---
+function subscribeToPinnedMessages(serverId, roomId) {
+  if (unsubscribePinnedMessages) {
+    unsubscribePinnedMessages();
+    unsubscribePinnedMessages = null;
+  }
+  if (!serverId || !roomId) {
+    currentPinnedMessages = [];
+    renderPinnedMessages();
+    return;
+  }
+
+  const q = query(
+    collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
+    where("isPinned", "==", true)
+  );
+
+  unsubscribePinnedMessages = onSnapshot(q, async (snap) => {
+    const pinned = [];
+    snap.forEach(d => {
+      pinned.push({ id: d.id, ...d.data() });
+    });
+    pinned.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    const members = (currentServerData && currentServerData.joinedUsers) || [];
+    await decryptMessagesInPlace(pinned, serverId, roomId, members).catch(() => {});
+    currentPinnedMessages = pinned;
+    renderPinnedMessages();
+  }, (err) => {
+    console.warn("[PinnedMessages onSnapshot] error:", err);
+  });
+}
+
 if (pinMessageBtn) {
   pinMessageBtn.addEventListener("click", async (e) => {
     if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-    if (selectedMessageForContext) {
-      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, selectedMessageForContext.id);
+    if (selectedMessageForContext && currentServerId && currentRoomId) {
+      const targetId = selectedMessageForContext.id;
       const isPinned = !selectedMessageForContext.isPinned;
+      selectedMessageForContext.isPinned = isPinned;
+
+      // ローカル状態を即時更新して画面に瞬時反映
+      const mObj = allLoadedMessages.find(m => m.id === targetId);
+      if (mObj) mObj.isPinned = isPinned;
+
+      if (isPinned) {
+        if (!currentPinnedMessages.some(m => m.id === targetId)) {
+          currentPinnedMessages.push({ ...selectedMessageForContext });
+          currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+        }
+      } else {
+        currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
+      }
+      renderPinnedMessages();
+
+      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, targetId);
       await updateDoc(msgRef, { isPinned: isPinned });
       try {
         const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${selectedMessageForContext.id}`), { isPinned: isPinned });
+        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${targetId}`), { isPinned: isPinned });
       } catch (e) { console.error("RTDB Pin Failed", e); }
       alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
     }
@@ -10585,17 +10677,38 @@ async function openCallPicker() {
     });
   }
 
-  modal.classList.remove('hidden');
+  const box = modal.querySelector('.call-picker-box');
+  modal.classList.remove('hidden', 'closing');
   modal.classList.add('show');
+  modal.style.opacity = '1';
+  if (box) {
+    box.classList.remove('closing');
+    box.style.transform = '';
+  }
 }
 
 function closeCallPicker() {
   const modal = document.getElementById('callPickerModal');
-  if (modal) {
+  if (!modal) return;
+  if (window.innerWidth < 768) {
+    const box = modal.querySelector('.call-picker-box');
+    modal.classList.add('closing');
+    if (box) box.classList.add('closing');
+    setTimeout(() => {
+      modal.classList.remove('show', 'closing');
+      modal.classList.add('hidden');
+      modal.style.opacity = '';
+      if (box) {
+        box.classList.remove('closing');
+        box.style.transform = '';
+      }
+    }, 280);
+  } else {
     modal.classList.remove('show');
     modal.classList.add('hidden');
   }
 }
+
 
 /* =====================================================================
    P2P ファイル共有（WebRTC DataChannel）

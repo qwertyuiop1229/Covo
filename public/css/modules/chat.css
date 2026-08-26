@@ -24,11 +24,9 @@
 
     /* ピン留めエリア */
     #pinnedMessagesArea {
-      border-bottom: 2px solid #e5e7eb;
-      background-color: #f8fafc;
-      padding: 0.5rem;
-      max-height: 120px;
-      overflow-y: auto;
+      position: relative;
+      z-index: 25;
+      width: 100%;
     }
 
     .pinned-message-item {

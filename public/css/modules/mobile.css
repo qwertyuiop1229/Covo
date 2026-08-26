@@ -157,6 +157,11 @@
     }
 
     @media (max-width: 768px) {
+      /* スマホUIではファイル共有右側のメンバーボタンを完全非表示 */
+      #toggleMembersSidebarBtn {
+        display: none !important;
+      }
+
       .covo-bottom-sheet,
       #membersSidebar,
       #serverSettingsModal .modal-box,
@@ -206,7 +211,8 @@
       }
 
       .covo-bottom-sheet.closing,
-      #membersSidebar.closing {
+      #membersSidebar.closing,
+      #callPickerModal.closing .call-picker-box {
         transform: translateY(100%) !important;
       }
     }

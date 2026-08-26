@@ -311,6 +311,190 @@ console.log('[version] skip bump (use "npm run deploy" to bump)');
 process.exit(0);
 </file>
 
+<file path="scripts/cleanup_webrtc_fast.js">
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getDatabase } = require('firebase-admin/database');
+const fs = require('fs');
+const path = require('path');
+
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
+
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+  console.error("❌ serviceAccountKey.json not found.");
+  process.exit(1);
+}
+
+const serviceAccount = require(SERVICE_ACCOUNT_PATH);
+const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
+const APP_ID = "simplechat-65a0d";
+
+initializeApp({
+  credential: cert(serviceAccount),
+  databaseURL: DATABASE_URL
+});
+
+const firestore = getFirestore();
+const rtdb = getDatabase();
+
+async function cleanupFirestore(collectionName) {
+  const colRef = firestore.collection('artifacts').doc(APP_ID).collection(collectionName);
+  const snap = await colRef.get();
+  
+  if (snap.empty) {
+    console.log(`✅ Firestore: No documents found in ${collectionName}.`);
+    return;
+  }
+  
+  console.log(`🧹 Firestore: Found ${snap.size} documents in ${collectionName}. Deleting...`);
+  
+  const deletePromises = [];
+  let deletedCount = 0;
+  
+  for (const doc of snap.docs) {
+    const subCollections = await doc.ref.listCollections();
+    for (const sub of subCollections) {
+      const subSnap = await sub.get();
+      for (const subDoc of subSnap.docs) {
+        deletePromises.push(subDoc.ref.delete());
+      }
+    }
+    deletePromises.push(doc.ref.delete());
+    deletedCount++;
+  }
+  
+  await Promise.all(deletePromises);
+  console.log(`✅ Firestore: Deleted ${deletedCount} documents and their subcollections from ${collectionName}.`);
+}
+
+async function cleanupRTDB(nodeName) {
+  const path = `artifacts/${APP_ID}/${nodeName}`;
+  const ref = rtdb.ref(path);
+  const snap = await ref.once('value');
+  
+  if (!snap.exists()) {
+    console.log(`✅ RTDB: No data found at ${path}.`);
+    return;
+  }
+  
+  const count = Object.keys(snap.val()).length;
+  console.log(`🧹 RTDB: Found ${count} nodes at ${path}. Deleting...`);
+  await ref.remove();
+  console.log(`✅ RTDB: Deleted ${nodeName} from RTDB.`);
+}
+
+async function runCleanup() {
+  console.log("🚀 Starting WebRTC garbage cleanup...");
+  
+  try {
+    await cleanupFirestore('calls');
+    await cleanupFirestore('fileshares');
+    
+    await cleanupRTDB('calls');
+    await cleanupRTDB('fileshares');
+    
+    console.log("\n🎉 Cleanup complete! The database is now free of WebRTC garbage data.");
+    process.exit(0);
+  } catch (err) {
+    console.error("\n❌ Error during cleanup:", err);
+    process.exit(1);
+  }
+}
+
+runCleanup();
+</file>
+
+<file path="scripts/cleanup_webrtc.js">
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getDatabase } = require('firebase-admin/database');
+const fs = require('fs');
+const path = require('path');
+
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
+
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+  console.error("❌ serviceAccountKey.json not found.");
+  process.exit(1);
+}
+
+const serviceAccount = require(SERVICE_ACCOUNT_PATH);
+const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
+const APP_ID = "simplechat-65a0d";
+
+initializeApp({
+  credential: cert(serviceAccount),
+  databaseURL: DATABASE_URL
+});
+
+const firestore = getFirestore();
+const rtdb = getDatabase();
+
+async function cleanupFirestore(collectionName) {
+  const colRef = firestore.collection('artifacts').doc(APP_ID).collection(collectionName);
+  const snap = await colRef.get();
+  
+  if (snap.empty) {
+    console.log(`✅ Firestore: No documents found in ${collectionName}.`);
+    return;
+  }
+  
+  console.log(`🧹 Firestore: Found ${snap.size} documents in ${collectionName}. Deleting...`);
+  
+  let deletedCount = 0;
+  for (const doc of snap.docs) {
+    // Delete subcollections (candidates)
+    const subCollections = await doc.ref.listCollections();
+    for (const sub of subCollections) {
+      const subSnap = await sub.get();
+      for (const subDoc of subSnap.docs) {
+        await subDoc.ref.delete();
+      }
+    }
+    // Delete parent doc
+    await doc.ref.delete();
+    deletedCount++;
+  }
+  console.log(`✅ Firestore: Deleted ${deletedCount} documents from ${collectionName}.`);
+}
+
+async function cleanupRTDB(nodeName) {
+  const path = `artifacts/${APP_ID}/${nodeName}`;
+  const ref = rtdb.ref(path);
+  const snap = await ref.once('value');
+  
+  if (!snap.exists()) {
+    console.log(`✅ RTDB: No data found at ${path}.`);
+    return;
+  }
+  
+  const count = Object.keys(snap.val()).length;
+  console.log(`🧹 RTDB: Found ${count} nodes at ${path}. Deleting...`);
+  await ref.remove();
+  console.log(`✅ RTDB: Deleted ${nodeName} from RTDB.`);
+}
+
+async function runCleanup() {
+  console.log("🚀 Starting WebRTC garbage cleanup...");
+  
+  try {
+    await cleanupFirestore('calls');
+    await cleanupFirestore('fileshares');
+    
+    await cleanupRTDB('calls');
+    await cleanupRTDB('fileshares');
+    
+    console.log("\n🎉 Cleanup complete! The database is now free of WebRTC garbage data.");
+    process.exit(0);
+  } catch (err) {
+    console.error("\n❌ Error during cleanup:", err);
+    process.exit(1);
+  }
+}
+
+runCleanup();
+</file>
+
 <file path="scripts/generate-icons.js">
 #!/usr/bin/env node
 const { Jimp } = require('jimp');
@@ -1194,229 +1378,6 @@ build/
 .wrangler/
 </file>
 
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-
-  switch (event.data.type) {
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      navigator.setAppBadge(self._badgeCount).catch(() => {});
-    } else {
-      navigator.clearAppBadge().catch(() => {});
-    }
-  } catch (_) {}
-}
-
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
-    if (activeClients.length === 0) {
-      // 全クライアントが非表示または存在しない → offlineビーコン
-      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
-  if (typeof body  === 'string' && body.indexOf('enc::v')  === 0) body  = '新しいメッセージがあります';
-  if (typeof title === 'string' && title.indexOf('enc::v') === 0) title = 'Covo';
-
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-
-  return self.registration.showNotification(title, notificationOptions);
-});
-
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
-</file>
-
 <file path="public/manifest.json">
 {
   "name": "Covo",
@@ -1453,190 +1414,6 @@ self.addEventListener('notificationclick', (event) => {
     }
   ]
 }
-</file>
-
-<file path="scripts/cleanup_webrtc_fast.js">
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
-const { getDatabase } = require('firebase-admin/database');
-const fs = require('fs');
-const path = require('path');
-
-const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
-
-if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
-  console.error("❌ serviceAccountKey.json not found.");
-  process.exit(1);
-}
-
-const serviceAccount = require(SERVICE_ACCOUNT_PATH);
-const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
-const APP_ID = "simplechat-65a0d";
-
-initializeApp({
-  credential: cert(serviceAccount),
-  databaseURL: DATABASE_URL
-});
-
-const firestore = getFirestore();
-const rtdb = getDatabase();
-
-async function cleanupFirestore(collectionName) {
-  const colRef = firestore.collection('artifacts').doc(APP_ID).collection(collectionName);
-  const snap = await colRef.get();
-  
-  if (snap.empty) {
-    console.log(`✅ Firestore: No documents found in ${collectionName}.`);
-    return;
-  }
-  
-  console.log(`🧹 Firestore: Found ${snap.size} documents in ${collectionName}. Deleting...`);
-  
-  const deletePromises = [];
-  let deletedCount = 0;
-  
-  for (const doc of snap.docs) {
-    const subCollections = await doc.ref.listCollections();
-    for (const sub of subCollections) {
-      const subSnap = await sub.get();
-      for (const subDoc of subSnap.docs) {
-        deletePromises.push(subDoc.ref.delete());
-      }
-    }
-    deletePromises.push(doc.ref.delete());
-    deletedCount++;
-  }
-  
-  await Promise.all(deletePromises);
-  console.log(`✅ Firestore: Deleted ${deletedCount} documents and their subcollections from ${collectionName}.`);
-}
-
-async function cleanupRTDB(nodeName) {
-  const path = `artifacts/${APP_ID}/${nodeName}`;
-  const ref = rtdb.ref(path);
-  const snap = await ref.once('value');
-  
-  if (!snap.exists()) {
-    console.log(`✅ RTDB: No data found at ${path}.`);
-    return;
-  }
-  
-  const count = Object.keys(snap.val()).length;
-  console.log(`🧹 RTDB: Found ${count} nodes at ${path}. Deleting...`);
-  await ref.remove();
-  console.log(`✅ RTDB: Deleted ${nodeName} from RTDB.`);
-}
-
-async function runCleanup() {
-  console.log("🚀 Starting WebRTC garbage cleanup...");
-  
-  try {
-    await cleanupFirestore('calls');
-    await cleanupFirestore('fileshares');
-    
-    await cleanupRTDB('calls');
-    await cleanupRTDB('fileshares');
-    
-    console.log("\n🎉 Cleanup complete! The database is now free of WebRTC garbage data.");
-    process.exit(0);
-  } catch (err) {
-    console.error("\n❌ Error during cleanup:", err);
-    process.exit(1);
-  }
-}
-
-runCleanup();
-</file>
-
-<file path="scripts/cleanup_webrtc.js">
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
-const { getDatabase } = require('firebase-admin/database');
-const fs = require('fs');
-const path = require('path');
-
-const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
-
-if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
-  console.error("❌ serviceAccountKey.json not found.");
-  process.exit(1);
-}
-
-const serviceAccount = require(SERVICE_ACCOUNT_PATH);
-const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
-const APP_ID = "simplechat-65a0d";
-
-initializeApp({
-  credential: cert(serviceAccount),
-  databaseURL: DATABASE_URL
-});
-
-const firestore = getFirestore();
-const rtdb = getDatabase();
-
-async function cleanupFirestore(collectionName) {
-  const colRef = firestore.collection('artifacts').doc(APP_ID).collection(collectionName);
-  const snap = await colRef.get();
-  
-  if (snap.empty) {
-    console.log(`✅ Firestore: No documents found in ${collectionName}.`);
-    return;
-  }
-  
-  console.log(`🧹 Firestore: Found ${snap.size} documents in ${collectionName}. Deleting...`);
-  
-  let deletedCount = 0;
-  for (const doc of snap.docs) {
-    // Delete subcollections (candidates)
-    const subCollections = await doc.ref.listCollections();
-    for (const sub of subCollections) {
-      const subSnap = await sub.get();
-      for (const subDoc of subSnap.docs) {
-        await subDoc.ref.delete();
-      }
-    }
-    // Delete parent doc
-    await doc.ref.delete();
-    deletedCount++;
-  }
-  console.log(`✅ Firestore: Deleted ${deletedCount} documents from ${collectionName}.`);
-}
-
-async function cleanupRTDB(nodeName) {
-  const path = `artifacts/${APP_ID}/${nodeName}`;
-  const ref = rtdb.ref(path);
-  const snap = await ref.once('value');
-  
-  if (!snap.exists()) {
-    console.log(`✅ RTDB: No data found at ${path}.`);
-    return;
-  }
-  
-  const count = Object.keys(snap.val()).length;
-  console.log(`🧹 RTDB: Found ${count} nodes at ${path}. Deleting...`);
-  await ref.remove();
-  console.log(`✅ RTDB: Deleted ${nodeName} from RTDB.`);
-}
-
-async function runCleanup() {
-  console.log("🚀 Starting WebRTC garbage cleanup...");
-  
-  try {
-    await cleanupFirestore('calls');
-    await cleanupFirestore('fileshares');
-    
-    await cleanupRTDB('calls');
-    await cleanupRTDB('fileshares');
-    
-    console.log("\n🎉 Cleanup complete! The database is now free of WebRTC garbage data.");
-    process.exit(0);
-  } catch (err) {
-    console.error("\n❌ Error during cleanup:", err);
-    process.exit(1);
-  }
-}
-
-runCleanup();
 </file>
 
 <file path="scripts/generate_geoguessr_data.py">
@@ -3328,6 +3105,237 @@ iPhone等で開発者コンソールが無くてもデバッグできるよう�
 
 - **`keys/` の鍵ファイルは過去に git にコミットされている**ため、GitHub の履歴に残っている可能性があります。もし秘密の鍵なら、新しい鍵に作り直す（ローテーションする）ことを検討してください。
 - `server/src/index.js` は **UTF-16LE** で保存されています（通常のエディタで文字化けする場合あり）。
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+
+  switch (event.data.type) {
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
+    if (activeClients.length === 0) {
+      // 全クライアントが非表示または存在しない → offlineビーコン
+      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
+  if (typeof body  === 'string' && body.indexOf('enc::v')  === 0) body  = '新しいメッセージがあります';
+  if (typeof title === 'string' && title.indexOf('enc::v') === 0) title = 'Covo';
+
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+
+  return self.registration.showNotification(title, notificationOptions);
+});
+
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
 </file>
 
 <file path="tailwind.config.js">
@@ -5977,6 +5985,64 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
+}
+</file>
+
 <file path="public/js/utils.js">
 /**
  * ユーティリティ関数群 (utils.js)
@@ -6049,12 +6115,20 @@ export function getMsgTimestamp(msg) {
     if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
       return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
     }
+    if (typeof msg.createdAt === 'string') {
+      const parsed = new Date(msg.createdAt).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
   }
   if (msg.timestamp) {
     if (typeof msg.timestamp === 'number') return msg.timestamp;
     if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
     if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
       return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.timestamp === 'string') {
+      const parsed = new Date(msg.timestamp).getTime();
+      if (!isNaN(parsed)) return parsed;
     }
   }
   return Date.now();
@@ -6151,64 +6225,6 @@ if (typeof window !== 'undefined') {
   window._execCopyFallback = _execCopyFallback;
   window.emailInitial = emailInitial;
   window.processHeicFile = processHeicFile;
-}
-</file>
-
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    }
-  }
 }
 </file>
 
@@ -10715,7 +10731,7 @@ async function handleJoinServer(request, env) {
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
   }
 }
 
@@ -10735,7 +10751,7 @@ async function handleSyncRtdb(request, env) {
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -10922,8 +10938,8 @@ async function handleSendNotification(request, env) {
 
   try {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
-    if (!receiverIds || !title || !appId || !senderId || !idToken) {
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: dynamicCors });
+    if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
+      return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
@@ -10936,13 +10952,13 @@ async function handleSendNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: dynamicCors });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
     // Service Account から FCM OAuth2 トークンおよび RTDB トークンを事前に1回のみ取得（ループ内多重フェッチを排除）
     if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: dynamicCors });
     }
     const [fcmAccessToken, rtdbToken] = await Promise.all([
       getFCMToken(env.SERVICE_ACCOUNT_JSON),
@@ -11264,7 +11280,8 @@ const ALLOWED_PROXY_DOMAINS = [
   "res.cloudinary.com",
   "firebasestorage.googleapis.com",
   "files.catbox.moe",
-  "0x0.st"
+  "0x0.st",
+  "workers.dev"
 ];
 
 async function handleDownloadProxy(request, env, url) {
@@ -12387,6 +12404,7 @@ async function handleD1Api(request, env, url) {
     // 7. WebRTC シグナリング (webrtc)
     if (subpath.startsWith("webrtc")) {
       if (request.method === "GET") {
+        if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const appId = url.searchParams.get("appId");
         const id = url.searchParams.get("id"); // callId or fsId
         const type = url.searchParams.get("type"); // 'call' or 'fs' or 'candidates'
@@ -13002,7 +13020,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
           versions: { [version]: b64Wrapped },
-          [`versions.${version}`]: b64Wrapped,
           latestVersion: version,
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
@@ -13019,7 +13036,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
         { 
           versions: { [version]: b64Wrapped },
-          [`versions.${version}`]: b64Wrapped,
           latestVersion: version,
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
@@ -16255,7 +16271,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
             <div class="flex gap-3 mt-6">
               <button id="cancelCreateServerBtn" type="button"
                 class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
-              <button id="confirmCreateServerBtn"
+              <button id="confirmCreateServerBtn" type="button"
                 class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">作成</button>
             </div>
           </form>
@@ -16298,7 +16314,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
             <div class="flex gap-3 mt-6">
               <button id="cancelJoinServerBtn" type="button"
                 class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all">キャンセル</button>
-              <button id="confirmJoinServerBtn"
+              <button id="confirmJoinServerBtn" type="button"
                 class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition-all">参加</button>
             </div>
           </form>
@@ -16468,7 +16484,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
                     <input type="text" autocomplete="username" style="display:none;" />
                     <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード" autocomplete="new-password"
                       class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
-                    <button id="changeServerPasswordBtn"
+                    <button id="changeServerPasswordBtn" type="button"
                       class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all">パスワード変更</button>
                   </form>
                 </div>
@@ -20745,15 +20761,22 @@ function formatTimeAgo(timestamp) {
   let past;
   if (typeof timestamp === 'number') {
     past = new Date(timestamp);
-  } else if (timestamp.toDate) {
+  } else if (typeof timestamp.toDate === 'function') {
     past = timestamp.toDate();
+  } else if (typeof timestamp === 'object' && timestamp.seconds != null) {
+    past = new Date(timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000));
+  } else if (typeof timestamp === 'string') {
+    past = new Date(timestamp);
   } else {
     return "";
   }
 
+  if (isNaN(past.getTime())) return "";
+
   const now = new Date();
   const diffInSeconds = Math.floor((now - past) / 1000);
 
+  if (diffInSeconds < 0) return `たった今`;
   if (diffInSeconds < 60) return `数秒前`;
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes}分前`;
@@ -30947,9 +30970,7 @@ window.setAppTheme = function (theme) {
   document.documentElement.classList.toggle('dark-server-theme', isDark);
   document.body.classList.toggle('dark-server-theme', isDark);
 
-  const pcToggle = document.getElementById('toggleDarkServer');
   const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle && 'checked' in pcToggle) pcToggle.checked = isDark;
   if (mobileToggle && 'checked' in mobileToggle) mobileToggle.checked = isDark;
 
   updateThemeSelectorUI(validTheme);
@@ -31162,7 +31183,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.67",
+  "version": "1.1.68",
   "force": false
 }
 </file>
@@ -31171,7 +31192,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.67",
+  "version": "1.1.68",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
