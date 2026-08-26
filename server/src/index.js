@@ -966,10 +966,10 @@ async function handleUploadFile(request, env) {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'アップロードエラー', details: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
+      return new Response(JSON.stringify({ error: 'アップロードエラー', details: err.toString() }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 }
 
 // -------------------------------------------------------------
@@ -1358,10 +1358,10 @@ async function handleShareFile(request, env) {
       status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Proxy error', details: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
+      return new Response(JSON.stringify({ error: 'Proxy error', details: err.toString() }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 }
 
 

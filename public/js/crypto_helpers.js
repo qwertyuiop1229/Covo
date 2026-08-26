@@ -419,30 +419,34 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           if (ver === 'latest' || ver === 'latestVersion') continue;
           const rawKey = await window.crypto.subtle.exportKey("raw", roomKeyObj[ver]);
           const ids = Array.from(new Set(memberIds || []));
-          const d1Keys = [];
+          const writePromises = [];
           for (const uid of ids) {
             try {
               const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
               if (!pub) continue; 
               const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
               if (isD1) {
-                d1Keys.push({ userId: uid, keyData: { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: Date.now() } });
+                // D1用
               } else {
-                await setDoc(
-                  doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-                  { 
-                    versions: { [ver]: _abToB64(wrapped) },
-                    [`versions.${ver}`]: _abToB64(wrapped),
-                    latestVersion: ver,
-                    wrappedKey: _abToB64(wrapped),
-                    updatedAt: serverTimestamp() 
-                  }, 
-                  { merge: true }
+                writePromises.push(
+                  setDoc(
+                    doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
+                    { 
+                      versions: { [ver]: _abToB64(wrapped) },
+                      [`versions.${ver}`]: _abToB64(wrapped),
+                      latestVersion: ver,
+                      wrappedKey: _abToB64(wrapped),
+                      updatedAt: serverTimestamp() 
+                    }, 
+                    { merge: true }
+                  ).catch(() => {})
                 );
               }
             } catch (e) { }
           }
-          // Firestore へのキー配布完了
+          if (writePromises.length > 0) {
+            await Promise.all(writePromises);
+          }
         }
       } catch (e) {}
     }

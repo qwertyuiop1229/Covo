@@ -4592,10 +4592,14 @@ window.saLoadStamps = async function (targetServerId) {
                 <img src="${escapeHtml(thumbUrl)}" class="w-8 h-8 object-contain rounded bg-gray-50 border border-gray-200" />
                 <span class="font-bold text-gray-800 text-sm">${escapeHtml(name)} ${isLegacy ? '<span class="text-xs text-gray-400 font-normal">(レガシー)</span>' : ''}</span>
               </div>
-              ${hasAdminRights ? `<button class="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" onclick="saDeleteGroup('${targetServerId}', '${id}', ${isLegacy})">グループごと削除</button>` : ''}
+              ${hasAdminRights ? `<button class="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors sa-del-grp-btn">グループごと削除</button>` : ''}
             </div>
             <div class="flex flex-wrap gap-3 pt-1 max-h-32 overflow-y-auto">${stampsHtml}</div>
           `;
+      const delGrpBtn = div.querySelector('.sa-del-grp-btn');
+      if (delGrpBtn) {
+        delGrpBtn.addEventListener('click', () => saDeleteGroup(targetServerId, id, isLegacy));
+      }
       listEl.appendChild(div);
     };
     snapGroups.forEach(doc => {
@@ -12878,29 +12882,44 @@ function initializeResizer() {
   }
 
   let isResizingLeft = false;
-  if (resizer) {
-    resizer.addEventListener("mousedown", (e) => {
+  let leftPointerId = null;
+
+  if (resizer && sidebar) {
+    resizer.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
       isResizingLeft = true;
+      leftPointerId = e.pointerId;
+      try { resizer.setPointerCapture(e.pointerId); } catch (_) {}
+      resizer.classList.add("is-resizing");
       document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleLeftMouseMove);
-      document.addEventListener("mouseup", handleLeftMouseUp);
+      document.body.style.cursor = "col-resize";
     });
-  }
 
-  function handleLeftMouseMove(e) {
-    if (isResizingLeft && sidebar) {
-      const maxAllowed = Math.min(600, window.innerWidth - 120);
-      const newWidth = Math.max(180, Math.min(maxAllowed, e.clientX));
+    resizer.addEventListener("pointermove", (e) => {
+      if (!isResizingLeft) return;
+      const sidebarRect = sidebar.getBoundingClientRect();
+      // sidebar の左端からの相対X座標で計算（サーバーナビゲーションバーの幅を自動控除）
+      const calculatedWidth = e.clientX - sidebarRect.left;
+      const maxAllowed = Math.min(600, window.innerWidth - 180);
+      const newWidth = Math.max(180, Math.min(maxAllowed, calculatedWidth));
       sidebar.style.width = `${newWidth}px`;
-    }
-  }
+    });
 
-  function handleLeftMouseUp() {
-    isResizingLeft = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleLeftMouseMove);
-    document.removeEventListener("mouseup", handleLeftMouseUp);
-    if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+    const stopLeftResize = (e) => {
+      if (!isResizingLeft) return;
+      isResizingLeft = false;
+      if (leftPointerId !== null) {
+        try { resizer.releasePointerCapture(leftPointerId); } catch (_) {}
+        leftPointerId = null;
+      }
+      resizer.classList.remove("is-resizing");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (sidebar) localStorage.setItem(LEFT_WIDTH_KEY, sidebar.style.width);
+    };
+
+    resizer.addEventListener("pointerup", stopLeftResize);
+    resizer.addEventListener("pointercancel", stopLeftResize);
   }
 
   if (toggleLeftBtn && sidebar) {
@@ -12936,28 +12955,45 @@ function initializeResizer() {
   }
 
   let isResizingRight = false;
-  if (resizerRight) {
-    resizerRight.addEventListener("mousedown", (e) => {
+  let rightPointerId = null;
+
+  if (resizerRight && membersSidebar) {
+    resizerRight.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
       isResizingRight = true;
+      rightPointerId = e.pointerId;
+      try { resizerRight.setPointerCapture(e.pointerId); } catch (_) {}
+      resizerRight.classList.add("is-resizing");
       document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleRightMouseMove);
-      document.addEventListener("mouseup", handleRightMouseUp);
+      document.body.style.cursor = "col-resize";
     });
-  }
 
-  function handleRightMouseMove(e) {
-    if (isResizingRight && membersSidebar) {
-      const newWidth = Math.max(150, Math.min(500, window.innerWidth - e.clientX));
+    resizerRight.addEventListener("pointermove", (e) => {
+      if (!isResizingRight) return;
+      const appContainer = document.getElementById("appContainer") || document.body;
+      const appRect = appContainer.getBoundingClientRect();
+      // 右端からの相対幅を計算
+      const calculatedWidth = appRect.right - e.clientX;
+      const maxAllowed = Math.min(500, window.innerWidth - 200);
+      const newWidth = Math.max(160, Math.min(maxAllowed, calculatedWidth));
       membersSidebar.style.width = `${newWidth}px`;
-    }
-  }
+    });
 
-  function handleRightMouseUp() {
-    isResizingRight = false;
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleRightMouseMove);
-    document.removeEventListener("mouseup", handleRightMouseUp);
-    if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+    const stopRightResize = (e) => {
+      if (!isResizingRight) return;
+      isResizingRight = false;
+      if (rightPointerId !== null) {
+        try { resizerRight.releasePointerCapture(rightPointerId); } catch (_) {}
+        rightPointerId = null;
+      }
+      resizerRight.classList.remove("is-resizing");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (membersSidebar) localStorage.setItem(RIGHT_WIDTH_KEY, membersSidebar.style.width);
+    };
+
+    resizerRight.addEventListener("pointerup", stopRightResize);
+    resizerRight.addEventListener("pointercancel", stopRightResize);
   }
 
   if (toggleMembersBtn && membersSidebar) {

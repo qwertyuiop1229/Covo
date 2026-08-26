@@ -182,17 +182,40 @@
       background-color: #f0f0f0;
     }
 
-    /* サイドバーリサイズ用ハンドル */
+    /* サイドバーリサイズ用ハンドル (Discord風: 細線＋広域タッチ判定) */
     #resizer, #resizerRight {
       width: 2px;
       cursor: col-resize;
-      background-color: #e5e7eb;
-      transition: background-color 0.2s;
+      background-color: #e2e8f0;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
       flex-shrink: 0;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 25;
     }
 
-    #resizer:hover, #resizerRight:hover {
-      background-color: #d1d5db;
+    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
+    #resizer::before, #resizerRight::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -10px;
+      right: -10px;
+      width: calc(100% + 20px);
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 26;
+    }
+
+    /* ホバー時およびドラッグ中のDiscord風ハイライト */
+    #resizer:hover, #resizerRight:hover,
+    #resizer.is-resizing, #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: 0 0 6px rgba(88, 101, 242, 0.6);
     }
 
     /* リプライ機能用CSS (Discord風L字ライン) - merged above */
@@ -379,8 +402,12 @@
     body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
 
     /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
+    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: 0 0 8px rgba(88, 101, 242, 0.8);
+    }
     body.dark-server-theme * {
       scrollbar-color: rgba(255,255,255,0.18) transparent;
     }
