@@ -223,6 +223,10 @@
       cursor: pointer;
       font-size: 0.8rem;
       color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
     }
     .reply-quote::before {
       content: "";
@@ -238,6 +242,8 @@
     .my-reply {
       padding: 2px 28px 2px 0;
       justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
     }
     .my-reply::before {
       left: auto;

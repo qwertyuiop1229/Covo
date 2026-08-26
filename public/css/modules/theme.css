@@ -205,6 +205,11 @@
     .reply-quote-nickname {
       font-weight: 600;
       color: #475569;
+      flex-shrink: 0;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .reply-quote-text {
@@ -213,6 +218,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
       opacity: 0.9;
+      flex: 1 1 auto;
+      min-width: 0;
     }
 
     .message-highlight {

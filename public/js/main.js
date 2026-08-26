@@ -7985,7 +7985,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
   }
 
   const bubbleContainer = document.createElement("div");
-  bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] ${isMyMessage ? 'items-end' : 'items-start'}`;
+  bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] min-w-0 ${isMyMessage ? 'items-end' : 'items-start'}`;
 
   if (message.replyTo && message.replyTo.messageId) {
     const replyQuoteDiv = document.createElement("div");
@@ -9156,16 +9156,27 @@ async function showUnloadedMessagePreview(msgId) {
 
 
 function doJumpHighlight(el) {
-  const container = messagesDisplay;
+  const container = document.getElementById("messagesDisplay") || messagesDisplay;
+  let didScroll = false;
+
   if (container) {
     const row = el.closest('.message-row') || el;
-    // scrollIntoViewを使用して、どの画面サイズ・環境でも確実に中央にスクロールさせる
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const cRect = container.getBoundingClientRect();
+    const rRect = row.getBoundingClientRect();
+
+    // 対象のメッセージがすでに画面内に見えているか判定（上下30pxのマージンを確保）
+    const isVisible = (rRect.top >= cRect.top + 30 && rRect.bottom <= cRect.bottom - 30);
+
+    // 画面外に見切れている場合のみ、最小限のスクロールを実行して隙間の発生を防止
+    if (!isVisible) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      didScroll = true;
+    }
   }
 
-  // ハイライトアニメーション（少し遅延させてスクロール後に発火）
+  // すでに見えている場合は即座に、スクロールした場合は移動を待ってハイライトを発火
   setTimeout(() => {
-    const isStamp = el.querySelector('img[alt^="stamp_"]');
+    const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
     if (isStamp) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
@@ -9173,7 +9184,7 @@ function doJumpHighlight(el) {
       el.classList.add('message-highlight');
       setTimeout(() => el.classList.remove('message-highlight'), 1200);
     }
-  }, 200);
+  }, didScroll ? 200 : 50);
 }
 
 // iOS/Safari 判定
