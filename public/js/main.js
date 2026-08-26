@@ -9868,44 +9868,53 @@ if (currentRoomTitleAreaEl) {
 }
 if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", () => closeBottomSheet());
 
-// スワイプダウンで閉じる処理
+// スワイプダウンで閉じる処理（リストスクロールと競合しないスマートジェスチャー）
 let touchStartY = 0;
-let touchCurrentY = 0;
 let isDraggingSheet = false;
+let isHandleDrag = false;
 
 if (membersSidebarEl) {
   membersSidebarEl.addEventListener("touchstart", (e) => {
     if (window.innerWidth >= 768) return;
-    if (membersListEl && membersListEl.scrollTop === 0) {
+    const handle = e.target.closest("#bottomSheetHandle, .bottom-sheet-handle, .bottom-sheet-handle-bar");
+    isHandleDrag = !!handle;
+    if (isHandleDrag || (membersListEl && membersListEl.scrollTop <= 0)) {
       touchStartY = e.touches[0].clientY;
       isDraggingSheet = true;
       membersSidebarEl.style.transition = "none";
+    } else {
+      isDraggingSheet = false;
     }
   }, { passive: true });
 
   membersSidebarEl.addEventListener("touchmove", (e) => {
     if (!isDraggingSheet) return;
-    e.preventDefault();
-    touchCurrentY = e.touches[0].clientY;
-    const deltaY = touchCurrentY - touchStartY;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - touchStartY;
     if (deltaY > 0) {
+      if (e.cancelable) e.preventDefault();
       membersSidebarEl.style.transform = `translateY(${deltaY}px)`;
+    } else {
+      // 指が上方向に動いた場合は通常のリストスクロールを優先
+      isDraggingSheet = false;
+      membersSidebarEl.style.transform = "translateY(0)";
     }
   }, { passive: false });
 
   membersSidebarEl.addEventListener("touchend", () => {
-    if (!isDraggingSheet) return;
+    if (!isDraggingSheet && membersSidebarEl.style.transform === "translateY(0)") return;
     isDraggingSheet = false;
-    membersSidebarEl.style.transition = "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
-
-    const deltaY = touchCurrentY - touchStartY;
+    isHandleDrag = false;
+    membersSidebarEl.style.transition = "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)";
+    const currentTransform = membersSidebarEl.style.transform || "";
+    const match = currentTransform.match(/translateY\((\d+(?:\.\d+)?)px\)/);
+    const deltaY = match ? parseFloat(match[1]) : 0;
     if (deltaY > 100) {
       closeBottomSheet();
     } else {
       membersSidebarEl.style.transform = "translateY(0)";
     }
     touchStartY = 0;
-    touchCurrentY = 0;
   });
 }
 
@@ -10486,40 +10495,99 @@ function initCallListener() {
   }).catch(() => {});
 }
 
+function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
+  listContainer.innerHTML = '';
+
+  const processedMembers = memberIds.map(uid => {
+    const user = (cachedUsers || []).find(u => u.id === uid) || { id: uid };
+    let computedState = user.computedState || user.state || 'offline';
+    return { ...user, id: uid, computedState };
+  });
+
+  const onlineMembers = processedMembers.filter(u => u.computedState === 'online');
+  const awayMembers = processedMembers.filter(u => u.computedState === 'away');
+  const offlineMembers = processedMembers.filter(u => u.computedState === 'offline');
+
+  onlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+  awayMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+  offlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+
+  const sortedList = [...onlineMembers, ...awayMembers, ...offlineMembers];
+
+  sortedList.forEach(member => {
+    const nameRaw = member.nickname || member.displayName || member.id.slice(0, 8);
+    const item = document.createElement("div");
+    item.className = "call-picker-item";
+
+    const avatar = document.createElement("div");
+    avatar.className = "call-picker-avatar relative";
+    if (isUsableAvatarUrl(member.avatarUrl)) {
+      __setAvatarImg(avatar, member.avatarUrl, nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
+    } else {
+      avatar.textContent = (nameRaw || " ").charAt(0).toUpperCase();
+    }
+
+    const statusDot = document.createElement("div");
+    statusDot.className = `status-indicator status-${member.computedState}`;
+    avatar.appendChild(statusDot);
+
+    const info = document.createElement("div");
+    info.className = "flex-1 min-w-0";
+
+    const name = document.createElement("div");
+    name.className = "call-picker-name truncate";
+    name.textContent = nameRaw;
+    info.appendChild(name);
+
+    let statusTextVal = "オフライン";
+    if (member.computedState === 'online') statusTextVal = "オンライン";
+    else if (member.computedState === 'away') statusTextVal = "離席中";
+    else if (member.last_changed) statusTextVal = formatTimeAgo(member.last_changed);
+
+    const statusText = document.createElement("div");
+    statusText.className = "call-picker-status";
+    statusText.textContent = statusTextVal;
+    info.appendChild(statusText);
+
+    item.appendChild(avatar);
+    item.appendChild(info);
+
+    item.onclick = () => {
+      onClickCallback(member.id, nameRaw, member.avatarUrl || '');
+    };
+    listContainer.appendChild(item);
+  });
+}
+
 async function openCallPicker() {
   if (!currentServerData || !userId) return;
   const modal = document.getElementById('callPickerModal');
   const list = document.getElementById('callPickerList');
-  const header = modal.querySelector('.call-picker-header span');
-  if (header) header.textContent = '通話する相手を選択';
+  const titleEl = document.getElementById('callPickerTitle');
+  if (titleEl) titleEl.textContent = '通話する相手を選択';
+  if (!list || !modal) return;
   list.innerHTML = '';
 
   const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
   if (memberIds.length === 0) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.4);">メンバーがいません</div>';
+    list.innerHTML = '<div class="p-6 text-center text-xs text-gray-400">メンバーがいません</div>';
   } else {
-    for (const uid of memberIds) {
-      const user = cachedUsers.find(u => u.id === uid) || {};
-      const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
-      const name = escapeHtml(nameRaw);
-      const div = document.createElement('div');
-      div.className = 'call-picker-item';
-      div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${name}</div></div>`;
-      const avatarEl = div.querySelector('.call-picker-avatar');
-      __setAvatarImg(avatarEl, user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
-      div.onclick = () => {
-        closeCallPicker();
-        startCall(uid, nameRaw, user.avatarUrl || '');
-      };
-      list.appendChild(div);
-    }
+    _renderPickerMembers(list, memberIds, (uid, nameRaw, avatarUrl) => {
+      closeCallPicker();
+      startCall(uid, nameRaw, avatarUrl);
+    });
   }
 
+  modal.classList.remove('hidden');
   modal.classList.add('show');
 }
 
 function closeCallPicker() {
-  document.getElementById('callPickerModal').classList.remove('show');
+  const modal = document.getElementById('callPickerModal');
+  if (modal) {
+    modal.classList.remove('show');
+    modal.classList.add('hidden');
+  }
 }
 
 /* =====================================================================
@@ -10556,24 +10624,20 @@ window.openFileSharePicker = function () {
   if (!currentServerData || !userId) return;
   const modal = document.getElementById('callPickerModal');
   const list = document.getElementById('callPickerList');
-  const header = modal.querySelector('.call-picker-header span');
-  if (header) header.textContent = 'ファイルを送る相手を選択';
+  const titleEl = document.getElementById('callPickerTitle');
+  if (titleEl) titleEl.textContent = 'ファイルを送る相手を選択';
+  if (!list || !modal) return;
   list.innerHTML = '';
   const memberIds = (currentServerData.joinedUsers || []).filter(uid => uid !== userId);
   if (memberIds.length === 0) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.4);">メンバーがいません</div>';
+    list.innerHTML = '<div class="p-6 text-center text-xs text-gray-400">メンバーがいません</div>';
   } else {
-    for (const uid of memberIds) {
-      const user = cachedUsers.find(u => u.id === uid) || {};
-      const nameRaw = user.nickname || user.displayName || uid.slice(0, 8);
-      const div = document.createElement('div');
-      div.className = 'call-picker-item';
-      div.innerHTML = `<div class="call-picker-avatar"></div><div><div class="call-picker-name">${escapeHtml(nameRaw)}</div></div>`;
-      __setAvatarImg(div.querySelector('.call-picker-avatar'), user.avatarUrl || '', nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
-      div.onclick = () => { closeCallPicker(); _fsPickFileAndSend(uid, nameRaw); };
-      list.appendChild(div);
-    }
+    _renderPickerMembers(list, memberIds, (uid, nameRaw, avatarUrl) => {
+      closeCallPicker();
+      _fsPickFileAndSend(uid, nameRaw);
+    });
   }
+  modal.classList.remove('hidden');
   modal.classList.add('show');
 };
 

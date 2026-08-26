@@ -182,12 +182,12 @@
       background-color: #f0f0f0;
     }
 
-    /* サイドバーリサイズ用ハンドル (Discord風: 細線＋広域タッチ判定) */
+    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
     #resizer, #resizerRight {
       width: 2px;
       cursor: col-resize;
       background-color: #e2e8f0;
-      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+      transition: background-color 0.15s ease;
       flex-shrink: 0;
       position: relative;
       touch-action: none;
@@ -211,11 +211,11 @@
       z-index: 26;
     }
 
-    /* ホバー時およびドラッグ中のDiscord風ハイライト */
+    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
     #resizer:hover, #resizerRight:hover,
     #resizer.is-resizing, #resizerRight.is-resizing {
-      background-color: #5865f2;
-      box-shadow: 0 0 6px rgba(88, 101, 242, 0.6);
+      background-color: #1e293b;
+      box-shadow: none;
     }
 
     /* リプライ機能用CSS (Discord風L字ライン) - merged above */
@@ -405,8 +405,14 @@
     body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
     body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
     body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #3b82f6;
+      box-shadow: none;
+    }
+    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
+    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
+    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
       background-color: #5865f2;
-      box-shadow: 0 0 8px rgba(88, 101, 242, 0.8);
+      box-shadow: none;
     }
     body.dark-server-theme * {
       scrollbar-color: rgba(255,255,255,0.18) transparent;

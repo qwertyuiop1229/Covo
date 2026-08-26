@@ -408,19 +408,11 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       #bottomSheetHandle {
         display: flex;
         justify-content: center;
-        padding: 12px 0;
+        align-items: center;
+        width: 100%;
+        padding: 10px 0 6px;
         cursor: pointer;
         flex-shrink: 0;
-      }
-
-      
-
-      #bottomSheetHandle::after {
-        content: "";
-        width: 40px;
-        height: 5px;
-        background-color: #d1d5db;
-        border-radius: 3px;
       }
     }
 

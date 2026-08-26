@@ -1949,12 +1949,12 @@
         <div id="resizerRight"></div>
         <div id="bottomSheetOverlay" onclick="closeBottomSheet()"></div>
         <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet">
-          <div class="bottom-sheet-handle" id="bottomSheetHandle">
+          <div class="bottom-sheet-handle md:hidden" id="bottomSheetHandle">
             <div class="bottom-sheet-handle-bar"></div>
           </div>
-          <div class="px-4 py-2 border-b border-gray-100 dark:border-white/5 flex items-center justify-between md:hidden">
+          <div class="px-4 py-2.5 border-b border-gray-100 dark:border-white/5 flex items-center justify-between md:hidden flex-shrink-0">
             <span class="text-sm font-bold text-gray-800 dark:text-gray-100">メンバー一覧</span>
-            <button onclick="closeBottomSheet()" class="text-gray-400 hover:text-gray-600 p-1.5"><i class="fas fa-times"></i></button>
+            <button onclick="closeBottomSheet()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg"><i class="fas fa-times"></i></button>
           </div>
           <div id="membersList" class="p-2 w-full flex-1 overflow-y-auto">
             <!-- メンバーはここに動的に追加されます -->
@@ -2307,12 +2307,14 @@
   <!-- 通話相手選択モーダル -->
   <div id="callPickerModal" onclick="closeCallPicker()">
     <div class="call-picker-box" onclick="event.stopPropagation()">
-      <div class="call-picker-handle"></div>
-      <div class="call-picker-header">
-        <span>通話する相手を選択</span>
-        <button class="" onclick="closeCallPicker()" style="background:none;border:none;color:rgba(255,255,255,0.45);cursor:pointer;font-size:1.1rem;padding:4px;line-height:1;border-radius:6px;"><i class="fas fa-times"></i></button>
+      <div class="call-picker-handle" id="callPickerHandle">
+        <div class="bottom-sheet-handle-bar"></div>
       </div>
-      <div id="callPickerList"></div>
+      <div class="call-picker-header">
+        <span id="callPickerTitle">通話する相手を選択</span>
+        <button class="call-picker-close-btn" onclick="closeCallPicker()"><i class="fas fa-times"></i></button>
+      </div>
+      <div id="callPickerList" class="p-2 overflow-y-auto"></div>
     </div>
   </div>
 
