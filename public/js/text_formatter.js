@@ -38,7 +38,7 @@ export function getEmojiHtml(emoji, spanClass = 'sk-em') {
   }
   if (emoji.startsWith('serverstamp:')) {
     const url = emoji.substring(12);
-    const isSafe = /^https?:\/\//i.test(url) || url.startsWith('/');
+    const isSafe = /^https?:\/\//i.test(url) || (url.startsWith('/') && !url.startsWith('//'));
     if (!isSafe) return '';
     return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }

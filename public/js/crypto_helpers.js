@@ -549,16 +549,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
       const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
-      if (data.length < 14) throw new Error("Invalid encrypted file: payload too short");
+      if (data.length < 13) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
-        if (data.length < 14) throw new Error("Invalid payload length for v1-v254");
+        if (data.length < 13) throw new Error("Invalid payload length for v1-v254");
         version = firstByte.toString();
         iv = data.subarray(1, 13);
         ciphertext = data.subarray(13);
       } else {
-        if (data.length < 22) throw new Error("Invalid payload length for extended version");
+        if (data.length < 21) throw new Error("Invalid payload length for extended version");
         const headerBuf = data.subarray(1, 9);
         const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();

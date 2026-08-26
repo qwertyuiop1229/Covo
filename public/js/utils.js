@@ -25,9 +25,12 @@ export function _abToB64(buf) {
  */
 export function _b64ToAb(b64) {
   try {
-    if (typeof b64 !== "string") return new ArrayBuffer(0);
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
     let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    while (norm.length % 4 > 0) norm += "=";
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
     const bin = atob(norm);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);

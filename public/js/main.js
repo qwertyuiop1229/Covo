@@ -201,6 +201,44 @@ let isAdmin = false;
 let isListAdmin = false;
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI__);
 
+// DOM要素参照（安全な初期化とStrictスコープ対応）
+const userPanelName = document.getElementById("userPanelName");
+const userPanelId = document.getElementById("userPanelId");
+const userPanelAvatar = document.getElementById("userPanelAvatar");
+const headerTitle = document.getElementById("headerTitle");
+const authContainer = document.getElementById("authContainer");
+const nicknameContainer = document.getElementById("nicknameContainer");
+const appContainer = document.getElementById("appContainer");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const nicknameInput = document.getElementById("nicknameInput");
+const allowedEmailsList = document.getElementById("allowedEmailsList");
+const adminEmailsList = document.getElementById("adminEmailsList");
+const listAdminEmailsList = document.getElementById("listAdminEmailsList");
+const adminPanelContainer = document.getElementById("adminPanelContainer");
+const adminMessage = document.getElementById("adminMessage");
+const newListAdminEmailInput = document.getElementById("newListAdminEmailInput");
+const addListAdminEmailButton = document.getElementById("addListAdminEmailButton");
+const settingsNicknameInput = document.getElementById("settingsNicknameInput");
+const settingsAvatarText = document.getElementById("settingsAvatarText");
+const settingsMessage = document.getElementById("settingsMessage");
+const settingsModal = document.getElementById("settingsModal");
+const currentRoomTitleText = document.getElementById("currentRoomTitleText");
+const fileAttachInput = document.getElementById("fileAttachInput");
+const fileAttachButton = document.getElementById("fileAttachButton");
+const messageInput = document.getElementById("messageInput");
+const sendMessageButton = document.getElementById("sendMessageButton");
+const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
+const replyingToContainer = document.getElementById("replyingToContainer");
+const replyingToNickname = document.getElementById("replyingToNickname");
+const replyingToText = document.getElementById("replyingToText");
+const messageContextMenu = document.getElementById("messageContextMenu");
+const downloadMessageButton = document.getElementById("downloadMessageButton");
+const membersSidebar = document.getElementById("membersSidebar");
+const membersList = document.getElementById("membersList");
+const currentRoomHeader = document.getElementById("currentRoomHeader");
+const messagesDisplay = document.getElementById("messagesDisplay");
+const roomList = document.getElementById("roomList");
+
 let currentRoomId = null;
 let unsubscribeMessages = null;
 let unsubscribeUserStatus = null;
@@ -6570,14 +6608,29 @@ messagesDisplay.addEventListener("wheel", (e) => {
 
 function handleDeleteRoomClick(id, name) {
   pendingRoomDelete = { roomId: id, roomName: name };
-  deleteRoomConfirmModal.classList.remove("hidden");
-  roomToDeleteNameSpan.textContent = name;
+  const delModal = document.getElementById("deleteRoomConfirmModal");
+  if (delModal) delModal.classList.remove("hidden");
+  const nameEl = document.getElementById("roomToDeleteName");
+  if (nameEl) nameEl.textContent = name;
 }
-confirmDeleteButton.addEventListener("click", async () => {
-  deleteRoomConfirmModal.classList.add("hidden");
-  await deleteRoomAndMessages(pendingRoomDelete.roomId);
-});
-cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
+
+const confirmDelButton = document.getElementById("confirmDeleteButton");
+if (confirmDelButton) {
+  confirmDelButton.addEventListener("click", async () => {
+    const delModal = document.getElementById("deleteRoomConfirmModal");
+    if (delModal) delModal.classList.add("hidden");
+    if (pendingRoomDelete) {
+      await deleteRoomAndMessages(pendingRoomDelete.roomId);
+    }
+  });
+}
+const cancelDelButton = document.getElementById("cancelDeleteButton");
+if (cancelDelButton) {
+  cancelDelButton.addEventListener("click", () => {
+    const delModal = document.getElementById("deleteRoomConfirmModal");
+    if (delModal) delModal.classList.add("hidden");
+  });
+}
 
 async function deleteRoomAndMessages(roomId) {
   if (!currentServerId) return;
@@ -13027,8 +13080,8 @@ window.setAppTheme = function (theme) {
 
   const pcToggle = document.getElementById('toggleDarkServer');
   const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle) pcToggle.checked = isDark;
-  if (mobileToggle) mobileToggle.checked = isDark;
+  if (pcToggle && 'checked' in pcToggle) pcToggle.checked = isDark;
+  if (mobileToggle && 'checked' in mobileToggle) mobileToggle.checked = isDark;
 
   updateThemeSelectorUI(validTheme);
   if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();

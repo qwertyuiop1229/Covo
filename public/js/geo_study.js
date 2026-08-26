@@ -229,8 +229,9 @@ function toggleMapSwap() {
 
 function loadDependencies() {
   return new Promise((resolve) => {
-    // 既に読み込み済みの場合はスキップ
+    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
     if (window.L) {
+      if (!leafletMap) initMap();
       resolve();
       return;
     }

@@ -209,51 +209,7 @@ async function signUpWithFirebase(email, password, env) {
 // ルーム参加処理 (Deprecated / Broken) -> サーバー参加処理に変更
 // -------------------------------------------------------------
 async function getFirestoreAdminToken(serviceAccountJsonStr) {
-  const serviceAccount = JSON.parse(serviceAccountJsonStr);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + 3600;
-  const payload = {
-    iss: serviceAccount.client_email,
-    sub: serviceAccount.client_email,
-    aud: 'https://oauth2.googleapis.com/token',
-    iat,
-    exp,
-    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
-  };
-
-  const encodeBase64Url = (obj) => btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const unsignedToken = `${encodeBase64Url(header)}.${encodeBase64Url(payload)}`;
-
-  const privateKey = serviceAccount.private_key;
-  const pemHeader = "-----BEGIN PRIVATE KEY-----";
-  const pemFooter = "-----END PRIVATE KEY-----";
-  const pemContents = privateKey.substring(pemHeader.length, privateKey.length - pemFooter.length - 1).replace(/\s/g, '');
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    binaryDer.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(unsignedToken)
-  );
-
-  const jwt = `${unsignedToken}.${btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
-  });
-  const data = await res.json();
-  return data.access_token;
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform');
 }
 
 // -------------------------------------------------------------
@@ -907,9 +863,10 @@ async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
   const unsignedToken = `${encodeBase64Url(header)}.${encodeBase64Url(payload)}`;
 
   const privateKey = serviceAccount.private_key;
-  const pemHeader = "-----BEGIN PRIVATE KEY-----";
-  const pemFooter = "-----END PRIVATE KEY-----";
-  const pemContents = privateKey.substring(pemHeader.length, privateKey.length - pemFooter.length - 1).replace(/\s/g, '');
+  const pemContents = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
   const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
 
   const cryptoKey = await crypto.subtle.importKey(
@@ -1039,8 +996,8 @@ async function handleDownloadProxy(request, env, url) {
       });
     }
 
-    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
-      return new Response(JSON.stringify({ error: 'Invalid protocol' }), {
+    if (parsedTarget.protocol !== 'https:') {
+      return new Response(JSON.stringify({ error: 'Invalid protocol: Only HTTPS is allowed' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -1593,10 +1550,12 @@ async function handleD1Api(request, env, url) {
         const body = await request.json();
         const { appId, userId, type, keyType, keyData, nickname, avatarUrl, publicKeyJwk, fcmToken, removeFcmToken } = body;
         
+        // ユーザー自身のデータ以外は書き込み禁止 (IDOR対策)
+        if (verifiedUser.uid !== userId) {
+          return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user profile" }), { status: 403, headers: d1Cors });
+        }
+
         if (type === "keys") {
-          if (verifiedUser.uid !== userId) {
-            return new Response(JSON.stringify({ error: "Forbidden: Only owner can write private keys" }), { status: 403, headers: d1Cors });
-          }
           await env.DB.prepare("INSERT INTO user_private_keys (user_id, app_id, key_type, key_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, app_id, key_type) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
             .bind(userId, appId, keyType || 'keys', JSON.stringify(keyData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -1699,8 +1658,23 @@ async function handleD1Api(request, env, url) {
         const { appId, serverId, type, name, description, isPublic, data, passwordHash, userId, profileData, stampId, stampName, stampUrl, groupId, groupData, code, inviteData, deleteFieldVal } = body;
         
         if (type === "create" || type === "update") {
-          const cur = await env.DB.prepare("SELECT server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          const cur = await env.DB.prepare("SELECT created_by, server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          
+          if (type === "update" && cur) {
+            let sData = cur.server_data ? JSON.parse(cur.server_data) : {};
+            const isOwner = cur.created_by === verifiedUser.uid;
+            const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (!isOwner && !isSvAdmin && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+            }
+          }
+
           let mergedData = cur && cur.server_data ? JSON.parse(cur.server_data) : {};
+          if (type === "create") {
+            mergedData.serverAdmins = [verifiedUser.uid];
+            mergedData.joinedUsers = [verifiedUser.uid];
+          }
           if (data) mergedData = { ...mergedData, ...data };
           if (deleteFieldVal && mergedData[deleteFieldVal] !== undefined) delete mergedData[deleteFieldVal];
           
@@ -1708,12 +1682,13 @@ async function handleD1Api(request, env, url) {
           const nextDesc = description !== undefined ? description : (mergedData.description || "");
           const nextPub = isPublic !== undefined ? (isPublic ? 1 : 0) : (mergedData.isPublic ? 1 : 0);
           const memberCount = cur ? cur.member_count : 1;
+          const createdBy = cur ? cur.created_by : verifiedUser.uid;
 
           await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
-            .bind(serverId, appId, nextName, nextDesc, nextPub, verifiedUser.uid, Date.now(), memberCount, JSON.stringify(mergedData)).run();
+            .bind(serverId, appId, nextName, nextDesc, nextPub, createdBy, Date.now(), memberCount, JSON.stringify(mergedData)).run();
           
-          if (userId && type === "create") {
-            await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
+          if (type === "create") {
+            await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, verifiedUser.uid, appId, Date.now()).run();
           }
           if (passwordHash) {
             await env.DB.prepare("INSERT INTO server_secrets (server_id, app_id, password_hash, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at")
@@ -1757,6 +1732,9 @@ async function handleD1Api(request, env, url) {
         }
 
         if (type === "profile") {
+          if (verifiedUser.uid !== userId) {
+            return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user profile" }), { status: 403, headers: d1Cors });
+          }
           await env.DB.prepare("INSERT INTO server_profiles (server_id, user_id, app_id, profile_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(server_id, user_id) DO UPDATE SET profile_data = excluded.profile_data, updated_at = excluded.updated_at")
             .bind(serverId, userId, appId, JSON.stringify(profileData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -1788,17 +1766,36 @@ async function handleD1Api(request, env, url) {
         const appId = url.searchParams.get("appId");
         const serverId = url.searchParams.get("serverId");
         const type = url.searchParams.get("type"); // 'server' or 'inviteCode' or 'stamp'
+        
+        // サーバー権限の確認
+        const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+        if (!curServer) return new Response(JSON.stringify({ error: "Server not found" }), { status: 404, headers: d1Cors });
+        
+        let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+        const isOwner = curServer.created_by === verifiedUser.uid;
+        const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+        const isGlobal = await isD1Admin(appId, verifiedUser, env);
+
         if (type === "inviteCode") {
+          if (!isOwner && !isSvAdmin && !isGlobal) {
+            return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+          }
           const code = url.searchParams.get("code");
           await env.DB.prepare("DELETE FROM server_invite_codes WHERE code = ? AND app_id = ?").bind(code, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
         if (type === "stamp") {
+          if (!isOwner && !isSvAdmin && !isGlobal) {
+            return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+          }
           const stampId = url.searchParams.get("stampId");
           await env.DB.prepare("DELETE FROM server_stamps WHERE stamp_id = ? AND app_id = ?").bind(stampId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        // サーバー削除
+        // サーバー削除 (オーナーまたはグローバル管理者のみ)
+        if (!isOwner && !isGlobal) {
+          return new Response(JSON.stringify({ error: "Forbidden: Only server owner or global admin can delete server" }), { status: 403, headers: d1Cors });
+        }
         await env.DB.prepare("DELETE FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
         await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
         await env.DB.prepare("DELETE FROM rooms WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
