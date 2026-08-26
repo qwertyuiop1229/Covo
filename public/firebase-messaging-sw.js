@@ -139,8 +139,8 @@ messaging.onBackgroundMessage((payload) => {
   if (data.type === 'incoming_call') {
     notificationOptions = {
       body,
-      icon: '/icon-192x192.png?v=6',
-      badge: '/icon-192x192.png?v=6',
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
       tag: `call-${data.callId || 'covo-call'}`,
       requireInteraction: true,
       data,
@@ -157,8 +157,8 @@ messaging.onBackgroundMessage((payload) => {
 
     notificationOptions = {
       body,
-      icon: '/icon-192x192.png?v=6',
-      badge: '/icon-192x192.png?v=6',
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
       tag,
       data,
       actions: [

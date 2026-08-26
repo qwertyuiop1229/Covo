@@ -108,9 +108,6 @@ function closeGeoStudy() {
     
     // ウィンドウを閉じたときにリセットしておく
     closeResultOverlay();
-    if (document.getElementById('gs-guess-btn')) {
-        startNewLocation();
-    }
   }
 }
 

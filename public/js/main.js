@@ -7013,7 +7013,7 @@ async function sendSticker(emoji) {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
           fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, appId, senderId: userId, idToken })
+            body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
           }).catch(() => { });
         }
       }
@@ -7503,7 +7503,7 @@ async function sendMessage() {
           const notifPayload = JSON.stringify({
             receiverIds,
             title: `${serverName} › #${roomName}`,
-            body: `${userNickname}: ${text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : '')}`,
+            body: `${userNickname}: ${wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))}`,
             roomId: currentRoomId,
             messageId: newMessageId, // ★ メッセージ固有ID（1件ずつ独立した通知）
             appId: appId,
@@ -7511,14 +7511,15 @@ async function sendMessage() {
             idToken
           });
           // sendBeaconはページを閉じても確実に届く（fetchより信頼性が高い）
+          const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
           const beaconSent = navigator.sendBeacon
             ? navigator.sendBeacon(
-              "https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification",
+              notifUrl,
               new Blob([notifPayload], { type: 'application/json' })
             )
             : false;
           if (!beaconSent) {
-            fetch("https://simplechat-api.astro-fray-server.workers.dev/api/sendNotification", {
+            fetch(notifUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: notifPayload,

@@ -141,7 +141,7 @@ export function escapeHtmlAndLinkUrls(text) {
   escapedText = escapedText.replace(/\n/g, '<br>');
 
   // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
   escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
     return `${prefix}<span class="mention-text">@${username}</span>`;
   });

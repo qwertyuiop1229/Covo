@@ -180,12 +180,21 @@
 
     async function triggerCacheClearAndRestart() {
       logMessage("Clearing cache...");
-      localStorage.removeItem("covo_use_d1");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
       logMessage("Cache cleared. Restarting...");
       if (invoke) {
         setTimeout(() => invoke('plugin:process|restart'), 1000);
       } else {
-        setTimeout(() => window.location.href = "http://tauri.localhost", 1000);
+        setTimeout(() => window.location.href = "./index.html", 1000);
       }
     }
 
@@ -198,7 +207,7 @@
           
           if (label === "main") {
             // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "http://tauri.localhost";
+            window.location.href = "./index.html";
           } else {
             // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
             if (invoke) await invoke('show_main_window');
@@ -207,13 +216,13 @@
         } else if (invoke) {
           // fallback
           await invoke('show_main_window');
-          window.location.href = "http://tauri.localhost";
+          window.location.href = "./index.html";
         } else {
-          window.location.href = "http://tauri.localhost";
+          window.location.href = "./index.html";
         }
       } catch (err) {
         logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "http://tauri.localhost";
+        window.location.href = "./index.html";
       }
     }
 

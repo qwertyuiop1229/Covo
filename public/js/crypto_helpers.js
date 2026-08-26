@@ -430,7 +430,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               } else {
                 await setDoc(
                   doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
-                  { [`versions.${ver}`]: _abToB64(wrapped), updatedAt: serverTimestamp() }, 
+                  { 
+                    versions: { [ver]: _abToB64(wrapped) },
+                    [`versions.${ver}`]: _abToB64(wrapped),
+                    latestVersion: ver,
+                    wrappedKey: _abToB64(wrapped),
+                    updatedAt: serverTimestamp() 
+                  }, 
                   { merge: true }
                 );
               }
@@ -499,16 +505,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages)) return;
-      for (const m of messages) {
-        if (!m || typeof m.text !== "string") continue;
-        if (m._decrypted) continue;            
+      await Promise.all(messages.map(async (m) => {
+        if (!m || typeof m.text !== "string") return;
+        if (m._decrypted) return;            
 
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
         }
         const textToDecrypt = m._originalText || m.text;
 
-        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; continue; } 
+        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; } 
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
@@ -523,7 +529,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           m.text = "（復号化エラー：メッセージを解読できません）";
           m._decrypted = false;
         }
-      }
+      }));
     }
 
     // --- ファイルのE2EE暗号化/復号化 ---
@@ -558,22 +564,23 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       } else {
         throw new Error("Invalid buffer type for decryption");
       }
-      if (data.length < 13) throw new Error("Invalid encrypted file: payload too short");
+      if (data.length < 29) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
-        if (data.length < 13) throw new Error("Invalid payload length for v1-v254");
+        if (data.length < 29) throw new Error("Invalid payload length for v1-v254");
         version = firstByte.toString();
         iv = data.subarray(1, 13);
         ciphertext = data.subarray(13);
       } else {
-        if (data.length < 21) throw new Error("Invalid payload length for extended version");
+        if (data.length < 37) throw new Error("Invalid payload length for extended version");
         const headerBuf = data.subarray(1, 9);
         const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();
         iv = data.subarray(9, 21);
         ciphertext = data.subarray(21);
       }
+      if (ciphertext.length < 16) throw new Error("Invalid ciphertext: missing authentication tag");
       let keyToUse = roomKeyObj[version];
       
       if (keyToUse) {

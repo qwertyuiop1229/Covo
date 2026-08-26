@@ -175,8 +175,8 @@ async function getAllowedEmails(idToken, env) {
       return { emails: [], isRestricted: false, error: null };
     }
 
-    // 2. 新形式: allowedEmails サブコレクションから一覧取得
-    const colUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/allowedEmails`;
+    // 2. 新形式: allowedEmails サブコレクションから一覧取得（最大300件取得）
+    const colUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/allowedEmails?pageSize=300`;
     const colRes = await fetch(colUrl, { headers: { "Authorization": `Bearer ${idToken}` } });
     const colData = await colRes.json();
 
@@ -633,12 +633,7 @@ async function handleSendCallNotification(request, env) {
 // FCM プッシュ通知送信処理
 // -------------------------------------------------------------
 async function handleSendNotification(request, env) {
-  const origin = request.headers.get("Origin") || "*";
-  const dynamicCors = {
-    ...corsHeaders,
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-  };
+  const dynamicCors = getCorsHeaders(request);
 
   try {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
@@ -916,10 +911,11 @@ async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
 // Workers KV を使ったファイルアップロード＆配信
 // -------------------------------------------------------------
 async function handleUploadFile(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     if (!env.FILES) {
       return new Response(JSON.stringify({ error: 'KVストレージが設定されていません' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
     const formData = await request.formData();
@@ -1083,13 +1079,10 @@ async function handleDeleteFile(request, env, url) {
     }
 
     // メタデータで所有者確認
-    const listed = await env.FILES.list({ prefix: key });
-    const fileEntry = listed.keys.find(k => k.name === key);
-    if (!fileEntry) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
-      status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    const { value, metadata: meta } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
+    if (!value && !meta) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
+      status: 404, headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' }
     });
-
-    const meta = fileEntry.metadata;
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';
 
@@ -1123,13 +1116,14 @@ async function handleDeleteFile(request, env, url) {
 }
 
 async function handleServeFile(request, env, url) {
+  const cors = getCorsHeaders(request);
   try {
     const key = url.pathname.replace('/api/file/', '');
     if (!key || !env.FILES) {
-      return new Response(null, { status: 204, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
-    if (!value) return new Response(null, { status: 204, headers: corsHeaders });
+    if (!value) return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     const contentType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
@@ -1467,12 +1461,7 @@ async function handleSetOffline(request, env) {
 // Cloudflare D1 連携 API エンドポイント群
 // -------------------------------------------------------------
 async function handleD1Api(request, env, url) {
-  const origin = request.headers.get("Origin") || "*";
-  const d1Cors = {
-    ...corsHeaders,
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-  };
+  const d1Cors = getCorsHeaders(request);
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: d1Cors });

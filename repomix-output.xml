@@ -3367,69 +3367,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap'
-]);
-
-/**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
-    return false;
-  }
-  return true;
-}
-
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
-  return new Promise(async (resolve, reject) => {
-    const idToken = auth && auth.currentUser ? await auth.currentUser.getIdToken() : "";
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
 <file path="public/recovery.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -5010,6 +4947,69 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+/**
+ * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
+  return new Promise(async (resolve, reject) => {
+    const idToken = auth && auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
 </file>
 
 <file path="public/css/modules/animations.css">
@@ -23965,18 +23965,21 @@ function doJumpHighlight(el) {
     const row = el.closest('.message-row') || el;
     const cRect = container.getBoundingClientRect();
     const rRect = row.getBoundingClientRect();
+    const containerCenterY = (cRect.top + cRect.bottom) / 2;
+    const rowCenterY = (rRect.top + rRect.bottom) / 2;
 
-    // 対象のメッセージがすでに画面内に見えているか判定（上下30pxのマージンを確保）
-    const isVisible = (rRect.top >= cRect.top + 30 && rRect.bottom <= cRect.bottom - 30);
+    // 「中央より下にある（画面下半分に完全に収まっている）」場合はスクロールしない
+    // 最新メッセージ付近で見えているメッセージの不必要なスクロールを防止
+    const isBelowCenterAndVisible = (rowCenterY >= containerCenterY && rRect.bottom <= cRect.bottom && rRect.top >= cRect.top);
 
-    // 画面外に見切れている場合のみ、最小限のスクロールを実行して隙間の発生を防止
-    if (!isVisible) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // 中央より上にある、または画面外・見切れている場合は、画面の真ん中（center）に来るようにスクロール
+    if (!isBelowCenterAndVisible) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       didScroll = true;
     }
   }
 
-  // すでに見えている場合は即座に、スクロールした場合は移動を待ってハイライトを発火
+  // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
   setTimeout(() => {
     const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
     if (isStamp) {
@@ -23986,7 +23989,7 @@ function doJumpHighlight(el) {
       el.classList.add('message-highlight');
       setTimeout(() => el.classList.remove('message-highlight'), 1200);
     }
-  }, didScroll ? 200 : 50);
+  }, didScroll ? 350 : 50);
 }
 
 // iOS/Safari 判定
@@ -30828,7 +30831,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.61",
+  "version": "1.1.62",
   "force": false
 }
 </file>
@@ -30837,7 +30840,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.61",
+  "version": "1.1.62",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
