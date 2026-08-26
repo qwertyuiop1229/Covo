@@ -73,7 +73,7 @@ export function escapeHtmlAndLinkUrls(text) {
   // 1. コードブロック退避
   const codeBlocks = [];
   let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `__CB_${tokenNonce}_${codeBlocks.length}__`;
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
     const escapedCode = escapeHtml(p1);
     codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
     return id;
@@ -82,7 +82,7 @@ export function escapeHtmlAndLinkUrls(text) {
   // 2. インラインコード退避
   const inlineCodes = [];
   processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `__IC_${tokenNonce}_${inlineCodes.length}__`;
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
     const escapedCode = escapeHtml(p1);
     inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
     return id;
@@ -121,7 +121,7 @@ export function escapeHtmlAndLinkUrls(text) {
         break;
       }
     }
-    const id = `__URL_${tokenNonce}_${urls.length}__`;
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
     const escapedHref = escapeHtml(cleanUrl);
     const escapedText = escapeHtml(cleanUrl);
     const escapedTrailing = escapeHtml(trailing);
@@ -146,13 +146,13 @@ export function escapeHtmlAndLinkUrls(text) {
 
   // 7. URL・インラインコード・コードブロックの復元
   urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`__URL_${tokenNonce}_${index}__`, () => html);
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
   });
   inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
   });
   codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, () => html);
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
   });
 
   return escapedText;

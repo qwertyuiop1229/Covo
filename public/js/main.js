@@ -429,7 +429,9 @@ function initializeFirebase() {
               const allowedSnap = await getDoc(allowedRef).catch(e => null);
               if (!allowedSnap || !allowedSnap.exists()) {
                 await signOut(auth);
-                authMessage.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
+                if (authMessageEl) {
+                  authMessageEl.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
+                }
                 loadingOverlay.classList.add("hidden");
                 return;
               }
@@ -3897,7 +3899,7 @@ async function openServerSettings() {
       iconWrapper.dataset.canEdit = "false";
     }
     if (currentServerData?.iconUrl) {
-      iconPreview.innerHTML = `<img src="${currentServerData.iconUrl}" class="w-full h-full object-cover" />`;
+      iconPreview.innerHTML = `<img src="${escapeHtml(currentServerData.iconUrl)}" class="w-full h-full object-cover" />`;
       iconPreview.style.backgroundColor = "transparent";
     } else {
       const initial = (currentServerData?.name || currentServerId).charAt(0).toUpperCase();
@@ -5599,7 +5601,7 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
       }
       const iconPreview = document.getElementById("serverIconSettingsPreview");
       if (iconPreview) {
-        iconPreview.innerHTML = `<img src="${fileUrl}" class="w-full h-full object-cover" />`;
+        iconPreview.innerHTML = `<img src="${escapeHtml(fileUrl)}" class="w-full h-full object-cover" />`;
         iconPreview.style.backgroundColor = "transparent";
       }
       if (typeof renderServerList === 'function') renderServerList();
@@ -10859,8 +10861,10 @@ function _fsShowProgress(mode, fileName, statusText) {
     document.body.appendChild(ov);
   }
   ov.style.display = 'flex';
-  document.getElementById('fsProgName').textContent = fileName || '';
-  document.getElementById('fsProgStatus').textContent = statusText || '';
+  const nameEl = document.getElementById('fsProgName');
+  if (nameEl) nameEl.textContent = fileName || '';
+  const statusEl = document.getElementById('fsProgStatus');
+  if (statusEl) statusEl.textContent = statusText || '';
   const cancel = ov.querySelector('.fs-prog-cancel');
   if (cancel) cancel.style.display = (mode === 'done' || mode === 'error') ? 'none' : '';
 }
@@ -12697,7 +12701,7 @@ async function initializeFCM() {
           console.error('FCM Token error (push notifications disabled on this device):', tokenErr);
         }
       } else {
-        console.log('📱 [通知] 通知権限が許可されていないため、プッシュ通知の登録をスキップしました (現在の状態: ' + permission + ')');
+        console.log('📱 [通知] 通知権限が許可されていないため、プッシュ通知の登録をスキップしました (現在の状態: ' + Notification.permission + ')');
       }
     } else {
       console.log('📱 [通知] 通知設定がオフ、またはお使いのブラウザが通知に対応していません');

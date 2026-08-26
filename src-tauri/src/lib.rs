@@ -374,7 +374,7 @@ fn create_desktop_shortcut() -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let ps_script = format!(
-            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut((Join-Path $dp 'Covo.lnk'));$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
+            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut((Join-Path $dp 'Covo.lnk'));$sc.TargetPath=$t;$sc.IconLocation=$t;[void]$sc.Save()",
             exe_escaped
         );
         let status = std::process::Command::new("powershell")

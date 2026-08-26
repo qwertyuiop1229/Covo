@@ -5001,699 +5001,6 @@ module.exports = {
     }
 </file>
 
-<file path="public/css/modules/theme.css">
-/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,0,0,0.18) transparent;
-    }
-    *::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    *::-webkit-scrollbar-button {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    *::-webkit-scrollbar-thumb {
-      background: rgba(0,0,0,0.18);
-      border-radius: 100px;
-    }
-    *::-webkit-scrollbar-thumb:hover {
-      background: rgba(0,0,0,0.32);
-    }
-    *::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    /* モーダル背景 */
-    .modal-overlay {
-      background-color: rgba(0, 0, 0, 0.75);
-    }
-
-    /* ドロップダウンコンテナのスタイル */
-    .dropdown-container {
-      position: relative;
-      display: inline-block;
-    }
-
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      background-color: white;
-      min-width: 100px;
-      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
-      z-index: 10;
-      right: 0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      border: 1px solid #ddd;
-    }
-
-    .dropdown-content button {
-      color: black;
-      padding: 8px 12px;
-      text-decoration: none;
-      display: block;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background-color: transparent;
-      cursor: pointer;
-      transition: background-color 0.2s;
-      font-size: 0.875rem;
-    }
-
-    .dropdown-content button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* メッセージ内容と入力欄 */
-    .message-content {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-    }
-
-    textarea#messageInput {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-      overflow-y: auto;
-      resize: none;
-      min-height: 0;
-      max-height: 200px;
-      background-color: transparent;
-      border: none;
-      font-size: 16px;
-      line-height: 1.5;
-
-      /* ★スクロールバーを非表示にする設定 */
-      -ms-overflow-style: none;
-      /* IE and Edge */
-      scrollbar-width: none;
-      /* Firefox */
-    }
-
-    /* ★Chrome, Safari, Opera用 */
-    textarea#messageInput::-webkit-scrollbar {
-      display: none;
-    }
-
-    textarea#messageInput:focus {
-      background-color: transparent;
-      outline: none;
-    }
-
-    /* 既読表示 */
-    .read-receipt {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 2px;
-      display: block;
-      text-align: right;
-    }
-
-    .other-message .read-receipt {
-      text-align: left;
-    }
-
-    /* 未読の境界線（「ここから未読」） */
-    .unread-divider {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      margin: 6px 0 2px;
-      padding: 0 4px;
-      color: #ef4444;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      user-select: none;
-    }
-    .unread-divider::before,
-    .unread-divider::after {
-      content: "";
-      flex: 1;
-      height: 1px;
-      background: currentColor;
-      opacity: 0.35;
-    }
-    body.dark-server-theme .unread-divider { color: #f87171; }
-
-    /* カスタムコンテキストメニュー */
-    .custom-context-menu {
-      position: fixed;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      z-index: 100;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 120px;
-    }
-    .custom-context-menu:not(.hidden) {
-      display: flex;
-    }
-    .custom-context-menu-inner {
-      background-color: white;
-      border: 1px solid #ddd;
-      border-radius: 0.5rem;
-      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-      padding: 4px 0;
-      overflow: hidden;
-    }
-
-    .custom-context-menu button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      text-align: left;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 0.875rem;
-      color: black;
-    }
-
-    .custom-context-menu button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* サイドバーリサイズ用ハンドル */
-    #resizer, #resizerRight {
-      width: 2px;
-      cursor: col-resize;
-      background-color: #e5e7eb;
-      transition: background-color 0.2s;
-      flex-shrink: 0;
-    }
-
-    #resizer:hover, #resizerRight:hover {
-      background-color: #d1d5db;
-    }
-
-    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
-    .reply-quote:hover {
-      text-decoration: underline;
-      text-decoration-color: #94a3b8;
-      text-underline-offset: 2px;
-    }
-
-    .reply-quote-nickname {
-      font-weight: 600;
-      color: #475569;
-    }
-
-    .reply-quote-text {
-      color: #334155;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.9;
-    }
-
-    .message-highlight {
-      transition: background-color 0.8s ease-out;
-      background-color: #bde4ff !important;
-    }
-    /* === ダークモード全体 === */
-    body.dark-server-theme { background: #111827; }
-    body.dark-server-theme #mainContent,
-    body.dark-server-theme #appContainer { background: #111827; }
-
-    /* サーバーリスト・通知画面 */
-    body.dark-server-theme #serverListScreen { background: #1f2937; }
-    body.dark-server-theme #mobileNotifScreen { background: #111827; }
-    body.dark-server-theme .mobile-notif-item {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-
-    /* チャンネルサイドバー */
-    body.dark-server-theme #sidebar { background: #1e293b !important; }
-    body.dark-server-theme .room-item-animate {
-      background: transparent !important;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .room-item-animate:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: #f1f5f9;
-    }
-
-    /* ユーザーパネル */
-    body.dark-server-theme #userPanel {
-      background-color: #162032 !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme #userPanel:hover {
-      background-color: #1e2f42 !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-    }
-    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
-    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn:hover {
-      color: #f8fafc !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-    }
-
-    /* チャットエリア */
-    body.dark-server-theme #chatArea { background: #1a202c; }
-    body.dark-server-theme #currentRoomHeader {
-      background: #243040 !important;
-      border-bottom-color: rgba(255,255,255,0.08) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
-    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
-    body.dark-server-theme #messagesDisplay { background: #1a202c; }
-    body.dark-server-theme #pinnedMessagesArea {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-
-    /* メッセージバブル */
-    body.dark-server-theme .my-message {
-      background-color: #2a3a52 !important;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .other-message {
-      background-color: #243040 !important;
-      color: #e2e8f0;
-    }
-    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
-    body.dark-server-theme .message-bubble.sticker-bubble {
-      background: transparent !important;
-      box-shadow: none !important;
-      padding: 2px 0 !important;
-      border: none !important;
-    }
-    body.dark-server-theme .message-content { color: #e2e8f0; }
-    body.dark-server-theme .read-receipt { color: #4b5563; }
-   /* ダークモード時のリプライのL字矢印の色調整 */
-    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
-    body.dark-server-theme .message-highlight {
-      background-color: rgba(96,165,250,0.25) !important;
-    }
-
-    /* 入力エリア */
-    body.dark-server-theme #messageInputArea {
-      background: #1e293b !important;
-      border-top-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme #messageInputInner {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      box-shadow: none !important;
-    }
-    body.dark-server-theme #messageInputInner:focus-within {
-      border-color: rgba(255,255,255,0.22) !important;
-    }
-    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
-    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
-    body.dark-server-theme .input-side-btn {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
-      color: #e2e8f0 !important;
-      background: #243040 !important;
-      border-color: rgba(255,255,255,0.2) !important;
-    }
-    body.dark-server-theme #replyingToContainer {
-      background: #1e2d3f !important;
-      border-left-color: #4b6280 !important;
-    }
-    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme #typingIndicator { color: #4b5563; }
-
-    /* メンバーリスト */
-    body.dark-server-theme #membersSidebar {
-      background: #1e293b;
-      border-left-color: rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
-    body.dark-server-theme .member-name { color: #cbd5e1; }
-    body.dark-server-theme .member-status-text { color: #64748b; }
-    body.dark-server-theme .member-group-title { color: #64748b; }
-    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
-
-    /* 検索バー */
-    body.dark-server-theme #searchContainer {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme #searchInput {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.15) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
-
-    /* コンテキストメニュー / ドロップダウン */
-    body.dark-server-theme .custom-context-menu-inner {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
-    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme .dropdown-content {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-    }
-    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
-    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
-
-    /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
-    body.dark-server-theme * {
-      scrollbar-color: rgba(255,255,255,0.18) transparent;
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.18);
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.3);
-    }
-
-    /* 設定モーダル（コンテンツエリア）*/
-    body.dark-server-theme .settings-content {
-      background: #1a202c;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .bg-gray-50,
-    body.dark-server-theme .settings-content .bg-gray-100 {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .settings-content .text-gray-800,
-    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .text-gray-600,
-    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .settings-content .border-gray-200,
-    body.dark-server-theme .settings-content .border-t {
-      border-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme .settings-content .setting-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
-    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
-    body.dark-server-theme .settings-content input[type="text"],
-    body.dark-server-theme .settings-content input[type="email"],
-    body.dark-server-theme .settings-content input[type="password"] {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.12) !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* モバイル設定・プロフィール画面 */
-    body.dark-server-theme #mobileProfileScreen { background: #111827; }
-    body.dark-server-theme .mobile-settings-detail { background: #111827; }
-    body.dark-server-theme .mobile-settings-group {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-    body.dark-server-theme .mobile-settings-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
-    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
-    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
-    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
-
-    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
-       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
-       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
-    body.dark-server-theme .modal-box,
-    body.dark-server-theme #serverSettingsModal .settings-content,
-    body.dark-server-theme #adminModal .settings-content {
-      background-color: #1e293b !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme .modal-box .bg-white,
-    body.dark-server-theme .modal-box .bg-gray-50,
-    body.dark-server-theme .modal-box .bg-gray-100,
-    body.dark-server-theme .modal-overlay .bg-gray-50,
-    body.dark-server-theme .modal-overlay .bg-white {
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme .modal-box .text-gray-900,
-    body.dark-server-theme .modal-box .text-gray-800,
-    body.dark-server-theme .modal-box .text-gray-700,
-    body.dark-server-theme .modal-overlay .text-gray-900,
-    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme .modal-box .text-gray-600,
-    body.dark-server-theme .modal-box .text-gray-500,
-    body.dark-server-theme .modal-overlay .text-gray-600,
-    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .modal-box .border-gray-200,
-    body.dark-server-theme .modal-box .border-gray-300,
-    body.dark-server-theme .modal-box .border-t,
-    body.dark-server-theme .modal-box .border-b,
-    body.dark-server-theme .modal-overlay .border-gray-200,
-    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
-    body.dark-server-theme .modal-box input[type="text"],
-    body.dark-server-theme .modal-box input[type="email"],
-    body.dark-server-theme .modal-box input[type="password"],
-    body.dark-server-theme .modal-box input[type="number"],
-    body.dark-server-theme .modal-box textarea,
-    body.dark-server-theme .modal-box select,
-    body.dark-server-theme .modal-overlay input[type="text"],
-    body.dark-server-theme .modal-overlay input[type="email"] {
-      background-color: #0f172a !important;
-      color: #e2e8f0 !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme .modal-box .bg-gray-100:hover,
-    body.dark-server-theme .modal-box .bg-gray-200:hover,
-    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
-    body.dark-server-theme .modal-box button.bg-gray-100,
-    body.dark-server-theme .modal-box button.bg-gray-200 {
-      background-color: #334155 !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* ===== ショートカット設定のダークモード対応 ===== */
-    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
-    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
-      background: #1e293b !important;
-      color: #e2e8f0 !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-    }
-    body.dark-server-theme #shortcutInfoContainer kbd,
-    body.discord-dark-theme #shortcutInfoContainer kbd {
-      background: #0f172a !important;
-      color: #93c5fd !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme #shortcutKeyInput,
-    body.discord-dark-theme #shortcutKeyInput {
-      background: #0f172a !important;
-      color: #60a5fa !important;
-      border-color: #3b82f6 !important;
-    }
-
-    /* =========================================================================
-       新テーマ: Discordダーク (body.discord-dark-theme)
-       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
-       ========================================================================= */
-    body.discord-dark-theme {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme #discordServerNav {
-      background-color: #1e1f22 !important;
-      border-right-color: #1e1f22 !important;
-    }
-    body.discord-dark-theme #sidebar,
-    body.discord-dark-theme #membersSidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme #serverHeader,
-    body.discord-dark-theme #currentRoomHeader,
-    body.discord-dark-theme #discordTopBar {
-      background-color: #313338 !important;
-      border-bottom-color: #1f2023 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #chatArea {
-      background-color: #313338 !important;
-    }
-    body.discord-dark-theme #messageInputArea {
-      background-color: #313338 !important;
-      border-top-color: transparent !important;
-    }
-    body.discord-dark-theme #messageInput,
-    body.discord-dark-theme .discord-input-box {
-      background-color: #383a40 !important;
-      color: #dbdee1 !important;
-      border-color: transparent !important;
-    }
-    body.discord-dark-theme #userPanel {
-      background-color: #232428 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-server-pill {
-      background-color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-hero-banner {
-      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .modal-box,
-    body.discord-dark-theme .settings-content {
-      background-color: #313338 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .settings-sidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme .settings-nav-item.active {
-      background-color: #3f4248 !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
-      background-color: #35373c !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .bg-gray-50,
-    body.discord-dark-theme .bg-gray-100 {
-      background-color: #2b2d31 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme input[type="text"],
-    body.discord-dark-theme input[type="email"],
-    body.discord-dark-theme input[type="password"] {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-      border-color: #232428 !important;
-    }
-
-    /* ===== アプリ独自カスタムドロップダウン ===== */
-    .covo-custom-select {
-      position: relative;
-      display: inline-block;
-      user-select: none;
-    }
-    .covo-select-trigger {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 8px 14px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: #1e293b;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-    }
-    .covo-select-trigger:hover {
-      background: #e2e8f0;
-      border-color: #94a3b8;
-    }
-    body.dark-server-theme .covo-select-trigger {
-      background: #0f172a;
-      border-color: rgba(255,255,255,0.15);
-      color: #e2e8f0;
-    }
-    body.discord-dark-theme .covo-select-trigger {
-      background: #1e1f22;
-      border-color: rgba(255,255,255,0.1);
-      color: #dbdee1;
-    }
-    .covo-select-options {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
-      min-width: 180px;
-      background: white;
-      border-radius: 12px;
-      padding: 6px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-      border: 1px solid #e2e8f0;
-      z-index: 60;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-8px) scale(0.96);
-      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-    .covo-custom-select.open .covo-select-options {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0) scale(1);
-    }
-    body.dark-server-theme .covo-select-options {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.12);
-    }
-    body.discord-dark-theme .covo-select-options {
-      background: #2b2d31;
-      border-color: #202225;
-    }
-    .covo-select-option {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 500;
-      color: #334155;
-      cursor: pointer;
-      transition: background 0.15s ease;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .covo-select-option:hover {
-      background: #f1f5f9;
-      color: #0f172a;
-    }
-    .covo-select-option.selected {
-      background: #e0e7ff;
-      color: #4338ca;
-      font-weight: 600;
-    }
-    body.dark-server-theme .covo-select-option {
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .covo-select-option:hover {
-      background: rgba(255,255,255,0.08);
-      color: white;
-    }
-    body.dark-server-theme .covo-select-option.selected {
-      background: #312e81;
-      color: #c7d2fe;
-    }
-    body.discord-dark-theme .covo-select-option {
-      color: #949ba4;
-    }
-    body.discord-dark-theme .covo-select-option:hover {
-      background: #35373c;
-      color: #dbdee1;
-    }
-    body.discord-dark-theme .covo-select-option.selected {
-      background: #5865f2;
-      color: white;
-    }
-</file>
-
 <file path="public/css/main.css">
 @import url('./modules/base.css');
 @import url('./modules/sidebar.css');
@@ -5702,350 +5009,6 @@ module.exports = {
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const name = emoji.substring(5);
-    return `<img src="/covo-stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const name = emoji.substring(8);
-    return `<img src="/assets/covo_stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12);
-    const isSafe = /^https?:\/\//i.test(url) || url.startsWith('/');
-    if (!isSafe) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  
-  // 1. コードブロック退避
-  const codeBlocks = [];
-  let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `__CB_${tokenNonce}_${codeBlocks.length}__`;
-    const escapedCode = escapeHtml(p1);
-    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
-    return id;
-  });
-
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `__IC_${tokenNonce}_${inlineCodes.length}__`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-
-  // 3. URL退避（HTMLエスケープ前に抽出することで & や クエリパラメータの切断を防止）
-  const urls = [];
-  const rawUrlRegex = /https?:\/\/[^\s<>"']+/g;
-  processedText = processedText.replace(rawUrlRegex, (rawUrl) => {
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    const id = `__URL_${tokenNonce}_${urls.length}__`;
-    const escapedHref = escapeHtml(cleanUrl);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  
-  // 5. 書式装飾
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-
-  // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`__URL_${tokenNonce}_${index}__`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, () => html);
-  });
-
-  return escapedText;
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
-</file>
-
-<file path="public/js/utils.js">
-/**
- * ユーティリティ関数群 (utils.js)
- * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
- */
-
-/**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
- * @param {ArrayBuffer} buf - 変換元のバイナリデータ
- * @returns {string} Base64文字列
- */
-export function _abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-  }
-  return btoa(bin);
-}
-
-/**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
- * @param {string} b64 - 変換元のBase64文字列
- * @returns {ArrayBuffer} 復元されたバイナリデータ
- */
-export function _b64ToAb(b64) {
-  try {
-    if (typeof b64 !== "string") return new ArrayBuffer(0);
-    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    while (norm.length % 4 > 0) norm += "=";
-    const bin = atob(norm);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  } catch (e) {
-    console.error("Base64 decode failed:", e);
-    return new ArrayBuffer(0);
-  }
-}
-
-/**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
- * @param {number} bytes - バイト数
- * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列
- */
-export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-/**
- * メッセージオブジェクトから正確なタイムスタンプを取得
- * @param {Object} msg - メッセージオブジェクト
- * @returns {number} タイムスタンプ(ミリ秒)
- */
-export function getMsgTimestamp(msg) {
-  if (!msg) return Date.now();
-  if (msg.createdAt) {
-    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
-    if (typeof msg.createdAt === 'number') return msg.createdAt;
-    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
-      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
-    }
-  }
-  if (msg.timestamp) {
-    if (typeof msg.timestamp === 'number') return msg.timestamp;
-    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
-    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
-      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
-    }
-  }
-  return Date.now();
-}
-
-/**
- * テキストをクリップボードに安全にコピー
- * @param {string} txt - コピーするテキスト
- */
-export async function safeCopy(txt) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(txt);
-      return true;
-    } else {
-      return _execCopyFallback(txt);
-    }
-  } catch (err) {
-    console.warn("Clipboard API failed, fallback to execCommand", err);
-    return _execCopyFallback(txt);
-  }
-}
-
-/**
- * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
- * @param {string} txt - コピーするテキスト
- */
-export function _execCopyFallback(txt) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = txt;
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy error', err);
-    return false;
-  }
-}
-
-/**
- * メールアドレスの最初の1文字を取得
- * @param {string} email - メールアドレス
- * @returns {string} 最初の1文字(大文字) または '?'
- */
-export function emailInitial(email) {
-  if (!email) return '?';
-  return email.charAt(0).toUpperCase();
-}
-
-/**
- * HEICファイルをJPEGに変換
- * @param {File} file - 処理対象のファイル
- * @returns {Promise<File>} 処理後のファイル
- */
-export async function processHeicFile(file) {
-  if (!file) return null;
-  const name = file.name || '';
-  const ext = name.split('.').pop().toLowerCase();
-  
-  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
-    try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
-      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
-      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
-      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
-    } catch (e) {
-      console.error("HEIC conversion failed:", e);
-      return file;
-    }
-  }
-  return file;
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window._abToB64 = _abToB64;
-  window._b64ToAb = _b64ToAb;
-  window.formatBytes = formatBytes;
-  window.getMsgTimestamp = getMsgTimestamp;
-  window.safeCopy = safeCopy;
-  window._execCopyFallback = _execCopyFallback;
-  window.emailInitial = emailInitial;
-  window.processHeicFile = processHeicFile;
-}
 </file>
 
 <file path="public/css/modules/animations.css">
@@ -6607,6 +5570,706 @@ if (typeof window !== 'undefined') {
     }
 </file>
 
+<file path="public/css/modules/theme.css">
+/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* モーダル背景 */
+    .modal-overlay {
+      background-color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* ドロップダウンコンテナのスタイル */
+    .dropdown-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: white;
+      min-width: 100px;
+      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      right: 0;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+
+    .dropdown-content button {
+      color: black;
+      padding: 8px 12px;
+      text-decoration: none;
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background-color: transparent;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* メッセージ内容と入力欄 */
+    .message-content {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+    }
+
+    textarea#messageInput {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-y: auto;
+      resize: none;
+      min-height: 0;
+      max-height: 200px;
+      background-color: transparent;
+      border: none;
+      font-size: 16px;
+      line-height: 1.5;
+
+      /* ★スクロールバーを非表示にする設定 */
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* ★Chrome, Safari, Opera用 */
+    textarea#messageInput::-webkit-scrollbar {
+      display: none;
+    }
+
+    textarea#messageInput:focus {
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 既読表示 */
+    .read-receipt {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 2px;
+      display: block;
+      text-align: right;
+    }
+
+    .other-message .read-receipt {
+      text-align: left;
+    }
+
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
+    /* カスタムコンテキストメニュー */
+    .custom-context-menu {
+      position: fixed;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      z-index: 100;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      padding: 4px 0;
+      overflow: hidden;
+    }
+
+    .custom-context-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: black;
+    }
+
+    .custom-context-menu button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* サイドバーリサイズ用ハンドル */
+    #resizer, #resizerRight {
+      width: 2px;
+      cursor: col-resize;
+      background-color: #e5e7eb;
+      transition: background-color 0.2s;
+      flex-shrink: 0;
+    }
+
+    #resizer:hover, #resizerRight:hover {
+      background-color: #d1d5db;
+    }
+
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
+    .reply-quote:hover {
+      text-decoration: underline;
+      text-decoration-color: #94a3b8;
+      text-underline-offset: 2px;
+    }
+
+    .reply-quote-nickname {
+      font-weight: 600;
+      color: #475569;
+      flex-shrink: 0;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reply-quote-text {
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .message-highlight {
+      transition: background-color 0.8s ease-out;
+      background-color: #bde4ff !important;
+    }
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032 !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme #userPanel:hover {
+      background-color: #1e2f42 !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
+    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #f8fafc !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+   /* ダークモード時のリプライのL字矢印の色調整 */
+    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu-inner {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.05); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover { background-color: rgba(255,255,255,0.1); }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* ===== ショートカット設定のダークモード対応 ===== */
+    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
+    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
+      background: #1e293b !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    body.dark-server-theme #shortcutInfoContainer kbd,
+    body.discord-dark-theme #shortcutInfoContainer kbd {
+      background: #0f172a !important;
+      color: #93c5fd !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme #shortcutKeyInput,
+    body.discord-dark-theme #shortcutKeyInput {
+      background: #0f172a !important;
+      color: #60a5fa !important;
+      border-color: #3b82f6 !important;
+    }
+
+    /* =========================================================================
+       新テーマ: Discordダーク (body.discord-dark-theme)
+       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
+       ========================================================================= */
+    body.discord-dark-theme {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #discordServerNav {
+      background-color: #1e1f22 !important;
+      border-right-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme #sidebar,
+    body.discord-dark-theme #membersSidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme #serverHeader,
+    body.discord-dark-theme #currentRoomHeader,
+    body.discord-dark-theme #discordTopBar {
+      background-color: #313338 !important;
+      border-bottom-color: #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #chatArea {
+      background-color: #313338 !important;
+    }
+    body.discord-dark-theme #messageInputArea {
+      background-color: #313338 !important;
+      border-top-color: transparent !important;
+    }
+    body.discord-dark-theme #messageInput,
+    body.discord-dark-theme .discord-input-box {
+      background-color: #383a40 !important;
+      color: #dbdee1 !important;
+      border-color: transparent !important;
+    }
+    body.discord-dark-theme #userPanel {
+      background-color: #232428 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-server-pill {
+      background-color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-hero-banner {
+      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .modal-box,
+    body.discord-dark-theme .settings-content {
+      background-color: #313338 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .settings-sidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme .settings-nav-item.active {
+      background-color: #3f4248 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
+      background-color: #35373c !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .bg-gray-50,
+    body.discord-dark-theme .bg-gray-100 {
+      background-color: #2b2d31 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme input[type="text"],
+    body.discord-dark-theme input[type="email"],
+    body.discord-dark-theme input[type="password"] {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+      border-color: #232428 !important;
+    }
+
+    /* ===== アプリ独自カスタムドロップダウン ===== */
+    .covo-custom-select {
+      position: relative;
+      display: inline-block;
+      user-select: none;
+    }
+    .covo-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .covo-select-trigger:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+    body.dark-server-theme .covo-select-trigger {
+      background: #0f172a;
+      border-color: rgba(255,255,255,0.15);
+      color: #e2e8f0;
+    }
+    body.discord-dark-theme .covo-select-trigger {
+      background: #1e1f22;
+      border-color: rgba(255,255,255,0.1);
+      color: #dbdee1;
+    }
+    .covo-select-options {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: 180px;
+      background: white;
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
+      border: 1px solid #e2e8f0;
+      z-index: 60;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.96);
+      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .covo-custom-select.open .covo-select-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+    body.dark-server-theme .covo-select-options {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.12);
+    }
+    body.discord-dark-theme .covo-select-options {
+      background: #2b2d31;
+      border-color: #202225;
+    }
+    .covo-select-option {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #334155;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .covo-select-option:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .covo-select-option.selected {
+      background: #e0e7ff;
+      color: #4338ca;
+      font-weight: 600;
+    }
+    body.dark-server-theme .covo-select-option {
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .covo-select-option:hover {
+      background: rgba(255,255,255,0.08);
+      color: white;
+    }
+    body.dark-server-theme .covo-select-option.selected {
+      background: #312e81;
+      color: #c7d2fe;
+    }
+    body.discord-dark-theme .covo-select-option {
+      color: #949ba4;
+    }
+    body.discord-dark-theme .covo-select-option:hover {
+      background: #35373c;
+      color: #dbdee1;
+    }
+    body.discord-dark-theme .covo-select-option.selected {
+      background: #5865f2;
+      color: white;
+    }
+</file>
+
 <file path="public/js/debug_ui.js">
 import { safeCopy } from './utils.js';
 import { alertMessage } from './ui_helpers.js';
@@ -6804,6 +6467,176 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const name = emoji.substring(5);
+    return `<img src="/covo-stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const name = emoji.substring(8);
+    return `<img src="/assets/covo_stamps/${escapeHtml(name)}.png" class="emoji covo-emoji" alt="${escapeHtml(name)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12);
+    const isSafe = /^https?:\/\//i.test(url) || (url.startsWith('/') && !url.startsWith('//'));
+    if (!isSafe) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  
+  // 1. コードブロック退避
+  const codeBlocks = [];
+  let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `__CB_${tokenNonce}_${codeBlocks.length}__`;
+    const escapedCode = escapeHtml(p1);
+    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
+    return id;
+  });
+
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `__IC_${tokenNonce}_${inlineCodes.length}__`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+
+  // 3. URL退避（HTMLエスケープ前に抽出することで & や クエリパラメータの切断を防止）
+  const urls = [];
+  const rawUrlRegex = /https?:\/\/[^\s<>"']+/g;
+  processedText = processedText.replace(rawUrlRegex, (rawUrl) => {
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    const id = `__URL_${tokenNonce}_${urls.length}__`;
+    const escapedHref = escapeHtml(cleanUrl);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  
+  // 5. 書式装飾
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+
+  // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`__URL_${tokenNonce}_${index}__`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`__IC_${tokenNonce}_${index}__`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`__CB_${tokenNonce}_${index}__`, () => html);
+  });
+
+  return escapedText;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
+</file>
+
 <file path="public/js/ui_helpers.js">
 /**
  * UI補助機能 (ui_helpers.js)
@@ -6894,6 +6727,241 @@ if (typeof window !== 'undefined') {
   window.alertMessage = alertMessage;
   window.openAvatarLightbox = openAvatarLightbox;
   window.playNotificationSound = playNotificationSound;
+}
+</file>
+
+<file path="public/js/utils.js">
+/**
+ * ユーティリティ関数群 (utils.js)
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
+ */
+
+/**
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
+ * @param {ArrayBuffer} buf - 変換元のバイナリデータ
+ * @returns {string} Base64文字列
+ */
+export function _abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
+ * @param {string} b64 - 変換元のBase64文字列
+ * @returns {ArrayBuffer} 復元されたバイナリデータ
+ */
+export function _b64ToAb(b64) {
+  try {
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
+    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
+    const bin = atob(norm);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  } catch (e) {
+    console.error("Base64 decode failed:", e);
+    return new ArrayBuffer(0);
+  }
+}
+
+/**
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
+ * @param {number} bytes - バイト数
+ * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
+ * @returns {string} フォーマットされた文字列
+ */
+export function formatBytes(bytes, decimals = 2) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * メッセージオブジェクトから正確なタイムスタンプを取得
+ * @param {Object} msg - メッセージオブジェクト
+ * @returns {number} タイムスタンプ(ミリ秒)
+ */
+export function getMsgTimestamp(msg) {
+  if (!msg) return Date.now();
+  if (msg.createdAt) {
+    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
+    if (typeof msg.createdAt === 'number') return msg.createdAt;
+    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
+      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
+    }
+  }
+  if (msg.timestamp) {
+    if (typeof msg.timestamp === 'number') return msg.timestamp;
+    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
+    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
+      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
+  }
+  return Date.now();
+}
+
+/**
+ * テキストをクリップボードに安全にコピー
+ * @param {string} txt - コピーするテキスト
+ */
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
+  }
+}
+
+/**
+ * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
+ * @param {string} txt - コピーするテキスト
+ */
+export function _execCopyFallback(txt) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy error', err);
+    return false;
+  }
+}
+
+/**
+ * メールアドレスの最初の1文字を取得
+ * @param {string} email - メールアドレス
+ * @returns {string} 最初の1文字(大文字) または '?'
+ */
+export function emailInitial(email) {
+  if (!email) return '?';
+  return email.charAt(0).toUpperCase();
+}
+
+/**
+ * HEICファイルをJPEGに変換
+ * @param {File} file - 処理対象のファイル
+ * @returns {Promise<File>} 処理後のファイル
+ */
+export async function processHeicFile(file) {
+  if (!file) return null;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  
+  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
+    try {
+      if (typeof heic2any === 'undefined') {
+        console.warn("heic2any is not loaded");
+        return file;
+      }
+      console.log("HEIC file detected. Converting to JPEG...");
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      console.error("HEIC conversion failed:", e);
+      return file;
+    }
+  }
+  return file;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
+}
+</file>
+
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
 }
 </file>
 
@@ -7267,14 +7335,14 @@ fn create_desktop_shortcut() -> Result<(), String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("current_exe failed: {}", e))?;
     let exe_str = exe.to_string_lossy().to_string();
-    let exe_escaped = exe_str.replace('\'', "''");
+    let exe_escaped = exe_str.replace('\'', "''").replace('`', "``").replace('$', "`$");
 
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let ps_script = format!(
-            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut(\"$dp\\Covo.lnk\");$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
+            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');$sc=$s.CreateShortcut((Join-Path $dp 'Covo.lnk'));$sc.TargetPath=$t;$sc.IconLocation=\"$t,0\";$sc.Save()",
             exe_escaped
         );
         let status = std::process::Command::new("powershell")
@@ -7954,64 +8022,6 @@ pub fn run() {
 }
 </file>
 
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    }
-  }
-}
-</file>
-
 <file path="public/js/geo_study.js">
 // geo_study.js - 隠し機能の制御スクリプト
 
@@ -8244,8 +8254,9 @@ function toggleMapSwap() {
 
 function loadDependencies() {
   return new Promise((resolve) => {
-    // 既に読み込み済みの場合はスキップ
+    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
     if (window.L) {
+      if (!leafletMap) initMap();
       resolve();
       return;
     }
@@ -8781,6 +8792,10 @@ if (typeof window !== 'undefined') {
       cursor: pointer;
       font-size: 0.8rem;
       color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
     }
     .reply-quote::before {
       content: "";
@@ -8796,6 +8811,8 @@ if (typeof window !== 'undefined') {
     .my-reply {
       padding: 2px 28px 2px 0;
       justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
     }
     .my-reply::before {
       left: auto;
@@ -9078,51 +9095,7 @@ async function signUpWithFirebase(email, password, env) {
 // ルーム参加処理 (Deprecated / Broken) -> サーバー参加処理に変更
 // -------------------------------------------------------------
 async function getFirestoreAdminToken(serviceAccountJsonStr) {
-  const serviceAccount = JSON.parse(serviceAccountJsonStr);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + 3600;
-  const payload = {
-    iss: serviceAccount.client_email,
-    sub: serviceAccount.client_email,
-    aud: 'https://oauth2.googleapis.com/token',
-    iat,
-    exp,
-    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
-  };
-
-  const encodeBase64Url = (obj) => btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const unsignedToken = `${encodeBase64Url(header)}.${encodeBase64Url(payload)}`;
-
-  const privateKey = serviceAccount.private_key;
-  const pemHeader = "-----BEGIN PRIVATE KEY-----";
-  const pemFooter = "-----END PRIVATE KEY-----";
-  const pemContents = privateKey.substring(pemHeader.length, privateKey.length - pemFooter.length - 1).replace(/\s/g, '');
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    binaryDer.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(unsignedToken)
-  );
-
-  const jwt = `${unsignedToken}.${btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
-  });
-  const data = await res.json();
-  return data.access_token;
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform');
 }
 
 // -------------------------------------------------------------
@@ -9776,9 +9749,10 @@ async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
   const unsignedToken = `${encodeBase64Url(header)}.${encodeBase64Url(payload)}`;
 
   const privateKey = serviceAccount.private_key;
-  const pemHeader = "-----BEGIN PRIVATE KEY-----";
-  const pemFooter = "-----END PRIVATE KEY-----";
-  const pemContents = privateKey.substring(pemHeader.length, privateKey.length - pemFooter.length - 1).replace(/\s/g, '');
+  const pemContents = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
   const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
 
   const cryptoKey = await crypto.subtle.importKey(
@@ -9908,8 +9882,8 @@ async function handleDownloadProxy(request, env, url) {
       });
     }
 
-    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
-      return new Response(JSON.stringify({ error: 'Invalid protocol' }), {
+    if (parsedTarget.protocol !== 'https:') {
+      return new Response(JSON.stringify({ error: 'Invalid protocol: Only HTTPS is allowed' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -10462,10 +10436,12 @@ async function handleD1Api(request, env, url) {
         const body = await request.json();
         const { appId, userId, type, keyType, keyData, nickname, avatarUrl, publicKeyJwk, fcmToken, removeFcmToken } = body;
         
+        // ユーザー自身のデータ以外は書き込み禁止 (IDOR対策)
+        if (verifiedUser.uid !== userId) {
+          return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user profile" }), { status: 403, headers: d1Cors });
+        }
+
         if (type === "keys") {
-          if (verifiedUser.uid !== userId) {
-            return new Response(JSON.stringify({ error: "Forbidden: Only owner can write private keys" }), { status: 403, headers: d1Cors });
-          }
           await env.DB.prepare("INSERT INTO user_private_keys (user_id, app_id, key_type, key_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, app_id, key_type) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
             .bind(userId, appId, keyType || 'keys', JSON.stringify(keyData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -10568,8 +10544,23 @@ async function handleD1Api(request, env, url) {
         const { appId, serverId, type, name, description, isPublic, data, passwordHash, userId, profileData, stampId, stampName, stampUrl, groupId, groupData, code, inviteData, deleteFieldVal } = body;
         
         if (type === "create" || type === "update") {
-          const cur = await env.DB.prepare("SELECT server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          const cur = await env.DB.prepare("SELECT created_by, server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          
+          if (type === "update" && cur) {
+            let sData = cur.server_data ? JSON.parse(cur.server_data) : {};
+            const isOwner = cur.created_by === verifiedUser.uid;
+            const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (!isOwner && !isSvAdmin && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+            }
+          }
+
           let mergedData = cur && cur.server_data ? JSON.parse(cur.server_data) : {};
+          if (type === "create") {
+            mergedData.serverAdmins = [verifiedUser.uid];
+            mergedData.joinedUsers = [verifiedUser.uid];
+          }
           if (data) mergedData = { ...mergedData, ...data };
           if (deleteFieldVal && mergedData[deleteFieldVal] !== undefined) delete mergedData[deleteFieldVal];
           
@@ -10577,12 +10568,13 @@ async function handleD1Api(request, env, url) {
           const nextDesc = description !== undefined ? description : (mergedData.description || "");
           const nextPub = isPublic !== undefined ? (isPublic ? 1 : 0) : (mergedData.isPublic ? 1 : 0);
           const memberCount = cur ? cur.member_count : 1;
+          const createdBy = cur ? cur.created_by : verifiedUser.uid;
 
           await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
-            .bind(serverId, appId, nextName, nextDesc, nextPub, verifiedUser.uid, Date.now(), memberCount, JSON.stringify(mergedData)).run();
+            .bind(serverId, appId, nextName, nextDesc, nextPub, createdBy, Date.now(), memberCount, JSON.stringify(mergedData)).run();
           
-          if (userId && type === "create") {
-            await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
+          if (type === "create") {
+            await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, verifiedUser.uid, appId, Date.now()).run();
           }
           if (passwordHash) {
             await env.DB.prepare("INSERT INTO server_secrets (server_id, app_id, password_hash, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at")
@@ -10626,6 +10618,9 @@ async function handleD1Api(request, env, url) {
         }
 
         if (type === "profile") {
+          if (verifiedUser.uid !== userId) {
+            return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user profile" }), { status: 403, headers: d1Cors });
+          }
           await env.DB.prepare("INSERT INTO server_profiles (server_id, user_id, app_id, profile_data, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(server_id, user_id) DO UPDATE SET profile_data = excluded.profile_data, updated_at = excluded.updated_at")
             .bind(serverId, userId, appId, JSON.stringify(profileData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -10657,17 +10652,36 @@ async function handleD1Api(request, env, url) {
         const appId = url.searchParams.get("appId");
         const serverId = url.searchParams.get("serverId");
         const type = url.searchParams.get("type"); // 'server' or 'inviteCode' or 'stamp'
+        
+        // サーバー権限の確認
+        const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+        if (!curServer) return new Response(JSON.stringify({ error: "Server not found" }), { status: 404, headers: d1Cors });
+        
+        let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+        const isOwner = curServer.created_by === verifiedUser.uid;
+        const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+        const isGlobal = await isD1Admin(appId, verifiedUser, env);
+
         if (type === "inviteCode") {
+          if (!isOwner && !isSvAdmin && !isGlobal) {
+            return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+          }
           const code = url.searchParams.get("code");
           await env.DB.prepare("DELETE FROM server_invite_codes WHERE code = ? AND app_id = ?").bind(code, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
         if (type === "stamp") {
+          if (!isOwner && !isSvAdmin && !isGlobal) {
+            return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+          }
           const stampId = url.searchParams.get("stampId");
           await env.DB.prepare("DELETE FROM server_stamps WHERE stamp_id = ? AND app_id = ?").bind(stampId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        // サーバー削除
+        // サーバー削除 (オーナーまたはグローバル管理者のみ)
+        if (!isOwner && !isGlobal) {
+          return new Response(JSON.stringify({ error: "Forbidden: Only server owner or global admin can delete server" }), { status: 403, headers: d1Cors });
+        }
         await env.DB.prepare("DELETE FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
         await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
         await env.DB.prepare("DELETE FROM rooms WHERE server_id = ? AND app_id = ?").bind(serverId, appId).run();
@@ -11762,16 +11776,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptFileE2EE(encryptedBuffer, roomKeyObj, serverId = null, roomId = null) {
       if (!_subtleOK || !roomKeyObj) throw new Error("Key not found");
       const data = encryptedBuffer instanceof Uint8Array ? encryptedBuffer : new Uint8Array(encryptedBuffer instanceof ArrayBuffer ? encryptedBuffer : encryptedBuffer.buffer, encryptedBuffer.byteOffset || 0, encryptedBuffer.byteLength || encryptedBuffer.length);
-      if (data.length < 14) throw new Error("Invalid encrypted file: payload too short");
+      if (data.length < 13) throw new Error("Invalid encrypted file: payload too short");
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
-        if (data.length < 14) throw new Error("Invalid payload length for v1-v254");
+        if (data.length < 13) throw new Error("Invalid payload length for v1-v254");
         version = firstByte.toString();
         iv = data.subarray(1, 13);
         ciphertext = data.subarray(13);
       } else {
-        if (data.length < 22) throw new Error("Invalid payload length for extended version");
+        if (data.length < 21) throw new Error("Invalid payload length for extended version");
         const headerBuf = data.subarray(1, 9);
         const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
         version = dv.getFloat64(0, false).toString();
@@ -14963,6 +14977,44 @@ let userNickname = null;
 let isAdmin = false;
 let isListAdmin = false;
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI__);
+
+// DOM要素参照（安全な初期化とStrictスコープ対応）
+const userPanelName = document.getElementById("userPanelName");
+const userPanelId = document.getElementById("userPanelId");
+const userPanelAvatar = document.getElementById("userPanelAvatar");
+const headerTitle = document.getElementById("headerTitle");
+const authContainer = document.getElementById("authContainer");
+const nicknameContainer = document.getElementById("nicknameContainer");
+const appContainer = document.getElementById("appContainer");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const nicknameInput = document.getElementById("nicknameInput");
+const allowedEmailsList = document.getElementById("allowedEmailsList");
+const adminEmailsList = document.getElementById("adminEmailsList");
+const listAdminEmailsList = document.getElementById("listAdminEmailsList");
+const adminPanelContainer = document.getElementById("adminPanelContainer");
+const adminMessage = document.getElementById("adminMessage");
+const newListAdminEmailInput = document.getElementById("newListAdminEmailInput");
+const addListAdminEmailButton = document.getElementById("addListAdminEmailButton");
+const settingsNicknameInput = document.getElementById("settingsNicknameInput");
+const settingsAvatarText = document.getElementById("settingsAvatarText");
+const settingsMessage = document.getElementById("settingsMessage");
+const settingsModal = document.getElementById("settingsModal");
+const currentRoomTitleText = document.getElementById("currentRoomTitleText");
+const fileAttachInput = document.getElementById("fileAttachInput");
+const fileAttachButton = document.getElementById("fileAttachButton");
+const messageInput = document.getElementById("messageInput");
+const sendMessageButton = document.getElementById("sendMessageButton");
+const pinnedMessagesArea = document.getElementById("pinnedMessagesArea");
+const replyingToContainer = document.getElementById("replyingToContainer");
+const replyingToNickname = document.getElementById("replyingToNickname");
+const replyingToText = document.getElementById("replyingToText");
+const messageContextMenu = document.getElementById("messageContextMenu");
+const downloadMessageButton = document.getElementById("downloadMessageButton");
+const membersSidebar = document.getElementById("membersSidebar");
+const membersList = document.getElementById("membersList");
+const currentRoomHeader = document.getElementById("currentRoomHeader");
+const messagesDisplay = document.getElementById("messagesDisplay");
+const roomList = document.getElementById("roomList");
 
 let currentRoomId = null;
 let unsubscribeMessages = null;
@@ -21333,14 +21385,29 @@ messagesDisplay.addEventListener("wheel", (e) => {
 
 function handleDeleteRoomClick(id, name) {
   pendingRoomDelete = { roomId: id, roomName: name };
-  deleteRoomConfirmModal.classList.remove("hidden");
-  roomToDeleteNameSpan.textContent = name;
+  const delModal = document.getElementById("deleteRoomConfirmModal");
+  if (delModal) delModal.classList.remove("hidden");
+  const nameEl = document.getElementById("roomToDeleteName");
+  if (nameEl) nameEl.textContent = name;
 }
-confirmDeleteButton.addEventListener("click", async () => {
-  deleteRoomConfirmModal.classList.add("hidden");
-  await deleteRoomAndMessages(pendingRoomDelete.roomId);
-});
-cancelDeleteButton.addEventListener("click", () => deleteRoomConfirmModal.classList.add("hidden"));
+
+const confirmDelButton = document.getElementById("confirmDeleteButton");
+if (confirmDelButton) {
+  confirmDelButton.addEventListener("click", async () => {
+    const delModal = document.getElementById("deleteRoomConfirmModal");
+    if (delModal) delModal.classList.add("hidden");
+    if (pendingRoomDelete) {
+      await deleteRoomAndMessages(pendingRoomDelete.roomId);
+    }
+  });
+}
+const cancelDelButton = document.getElementById("cancelDeleteButton");
+if (cancelDelButton) {
+  cancelDelButton.addEventListener("click", () => {
+    const delModal = document.getElementById("deleteRoomConfirmModal");
+    if (delModal) delModal.classList.add("hidden");
+  });
+}
 
 async function deleteRoomAndMessages(roomId) {
   if (!currentServerId) return;
@@ -22695,7 +22762,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
   }
 
   const bubbleContainer = document.createElement("div");
-  bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] ${isMyMessage ? 'items-end' : 'items-start'}`;
+  bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] min-w-0 ${isMyMessage ? 'items-end' : 'items-start'}`;
 
   if (message.replyTo && message.replyTo.messageId) {
     const replyQuoteDiv = document.createElement("div");
@@ -23866,16 +23933,27 @@ async function showUnloadedMessagePreview(msgId) {
 
 
 function doJumpHighlight(el) {
-  const container = messagesDisplay;
+  const container = document.getElementById("messagesDisplay") || messagesDisplay;
+  let didScroll = false;
+
   if (container) {
     const row = el.closest('.message-row') || el;
-    // scrollIntoViewを使用して、どの画面サイズ・環境でも確実に中央にスクロールさせる
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const cRect = container.getBoundingClientRect();
+    const rRect = row.getBoundingClientRect();
+
+    // 対象のメッセージがすでに画面内に見えているか判定（上下30pxのマージンを確保）
+    const isVisible = (rRect.top >= cRect.top + 30 && rRect.bottom <= cRect.bottom - 30);
+
+    // 画面外に見切れている場合のみ、最小限のスクロールを実行して隙間の発生を防止
+    if (!isVisible) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      didScroll = true;
+    }
   }
 
-  // ハイライトアニメーション（少し遅延させてスクロール後に発火）
+  // すでに見えている場合は即座に、スクロールした場合は移動を待ってハイライトを発火
   setTimeout(() => {
-    const isStamp = el.querySelector('img[alt^="stamp_"]');
+    const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
     if (isStamp) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
@@ -23883,7 +23961,7 @@ function doJumpHighlight(el) {
       el.classList.add('message-highlight');
       setTimeout(() => el.classList.remove('message-highlight'), 1200);
     }
-  }, 200);
+  }, didScroll ? 200 : 50);
 }
 
 // iOS/Safari 判定
@@ -27790,8 +27868,8 @@ window.setAppTheme = function (theme) {
 
   const pcToggle = document.getElementById('toggleDarkServer');
   const mobileToggle = document.getElementById('toggleDarkServerMobile');
-  if (pcToggle) pcToggle.checked = isDark;
-  if (mobileToggle) mobileToggle.checked = isDark;
+  if (pcToggle && 'checked' in pcToggle) pcToggle.checked = isDark;
+  if (mobileToggle && 'checked' in mobileToggle) mobileToggle.checked = isDark;
 
   updateThemeSelectorUI(validTheme);
   if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
@@ -29878,8 +29956,8 @@ document.addEventListener("keydown", (e) => {
             <!-- リプライUI -->
             <div id="replyingToContainer"
               class="w-full px-3 py-2 mb-2 rounded-lg flex items-center justify-between hidden bg-gray-50 dark:bg-[#2b2d31] border-l-[3px] border-gray-300 dark:border-gray-500">
-              <div class="flex-1 overflow-hidden">
-                <div class="text-xs text-gray-500 font-semibold">
+              <div class="flex-1 min-w-0 overflow-hidden">
+                <div class="text-xs text-gray-500 font-semibold truncate">
                   返信先: <span id="replyingToNickname"></span>
                 </div>
                 <div id="replyingToText" class="text-sm text-gray-800 dark:text-gray-200 truncate"></div>
@@ -30718,7 +30796,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.57",
+  "version": "1.1.59",
   "force": false
 }
 </file>
@@ -30727,7 +30805,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.57",
+  "version": "1.1.59",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

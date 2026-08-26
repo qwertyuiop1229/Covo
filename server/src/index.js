@@ -659,7 +659,7 @@ async function handleSendNotification(request, env) {
 
     // 各受信者について処理
     for (const rid of receiverIds) {
-        if (rid === senderId) continue; // 自分には送らない
+        if (!rid || rid === senderId) continue; // 自分や空IDには送らない
 
         let shouldSend = true;
         try {
@@ -684,8 +684,8 @@ async function handleSendNotification(request, env) {
                     } else if (typeof lastChangedRaw === 'string') {
                       lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
                     }
-                    const ageMs = Date.now() - lastChangedMs;
-                    const isStale = ageMs > 5 * 60 * 1000;
+                    const ageMs = lastChangedMs > 0 ? (Date.now() - lastChangedMs) : 0;
+                    const isStale = lastChangedMs > 0 && (ageMs > 5 * 60 * 1000);
                     const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
                       || statusData.currentRoomId; // RTDB形式
                     if (!isStale && currentRoomIdStatus === roomId) {

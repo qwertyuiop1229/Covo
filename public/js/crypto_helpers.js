@@ -176,22 +176,19 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function _requestEscrowRescue(serverId, roomId) {
-      if (!_getUserId()) return;
+      if (!_getUserId() || !serverId || !roomId) return;
+      if (!_e2ee._rescueRequestFlags) _e2ee._rescueRequestFlags = {};
       const now = Date.now();
-      if (_e2ee._rescueRequestFlags && _e2ee._rescueRequestFlags[roomId] && (now - _e2ee._rescueRequestFlags[roomId] < 60000)) {
+      if (_e2ee._rescueRequestFlags[roomId] && (now - _e2ee._rescueRequestFlags[roomId] < 60000)) {
         return; // 1分以内の連続リクエストはスキップ
       }
-      if (_e2ee._rescueRequestFlags) {
-        _e2ee._rescueRequestFlags[roomId] = now;
-      }
+      _e2ee._rescueRequestFlags[roomId] = now;
       try {
-        
-          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
-            userId: _getUserId(), requestedAt: serverTimestamp()
-          }, { merge: true });
-          console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
-          delete _e2ee.roomKeyCache[roomId];
-        
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
+          userId: _getUserId(), requestedAt: serverTimestamp()
+        }, { merge: true });
+        console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
+        delete _e2ee.roomKeyCache[roomId];
       } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
     }
 
