@@ -9169,18 +9169,21 @@ function doJumpHighlight(el) {
     const row = el.closest('.message-row') || el;
     const cRect = container.getBoundingClientRect();
     const rRect = row.getBoundingClientRect();
+    const containerCenterY = (cRect.top + cRect.bottom) / 2;
+    const rowCenterY = (rRect.top + rRect.bottom) / 2;
 
-    // 対象のメッセージがすでに画面内に見えているか判定（上下30pxのマージンを確保）
-    const isVisible = (rRect.top >= cRect.top + 30 && rRect.bottom <= cRect.bottom - 30);
+    // 「中央より下にある（画面下半分に完全に収まっている）」場合はスクロールしない
+    // 最新メッセージ付近で見えているメッセージの不必要なスクロールを防止
+    const isBelowCenterAndVisible = (rowCenterY >= containerCenterY && rRect.bottom <= cRect.bottom && rRect.top >= cRect.top);
 
-    // 画面外に見切れている場合のみ、最小限のスクロールを実行して隙間の発生を防止
-    if (!isVisible) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // 中央より上にある、または画面外・見切れている場合は、画面の真ん中（center）に来るようにスクロール
+    if (!isBelowCenterAndVisible) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       didScroll = true;
     }
   }
 
-  // すでに見えている場合は即座に、スクロールした場合は移動を待ってハイライトを発火
+  // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
   setTimeout(() => {
     const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
     if (isStamp) {
@@ -9190,7 +9193,7 @@ function doJumpHighlight(el) {
       el.classList.add('message-highlight');
       setTimeout(() => el.classList.remove('message-highlight'), 1200);
     }
-  }, didScroll ? 200 : 50);
+  }, didScroll ? 350 : 50);
 }
 
 // iOS/Safari 判定

@@ -5,7 +5,7 @@ const BLOCKED_EXTENSIONS = new Set([
   'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
   'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
   'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap'
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
 ]);
 
 /**
