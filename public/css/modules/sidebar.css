@@ -1507,14 +1507,37 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         display: none !important;
       }
 
-      /* 各ヘッダー（探索・DM・チャット）に Safe Area Top を適用してダイナミックアイランドを回避 */
+      /* 各ヘッダー（探索・DM・チャット）の上下完全中央揃え（Dynamic Island / Safe Area Top に完全対応） */
+      body.discord-ui-mode #serverHeader,
       body.discord-ui-mode #discordDiscoverHeader,
       body.discord-ui-mode #discordDmHeader,
       #currentRoomHeader {
-        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
+        padding-bottom: 0 !important;
+        height: calc(48px + env(safe-area-inset-top, 0px)) !important;
         min-height: calc(48px + env(safe-area-inset-top, 0px)) !important;
-        height: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
         box-sizing: border-box !important;
+      }
+
+      #currentRoomHeader #mobileBackButton {
+        width: 32px !important;
+        height: 32px !important;
+        padding: 0 !important;
+        margin: 0 4px 0 -4px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+        flex-shrink: 0 !important;
+      }
+
+      #currentRoomHeader #currentRoomTitleArea {
+        display: flex !important;
+        align-items: center !important;
+        height: 32px !important;
       }
 
       /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応（全幅に最適化） */

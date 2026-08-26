@@ -9969,7 +9969,7 @@ if (callPickerBoxEl) {
   initBottomSheetGestures(callPickerBoxEl, callPickerModalEl, () => closeCallPicker(), callPickerListEl);
 }
 
-// --- ピン留め機能 ---
+// --- LINE完全準拠 ピン留め（アナウンス）機能 ---
 function subscribeToPinnedMessages(serverId, roomId) {
   if (unsubscribePinnedMessages) {
     unsubscribePinnedMessages();
@@ -10001,6 +10001,51 @@ function subscribeToPinnedMessages(serverId, roomId) {
   });
 }
 
+window.unpinMessage = async function(msgId) {
+  if (!currentServerId || !currentRoomId || !msgId) return;
+  const msgObj = currentPinnedMessages.find(m => m.id === msgId) || allLoadedMessages.find(m => m.id === msgId);
+  const canUnpin = isAdmin || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || (msgObj && msgObj.senderId === userId);
+  if (!canUnpin) {
+    alertMessage("ピン留めを解除する権限がありません", "warning");
+    return;
+  }
+  const confirmed = await showCustomConfirm("このメッセージのピン留め（アナウンス）を解除しますか？", "解除する", "キャンセル");
+  if (!confirmed) return;
+
+  try {
+    const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+    await updateDoc(msgRef, { isPinned: false });
+    
+    try {
+      const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: false });
+    } catch (e) {}
+
+    currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgId);
+    const mInLoaded = allLoadedMessages.find(m => m.id === msgId);
+    if (mInLoaded) mInLoaded.isPinned = false;
+
+    renderPinnedMessages();
+    alertMessage("ピン留めを解除しました", "success");
+  } catch (e) {
+    console.error("unpinMessage error:", e);
+    alertMessage("ピン留め解除に失敗しました", "error");
+  }
+};
+
+window.minimizePinnedAnnouncement = function() {
+  sessionStorage.setItem(`minimized_pins_${currentRoomId}`, "true");
+  isPinnedMessagesExpanded = false;
+  renderPinnedMessages();
+};
+
+window.restorePinnedAnnouncement = function() {
+  sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+  renderPinnedMessages();
+};
+
 if (pinMessageBtn) {
   pinMessageBtn.addEventListener("click", async (e) => {
     if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
@@ -10018,6 +10063,8 @@ if (pinMessageBtn) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
+        // 新しくピン留めした際は最小化を解除してバーを表示
+        sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
@@ -10030,7 +10077,7 @@ if (pinMessageBtn) {
         const rtdb = await _getOrInitRTDB();
         await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${targetId}`), { isPinned: isPinned });
       } catch (e) { console.error("RTDB Pin Failed", e); }
-      alertMessage(isPinned ? "ピン留めしました" : "ピン留めを解除しました", "success");
+      alertMessage(isPinned ? "アナウンスに固定しました" : "ピン留めを解除しました", "success");
     }
     if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
   });
@@ -10040,130 +10087,174 @@ let isPinnedMessagesExpanded = false;
 let isPinnedMessagesMinimized = false;
 
 function renderPinnedMessages() {
-  const pinnedMessages = currentPinnedMessages;
+  const pinnedMessages = currentPinnedMessages || [];
   pinnedMessagesArea.innerHTML = "";
 
-  // If no pins or it's manually minimized by user, we show the floating minimized icon (or hide if no pins)
+  // 既存のフローティングアイコンを一旦取得
+  let floatIcon = document.getElementById("minimizedPinIcon");
+
+  // ピン留めが0件の場合はエリアを隠し、フローティングアイコンも完全消去
   if (pinnedMessages.length === 0) {
     pinnedMessagesArea.classList.add("hidden");
-    document.getElementById("minimizedPinIcon")?.remove();
+    if (floatIcon) floatIcon.remove();
     return;
+  }
+
+  // セッションから最小化状態を復元
+  const isMinimized = sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true";
+
+  if (isMinimized) {
+    pinnedMessagesArea.classList.add("hidden");
+    // フローティング最小化アイコン（メガホン）を表示
+    if (!floatIcon) {
+      floatIcon = document.createElement("div");
+      floatIcon.id = "minimizedPinIcon";
+      floatIcon.className = "minimized-pin-icon";
+      floatIcon.title = "アナウンスを表示";
+      floatIcon.onclick = (e) => {
+        e.stopPropagation();
+        window.restorePinnedAnnouncement();
+      };
+      
+      const chatAreaContainer = document.querySelector("#chatArea .relative.flex-1") || document.getElementById("chatArea");
+      if (chatAreaContainer) {
+        chatAreaContainer.appendChild(floatIcon);
+      }
+    }
+
+    const badgeCount = pinnedMessages.length;
+    floatIcon.innerHTML = `
+      <i class="fas fa-bullhorn"></i>
+      ${badgeCount > 1 ? `<div class="minimized-pin-badge">${badgeCount}</div>` : ''}
+    `;
+    return;
+  } else {
+    // 最小化されていない場合はフローティングアイコンを消去
+    if (floatIcon) floatIcon.remove();
   }
 
   pinnedMessagesArea.classList.remove("hidden");
 
-  // Restore minimized state from session
-  if (sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true") {
-    isPinnedMessagesMinimized = true;
-  } else {
-    isPinnedMessagesMinimized = false;
-  }
-
-  if (isPinnedMessagesMinimized) {
-    pinnedMessagesArea.classList.add("hidden");
-    // Show floating icon
-    let floatIcon = document.getElementById("minimizedPinIcon");
-    if (!floatIcon) {
-      floatIcon = document.createElement("div");
-      floatIcon.id = "minimizedPinIcon";
-      floatIcon.className = "absolute top-4 right-4 z-[60] bg-white dark:bg-gray-800 shadow-lg rounded-full w-10 h-10 flex items-center justify-center cursor-pointer border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all";
-      floatIcon.innerHTML = `<i class="fas fa-bullhorn"></i><div class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">${pinnedMessages.length}</div>`;
-      floatIcon.onclick = () => {
-        sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
-        isPinnedMessagesMinimized = false;
-        renderPinnedMessages();
-      };
-      document.querySelector(".relative.flex-1").appendChild(floatIcon);
-    } else {
-      floatIcon.querySelector("div").textContent = pinnedMessages.length;
-    }
-    return;
-  } else {
-    document.getElementById("minimizedPinIcon")?.remove();
-  }
-
-  // LINE-style Announcement Banner
+  // LINE完全準拠 アナウンスコンテナ
   const container = document.createElement("div");
-  container.className = "w-full bg-white dark:bg-[#202225] border-b border-gray-200 dark:border-[#1e1f22] shadow-sm flex flex-col transition-all duration-300";
+  container.className = "pinned-announcement-container";
 
-  // Main visible header (shows the latest pin)
+  // 最新（直近）のピン留めメッセージ
   const latestMsg = pinnedMessages[pinnedMessages.length - 1];
+  const count = pinnedMessages.length;
+
   const headerRow = document.createElement("div");
-  headerRow.className = "flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#2b2d31] transition-colors relative";
+  headerRow.className = "pinned-announcement-header";
 
   const iconWrap = document.createElement("div");
-  iconWrap.className = "text-gray-400 dark:text-gray-500 mr-3";
+  iconWrap.className = "announcement-icon-wrap";
   iconWrap.innerHTML = '<i class="fas fa-bullhorn"></i>';
 
   const contentWrap = document.createElement("div");
-  contentWrap.className = "flex-1 flex flex-col min-w-0 mr-2";
+  contentWrap.className = "announcement-content-wrap";
 
-  const msgLine = document.createElement("div");
-  msgLine.className = "truncate text-sm text-gray-800 dark:text-gray-200";
-  msgLine.innerHTML = `<span class="font-bold mr-1">${escapeHtml(latestMsg.senderNickname)}:</span>${escapeHtml(latestMsg._decryptedErrorText || latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
-
-  contentWrap.appendChild(msgLine);
-
-  // Action buttons
-  const actionsWrap = document.createElement("div");
-  actionsWrap.className = "flex items-center gap-1 text-gray-400";
-
-  const expandBtn = document.createElement("div");
-  expandBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors";
-  expandBtn.innerHTML = `<i class="fas fa-chevron-${isPinnedMessagesExpanded ? 'up' : 'down'} transition-transform duration-300"></i>`;
-
-  const closeBtn = document.createElement("div");
-  closeBtn.className = "w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ml-1";
-  closeBtn.innerHTML = `<i class="fas fa-times"></i>`;
-
-  // Events
-  msgLine.onclick = (e) => {
+  const latestText = latestMsg._decryptedErrorText || latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "（画像）" : latestMsg.fileData ? "（ファイル）" : latestMsg.sticker ? "（スタンプ）" : "...");
+  contentWrap.innerHTML = `
+    <span class="announcement-sender">${escapeHtml(latestMsg.senderNickname || 'ユーザー')}:</span>
+    <span class="announcement-text">${escapeHtml(latestText)}</span>
+  `;
+  contentWrap.title = "クリックしてメッセージへ移動";
+  contentWrap.onclick = (e) => {
     e.stopPropagation();
     jumpToMsg(latestMsg.id);
   };
 
-  expandBtn.onclick = (e) => {
-    e.stopPropagation();
-    isPinnedMessagesExpanded = !isPinnedMessagesExpanded;
-    renderPinnedMessages();
-  };
+  // アクションボタン群
+  const actionsWrap = document.createElement("div");
+  actionsWrap.className = "announcement-actions";
 
-  closeBtn.onclick = (e) => {
-    e.stopPropagation();
-    sessionStorage.setItem(`minimized_pins_${currentRoomId}`, "true");
-    isPinnedMessagesMinimized = true;
-    renderPinnedMessages();
-  };
-
-  // If only 1 message, no expand button needed
-  if (pinnedMessages.length > 1) {
+  // 複数件ある場合のアコーディオン開閉ボタン (V / ∧)
+  if (count > 1) {
+    const expandBtn = document.createElement("button");
+    expandBtn.className = "announcement-btn announcement-expand-btn";
+    expandBtn.title = isPinnedMessagesExpanded ? "アナウンスを折りたたむ" : `他 ${count - 1} 件のアナウンスを表示`;
+    expandBtn.innerHTML = `<i class="fas fa-chevron-${isPinnedMessagesExpanded ? 'up' : 'down'}"></i>`;
+    expandBtn.onclick = (e) => {
+      e.stopPropagation();
+      isPinnedMessagesExpanded = !isPinnedMessagesExpanded;
+      renderPinnedMessages();
+    };
     actionsWrap.appendChild(expandBtn);
   }
-  actionsWrap.appendChild(closeBtn);
+
+  // 最小化ボタン (LINE風: アナウンスを隠して右上のメガホンアイコンにする)
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "announcement-btn announcement-minimize-btn";
+  minimizeBtn.title = "アナウンスを最小化";
+  minimizeBtn.innerHTML = `<i class="fas fa-chevron-up"></i>`;
+  minimizeBtn.onclick = (e) => {
+    e.stopPropagation();
+    window.minimizePinnedAnnouncement();
+  };
+  actionsWrap.appendChild(minimizeBtn);
 
   headerRow.appendChild(iconWrap);
   headerRow.appendChild(contentWrap);
   headerRow.appendChild(actionsWrap);
   container.appendChild(headerRow);
 
-  // Expanded List
-  if (isPinnedMessagesExpanded && pinnedMessages.length > 1) {
+  // 複数件のアナウンス展開アコーディオンリスト
+  if (isPinnedMessagesExpanded && count > 1) {
     const listWrap = document.createElement("div");
-    listWrap.className = "border-t border-gray-100 dark:border-[#2b2d31] bg-gray-50 dark:bg-[#1e1f22] overflow-y-auto max-h-64";
+    listWrap.className = "pinned-announcement-list";
 
-    pinnedMessages.forEach((msg, idx) => {
-      // Skip the latest one if we want, but LINE shows all in the list
+    // 新しい順（最新が上）で一覧表示
+    const reversedPins = [...pinnedMessages].reverse();
+    reversedPins.forEach((msg) => {
       const itemRow = document.createElement("div");
-      itemRow.className = "flex items-center px-4 py-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-[#2b2d31] transition-colors border-b border-gray-100 dark:border-gray-800 last:border-0";
+      itemRow.className = "pinned-announcement-item" + (msg.id === latestMsg.id ? " active-latest" : "");
 
-      const itemText = document.createElement("div");
-      itemText.className = "flex-1 truncate text-sm text-gray-700 dark:text-gray-300";
-      itemText.innerHTML = `<span class="font-bold mr-1 text-gray-900 dark:text-gray-100">${escapeHtml(msg.senderNickname)}:</span>${escapeHtml(msg._decryptedErrorText || msg.text || (msg.fileType?.startsWith('image') ? "画像" : "ファイル"))}`;
+      const itemIcon = document.createElement("div");
+      itemIcon.className = "announcement-item-icon";
+      itemIcon.innerHTML = '<i class="fas fa-bullhorn text-xs opacity-60"></i>';
 
-      itemRow.appendChild(itemText);
-      itemRow.onclick = () => jumpToMsg(msg.id);
+      const itemContent = document.createElement("div");
+      itemContent.className = "announcement-item-content";
+      const itemText = msg._decryptedErrorText || msg.text || (msg.fileType?.startsWith('image') ? "（画像）" : msg.fileData ? "（ファイル）" : msg.sticker ? "（スタンプ）" : "...");
+      itemContent.innerHTML = `
+        <span class="announcement-sender">${escapeHtml(msg.senderNickname || 'ユーザー')}:</span>
+        <span class="announcement-text">${escapeHtml(itemText)}</span>
+      `;
+      itemContent.onclick = (e) => {
+        e.stopPropagation();
+        jumpToMsg(msg.id);
+      };
+
+      itemRow.appendChild(itemIcon);
+      itemRow.appendChild(itemContent);
+
+      // ピン留め解除ボタン（権限所持者のみ）
+      const canUnpin = isAdmin || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || msg.senderId === userId;
+      if (canUnpin) {
+        const unpinBtn = document.createElement("button");
+        unpinBtn.className = "announcement-unpin-btn";
+        unpinBtn.title = "アナウンス（ピン留め）を解除";
+        unpinBtn.innerHTML = '<i class="fas fa-times"></i>';
+        unpinBtn.onclick = (e) => {
+          e.stopPropagation();
+          window.unpinMessage(msg.id);
+        };
+        itemRow.appendChild(unpinBtn);
+      }
+
       listWrap.appendChild(itemRow);
     });
+
+    // リスト下部の最小化フッター
+    const footer = document.createElement("div");
+    footer.className = "pinned-announcement-footer";
+    footer.innerHTML = `
+      <button class="pinned-announcement-footer-btn" onclick="window.minimizePinnedAnnouncement()">
+        <i class="fas fa-chevron-up mr-1 text-xs"></i>アナウンスを最小化
+      </button>
+    `;
+    listWrap.appendChild(footer);
+
     container.appendChild(listWrap);
   }
 
