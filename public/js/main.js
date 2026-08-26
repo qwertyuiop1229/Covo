@@ -477,13 +477,18 @@ function initializeFirebase() {
                 if (reg.active) reg.active.postMessage({ type: 'SET_USER_ID', userId: userId, appId: appId, idToken: _cachedIdToken });
               }).catch(() => { });
             }
-            // FCMが有効な場合はFirestoreグローバルリスナーは不要（FCMが通知を担当）
-            // Tauriのみ或いはFCMトークン取得失敗時はFirestoreリスナーをフォールバック
-            setTimeout(() => setupGlobalNotificationListeners(), 2000);
+            // 全参加サーバーの最新メッセージ監視リスナーを開始
+            setTimeout(() => setupGlobalNotificationListeners(), 1000);
             initCallListener();
             initFileShareListener();
             initReadStatesSync();
             setupGlobalRtdbListener();
+
+            if (window.__pendingNotifJump) {
+              const jumpFn = window.__pendingNotifJump;
+              window.__pendingNotifJump = null;
+              setTimeout(() => { try { jumpFn(); } catch(e){} }, 600);
+            }
           } else {
             authContainer.classList.add("hidden");
             appContainer.classList.add("hidden");
@@ -1901,12 +1906,7 @@ window.mobileProfileSave = async function () {
 const atm = document.getElementById('avatarUploadTriggerMobile');
 if (atm) atm.addEventListener('click', () => document.getElementById('avatarUploadInput').click());
 
-const tnsm = document.getElementById('toggleNotifSoundMobile');
-const tnbm = document.getElementById('toggleBrowserNotifMobile');
-const tnsp = document.getElementById('toggleNotifSound');
-const tnbp = document.getElementById('toggleBrowserNotif');
-if (tnsm && tnsp) { tnsm.checked = tnsp.checked; tnsm.addEventListener('change', () => { tnsp.checked = tnsm.checked; tnsp.dispatchEvent(new Event('change')); }); }
-if (tnbm && tnbp) { tnbm.checked = tnbp.checked; tnbm.addEventListener('change', () => { tnbp.checked = tnbm.checked; tnbp.dispatchEvent(new Event('change')); }); }
+// モバイル通知トグルの双方向同期は initSettings 内で一元管理
 
 // サーバーリストのアバターボタン押下時（スマホはスライドイン設定画面）
 document.getElementById('serverListUserBtn')?.addEventListener('click', (e) => {
@@ -3214,6 +3214,9 @@ async function showServerList() {
     snapshot.forEach(d => servers.push({ id: d.id, ...d.data() }));
     allServersCache = servers;
     window.renderServerList();
+    if (typeof setupGlobalNotificationListeners === 'function') {
+      setupGlobalNotificationListeners();
+    }
 
     // 初回ロード時、前回開いていたサーバーがあれば自動復帰 (Discordと同等のオートロード挙動)
     if (!window.hasAutoOpenedLastServer) {
@@ -3291,6 +3294,11 @@ async function enterServer(serverId, serverData) {
     updateTitleBarContext('server', serverData);
   }
 
+  // サーバー切り替え時に他サーバー通知監視を再同期
+  if (typeof setupGlobalNotificationListeners === 'function') {
+    setupGlobalNotificationListeners();
+  }
+
   // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
   try {
     const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
@@ -3366,6 +3374,9 @@ window.openDmHomeView = function () {
   if (typeof updateTitleBarContext === 'function') {
     updateTitleBarContext('dm');
   }
+  if (typeof setupGlobalNotificationListeners === 'function') {
+    setupGlobalNotificationListeners();
+  }
   if (window.renderServerList) window.renderServerList();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 };
@@ -3416,6 +3427,9 @@ window.openDiscoverView = function () {
   document.getElementById("globalAppHeader")?.classList.remove("server-mode");
   if (typeof updateTitleBarContext === 'function') {
     updateTitleBarContext('discover');
+  }
+  if (typeof setupGlobalNotificationListeners === 'function') {
+    setupGlobalNotificationListeners();
   }
   if (window.renderServerList) window.renderServerList();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
@@ -4934,18 +4948,21 @@ let globalNotifListeners = {};
 async function setupGlobalNotificationListeners() {
   Object.values(globalNotifListeners).forEach(unsub => unsub());
   globalNotifListeners = {};
-  if (!isTauri && currentFcmToken) {
-    console.log('🔔 [通知] FCM(プッシュ通知)が有効なため、バックグラウンド監視を最適化しました');
-    return;
-  }
+  if (!userId) return;
 
   try {
-    const serversSnap = await getDocs(
-      query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
-    );
-    for (const serverDoc of serversSnap.docs) {
-      const svId = serverDoc.id;
-      const svData = serverDoc.data();
+    let servers = (allServersCache && allServersCache.length)
+      ? allServersCache.filter(s => (s.joinedUsers || []).includes(userId))
+      : null;
+    if (!servers) {
+      const serversSnap = await getDocs(
+        query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId))
+      );
+      servers = serversSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    for (const svData of servers) {
+      const svId = svData.id;
       if (svId === currentServerId) continue;
 
       const roomsQuery = collection(db, `artifacts/${appId}/servers/${svId}/rooms`);
@@ -4990,26 +5007,25 @@ async function setupGlobalNotificationListeners() {
                     }
                   } catch (e) { body = '（暗号化されたメッセージ）'; }
                   if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
+                  
+                  const isMentioned = userNickname && body && (body.includes(`@${userNickname}`) || body.includes('@all'));
+                  const title = isMentioned ? `[@メンション] ${svData.name || svId} › #${rmName}` : `${svData.name || svId} › #${rmName}`;
+                  
                   showInAppNotification(
                     svData.name || svId, rmName,
                     'メンバー',
                     body,
                     svId, svData, rmId, rmName
                   );
-                  // Push Notification for other servers
-                  if (!document.hasFocus()) {
-                    if (isTauri) {
-                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
-                    } else if (!currentFcmToken) {
-                      if (typeof showNotification === 'function') showNotification(`${svData.name || svId} › #${rmName}`, `メンバー: ${body}`, rmId);
-                    }
+                  // バックグラウンド・非フォーカス時はOS通知 / デスクトップ通知を必ず送信
+                  if (!document.hasFocus() || document.visibilityState === 'hidden') {
+                    showNotification(title, `メンバー: ${body}`, rmId);
                   }
                 })();
               }
             }
           }
         });
-        // バッジ更新のために即座に更新するか、未読再スキャンをトリガー
         if (hasNewMessage) {
           if (newItemsToNotif.length > 0) {
             try {
@@ -5023,7 +5039,7 @@ async function setupGlobalNotificationListeners() {
               localStorage.setItem('covo_global_items', JSON.stringify(items));
               if (typeof renderNotifList === 'function') renderNotifList(items);
               if (isTauri && window.__TAURI__?.core?.invoke) {
-                window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => { });
+                window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(() => { });
               }
             } catch (e) { console.error(e); }
           } else if (typeof scanAllUnreadAndRender === 'function') {
@@ -5996,7 +6012,7 @@ async function subscribeToMessagesRTDB() {
     }
   };
 
-  performInitialLoad().catch(async () => {
+  performInitialLoad().catch(async (err) => {
     console.warn('[RTDB] 初期メッセージ取得エラー、Firestoreからフォールバック取得:', err);
     try {
       const msgsSnap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), orderBy('timestamp', 'desc'), limit(20)));
@@ -6080,6 +6096,19 @@ async function subscribeToMessagesRTDB() {
       const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
       if (isMentioned && document.hasFocus()) {
         showMentionToast(data.senderNickname || "ユーザー");
+      }
+      
+      // 裏にいる時（非フォーカス／バックグラウンド時）は確実にデスクトップ通知・タスクバーバッジ点灯を実行
+      if (!document.hasFocus() || document.visibilityState === 'hidden') {
+        const sName = currentServerData?.name || 'Covo';
+        const rName = roomNames[currentRoomId] || 'ルーム';
+        const notifTitle = isMentioned ? `[@メンション] ${sName} › #${rName}` : `${sName} › #${rName}`;
+        showNotification(notifTitle, `${data.senderNickname || 'ユーザー'}: ${bodyText || '新着メッセージ'}`, currentRoomId);
+        showInAppNotification(sName, rName, data.senderNickname || 'ユーザー', bodyText || '新着メッセージ', currentServerId, currentServerData, currentRoomId);
+        updateGlobalNotifUI();
+        if (isTauri && window.__TAURI__?.core?.invoke) {
+          window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
+        }
       }
     }
 
@@ -6891,6 +6920,13 @@ async function sendSticker(emoji) {
     window._reactionTargetMessageId = null;
     return;
   }
+
+  // 自分が送信した時は未読境界線をクリア
+  unreadBoundaryAt = 0;
+  unreadBoundaryMessageId = null;
+  const existingDiv = messagesDisplay.querySelector('.unread-divider');
+  if (existingDiv) existingDiv.remove();
+
   try {
     const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
     if (replyingToMessage) {
@@ -7253,6 +7289,12 @@ async function sendMessage() {
   messageInput.value = "";
   messageInput.style.height = "auto";
   if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+
+  // 自分がメッセージを送信した時は未読境界線をクリア
+  unreadBoundaryAt = 0;
+  unreadBoundaryMessageId = null;
+  const existingDiv = messagesDisplay.querySelector('.unread-divider');
+  if (existingDiv) existingDiv.remove();
 
   // 共通のUI要素を取得 (finallyブロックでの参照エラー防止)
   const progressBar = document.getElementById("uploadProgressBar");
@@ -8454,7 +8496,7 @@ function resolveUnreadBoundaryMessageId(chronologicalMessages) {
 }
 
 // 区切り線を、境界メッセージの「視覚的に直上」に配置する。
-// 表示は scaleY(-1) で反転しているため、DOM上は境界行の直後に入れると視覚的に直上になる。
+// 表示は scaleY(-1) で反転しているため、DOM上は境界行の次 (nextSibling) に入れると視覚的に直上（過去メッセージ側）になる。
 function renderUnreadDivider(boundaryMessageId) {
   const existing = messagesDisplay.querySelector('.unread-divider');
   if (existing) existing.remove();
@@ -8466,7 +8508,7 @@ function renderUnreadDivider(boundaryMessageId) {
   const divider = document.createElement('div');
   divider.className = 'unread-divider flipped';
   divider.innerHTML = '<span>ここから未読</span>';
-  messagesDisplay.insertBefore(divider, boundaryRow);
+  messagesDisplay.insertBefore(divider, boundaryRow.nextSibling);
 }
 
 function computeReadByCount(message, msgIndex) {
@@ -9346,6 +9388,9 @@ window._mobileNotifActive = window._mobileNotifActive || false;
 async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
   if (document.hasFocus() && roomId === currentRoomId) return;
 
+  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+
   // 1. 本文が暗号化されている場合は、非同期で確実に復号を実行
   if (typeof isEncrypted === 'function' && isEncrypted(text)) {
     try {
@@ -9368,8 +9413,7 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
   const isMention = displayBody && userNickname && (displayBody.includes(`@${userNickname}`) || displayBody.includes('@all'));
 
   // 通知音の再生
-  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-  if (soundEnabled) {
+  if (soundEnabled && notifEnabled) {
     playNotificationSound();
   }
   if (isTauri && window.__TAURI__?.core?.invoke) {
@@ -11235,11 +11279,9 @@ async function showNotification(title, body, roomId) {
     if (isEncrypted(title)) title = 'Covo';
   }
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-  const desktopEnabled = localStorage.getItem('simplechat_desktop_notif') !== 'false';
-  const browserEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
 
-  if (!isTauri && !browserEnabled) return;
-  if (isTauri && !desktopEnabled) return;
+  if (!notifEnabled) return;
 
   const now = Date.now();
   const sameContent = body === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
@@ -12512,17 +12554,24 @@ async function initializeFCM() {
           if (notifData?.type === 'incoming_call') {
             handleCallNotificationClick(notifData);
           } else if (notifData?.roomId) {
-            if (notifData.serverId && notifData.serverId !== currentServerId) {
-              if (typeof goToServerRoom === 'function') {
-                goToServerRoom(notifData.serverId, notifData.roomId);
-              }
-            } else {
-              if (typeof goToRoom === 'function') {
-                goToRoom(notifData.roomId);
+            const doJump = () => {
+              if (notifData.serverId && notifData.serverId !== currentServerId) {
+                if (typeof goToServerRoom === 'function') {
+                  goToServerRoom(notifData.serverId, notifData.roomId);
+                }
               } else {
-                const roomItem = document.getElementById(`room-item-${notifData.roomId}`);
-                if (roomItem) roomItem.click();
+                if (typeof goToRoom === 'function') {
+                  goToRoom(notifData.roomId);
+                } else {
+                  const roomItem = document.getElementById(`room-item-${notifData.roomId}`);
+                  if (roomItem) roomItem.click();
+                }
               }
+            };
+            if (isAuthReady && userId) {
+              doJump();
+            } else {
+              window.__pendingNotifJump = doJump;
             }
           }
         }
@@ -12826,28 +12875,57 @@ if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !window.
 function initSettings() {
   const toggleNotifSound = document.getElementById('toggleNotifSound');
   const toggleBrowserNotif = document.getElementById('toggleBrowserNotif');
-  const toggleDesktopNotif = document.getElementById('toggleDesktopNotif');
+  const toggleNotifSoundMobile = document.getElementById('toggleNotifSoundMobile');
+  const toggleBrowserNotifMobile = document.getElementById('toggleBrowserNotifMobile');
   const toggleAutoStart = document.getElementById('toggleAutoStart');
 
-  // 初期値の読み込み
-  toggleNotifSound.checked = localStorage.getItem('simplechat_sound') !== 'false';
-  toggleBrowserNotif.checked = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  // 初期値の読み込み (デフォルトは有効: true)
+  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+
+  if (toggleNotifSound) toggleNotifSound.checked = soundEnabled;
+  if (toggleNotifSoundMobile) toggleNotifSoundMobile.checked = soundEnabled;
+  if (toggleBrowserNotif) toggleBrowserNotif.checked = notifEnabled;
+  if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.checked = notifEnabled;
+
   loadDarkServerTheme();
 
+  // 通知音トグルのリスナー (PC & Mobile 同期)
+  const handleSoundChange = (checked) => {
+    localStorage.setItem('simplechat_sound', checked ? 'true' : 'false');
+    if (toggleNotifSound && toggleNotifSound.checked !== checked) toggleNotifSound.checked = checked;
+    if (toggleNotifSoundMobile && toggleNotifSoundMobile.checked !== checked) toggleNotifSoundMobile.checked = checked;
+  };
+  if (toggleNotifSound) toggleNotifSound.addEventListener('change', (e) => handleSoundChange(e.target.checked));
+  if (toggleNotifSoundMobile) toggleNotifSoundMobile.addEventListener('change', (e) => handleSoundChange(e.target.checked));
+
+  // 通知トグルのリスナー (PC & Mobile 同期)
+  const handleNotifChange = (checked) => {
+    localStorage.setItem('simplechat_browser_notif', checked ? 'true' : 'false');
+    localStorage.setItem('simplechat_desktop_notif', checked ? 'true' : 'false');
+    if (toggleBrowserNotif && toggleBrowserNotif.checked !== checked) toggleBrowserNotif.checked = checked;
+    if (toggleBrowserNotifMobile && toggleBrowserNotifMobile.checked !== checked) toggleBrowserNotifMobile.checked = checked;
+    setBrowserPushEnabled(checked).catch(console.error);
+    if (isTauri && checked) {
+      const tauriNotif = window.__TAURI__?.notification;
+      if (tauriNotif && tauriNotif.requestPermission) {
+        tauriNotif.requestPermission();
+      } else if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission();
+      }
+    }
+  };
+  if (toggleBrowserNotif) toggleBrowserNotif.addEventListener('change', (e) => handleNotifChange(e.target.checked));
+  if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.addEventListener('change', (e) => handleNotifChange(e.target.checked));
+
   if (isTauri) {
-    // Windows版: ブラウザ通知行を非表示、デスクトップ通知・自動起動・ショートカットを表示
-    document.getElementById('desktopSettingsContainer').classList.remove('hidden');
-    document.getElementById('desktopNotifRow').classList.remove('hidden');
-    document.getElementById('shortcutInfoContainer').classList.remove('hidden');
-    document.getElementById('browserNotifRow').classList.add('hidden');
-    // デスクトップショートカット作成ボタン（Tauri専用）
+    // Windows版: 自動起動・ショートカットを表示
+    document.getElementById('desktopSettingsContainer')?.classList.remove('hidden');
+    document.getElementById('shortcutInfoContainer')?.classList.remove('hidden');
     const pcRow = document.getElementById('pcCreateShortcutRow');
     if (pcRow) pcRow.style.setProperty('display', 'flex', 'important');
     const mobileRow = document.getElementById('mobileCreateShortcutBtn');
     if (mobileRow) mobileRow.style.display = 'flex';
-
-    // ログフォルダボタンをdesktopSettingsContainer内に動的追加する代わりに、
-    // notifPositionContainerが削除されたため openLogDirBtn は追加しない
 
     // バージョン表示
     (async () => {
@@ -12870,19 +12948,9 @@ function initSettings() {
       }
     })();
 
-    toggleDesktopNotif.checked = localStorage.getItem('simplechat_desktop_notif') !== 'false';
-    if (isTauri && toggleDesktopNotif.checked) {
-      const tauriNotif = window.__TAURI__?.notification;
-      if (tauriNotif && tauriNotif.requestPermission) {
-        tauriNotif.requestPermission();
-      } else if ('Notification' in window && Notification.permission !== 'granted') {
-        Notification.requestPermission();
-      }
-    }
-
     if (window.__TAURI__?.autostart) {
       window.__TAURI__.autostart.isEnabled().then(enabled => {
-        toggleAutoStart.checked = enabled;
+        if (toggleAutoStart) toggleAutoStart.checked = enabled;
       }).catch(console.error);
     }
 
@@ -12890,53 +12958,26 @@ function initSettings() {
     const shortcutInput = document.getElementById('shortcutKeyInput');
     const shortcutDisplay = document.getElementById('shortcutKeyDisplay');
     const savedKey = localStorage.getItem('simplechat_shortcut_key') || 'S';
-    shortcutInput.value = savedKey.toUpperCase();
-    shortcutDisplay.textContent = savedKey.toUpperCase();
+    if (shortcutInput) shortcutInput.value = savedKey.toUpperCase();
+    if (shortcutDisplay) shortcutDisplay.textContent = savedKey.toUpperCase();
 
-    shortcutInput.addEventListener('input', (e) => {
-      const val = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
-      e.target.value = val;
-      if (val.length === 1) {
-        localStorage.setItem('simplechat_shortcut_key', val);
-        shortcutDisplay.textContent = val;
-        if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(console.error);
+    if (shortcutInput) {
+      shortcutInput.addEventListener('input', (e) => {
+        const val = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
+        e.target.value = val;
+        if (val.length === 1) {
+          localStorage.setItem('simplechat_shortcut_key', val);
+          if (shortcutDisplay) shortcutDisplay.textContent = val;
+          if (window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(console.error);
+          }
         }
-      }
-    });
+      });
 
-    shortcutInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') e.preventDefault();
-    });
-  }
-  // Web/PWA版: ブラウザ通知行はデフォルトで表示済み。他のTauri専用UIは hidden のまま。
-
-  // Event Listeners (nullガード付き安全登録)
-  if (toggleNotifSound) {
-    toggleNotifSound.addEventListener('change', (e) => {
-      localStorage.setItem('simplechat_sound', e.target.checked);
-    });
-  }
-
-  if (toggleBrowserNotif) {
-    toggleBrowserNotif.addEventListener('change', (e) => {
-      localStorage.setItem('simplechat_browser_notif', e.target.checked);
-      setBrowserPushEnabled(e.target.checked).catch(console.error);
-    });
-  }
-
-  if (toggleDesktopNotif) {
-    toggleDesktopNotif.addEventListener('change', (e) => {
-      localStorage.setItem('simplechat_desktop_notif', e.target.checked);
-      if (isTauri && e.target.checked) {
-        const tauriNotif = window.__TAURI__?.notification;
-        if (tauriNotif && tauriNotif.requestPermission) {
-          tauriNotif.requestPermission();
-        } else if ('Notification' in window && Notification.permission !== 'granted') {
-          Notification.requestPermission();
-        }
-      }
-    });
+      shortcutInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') e.preventDefault();
+      });
+    }
   }
 
   if (toggleAutoStart) {
@@ -13147,6 +13188,11 @@ document.addEventListener("keydown", (e) => {
 // =========================================================================
 (async function bootstrapApp() {
   try {
+    // 0. 設定の初期化 (通知設定などの状態復元)
+    if (typeof initSettings === 'function') {
+      initSettings();
+    }
+
     // 1. Tauri環境の場合: アップデートチェック
     if (isTauri && typeof blockingUpdateCheck === 'function') {
       const hasUpdate = await blockingUpdateCheck();
