@@ -125,29 +125,37 @@
       z-index: 9998;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.3s ease;
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .bottom-sheet-overlay.show {
       opacity: 1;
       pointer-events: auto;
     }
 
-    .bottom-sheet-handle {
+    .bottom-sheet-handle,
+    .call-picker-handle {
       display: flex;
       justify-content: center;
       align-items: center;
       width: 100%;
-      padding: 10px 0 6px;
-      cursor: pointer;
+      padding: 12px 0 8px;
+      cursor: grab;
       flex-shrink: 0;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-sheet-handle:active,
+    .call-picker-handle:active {
+      cursor: grabbing;
     }
 
     .bottom-sheet-handle-bar {
-      width: 36px;
-      height: 4px;
+      width: 40px;
+      height: 5px;
       background-color: #cbd5e1;
       border-radius: 9999px;
       margin: 0 auto;
+      transition: background-color 0.2s, transform 0.2s;
     }
     body.dark-server-theme .bottom-sheet-handle-bar {
       background-color: #475569;
@@ -185,7 +193,7 @@
         overflow: hidden !important;
         z-index: 9999 !important;
         transform: translateY(100%) !important;
-        transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
         touch-action: pan-y !important;
         padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
       }
@@ -214,6 +222,7 @@
       #membersSidebar.closing,
       #callPickerModal.closing .call-picker-box {
         transform: translateY(100%) !important;
+        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
       }
     }
     #mobileBottomNav {
@@ -265,16 +274,29 @@
       display: none !important;
     }
 
-    /* 全画面スクリーン (プロフィール・通知) */
+    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
     #mobileProfileScreen,
-    #mobileNotifScreen {
-      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
-      padding-bottom: 0 !important;
-      box-sizing: border-box;
+    #mobileNotifScreen,
+    .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+      box-sizing: border-box !important;
+      background: #f8fafc !important;
     }
     body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
+    body.has-mobile-nav #mobileNotifScreen,
+    body.has-mobile-nav .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+    }
+    body.dark-server-theme #mobileProfileScreen,
+    body.dark-server-theme #mobileNotifScreen,
+    body.dark-server-theme .mobile-settings-detail {
+      background: #111827 !important;
     }
     /* =============================================
        Server list-view toggle
@@ -665,14 +687,24 @@
         justify-content: center !important;
       }
 
-      /* 確認・アラートダイアログ・サーバー追加選択は小型のままセンターに美しく表示（全画面不要） */
+      /* 確認・アラートダイアログ・サーバー追加選択: スマホUIでの変形・右伸びバグを完全解消 */
+      #customConfirmModal:not(.hidden),
+      #customAlertModal:not(.hidden),
+      #messagePreviewModal:not(.hidden),
+      #addServerSelectModal:not(.hidden) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 16px !important;
+      }
+
       #customConfirmModal:not(.hidden) .modal-box,
       #customAlertModal:not(.hidden) .modal-box,
       #messagePreviewModal:not(.hidden) .modal-box,
       #addServerSelectModal:not(.hidden) .modal-box {
         max-width: 340px !important;
-        width: calc(100% - 48px) !important;
-        padding: 28px !important;
+        width: min(90vw, 340px) !important;
+        padding: 24px !important;
         overflow-y: auto !important;
         justify-content: flex-start !important;
         animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
@@ -686,7 +718,8 @@
         right: auto !important;
         bottom: auto !important;
         transform: none !important;
-        margin: auto !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
       }
 
       /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */

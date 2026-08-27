@@ -875,8 +875,9 @@
       align-items: center;
       justify-content: center;
       background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     #callPickerModal.show { display: flex; }
     @keyframes modalScaleIn {
@@ -887,14 +888,14 @@
       background: #ffffff;
       color: #0f172a;
       border: 1px solid #e2e8f0;
-      border-radius: 1rem;
+      border-radius: 1.25rem;
       width: 90%;
       max-width: 440px;
       max-height: min(560px, 80vh);
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.25);
       animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
       font-size: 14px;
     }
@@ -902,13 +903,13 @@
       background: #1e293b;
       color: #f8fafc;
       border-color: rgba(255,255,255,0.08);
-      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     }
     body.discord-dark-theme .call-picker-box {
       background: #2b2d31;
       color: #dbdee1;
       border-color: #383a40;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     }
     .call-picker-handle {
       display: none;
@@ -1030,20 +1031,7 @@
       #callPickerModal {
         align-items: flex-end;
       }
-      .call-picker-box {
-        border-radius: 24px 24px 0 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        max-height: min(85vh, calc(100dvh - 30px)) !important;
-        padding-bottom: max(20px, calc(10px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-      }
       .call-picker-handle {
         display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        padding: 10px 0 4px;
-        cursor: pointer;
-        flex-shrink: 0;
       }
     }

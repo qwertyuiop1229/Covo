@@ -5417,1055 +5417,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/css/modules/chat.css">
-/* --- 追加機能用スタイル --- */
-    /* メンションのハイライト */
-    .mention-highlight {
-      background-color: rgba(29, 78, 216, 0.1) !important; /* light indigo */
-      border-left: 4px solid #1d4ed8;
-      border-radius: 4px;
-    }
-    .dark-server-theme .mention-highlight, .dark .mention-highlight {
-      background-color: rgba(96, 165, 250, 0.1) !important; /* darker indigo */
-      border-left: 4px solid #60a5fa;
-    }
-
-    .mention-text {
-      color: #1e40af; /* blue-800 for a distinct dark navy in light mode */
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .mention-text:hover {
-      text-decoration: underline;
-    }
-    .dark-server-theme .mention-text, .dark .mention-text {
-      color: #60a5fa; /* blue-400 for dark mode */
-    }
-
-    /* === LINE完全準拠 ピン留め（アナウンス）UI === */
-    #pinnedMessagesArea {
-      position: relative;
-      z-index: 25;
-      width: 100%;
-    }
-
-    .pinned-announcement-container {
-      width: 100%;
-      background: #ffffff;
-      border-bottom: 1px solid #e2e8f0;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-      display: flex;
-      flex-direction: column;
-      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .pinned-announcement-header {
-      display: flex;
-      align-items: center;
-      padding: 0.55rem 1rem;
-      min-height: 40px;
-      gap: 0.65rem;
-      cursor: pointer;
-      transition: background-color 0.15s ease;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .pinned-announcement-header:hover {
-      background-color: #f8fafc;
-    }
-
-    .announcement-icon-wrap {
-      color: #4f46e5;
-      font-size: 0.95rem;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 22px;
-      height: 22px;
-    }
-
-    .announcement-content-wrap {
-      flex: 1 1 0%;
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      font-size: 0.825rem;
-      line-height: 1.35;
-    }
-
-    .announcement-sender {
-      font-weight: 700;
-      color: #0f172a;
-      flex-shrink: 0;
-      max-width: 35%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .announcement-text {
-      color: #334155;
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .announcement-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      flex-shrink: 0;
-    }
-
-    .announcement-btn {
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      border: none;
-      background: transparent;
-      color: #64748b;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 0.75rem;
-      transition: background-color 0.15s, color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .announcement-btn:hover {
-      background-color: #f1f5f9;
-      color: #0f172a;
-    }
-
-    .pinned-announcement-list {
-      border-top: 1px solid #f1f5f9;
-      background: #f8fafc;
-      max-height: 220px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .pinned-announcement-item {
-      display: flex;
-      align-items: center;
-      padding: 0.45rem 1rem 0.45rem 1.25rem;
-      gap: 0.65rem;
-      border-bottom: 1px solid #f1f5f9;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: background-color 0.15s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .pinned-announcement-item:hover {
-      background-color: #f1f5f9;
-    }
-    .pinned-announcement-item.active-latest {
-      background-color: rgba(79, 70, 229, 0.04);
-    }
-
-    .announcement-item-icon {
-      color: #64748b;
-      font-size: 0.75rem;
-      flex-shrink: 0;
-      width: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .announcement-item-content {
-      flex: 1 1 0%;
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .announcement-unpin-btn {
-      width: 22px;
-      height: 22px;
-      border-radius: 4px;
-      border: none;
-      background: transparent;
-      color: #94a3b8;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.7rem;
-      cursor: pointer;
-      transition: background-color 0.15s, color 0.15s;
-      margin-left: 0.5rem;
-      flex-shrink: 0;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .announcement-unpin-btn:hover {
-      background-color: #fee2e2;
-      color: #ef4444;
-    }
-
-    .pinned-announcement-footer {
-      padding: 0.4rem 1rem;
-      display: flex;
-      justify-content: center;
-      border-top: 1px solid #f1f5f9;
-    }
-
-    .pinned-announcement-footer-btn {
-      font-size: 0.725rem;
-      font-weight: 600;
-      color: #64748b;
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      transition: color 0.15s;
-    }
-    .pinned-announcement-footer-btn:hover {
-      color: #0f172a;
-    }
-
-    /* フローティング最小化ピン留めアイコン (LINE風) */
-    .minimized-pin-icon {
-      position: absolute;
-      top: 0.75rem;
-      right: 1rem;
-      z-index: 35;
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #4f46e5;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 0.95rem;
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, background-color 0.2s;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
-    .minimized-pin-icon:hover {
-      transform: scale(1.08);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-    }
-    .minimized-pin-icon:active {
-      transform: scale(0.95);
-    }
-
-    .minimized-pin-badge {
-      position: absolute;
-      top: -2px;
-      right: -2px;
-      background: #ef4444;
-      color: #ffffff;
-      font-size: 9px;
-      font-weight: 800;
-      min-width: 16px;
-      height: 16px;
-      border-radius: 9999px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 4px;
-      border: 2px solid #ffffff;
-      line-height: 1;
-      pointer-events: none;
-    }
-
-    /* 未読バッジ（ルーム用・小さいドット） */
-    .unread-badge {
-      background-color: #4f46e5;
-      width: 8px;
-      height: 8px;
-      min-width: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      margin-left: auto;
-      transition: background-color 0.2s, box-shadow 0.2s;
-    }
-    body.dark-server-theme .unread-badge,
-    body.discord-dark-theme .unread-badge {
-      background-color: #818cf8;
-      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
-    }
-    body.discord-dark-theme .unread-badge {
-      background-color: #5865f2;
-      box-shadow: 0 0 6px rgba(88, 101, 242, 0.45);
-    }
-
-    /* サーバーカード未読ドット */
-    .server-card-unread-dot {
-      position: absolute;
-      top: 9px;
-      right: 9px;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #4f46e5;
-      border: 2px solid white;
-      transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
-    }
-    body.dark-server-theme .server-card-unread-dot,
-    body.discord-dark-theme .server-card-unread-dot {
-      background: #818cf8;
-      border-color: #1e293b;
-      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
-    }
-    body.discord-dark-theme .server-card-unread-dot {
-      background: #5865f2;
-      border-color: #2b2d31;
-      box-shadow: 0 0 6px rgba(88, 101, 242, 0.45);
-    }
-
-    /* 検索バー */
-    #searchContainer {
-      padding: 0.5rem;
-      background: #f3f4f6;
-      border-bottom: 1px solid #e5e7eb;
-    }
-
-    #searchContainer input {
-      background-color: #fff;
-      border: 1px solid #d1d5db;
-      border-radius: 0.5rem;
-      color: #374151;
-      font-size: 16px;
-      /* スマホでの自動拡大防止のため16pxに固定 */
-      padding: 0.5rem 0.75rem;
-    }
-
-    #searchContainer input:focus {
-      border-color: #9ca3af;
-      outline: none;
-    }
-
-    /* ドラッグ＆ドロップオーバーレイ */
-    #dropOverlay {
-      position: absolute;
-      inset: 8px;
-      background-color: rgba(255, 255, 255, 0.85);
-      border: 3px dashed #6366f1;
-      border-radius: 12px;
-      z-index: 50;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
-      transform: scale(0.98);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-    }
-    body.dark-server-theme #dropOverlay {
-      background-color: rgba(17, 24, 39, 0.85);
-      border-color: #818cf8;
-    }
-
-    #dropOverlay.active {
-      opacity: 1;
-      visibility: visible;
-      transform: scale(1);
-    }
-
-    /* 入力欄アクションボタン */
-    .input-action-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #9ca3af;
-      font-size: 1rem;
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      flex-shrink: 0;
-      transition: color 0.15s, background-color 0.15s;
-    }
-
-    .input-action-btn:hover:not(:disabled) {
-      color: #374151;
-      background-color: #f3f4f6;
-    }
-
-    .input-action-btn:disabled {
-      color: #d1d5db;
-      cursor: not-allowed;
-    }
-
-    .send-btn {
-      background-color: #374151 !important;
-      color: white !important;
-      border-color: #374151 !important;
-    }
-
-    .send-btn:hover:not(:disabled) {
-      background-color: #1f2937 !important;
-      border-color: #1f2937 !important;
-      color: white !important;
-    }
-
-    .send-btn:disabled {
-      background-color: #e5e7eb !important;
-      border-color: #e5e7eb !important;
-      color: #9ca3af !important;
-    }
-
-    #messageInputInner {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 0 0 0 10px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-
-    #messageInputInner:focus-within {
-      border-color: #9ca3af;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    }
-
-    /* ===== スタンプ ===== */
-    /* スタンプメッセージは吹き出しの背景・枠を消して絵文字だけ大きく見せる */
-    .message-bubble.sticker-bubble {
-      background: transparent !important;
-      box-shadow: none !important;
-      padding: 2px 0 !important;
-      border: none !important;
-    }
-    .sticker-content { line-height: 1; font-size: 128px; }
-    .sticker-content img.emoji { width: 128px !important; height: 128px !important; object-fit: contain; margin: 0 !important; display: block; }
-    /* 本文中のTwemoji絵文字は文字サイズに馴染ませる */
-    .message-content img.emoji { width: 1.3em; height: 1.3em; vertical-align: -0.25em; margin: 0 1px; }
-
-    /* スタンプピッカー */
-    #stickerPicker {
-      position: fixed; z-index: 99996; display: none;
-      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.18);
-      width: 360px; max-width: calc(100vw - 20px);
-      height: 420px; max-height: 60vh; flex-direction: column; overflow: hidden;
-    }
-    #stickerPicker.show { display: flex; }
-    body.dark-server-theme #stickerPicker,
-    body.discord-dark-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
-    body.discord-dark-theme #stickerPicker { background: #2b2d31; border-color: #383a40; }
-    .sticker-tabs {
-      display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid #f3f4f6;
-      overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
-    }
-    .sticker-tabs::-webkit-scrollbar { display: none; }
-    body.dark-server-theme .sticker-tabs,
-    body.discord-dark-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
-    body.discord-dark-theme .sticker-tabs { border-bottom-color: #1f2023; }
-    .sticker-tab {
-      flex-shrink: 0; width: 34px; height: 34px; border: none; background: transparent;
-      border-radius: 9px; cursor: pointer; font-size: 1.1rem; display: flex;
-      align-items: center; justify-content: center; color: #9ca3af; transition: background 0.12s;
-    }
-    .sticker-tab.active { background: #eef2ff; }
-    body.dark-server-theme .sticker-tab.active,
-    body.discord-dark-theme .sticker-tab.active { background: #334155; }
-    body.discord-dark-theme .sticker-tab.active { background: #35373c; }
-    .sticker-tab img.emoji { width: 22px; height: 22px; }
-    .sticker-grid {
-      flex: 1; overflow-y: auto; padding: 12px;
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-content: start;
-    }
-    .sticker-cell {
-      aspect-ratio: 1; border: none; background: transparent; border-radius: 14px;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      transition: background 0.12s, transform 0.08s; position: relative; -webkit-tap-highlight-color: transparent;
-    }
-    .sticker-cell:hover { background: #f3f4f6; }
-    .sticker-cell:active { background: #eef2ff; transform: scale(0.9); }
-    body.dark-server-theme .sticker-cell:hover,
-    body.discord-dark-theme .sticker-cell:hover { background: #283548; }
-    body.discord-dark-theme .sticker-cell:hover { background: #35373c; }
-    body.dark-server-theme .sticker-cell:active,
-    body.discord-dark-theme .sticker-cell:active { background: #334155; }
-    body.discord-dark-theme .sticker-cell:active { background: #3f4248; }
-    .sticker-cell .sk-em { font-size: 52px; line-height: 1; }
-    .sticker-cell img.emoji { width: 56px; height: 56px; }
-    .sticker-cat-label {
-      grid-column: 1 / -1; font-size: 0.68rem; font-weight: 700; color: #9ca3af;
-      padding: 6px 4px 2px; text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    .sticker-fav-star {
-      position: absolute; top: 2px; right: 2px; font-size: 0.6rem; color: #f59e0b; display: none;
-    }
-    .sticker-cell.is-fav .sticker-fav-star { display: block; }
-    .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
-
-    /* 独立アクションボタン（ファイル添付・メンション） */
-    .input-side-btn {
-      background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      width: 40px;
-      height: 43px;
-      color: #9ca3af;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      font-size: 1rem;
-      transition: color 0.15s, background-color 0.15s, border-color 0.15s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-
-    .input-side-btn:hover:not(:disabled) {
-      color: #374151;
-      background-color: #f3f4f6;
-      border-color: #d1d5db;
-    }
-
-    .input-side-btn:disabled {
-      color: #d1d5db;
-      cursor: not-allowed;
-      background: #fafafa;
-      border-color: #f3f4f6;
-    }
-
-    /* 設定モーダルのスクロールバーを非表示 */
-
-    /* メンションポップアップ */
-    .mention-option {
-      padding: 12px 16px;
-      cursor: pointer;
-      font-size: 0.9375rem;
-      color: #1e293b;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      transition: background-color 0.15s ease, color 0.15s ease;
-    }
-    .dark-server-theme .mention-option, .dark .mention-option {
-      color: #f1f5f9;
-    }
-    .mention-option:hover, .mention-option.active {
-      background-color: #f1f5f9;
-      color: #0f172a;
-    }
-    .dark-server-theme .mention-option:hover, .dark-server-theme .mention-option.active, .dark .mention-option:hover, .dark .mention-option.active {
-      background-color: #334155;
-      color: #ffffff;
-    }
-    .mention-option-sub {
-      font-size: 0.75rem;
-      color: #64748b;
-      font-weight: 400;
-      transition: color 0.15s ease;
-    }
-    .mention-option:hover .mention-option-sub, .mention-option.active .mention-option-sub {
-      color: #475569;
-    }
-    .dark-server-theme .mention-option-sub, .dark .mention-option-sub {
-      color: #94a3b8;
-    }
-    /* Fix for Tailwind dark: classes out of sync with Covo theme toggle */
-    .dark-server-theme #mentionPopup, .dark #mentionPopup {
-      background-color: #1e293b !important;
-      border-color: #374151 !important;
-    }
-    .dark-server-theme #plusMenuPopup, .dark #plusMenuPopup {
-      background-color: #1e293b !important;
-      border-color: #374151 !important;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
-    }
-    .dark-server-theme #plusMenuPopup .plus-menu-btn, .dark #plusMenuPopup .plus-menu-btn {
-      color: #e2e8f0 !important;
-    }
-    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover, .dark #plusMenuPopup .plus-menu-btn:hover {
-      background-color: #334155 !important;
-      color: #ffffff !important;
-    }
-    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover i, .dark #plusMenuPopup .plus-menu-btn:hover i {
-      color: #ffffff !important;
-    }
-    .dark-server-theme #plusMenuPopup .plus-menu-divider, .dark #plusMenuPopup .plus-menu-divider {
-      background-color: #374151 !important;
-    }
-
-    .dark-server-theme .mention-option:hover .mention-option-sub, .dark-server-theme .mention-option.active .mention-option-sub, .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
-      color: #cbd5e1;
-    }
-    /* === 通話オーバーレイ === */
-    @keyframes callPulse {
-      0%, 100% { transform: scale(1); opacity: 0.7; }
-      50% { transform: scale(1.18); opacity: 0.3; }
-    }
-    @keyframes callSlideIn {
-      from { transform: translateY(100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes callFadeOut {
-      from { transform: translateY(0); opacity: 1; }
-      to { transform: translateY(100%); opacity: 0; }
-    }
-
-    #callOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 100000;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f2544 100%);
-      padding: var(--safe-top, max(24px, env(safe-area-inset-top, 0px))) var(--safe-right, env(safe-area-inset-right, 0px)) max(24px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) var(--safe-left, env(safe-area-inset-left, 0px));
-      gap: 0;
-    }
-    #callOverlay.show {
-      display: flex;
-      animation: callSlideIn 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
-    }
-    #callOverlay.hide {
-      display: flex;
-      animation: callFadeOut 0.28s ease-in forwards;
-    }
-
-    #callIncomingView, #callActiveView {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      gap: 24px;
-    }
-
-    .call-status-label {
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.45);
-      transition: color 0.3s;
-    }
-    .call-status-label.reconnecting {
-      color: #f59e0b;
-      animation: reconnectPulse 1.2s ease-in-out infinite;
-    }
-    @keyframes reconnectPulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.45; }
-    }
-    #callConnectionType {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-    #callConnectionType.p2p { color: #34d399; }
-    #callConnectionType.turn { color: #f59e0b; }
-
-    .call-avatar-wrap {
-      position: relative;
-      width: 128px;
-      height: 128px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .call-avatar-ring {
-      position: absolute;
-      inset: -16px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(99,179,237,0.3);
-      animation: callPulse 2s ease-in-out infinite;
-      pointer-events: none;
-    }
-    .call-avatar {
-      width: 128px;
-      height: 128px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      font-size: 2.8rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      position: relative;
-      z-index: 1;
-      border: 2.5px solid rgba(255,255,255,0.15);
-    }
-    .call-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .call-name {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: white;
-      letter-spacing: 0.01em;
-    }
-    .call-timer {
-      font-size: 1rem;
-      font-weight: 400;
-      color: rgba(255,255,255,0.5);
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 0.06em;
-    }
-
-    .call-btn-row {
-      display: flex;
-      gap: 48px;
-      align-items: center;
-      margin-top: 24px;
-    }
-    .call-btn-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
-    .call-btn-label {
-      font-size: 0.72rem;
-      font-weight: 500;
-      color: rgba(255,255,255,0.45);
-      letter-spacing: 0.05em;
-    }
-    .call-btn-circle {
-      width: 72px;
-      height: 72px;
-      border-radius: 50%;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.4rem;
-      color: white;
-      transition: transform 0.12s ease, opacity 0.12s ease;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .call-btn-circle:active { transform: scale(0.88); opacity: 0.8; }
-    .call-btn-circle.accept { background: #22c55e; }
-    .call-btn-circle.decline, .call-btn-circle.hangup { background: #ef4444; }
-    .call-btn-circle.mute {
-      background: rgba(255,255,255,0.14);
-      border: 1px solid rgba(255,255,255,0.2);
-    }
-    .call-btn-circle.mute.active {
-      background: rgba(255,255,255,0.3);
-      border-color: rgba(255,255,255,0.4);
-    }
-
-    #callEndedToast {
-      position: fixed;
-      bottom: max(100px, calc(84px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1e293b;
-      color: #e2e8f0;
-      border-radius: 16px;
-      padding: 10px 22px;
-      font-size: 0.83rem;
-      font-weight: 500;
-      z-index: 100002;
-      white-space: normal;
-      max-width: min(340px, 90vw);
-      text-align: center;
-      pointer-events: none;
-      opacity: 0;
-    }
-    #callEndedToast.show {
-      animation: callToastAnim 3.6s ease forwards;
-    }
-    @keyframes callToastAnim {
-      0%   { opacity:0; transform:translateX(-50%) translateY(10px); }
-      12%  { opacity:1; transform:translateX(-50%) translateY(0); }
-      78%  { opacity:1; transform:translateX(-50%) translateY(0); }
-      100% { opacity:0; transform:translateX(-50%) translateY(0); }
-    }
-
-    #callButton, #fileShareButton {
-      background: none;
-      border: none;
-      color: #6b7280;
-      cursor: pointer;
-      padding: 6px;
-      margin-left: 8px;
-      border-radius: 6px;
-      font-size: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    #callButton:hover:not(:disabled), #fileShareButton:hover:not(:disabled) { color: #1f2937; }
-    #callButton:disabled, #fileShareButton:disabled { opacity: 0.35; cursor: not-allowed; }
-    body.dark-server-theme #fileShareButton { color: #94a3b8; }
-    body.dark-server-theme #fileShareButton:hover:not(:disabled) { color: #e2e8f0; }
-
-    /* P2Pファイル共有: 進捗オーバーレイ */
-    #fsProgressOverlay, #fsPreviewOverlay {
-      position: fixed; inset: 0; z-index: 99999; display: none;
-      align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.55); padding: 20px;
-      padding-bottom: max(36px, calc(20px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
-    }
-    .fs-prog-box, .fs-prev-box {
-      background: #ffffff; border-radius: 20px; padding: 24px 22px;
-      width: 100%; max-width: 320px; text-align: center;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
-    }
-    body.dark-server-theme .fs-prog-box, body.dark-server-theme .fs-prev-box,
-    body.discord-dark-theme .fs-prog-box, body.discord-dark-theme .fs-prev-box {
-      background: #1e293b; color: #e2e8f0;
-    }
-    body.discord-dark-theme .fs-prog-box, body.discord-dark-theme .fs-prev-box {
-      background: #2b2d31; color: #dbdee1;
-    }
-    .fs-prog-icon {
-      width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 14px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;
-      display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
-    }
-    .fs-prog-name, .fs-prev-name { font-size: 0.9rem; font-weight: 700; color: inherit; word-break: break-all; }
-    .fs-prog-status { font-size: 0.78rem; color: #6b7280; margin: 4px 0 14px; }
-    body.dark-server-theme .fs-prog-status { color: #94a3b8; }
-    .fs-prog-bar { height: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
-    body.dark-server-theme .fs-prog-bar { background: #334155; }
-    .fs-prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.15s; }
-    .fs-prog-pct { font-size: 0.8rem; font-weight: 700; margin-top: 8px; color: #3b82f6; }
-    .fs-prog-cancel {
-      margin-top: 16px; width: 100%; padding: 10px; border: none; border-radius: 12px;
-      background: #f3f4f6; color: #6b7280; font-weight: 700; font-size: 0.85rem; cursor: pointer;
-    }
-    body.dark-server-theme .fs-prog-cancel { background: #334155; color: #cbd5e1; }
-    /* 受信プレビュー */
-    .fs-prev-title { font-size: 0.78rem; color: #9ca3af; font-weight: 700; margin-bottom: 12px; }
-    .fs-prev-media { max-width: 100%; max-height: 50vh; border-radius: 12px; display: block; margin: 0 auto 12px; object-fit: contain; }
-    .fs-prev-file {
-      width: 80px; height: 80px; border-radius: 16px; margin: 0 auto 12px;
-      background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #9ca3af;
-    }
-    body.dark-server-theme .fs-prev-file { background: #0f172a; }
-    .fs-prev-size { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; }
-    .fs-prev-actions { display: flex; gap: 10px; margin-top: 18px; }
-    .fs-prev-save, .fs-prev-close {
-      flex: 1; padding: 11px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;
-      cursor: pointer; border: none; text-align: center; text-decoration: none;
-    }
-    .fs-prev-save { background: #1f2937; color: #fff; }
-    .fs-prev-close { background: #f3f4f6; color: #6b7280; }
-    body.dark-server-theme .fs-prev-close { background: #334155; color: #cbd5e1; }
-
-    #callPickerModal {
-      position: fixed;
-      inset: 0;
-      z-index: 99998;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-    }
-    #callPickerModal.show { display: flex; }
-    @keyframes modalScaleIn {
-      from { transform: scale(0.95); opacity: 0; }
-      to   { transform: scale(1);    opacity: 1; }
-    }
-    .call-picker-box {
-      background: #ffffff;
-      color: #0f172a;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      width: 90%;
-      max-width: 440px;
-      max-height: min(560px, 80vh);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.2);
-      animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
-      font-size: 14px;
-    }
-    body.dark-server-theme .call-picker-box {
-      background: #1e293b;
-      color: #f8fafc;
-      border-color: rgba(255,255,255,0.08);
-      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
-    }
-    body.discord-dark-theme .call-picker-box {
-      background: #2b2d31;
-      color: #dbdee1;
-      border-color: #383a40;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
-    }
-    .call-picker-handle {
-      display: none;
-    }
-    .call-picker-header {
-      padding: 14px 18px;
-      font-size: 0.95rem !important;
-      font-weight: 700;
-      color: #0f172a;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    body.dark-server-theme .call-picker-header {
-      color: #f8fafc;
-      border-bottom-color: rgba(255,255,255,0.06);
-    }
-    body.discord-dark-theme .call-picker-header {
-      color: #f2f3f5;
-      border-bottom-color: #1f2023;
-    }
-    .call-picker-close-btn {
-      background: none;
-      border: none;
-      color: #94a3b8;
-      cursor: pointer;
-      font-size: 1rem;
-      padding: 4px 6px;
-      border-radius: 6px;
-      transition: color 0.15s, background-color 0.15s;
-    }
-    .call-picker-close-btn:hover {
-      color: #0f172a;
-      background-color: #f1f5f9;
-    }
-    body.dark-server-theme .call-picker-close-btn:hover,
-    body.discord-dark-theme .call-picker-close-btn:hover {
-      color: #ffffff;
-      background-color: rgba(255,255,255,0.08);
-    }
-    #callPickerList {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: 8px 10px;
-    }
-    .call-picker-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 9px 12px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background-color 0.15s ease;
-      -webkit-tap-highlight-color: transparent;
-      margin-bottom: 2px;
-    }
-    .call-picker-item:hover, .call-picker-item:active {
-      background-color: #f1f5f9;
-    }
-    body.dark-server-theme .call-picker-item:hover,
-    body.dark-server-theme .call-picker-item:active {
-      background-color: rgba(255,255,255,0.06);
-    }
-    body.discord-dark-theme .call-picker-item:hover,
-    body.discord-dark-theme .call-picker-item:active {
-      background-color: #35373c;
-    }
-    .call-picker-avatar {
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      background: #e2e8f0;
-      color: #475569;
-      font-size: 0.85rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      flex-shrink: 0;
-      position: relative;
-    }
-    body.dark-server-theme .call-picker-avatar {
-      background: #374151;
-      color: white;
-    }
-    body.discord-dark-theme .call-picker-avatar {
-      background: #383a40;
-      color: #dbdee1;
-    }
-    .call-picker-name {
-      font-size: 0.88rem !important;
-      font-weight: 600;
-      color: #0f172a;
-    }
-    body.dark-server-theme .call-picker-name {
-      color: #f8fafc;
-    }
-    body.discord-dark-theme .call-picker-name {
-      color: #f2f3f5;
-    }
-    .call-picker-status {
-      font-size: 0.72rem !important;
-      color: #64748b;
-      margin-top: 1px;
-    }
-    body.dark-server-theme .call-picker-status {
-      color: #94a3b8;
-    }
-    body.discord-dark-theme .call-picker-status {
-      color: #949ba4;
-    }
-
-    @media (max-width: 768px) {
-      #callPickerModal {
-        align-items: flex-end;
-      }
-      .call-picker-box {
-        border-radius: 24px 24px 0 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        max-height: min(85vh, calc(100dvh - 30px)) !important;
-        padding-bottom: max(20px, calc(10px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-      }
-      .call-picker-handle {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        padding: 10px 0 4px;
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-    }
-</file>
-
 <file path="src-tauri/src/lib.rs">
 use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
 use tauri::WebviewWindowBuilder;
@@ -7840,857 +6791,1055 @@ pub fn run() {
     }
 </file>
 
-<file path="public/css/modules/theme.css">
-/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,0,0,0.18) transparent;
+<file path="public/css/modules/chat.css">
+/* --- 追加機能用スタイル --- */
+    /* メンションのハイライト */
+    .mention-highlight {
+      background-color: rgba(29, 78, 216, 0.1) !important; /* light indigo */
+      border-left: 4px solid #1d4ed8;
+      border-radius: 4px;
     }
-    *::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    *::-webkit-scrollbar-button {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    *::-webkit-scrollbar-thumb {
-      background: rgba(0,0,0,0.18);
-      border-radius: 100px;
-    }
-    *::-webkit-scrollbar-thumb:hover {
-      background: rgba(0,0,0,0.32);
-    }
-    *::-webkit-scrollbar-corner {
-      background: transparent;
+    .dark-server-theme .mention-highlight, .dark .mention-highlight {
+      background-color: rgba(96, 165, 250, 0.1) !important; /* darker indigo */
+      border-left: 4px solid #60a5fa;
     }
 
-    /* モーダル背景 */
-    .modal-overlay {
-      background-color: rgba(0, 0, 0, 0.75);
-    }
-
-    /* ドロップダウンコンテナのスタイル */
-    .dropdown-container {
-      position: relative;
-      display: inline-block;
-    }
-
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      background-color: white;
-      min-width: 100px;
-      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
-      z-index: 10;
-      right: 0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      border: 1px solid #ddd;
-    }
-
-    .dropdown-content button {
-      color: black;
-      padding: 8px 12px;
-      text-decoration: none;
-      display: block;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background-color: transparent;
+    .mention-text {
+      color: #1e40af; /* blue-800 for a distinct dark navy in light mode */
+      font-weight: 600;
       cursor: pointer;
-      transition: background-color 0.2s;
-      font-size: 0.875rem;
+    }
+    .mention-text:hover {
+      text-decoration: underline;
+    }
+    .dark-server-theme .mention-text, .dark .mention-text {
+      color: #60a5fa; /* blue-400 for dark mode */
     }
 
-    .dropdown-content button:hover {
-      background-color: #f0f0f0;
+    /* === LINE完全準拠 ピン留め（アナウンス）UI === */
+    #pinnedMessagesArea {
+      position: relative;
+      z-index: 25;
+      width: 100%;
     }
 
-    /* メッセージ内容と入力欄 */
-    .message-content {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
+    .pinned-announcement-container {
+      width: 100%;
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    textarea#messageInput {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-      overflow-y: auto;
-      resize: none;
-      min-height: 0;
-      max-height: 200px;
-      background-color: transparent;
+    .pinned-announcement-header {
+      display: flex;
+      align-items: center;
+      padding: 0.55rem 1rem;
+      min-height: 42px;
+      gap: 0.65rem;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pinned-announcement-header:hover {
+      background-color: #f8fafc;
+    }
+
+    .announcement-icon-wrap {
+      color: #1e293b;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+    }
+
+    .announcement-content-wrap {
+      flex: 1 1 0%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 0.85rem;
+      line-height: 1.35;
+    }
+
+    .announcement-sender {
+      font-weight: 700;
+      color: #0f172a;
+      flex-shrink: 0;
+      max-width: 35%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .announcement-text {
+      color: #334155;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .announcement-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      flex-shrink: 0;
+    }
+
+    .announcement-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
       border: none;
+      background: transparent;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: background-color 0.15s, color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .announcement-btn:hover {
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .pinned-announcement-list {
+      border-top: 1px solid #f1f5f9;
+      background: #f8fafc;
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pinned-announcement-item {
+      display: flex;
+      align-items: center;
+      padding: 0.55rem 1rem;
+      min-height: 42px;
+      gap: 0.65rem;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background-color 0.15s;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pinned-announcement-item:hover {
+      background-color: #f1f5f9;
+    }
+
+    .announcement-item-icon {
+      color: #64748b;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .announcement-item-content {
+      flex: 1 1 0%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 0.85rem;
+      line-height: 1.35;
+    }
+
+    .announcement-unpin-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: background-color 0.15s, color 0.15s;
+      margin-left: 0.5rem;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .announcement-unpin-btn:hover {
+      background-color: #fee2e2;
+      color: #ef4444;
+    }
+
+    .pinned-announcement-footer {
+      padding: 0.45rem 1rem;
+      display: flex;
+      justify-content: center;
+      border-top: 1px solid #f1f5f9;
+    }
+
+    .pinned-announcement-footer-btn {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.15s;
+    }
+    .pinned-announcement-footer-btn:hover {
+      color: #0f172a;
+    }
+
+    /* フローティング最小化ピン留めアイコン (LINE風) */
+    .minimized-pin-icon {
+      position: absolute;
+      top: 0.75rem;
+      right: 1rem;
+      z-index: 35;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, background-color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .minimized-pin-icon:hover {
+      transform: scale(1.06);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    }
+    .minimized-pin-icon:active {
+      transform: scale(0.95);
+    }
+
+    .minimized-pin-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #ef4444;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 800;
+      min-width: 18px;
+      height: 18px;
+      aspect-ratio: 1 / 1;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 2px solid #ffffff;
+      line-height: 1;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+
+    /* 未読バッジ（ルーム用・小さいドット） */
+    .unread-badge {
+      background-color: #4f46e5;
+      width: 8px;
+      height: 8px;
+      min-width: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-left: auto;
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    body.dark-server-theme .unread-badge,
+    body.discord-dark-theme .unread-badge {
+      background-color: #818cf8;
+      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
+    }
+    body.discord-dark-theme .unread-badge {
+      background-color: #5865f2;
+      box-shadow: 0 0 6px rgba(88, 101, 242, 0.45);
+    }
+
+    /* サーバーカード未読ドット */
+    .server-card-unread-dot {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4f46e5;
+      border: 2px solid white;
+      transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    body.dark-server-theme .server-card-unread-dot,
+    body.discord-dark-theme .server-card-unread-dot {
+      background: #818cf8;
+      border-color: #1e293b;
+      box-shadow: 0 0 6px rgba(129, 140, 248, 0.45);
+    }
+    body.discord-dark-theme .server-card-unread-dot {
+      background: #5865f2;
+      border-color: #2b2d31;
+      box-shadow: 0 0 6px rgba(88, 101, 242, 0.45);
+    }
+
+    /* 検索バー */
+    #searchContainer {
+      padding: 0.5rem;
+      background: #f3f4f6;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    #searchContainer input {
+      background-color: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 0.5rem;
+      color: #374151;
       font-size: 16px;
-      line-height: 1.5;
-
-      /* ★スクロールバーを非表示にする設定 */
-      -ms-overflow-style: none;
-      /* IE and Edge */
-      scrollbar-width: none;
-      /* Firefox */
+      /* スマホでの自動拡大防止のため16pxに固定 */
+      padding: 0.5rem 0.75rem;
     }
 
-    /* ★Chrome, Safari, Opera用 */
-    textarea#messageInput::-webkit-scrollbar {
-      display: none;
-    }
-
-    textarea#messageInput:focus {
-      background-color: transparent;
+    #searchContainer input:focus {
+      border-color: #9ca3af;
       outline: none;
     }
 
-    /* 既読表示 */
-    .read-receipt {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 2px;
-      display: block;
-      text-align: right;
-    }
-
-    .other-message .read-receipt {
-      text-align: left;
-    }
-
-    /* 未読の境界線（「ここから未読」） */
-    .unread-divider {
+    /* ドラッグ＆ドロップオーバーレイ */
+    #dropOverlay {
+      position: absolute;
+      inset: 8px;
+      background-color: rgba(255, 255, 255, 0.85);
+      border: 3px dashed #6366f1;
+      border-radius: 12px;
+      z-index: 50;
       display: flex;
       align-items: center;
-      gap: 8px;
-      width: 100%;
-      margin: 6px 0 2px;
-      padding: 0 4px;
-      color: #ef4444;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      user-select: none;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+      transform: scale(0.98);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
-    .unread-divider::before,
-    .unread-divider::after {
-      content: "";
-      flex: 1;
-      height: 1px;
-      background: currentColor;
-      opacity: 0.35;
-    }
-    body.dark-server-theme .unread-divider { color: #f87171; }
-
-    /* カスタムコンテキストメニュー */
-    .custom-context-menu {
-      position: fixed;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      z-index: 100;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 120px;
-    }
-    .custom-context-menu:not(.hidden) {
-      display: flex;
-    }
-    .custom-context-menu-inner {
-      background-color: white;
-      border: 1px solid #ddd;
-      border-radius: 0.5rem;
-      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-      padding: 4px 0;
-      overflow: hidden;
+    body.dark-server-theme #dropOverlay {
+      background-color: rgba(17, 24, 39, 0.85);
+      border-color: #818cf8;
     }
 
-    .custom-context-menu button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      text-align: left;
+    #dropOverlay.active {
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1);
+    }
+
+    /* 入力欄アクションボタン */
+    .input-action-btn {
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 0.875rem;
-      color: black;
-    }
-
-    .custom-context-menu button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
-    #resizer, #resizerRight {
-      width: 2px;
-      cursor: col-resize;
-      background-color: #e2e8f0;
-      transition: background-color 0.15s ease;
+      color: #9ca3af;
+      font-size: 1rem;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
       flex-shrink: 0;
-      position: relative;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      z-index: 25;
+      transition: color 0.15s, background-color 0.15s;
     }
 
-    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
-    #resizer::before, #resizerRight::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: -10px;
-      right: -10px;
-      width: calc(100% + 20px);
-      height: 100%;
-      cursor: col-resize;
-      touch-action: none;
-      z-index: 26;
+    .input-action-btn:hover:not(:disabled) {
+      color: #374151;
+      background-color: #f3f4f6;
     }
 
-    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
-    #resizer:hover, #resizerRight:hover,
-    #resizer.is-resizing, #resizerRight.is-resizing {
-      background-color: #1e293b;
-      box-shadow: none;
+    .input-action-btn:disabled {
+      color: #d1d5db;
+      cursor: not-allowed;
     }
 
-    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
-    .reply-quote:hover {
-      text-decoration: underline;
-      text-decoration-color: #94a3b8;
-      text-underline-offset: 2px;
+    .send-btn {
+      background-color: #374151 !important;
+      color: white !important;
+      border-color: #374151 !important;
     }
 
-    .reply-quote-nickname {
-      font-weight: 600;
-      color: #475569;
-      flex-shrink: 0;
-      max-width: 40%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .send-btn:hover:not(:disabled) {
+      background-color: #1f2937 !important;
+      border-color: #1f2937 !important;
+      color: white !important;
     }
 
-    .reply-quote-text {
-      color: #334155;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.9;
-      flex: 1 1 auto;
-      min-width: 0;
+    .send-btn:disabled {
+      background-color: #e5e7eb !important;
+      border-color: #e5e7eb !important;
+      color: #9ca3af !important;
     }
 
-    .message-highlight {
-      transition: background-color 0.8s ease-out;
-      background-color: #bde4ff !important;
-    }
-    /* === ダークモード全体 === */
-    body.dark-server-theme { background: #111827; }
-    body.dark-server-theme #mainContent,
-    body.dark-server-theme #appContainer { background: #111827; }
-
-    /* サーバーリスト・通知画面 */
-    body.dark-server-theme #serverListScreen { background: #1f2937; }
-    body.dark-server-theme #mobileNotifScreen { background: #111827; }
-    body.dark-server-theme .mobile-notif-item {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
+    #messageInputInner {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #ffffff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 0 0 0 10px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
     }
 
-    /* チャンネルサイドバー */
-    body.dark-server-theme #sidebar { background: #1e293b !important; }
-    body.dark-server-theme .room-item-animate {
-      background: transparent !important;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .room-item-animate:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: #f1f5f9;
+    #messageInputInner:focus-within {
+      border-color: #9ca3af;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
 
-    /* ユーザーパネル */
-    body.dark-server-theme #userPanel {
-      background-color: #162032 !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme #userPanel:hover {
-      background-color: #1e2f42 !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-    }
-    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
-    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn:hover {
-      color: #f8fafc !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-    }
-
-    /* チャットエリア */
-    body.dark-server-theme #chatArea { background: #1a202c; }
-    body.dark-server-theme #currentRoomHeader {
-      background: #243040 !important;
-      border-bottom-color: rgba(255,255,255,0.08) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
-    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
-    body.dark-server-theme #messagesDisplay { background: #1a202c; }
-    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
-    body.dark-server-theme #pinnedMessagesArea {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .pinned-announcement-container {
-      background: #1e293b !important;
-      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme .pinned-announcement-header:hover {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .announcement-icon-wrap {
-      color: #818cf8 !important;
-    }
-    body.dark-server-theme .announcement-sender {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .announcement-text {
-      color: #cbd5e1 !important;
-    }
-    body.dark-server-theme .announcement-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-btn:hover {
-      background: rgba(255, 255, 255, 0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .pinned-announcement-list {
-      background: #162032 !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item:hover {
-      background: #1e293b !important;
-    }
-    body.dark-server-theme .announcement-item-icon {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer {
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn:hover {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .minimized-pin-icon {
-      background: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.12) !important;
-      color: #818cf8 !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
-    }
-    body.dark-server-theme .minimized-pin-badge {
-      border-color: #1e293b !important;
-    }
-
-    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
-    body.discord-dark-theme .pinned-announcement-container {
-      background: #2b2d31 !important;
-      border-bottom-color: #1f2023 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-header:hover {
-      background: #35373c !important;
-    }
-    body.discord-dark-theme .announcement-icon-wrap {
-      color: #5865f2 !important;
-    }
-    body.discord-dark-theme .announcement-sender {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .announcement-text {
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .announcement-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-btn:hover {
-      background: #35373c !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-list {
-      background: #1e1f22 !important;
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item:hover {
-      background: #2b2d31 !important;
-    }
-    body.discord-dark-theme .announcement-item-icon {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer {
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .minimized-pin-icon {
-      background: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #5865f2 !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
-    }
-    body.discord-dark-theme .minimized-pin-badge {
-      border-color: #2b2d31 !important;
-    }
-
-    /* メッセージバブル */
-    body.dark-server-theme .my-message {
-      background-color: #2a3a52 !important;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .other-message {
-      background-color: #243040 !important;
-      color: #e2e8f0;
-    }
-    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
-    body.dark-server-theme .message-bubble.sticker-bubble {
+    /* ===== スタンプ ===== */
+    /* スタンプメッセージは吹き出しの背景・枠を消して絵文字だけ大きく見せる */
+    .message-bubble.sticker-bubble {
       background: transparent !important;
       box-shadow: none !important;
       padding: 2px 0 !important;
       border: none !important;
     }
-    body.dark-server-theme .message-content { color: #e2e8f0; }
-    body.dark-server-theme .read-receipt { color: #4b5563; }
-   /* ダークモード時のリプライのL字矢印の色調整 */
-    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
-    body.dark-server-theme .message-highlight {
-      background-color: rgba(96,165,250,0.25) !important;
-    }
+    .sticker-content { line-height: 1; font-size: 128px; }
+    .sticker-content img.emoji { width: 128px !important; height: 128px !important; object-fit: contain; margin: 0 !important; display: block; }
+    /* 本文中のTwemoji絵文字は文字サイズに馴染ませる */
+    .message-content img.emoji { width: 1.3em; height: 1.3em; vertical-align: -0.25em; margin: 0 1px; }
 
-    /* 入力エリア */
-    body.dark-server-theme #messageInputArea {
-      background: #1e293b !important;
-      border-top-color: rgba(255,255,255,0.08) !important;
+    /* スタンプピッカー */
+    #stickerPicker {
+      position: fixed; z-index: 99996; display: none;
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+      width: 360px; max-width: calc(100vw - 20px);
+      height: 420px; max-height: 60vh; flex-direction: column; overflow: hidden;
     }
-    body.dark-server-theme #messageInputInner {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      box-shadow: none !important;
+    #stickerPicker.show { display: flex; }
+    body.dark-server-theme #stickerPicker,
+    body.discord-dark-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
+    body.discord-dark-theme #stickerPicker { background: #2b2d31; border-color: #383a40; }
+    .sticker-tabs {
+      display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid #f3f4f6;
+      overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
     }
-    body.dark-server-theme #messageInputInner:focus-within {
-      border-color: rgba(255,255,255,0.22) !important;
+    .sticker-tabs::-webkit-scrollbar { display: none; }
+    body.dark-server-theme .sticker-tabs,
+    body.discord-dark-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
+    body.discord-dark-theme .sticker-tabs { border-bottom-color: #1f2023; }
+    .sticker-tab {
+      flex-shrink: 0; width: 34px; height: 34px; border: none; background: transparent;
+      border-radius: 9px; cursor: pointer; font-size: 1.1rem; display: flex;
+      align-items: center; justify-content: center; color: #9ca3af; transition: background 0.12s;
     }
-    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
-    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
-    body.dark-server-theme .input-side-btn {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      color: #94a3b8 !important;
+    .sticker-tab.active { background: #eef2ff; }
+    body.dark-server-theme .sticker-tab.active,
+    body.discord-dark-theme .sticker-tab.active { background: #334155; }
+    body.discord-dark-theme .sticker-tab.active { background: #35373c; }
+    .sticker-tab img.emoji { width: 22px; height: 22px; }
+    .sticker-grid {
+      flex: 1; overflow-y: auto; padding: 12px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-content: start;
     }
-    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
-      color: #e2e8f0 !important;
-      background: #243040 !important;
-      border-color: rgba(255,255,255,0.2) !important;
+    .sticker-cell {
+      aspect-ratio: 1; border: none; background: transparent; border-radius: 14px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, transform 0.08s; position: relative; -webkit-tap-highlight-color: transparent;
     }
-    body.dark-server-theme #replyingToContainer {
-      background: #1e2d3f !important;
-      border-left-color: #4b6280 !important;
+    .sticker-cell:hover { background: #f3f4f6; }
+    .sticker-cell:active { background: #eef2ff; transform: scale(0.9); }
+    body.dark-server-theme .sticker-cell:hover,
+    body.discord-dark-theme .sticker-cell:hover { background: #283548; }
+    body.discord-dark-theme .sticker-cell:hover { background: #35373c; }
+    body.dark-server-theme .sticker-cell:active,
+    body.discord-dark-theme .sticker-cell:active { background: #334155; }
+    body.discord-dark-theme .sticker-cell:active { background: #3f4248; }
+    .sticker-cell .sk-em { font-size: 52px; line-height: 1; }
+    .sticker-cell img.emoji { width: 56px; height: 56px; }
+    .sticker-cat-label {
+      grid-column: 1 / -1; font-size: 0.68rem; font-weight: 700; color: #9ca3af;
+      padding: 6px 4px 2px; text-transform: uppercase; letter-spacing: 0.04em;
     }
-    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme #typingIndicator { color: #4b5563; }
+    .sticker-fav-star {
+      position: absolute; top: 2px; right: 2px; font-size: 0.6rem; color: #f59e0b; display: none;
+    }
+    .sticker-cell.is-fav .sticker-fav-star { display: block; }
+    .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
 
-    /* メンバーリスト */
-    body.dark-server-theme #membersSidebar {
-      background: #1e293b;
-      border-left-color: rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
-    body.dark-server-theme .member-name { color: #cbd5e1; }
-    body.dark-server-theme .member-status-text { color: #64748b; }
-    body.dark-server-theme .member-group-title { color: #64748b; }
-    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
-
-    /* 検索バー */
-    body.dark-server-theme #searchContainer {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme #searchInput {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.15) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
-
-    /* コンテキストメニュー / ドロップダウン */
-    body.dark-server-theme .custom-context-menu-inner {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
-    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme .dropdown-content {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-    }
-    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
-    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
-
-    /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
-    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
-      background-color: #3b82f6;
-      box-shadow: none;
-    }
-    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
-    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
-    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
-      background-color: #5865f2;
-      box-shadow: none;
-    }
-    body.dark-server-theme * {
-      scrollbar-color: rgba(255,255,255,0.18) transparent;
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.18);
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.3);
-    }
-
-    /* 設定モーダル（コンテンツエリア）*/
-    body.dark-server-theme .settings-content {
-      background: #1a202c;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .bg-gray-50,
-    body.dark-server-theme .settings-content .bg-gray-100 {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .settings-content .text-gray-800,
-    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .text-gray-600,
-    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .settings-content .border-gray-200,
-    body.dark-server-theme .settings-content .border-t {
-      border-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme .settings-content .setting-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
-    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
-    body.dark-server-theme .settings-content input[type="text"],
-    body.dark-server-theme .settings-content input[type="email"],
-    body.dark-server-theme .settings-content input[type="password"] {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.12) !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* モバイル設定・プロフィール画面 */
-    body.dark-server-theme #mobileProfileScreen { background: #111827; }
-    body.dark-server-theme .mobile-settings-detail { background: #111827; }
-    body.dark-server-theme .mobile-settings-group {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-    body.dark-server-theme .mobile-settings-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
-    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
-    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
-    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
-
-    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
-       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
-       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
-    body.dark-server-theme .modal-box,
-    body.dark-server-theme #serverSettingsModal .settings-content,
-    body.dark-server-theme #adminModal .settings-content {
-      background-color: #1e293b !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme .modal-box .bg-white,
-    body.dark-server-theme .modal-box .bg-gray-50,
-    body.dark-server-theme .modal-box .bg-gray-100,
-    body.dark-server-theme .modal-overlay .bg-gray-50,
-    body.dark-server-theme .modal-overlay .bg-white {
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme .modal-box .text-gray-900,
-    body.dark-server-theme .modal-box .text-gray-800,
-    body.dark-server-theme .modal-box .text-gray-700,
-    body.dark-server-theme .modal-overlay .text-gray-900,
-    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme .modal-box .text-gray-600,
-    body.dark-server-theme .modal-box .text-gray-500,
-    body.dark-server-theme .modal-overlay .text-gray-600,
-    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .modal-box .border-gray-200,
-    body.dark-server-theme .modal-box .border-gray-300,
-    body.dark-server-theme .modal-box .border-t,
-    body.dark-server-theme .modal-box .border-b,
-    body.dark-server-theme .modal-overlay .border-gray-200,
-    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
-    body.dark-server-theme .modal-box input[type="text"],
-    body.dark-server-theme .modal-box input[type="email"],
-    body.dark-server-theme .modal-box input[type="password"],
-    body.dark-server-theme .modal-box input[type="number"],
-    body.dark-server-theme .modal-box textarea,
-    body.dark-server-theme .modal-box select,
-    body.dark-server-theme .modal-overlay input[type="text"],
-    body.dark-server-theme .modal-overlay input[type="email"] {
-      background-color: #0f172a !important;
-      color: #e2e8f0 !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme .modal-box .bg-gray-100:hover,
-    body.dark-server-theme .modal-box .bg-gray-200:hover,
-    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
-    body.dark-server-theme .modal-box button.bg-gray-100,
-    body.dark-server-theme .modal-box button.bg-gray-200 {
-      background-color: #334155 !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* ===== ショートカット設定のダークモード対応 ===== */
-    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
-    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
-      background: #1e293b !important;
-      color: #e2e8f0 !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-    }
-    body.dark-server-theme #shortcutInfoContainer kbd,
-    body.discord-dark-theme #shortcutInfoContainer kbd {
-      background: #0f172a !important;
-      color: #93c5fd !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme #shortcutKeyInput,
-    body.discord-dark-theme #shortcutKeyInput {
-      background: #0f172a !important;
-      color: #60a5fa !important;
-      border-color: #3b82f6 !important;
-    }
-
-    /* =========================================================================
-       新テーマ: Discordダーク (body.discord-dark-theme)
-       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
-       ========================================================================= */
-    body.discord-dark-theme {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme #discordServerNav {
-      background-color: #1e1f22 !important;
-      border-right-color: #1e1f22 !important;
-    }
-    body.discord-dark-theme #sidebar,
-    body.discord-dark-theme #membersSidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme #serverHeader,
-    body.discord-dark-theme #currentRoomHeader,
-    body.discord-dark-theme #discordTopBar {
-      background-color: #313338 !important;
-      border-bottom-color: #1f2023 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #chatArea {
-      background-color: #313338 !important;
-    }
-    body.discord-dark-theme #messageInputArea {
-      background-color: #313338 !important;
-      border-top-color: transparent !important;
-    }
-    body.discord-dark-theme #messageInput,
-    body.discord-dark-theme .discord-input-box {
-      background-color: #383a40 !important;
-      color: #dbdee1 !important;
-      border-color: transparent !important;
-    }
-    body.discord-dark-theme #userPanel {
-      background-color: #232428 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-server-pill {
-      background-color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-hero-banner {
-      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .modal-box,
-    body.discord-dark-theme .settings-content {
-      background-color: #313338 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .settings-sidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme .settings-nav-item.active {
-      background-color: #3f4248 !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
-      background-color: #35373c !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .bg-gray-50,
-    body.discord-dark-theme .bg-gray-100 {
-      background-color: #2b2d31 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme input[type="text"],
-    body.discord-dark-theme input[type="email"],
-    body.discord-dark-theme input[type="password"] {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-      border-color: #232428 !important;
-    }
-
-    /* ===== アプリ独自カスタムドロップダウン ===== */
-    .covo-custom-select {
-      position: relative;
-      display: inline-block;
-      user-select: none;
-    }
-    .covo-select-trigger {
+    /* 独立アクションボタン（ファイル添付・メンション） */
+    .input-side-btn {
+      background: #ffffff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 14px;
+      width: 40px;
+      height: 43px;
+      color: #9ca3af;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 8px 14px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      font-size: 0.82rem;
-      font-weight: 600;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1rem;
+      transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    }
+
+    .input-side-btn:hover:not(:disabled) {
+      color: #374151;
+      background-color: #f3f4f6;
+      border-color: #d1d5db;
+    }
+
+    .input-side-btn:disabled {
+      color: #d1d5db;
+      cursor: not-allowed;
+      background: #fafafa;
+      border-color: #f3f4f6;
+    }
+
+    /* 設定モーダルのスクロールバーを非表示 */
+
+    /* メンションポップアップ */
+    .mention-option {
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 0.9375rem;
       color: #1e293b;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-    }
-    .covo-select-trigger:hover {
-      background: #e2e8f0;
-      border-color: #94a3b8;
-    }
-    body.dark-server-theme .covo-select-trigger {
-      background: #0f172a;
-      border-color: rgba(255,255,255,0.15);
-      color: #e2e8f0;
-    }
-    body.discord-dark-theme .covo-select-trigger {
-      background: #1e1f22;
-      border-color: rgba(255,255,255,0.1);
-      color: #dbdee1;
-    }
-    .covo-select-options {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
-      min-width: 180px;
-      background: white;
-      border-radius: 12px;
-      padding: 6px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-      border: 1px solid #e2e8f0;
-      z-index: 60;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-8px) scale(0.96);
-      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-    .covo-custom-select.open .covo-select-options {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0) scale(1);
-    }
-    body.dark-server-theme .covo-select-options {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.12);
-    }
-    body.discord-dark-theme .covo-select-options {
-      background: #2b2d31;
-      border-color: #202225;
-    }
-    .covo-select-option {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
       font-weight: 500;
-      color: #334155;
-      cursor: pointer;
-      transition: background 0.15s ease;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 12px;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }
-    .covo-select-option:hover {
-      background: #f1f5f9;
+    .dark-server-theme .mention-option, .dark .mention-option {
+      color: #f1f5f9;
+    }
+    .mention-option:hover, .mention-option.active {
+      background-color: #f1f5f9;
       color: #0f172a;
     }
-    .covo-select-option.selected {
-      background: #e0e7ff;
-      color: #4338ca;
-      font-weight: 600;
+    .dark-server-theme .mention-option:hover, .dark-server-theme .mention-option.active, .dark .mention-option:hover, .dark .mention-option.active {
+      background-color: #334155;
+      color: #ffffff;
     }
-    body.dark-server-theme .covo-select-option {
+    .mention-option-sub {
+      font-size: 0.75rem;
+      color: #64748b;
+      font-weight: 400;
+      transition: color 0.15s ease;
+    }
+    .mention-option:hover .mention-option-sub, .mention-option.active .mention-option-sub {
+      color: #475569;
+    }
+    .dark-server-theme .mention-option-sub, .dark .mention-option-sub {
+      color: #94a3b8;
+    }
+    /* Fix for Tailwind dark: classes out of sync with Covo theme toggle */
+    .dark-server-theme #mentionPopup, .dark #mentionPopup {
+      background-color: #1e293b !important;
+      border-color: #374151 !important;
+    }
+    .dark-server-theme #plusMenuPopup, .dark #plusMenuPopup {
+      background-color: #1e293b !important;
+      border-color: #374151 !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn, .dark #plusMenuPopup .plus-menu-btn {
+      color: #e2e8f0 !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover, .dark #plusMenuPopup .plus-menu-btn:hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-btn:hover i, .dark #plusMenuPopup .plus-menu-btn:hover i {
+      color: #ffffff !important;
+    }
+    .dark-server-theme #plusMenuPopup .plus-menu-divider, .dark #plusMenuPopup .plus-menu-divider {
+      background-color: #374151 !important;
+    }
+
+    .dark-server-theme .mention-option:hover .mention-option-sub, .dark-server-theme .mention-option.active .mention-option-sub, .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
       color: #cbd5e1;
     }
-    body.dark-server-theme .covo-select-option:hover {
-      background: rgba(255,255,255,0.08);
+    /* === 通話オーバーレイ === */
+    @keyframes callPulse {
+      0%, 100% { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.18); opacity: 0.3; }
+    }
+    @keyframes callSlideIn {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes callFadeOut {
+      from { transform: translateY(0); opacity: 1; }
+      to { transform: translateY(100%); opacity: 0; }
+    }
+
+    #callOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f2544 100%);
+      padding: var(--safe-top, max(24px, env(safe-area-inset-top, 0px))) var(--safe-right, env(safe-area-inset-right, 0px)) max(24px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) var(--safe-left, env(safe-area-inset-left, 0px));
+      gap: 0;
+    }
+    #callOverlay.show {
+      display: flex;
+      animation: callSlideIn 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    #callOverlay.hide {
+      display: flex;
+      animation: callFadeOut 0.28s ease-in forwards;
+    }
+
+    #callIncomingView, #callActiveView {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 24px;
+    }
+
+    .call-status-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+      transition: color 0.3s;
+    }
+    .call-status-label.reconnecting {
+      color: #f59e0b;
+      animation: reconnectPulse 1.2s ease-in-out infinite;
+    }
+    @keyframes reconnectPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    #callConnectionType {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+    #callConnectionType.p2p { color: #34d399; }
+    #callConnectionType.turn { color: #f59e0b; }
+
+    .call-avatar-wrap {
+      position: relative;
+      width: 128px;
+      height: 128px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .call-avatar-ring {
+      position: absolute;
+      inset: -16px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(99,179,237,0.3);
+      animation: callPulse 2s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .call-avatar {
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      font-size: 2.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+      border: 2.5px solid rgba(255,255,255,0.15);
+    }
+    .call-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .call-name {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: white;
+      letter-spacing: 0.01em;
+    }
+    .call-timer {
+      font-size: 1rem;
+      font-weight: 400;
+      color: rgba(255,255,255,0.5);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.06em;
+    }
+
+    .call-btn-row {
+      display: flex;
+      gap: 48px;
+      align-items: center;
+      margin-top: 24px;
+    }
+    .call-btn-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .call-btn-label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.05em;
+    }
+    .call-btn-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      color: white;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .call-btn-circle:active { transform: scale(0.88); opacity: 0.8; }
+    .call-btn-circle.accept { background: #22c55e; }
+    .call-btn-circle.decline, .call-btn-circle.hangup { background: #ef4444; }
+    .call-btn-circle.mute {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .call-btn-circle.mute.active {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.4);
+    }
+
+    #callEndedToast {
+      position: fixed;
+      bottom: max(100px, calc(84px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 16px;
+      padding: 10px 22px;
+      font-size: 0.83rem;
+      font-weight: 500;
+      z-index: 100002;
+      white-space: normal;
+      max-width: min(340px, 90vw);
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+    }
+    #callEndedToast.show {
+      animation: callToastAnim 3.6s ease forwards;
+    }
+    @keyframes callToastAnim {
+      0%   { opacity:0; transform:translateX(-50%) translateY(10px); }
+      12%  { opacity:1; transform:translateX(-50%) translateY(0); }
+      78%  { opacity:1; transform:translateX(-50%) translateY(0); }
+      100% { opacity:0; transform:translateX(-50%) translateY(0); }
+    }
+
+    #callButton, #fileShareButton {
+      background: none;
+      border: none;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 6px;
+      margin-left: 8px;
+      border-radius: 6px;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #callButton:hover:not(:disabled), #fileShareButton:hover:not(:disabled) { color: #1f2937; }
+    #callButton:disabled, #fileShareButton:disabled { opacity: 0.35; cursor: not-allowed; }
+    body.dark-server-theme #fileShareButton { color: #94a3b8; }
+    body.dark-server-theme #fileShareButton:hover:not(:disabled) { color: #e2e8f0; }
+
+    /* P2Pファイル共有: 進捗オーバーレイ */
+    #fsProgressOverlay, #fsPreviewOverlay {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); padding: 20px;
+      padding-bottom: max(36px, calc(20px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
+    }
+    .fs-prog-box, .fs-prev-box {
+      background: #ffffff; border-radius: 20px; padding: 24px 22px;
+      width: 100%; max-width: 320px; text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    }
+    body.dark-server-theme .fs-prog-box, body.dark-server-theme .fs-prev-box,
+    body.discord-dark-theme .fs-prog-box, body.discord-dark-theme .fs-prev-box {
+      background: #1e293b; color: #e2e8f0;
+    }
+    body.discord-dark-theme .fs-prog-box, body.discord-dark-theme .fs-prev-box {
+      background: #2b2d31; color: #dbdee1;
+    }
+    .fs-prog-icon {
+      width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 14px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+    }
+    .fs-prog-name, .fs-prev-name { font-size: 0.9rem; font-weight: 700; color: inherit; word-break: break-all; }
+    .fs-prog-status { font-size: 0.78rem; color: #6b7280; margin: 4px 0 14px; }
+    body.dark-server-theme .fs-prog-status { color: #94a3b8; }
+    .fs-prog-bar { height: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+    body.dark-server-theme .fs-prog-bar { background: #334155; }
+    .fs-prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.15s; }
+    .fs-prog-pct { font-size: 0.8rem; font-weight: 700; margin-top: 8px; color: #3b82f6; }
+    .fs-prog-cancel {
+      margin-top: 16px; width: 100%; padding: 10px; border: none; border-radius: 12px;
+      background: #f3f4f6; color: #6b7280; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+    }
+    body.dark-server-theme .fs-prog-cancel { background: #334155; color: #cbd5e1; }
+    /* 受信プレビュー */
+    .fs-prev-title { font-size: 0.78rem; color: #9ca3af; font-weight: 700; margin-bottom: 12px; }
+    .fs-prev-media { max-width: 100%; max-height: 50vh; border-radius: 12px; display: block; margin: 0 auto 12px; object-fit: contain; }
+    .fs-prev-file {
+      width: 80px; height: 80px; border-radius: 16px; margin: 0 auto 12px;
+      background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #9ca3af;
+    }
+    body.dark-server-theme .fs-prev-file { background: #0f172a; }
+    .fs-prev-size { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; }
+    .fs-prev-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .fs-prev-save, .fs-prev-close {
+      flex: 1; padding: 11px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;
+      cursor: pointer; border: none; text-align: center; text-decoration: none;
+    }
+    .fs-prev-save { background: #1f2937; color: #fff; }
+    .fs-prev-close { background: #f3f4f6; color: #6b7280; }
+    body.dark-server-theme .fs-prev-close { background: #334155; color: #cbd5e1; }
+
+    #callPickerModal {
+      position: fixed;
+      inset: 0;
+      z-index: 99998;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    #callPickerModal.show { display: flex; }
+    @keyframes modalScaleIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .call-picker-box {
+      background: #ffffff;
+      color: #0f172a;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      width: 90%;
+      max-width: 440px;
+      max-height: min(560px, 80vh);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+      animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+      font-size: 14px;
+    }
+    body.dark-server-theme .call-picker-box {
+      background: #1e293b;
+      color: #f8fafc;
+      border-color: rgba(255,255,255,0.08);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+    }
+    body.discord-dark-theme .call-picker-box {
+      background: #2b2d31;
+      color: #dbdee1;
+      border-color: #383a40;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+    }
+    .call-picker-handle {
+      display: none;
+    }
+    .call-picker-header {
+      padding: 14px 18px;
+      font-size: 0.95rem !important;
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    body.dark-server-theme .call-picker-header {
+      color: #f8fafc;
+      border-bottom-color: rgba(255,255,255,0.06);
+    }
+    body.discord-dark-theme .call-picker-header {
+      color: #f2f3f5;
+      border-bottom-color: #1f2023;
+    }
+    .call-picker-close-btn {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: color 0.15s, background-color 0.15s;
+    }
+    .call-picker-close-btn:hover {
+      color: #0f172a;
+      background-color: #f1f5f9;
+    }
+    body.dark-server-theme .call-picker-close-btn:hover,
+    body.discord-dark-theme .call-picker-close-btn:hover {
+      color: #ffffff;
+      background-color: rgba(255,255,255,0.08);
+    }
+    #callPickerList {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 10px;
+    }
+    .call-picker-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+      margin-bottom: 2px;
+    }
+    .call-picker-item:hover, .call-picker-item:active {
+      background-color: #f1f5f9;
+    }
+    body.dark-server-theme .call-picker-item:hover,
+    body.dark-server-theme .call-picker-item:active {
+      background-color: rgba(255,255,255,0.06);
+    }
+    body.discord-dark-theme .call-picker-item:hover,
+    body.discord-dark-theme .call-picker-item:active {
+      background-color: #35373c;
+    }
+    .call-picker-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      position: relative;
+    }
+    body.dark-server-theme .call-picker-avatar {
+      background: #374151;
       color: white;
     }
-    body.dark-server-theme .covo-select-option.selected {
-      background: #312e81;
-      color: #c7d2fe;
-    }
-    body.discord-dark-theme .covo-select-option {
-      color: #949ba4;
-    }
-    body.discord-dark-theme .covo-select-option:hover {
-      background: #35373c;
+    body.discord-dark-theme .call-picker-avatar {
+      background: #383a40;
       color: #dbdee1;
     }
-    body.discord-dark-theme .covo-select-option.selected {
-      background: #5865f2;
-      color: white;
+    .call-picker-name {
+      font-size: 0.88rem !important;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    body.dark-server-theme .call-picker-name {
+      color: #f8fafc;
+    }
+    body.discord-dark-theme .call-picker-name {
+      color: #f2f3f5;
+    }
+    .call-picker-status {
+      font-size: 0.72rem !important;
+      color: #64748b;
+      margin-top: 1px;
+    }
+    body.dark-server-theme .call-picker-status {
+      color: #94a3b8;
+    }
+    body.discord-dark-theme .call-picker-status {
+      color: #949ba4;
+    }
+
+    @media (max-width: 768px) {
+      #callPickerModal {
+        align-items: flex-end;
+      }
+      .call-picker-box {
+        border-radius: 24px 24px 0 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: min(85vh, calc(100dvh - 30px)) !important;
+        padding-bottom: max(20px, calc(10px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+      }
+      .call-picker-handle {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        padding: 10px 0 4px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
     }
 </file>
 
@@ -9233,6 +8382,860 @@ if (typeof window !== 'undefined') {
   window.submitGuess = submitGuess;
   window.closeResultOverlay = closeResultOverlay;
 }
+</file>
+
+<file path="public/css/modules/theme.css">
+/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* モーダル背景 */
+    .modal-overlay {
+      background-color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* ドロップダウンコンテナのスタイル */
+    .dropdown-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: white;
+      min-width: 100px;
+      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      right: 0;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+
+    .dropdown-content button {
+      color: black;
+      padding: 8px 12px;
+      text-decoration: none;
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background-color: transparent;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* メッセージ内容と入力欄 */
+    .message-content {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+    }
+
+    textarea#messageInput {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-y: auto;
+      resize: none;
+      min-height: 0;
+      max-height: 200px;
+      background-color: transparent;
+      border: none;
+      font-size: 16px;
+      line-height: 1.5;
+
+      /* ★スクロールバーを非表示にする設定 */
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* ★Chrome, Safari, Opera用 */
+    textarea#messageInput::-webkit-scrollbar {
+      display: none;
+    }
+
+    textarea#messageInput:focus {
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 既読表示 */
+    .read-receipt {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 2px;
+      display: block;
+      text-align: right;
+    }
+
+    .other-message .read-receipt {
+      text-align: left;
+    }
+
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
+    /* カスタムコンテキストメニュー */
+    .custom-context-menu {
+      position: fixed;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      z-index: 100;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      padding: 4px 0;
+      overflow: hidden;
+    }
+
+    .custom-context-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: black;
+    }
+
+    .custom-context-menu button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
+    #resizer, #resizerRight {
+      width: 2px;
+      cursor: col-resize;
+      background-color: #e2e8f0;
+      transition: background-color 0.15s ease;
+      flex-shrink: 0;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 25;
+    }
+
+    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
+    #resizer::before, #resizerRight::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -10px;
+      right: -10px;
+      width: calc(100% + 20px);
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 26;
+    }
+
+    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
+    #resizer:hover, #resizerRight:hover,
+    #resizer.is-resizing, #resizerRight.is-resizing {
+      background-color: #1e293b;
+      box-shadow: none;
+    }
+
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
+    .reply-quote:hover {
+      text-decoration: underline;
+      text-decoration-color: #94a3b8;
+      text-underline-offset: 2px;
+    }
+
+    .reply-quote-nickname {
+      font-weight: 600;
+      color: #475569;
+      flex-shrink: 0;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reply-quote-text {
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .message-highlight {
+      transition: background-color 0.8s ease-out;
+      background-color: #bde4ff !important;
+    }
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032 !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme #userPanel:hover {
+      background-color: #1e2f42 !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
+    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #f8fafc !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .pinned-announcement-container {
+      background: #1e293b !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme .pinned-announcement-header:hover {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .announcement-icon-wrap {
+      color: #818cf8 !important;
+    }
+    body.dark-server-theme .announcement-sender {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .announcement-text {
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme .announcement-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-btn:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .pinned-announcement-list {
+      background: #162032 !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item:hover {
+      background: #1e293b !important;
+    }
+    body.dark-server-theme .announcement-item-icon {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer {
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn:hover {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .minimized-pin-icon {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #818cf8 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.dark-server-theme .minimized-pin-badge {
+      border-color: #1e293b !important;
+    }
+
+    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
+    body.discord-dark-theme .pinned-announcement-container {
+      background: #2b2d31 !important;
+      border-bottom-color: #1f2023 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-header:hover {
+      background: #35373c !important;
+    }
+    body.discord-dark-theme .announcement-icon-wrap {
+      color: #5865f2 !important;
+    }
+    body.discord-dark-theme .announcement-sender {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .announcement-text {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .announcement-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-btn:hover {
+      background: #35373c !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-list {
+      background: #1e1f22 !important;
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item:hover {
+      background: #2b2d31 !important;
+    }
+    body.discord-dark-theme .announcement-item-icon {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer {
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .minimized-pin-icon {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #5865f2 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+    }
+    body.discord-dark-theme .minimized-pin-badge {
+      border-color: #2b2d31 !important;
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+   /* ダークモード時のリプライのL字矢印の色調整 */
+    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu-inner {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
+    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #3b82f6;
+      box-shadow: none;
+    }
+    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
+    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
+    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: none;
+    }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .settings-section-title { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* ===== ショートカット設定のダークモード対応 ===== */
+    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
+    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
+      background: #1e293b !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    body.dark-server-theme #shortcutInfoContainer kbd,
+    body.discord-dark-theme #shortcutInfoContainer kbd {
+      background: #0f172a !important;
+      color: #93c5fd !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme #shortcutKeyInput,
+    body.discord-dark-theme #shortcutKeyInput {
+      background: #0f172a !important;
+      color: #60a5fa !important;
+      border-color: #3b82f6 !important;
+    }
+
+    /* =========================================================================
+       新テーマ: Discordダーク (body.discord-dark-theme)
+       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
+       ========================================================================= */
+    body.discord-dark-theme {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #discordServerNav {
+      background-color: #1e1f22 !important;
+      border-right-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme #sidebar,
+    body.discord-dark-theme #membersSidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme #serverHeader,
+    body.discord-dark-theme #currentRoomHeader,
+    body.discord-dark-theme #discordTopBar {
+      background-color: #313338 !important;
+      border-bottom-color: #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #chatArea {
+      background-color: #313338 !important;
+    }
+    body.discord-dark-theme #messageInputArea {
+      background-color: #313338 !important;
+      border-top-color: transparent !important;
+    }
+    body.discord-dark-theme #messageInput,
+    body.discord-dark-theme .discord-input-box {
+      background-color: #383a40 !important;
+      color: #dbdee1 !important;
+      border-color: transparent !important;
+    }
+    body.discord-dark-theme #userPanel {
+      background-color: #232428 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-server-pill {
+      background-color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-hero-banner {
+      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .modal-box,
+    body.discord-dark-theme .settings-content {
+      background-color: #313338 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .settings-sidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme .settings-nav-item.active {
+      background-color: #3f4248 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
+      background-color: #35373c !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .bg-gray-50,
+    body.discord-dark-theme .bg-gray-100 {
+      background-color: #2b2d31 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme input[type="text"],
+    body.discord-dark-theme input[type="email"],
+    body.discord-dark-theme input[type="password"] {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+      border-color: #232428 !important;
+    }
+
+    /* ===== アプリ独自カスタムドロップダウン ===== */
+    .covo-custom-select {
+      position: relative;
+      display: inline-block;
+      user-select: none;
+    }
+    .covo-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .covo-select-trigger:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+    body.dark-server-theme .covo-select-trigger {
+      background: #0f172a;
+      border-color: rgba(255,255,255,0.15);
+      color: #e2e8f0;
+    }
+    body.discord-dark-theme .covo-select-trigger {
+      background: #1e1f22;
+      border-color: rgba(255,255,255,0.1);
+      color: #dbdee1;
+    }
+    .covo-select-options {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: 180px;
+      background: white;
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
+      border: 1px solid #e2e8f0;
+      z-index: 60;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.96);
+      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .covo-custom-select.open .covo-select-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+    body.dark-server-theme .covo-select-options {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.12);
+    }
+    body.discord-dark-theme .covo-select-options {
+      background: #2b2d31;
+      border-color: #202225;
+    }
+    .covo-select-option {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #334155;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .covo-select-option:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .covo-select-option.selected {
+      background: #e0e7ff;
+      color: #4338ca;
+      font-weight: 600;
+    }
+    body.dark-server-theme .covo-select-option {
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .covo-select-option:hover {
+      background: rgba(255,255,255,0.08);
+      color: white;
+    }
+    body.dark-server-theme .covo-select-option.selected {
+      background: #312e81;
+      color: #c7d2fe;
+    }
+    body.discord-dark-theme .covo-select-option {
+      color: #949ba4;
+    }
+    body.discord-dark-theme .covo-select-option:hover {
+      background: #35373c;
+      color: #dbdee1;
+    }
+    body.discord-dark-theme .covo-select-option.selected {
+      background: #5865f2;
+      color: white;
+    }
 </file>
 
 <file path="public/js/text_formatter.js">
@@ -10057,16 +10060,29 @@ service cloud.firestore {
       display: none !important;
     }
 
-    /* 全画面スクリーン (プロフィール・通知) */
+    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
     #mobileProfileScreen,
-    #mobileNotifScreen {
-      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
-      padding-bottom: 0 !important;
-      box-sizing: border-box;
+    #mobileNotifScreen,
+    .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+      box-sizing: border-box !important;
+      background: #f8fafc !important;
     }
     body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen {
-      inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0 !important;
+    body.has-mobile-nav #mobileNotifScreen,
+    body.has-mobile-nav .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+    }
+    body.dark-server-theme #mobileProfileScreen,
+    body.dark-server-theme #mobileNotifScreen,
+    body.dark-server-theme .mobile-settings-detail {
+      background: #111827 !important;
     }
     /* =============================================
        Server list-view toggle
@@ -10457,14 +10473,24 @@ service cloud.firestore {
         justify-content: center !important;
       }
 
-      /* 確認・アラートダイアログ・サーバー追加選択は小型のままセンターに美しく表示（全画面不要） */
+      /* 確認・アラートダイアログ・サーバー追加選択: スマホUIでの変形・右伸びバグを完全解消 */
+      #customConfirmModal:not(.hidden),
+      #customAlertModal:not(.hidden),
+      #messagePreviewModal:not(.hidden),
+      #addServerSelectModal:not(.hidden) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 16px !important;
+      }
+
       #customConfirmModal:not(.hidden) .modal-box,
       #customAlertModal:not(.hidden) .modal-box,
       #messagePreviewModal:not(.hidden) .modal-box,
       #addServerSelectModal:not(.hidden) .modal-box {
         max-width: 340px !important;
-        width: calc(100% - 48px) !important;
-        padding: 28px !important;
+        width: min(90vw, 340px) !important;
+        padding: 24px !important;
         overflow-y: auto !important;
         justify-content: flex-start !important;
         animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
@@ -10478,7 +10504,8 @@ service cloud.firestore {
         right: auto !important;
         bottom: auto !important;
         transform: none !important;
-        margin: auto !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
       }
 
       /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
@@ -11875,6 +11902,29 @@ async function handleServeFile(request, env, url) {
 // -------------------------------------------------------------
 // 管理者: ストレージ使用状況取得
 // -------------------------------------------------------------
+function categorizeKvFile(meta) {
+  const folder = (meta?.folder || '').toLowerCase();
+  const type = (meta?.type || '').toLowerCase();
+  const name = (meta?.name || '').toLowerCase();
+
+  if (folder.includes('avatar') || folder.includes('icon') || folder === 'avatars' || folder === 'icons' || folder === 'server_icons') {
+    return 'avatars';
+  }
+  if (folder.includes('stamp') || folder === 'stamps') {
+    return 'stamps';
+  }
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|heic|heif|bmp|ico)$/i.test(name)) {
+    return 'images';
+  }
+  if (type.startsWith('video/') || type.startsWith('audio/') || /\.(mp4|mov|webm|avi|mkv|mp3|wav|m4a|ogg|aac|flac)$/i.test(name)) {
+    return 'videos';
+  }
+  if (type === 'application/pdf' || type.includes('pdf') || type.includes('document') || type.includes('text') || /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|json|md|zip|tar|gz|7z)$/i.test(name)) {
+    return 'documents';
+  }
+  return 'others';
+}
+
 async function handleStorageStats(request, env) {
   try {
     const authHeader = request.headers.get("Authorization") || "";
@@ -11903,19 +11953,37 @@ async function handleStorageStats(request, env) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const kvStats = { fileCount: 0, totalBytes: 0 };
+    const kvStats = {
+      fileCount: 0,
+      totalBytes: 0,
+      categories: {
+        images: { bytes: 0, count: 0, label: "画像", color: "#3b82f6" },
+        videos: { bytes: 0, count: 0, label: "動画・音声", color: "#a855f7" },
+        documents: { bytes: 0, count: 0, label: "書類・PDF", color: "#f59e0b" },
+        avatars: { bytes: 0, count: 0, label: "アイコン", color: "#10b981" },
+        stamps: { bytes: 0, count: 0, label: "スタンプ", color: "#ec4899" },
+        others: { bytes: 0, count: 0, label: "その他", color: "#64748b" }
+      }
+    };
+
     if (env.FILES) {
       let cursor;
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
-          const folder = key.metadata?.folder || '';
-          if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars') {
-            continue; // Ignore icons/avatars
-          }
+          const meta = key.metadata || {};
+          const size = meta.size || 0;
+          const cat = categorizeKvFile(meta);
+
           kvStats.fileCount++;
-          if (key.metadata && key.metadata.size) {
-            kvStats.totalBytes += key.metadata.size;
+          kvStats.totalBytes += size;
+
+          if (kvStats.categories[cat]) {
+            kvStats.categories[cat].bytes += size;
+            kvStats.categories[cat].count++;
+          } else {
+            kvStats.categories.others.bytes += size;
+            kvStats.categories.others.count++;
           }
         }
         cursor = listed.cursor;
@@ -11934,7 +12002,7 @@ async function handleStorageStats(request, env) {
 }
 
 // -------------------------------------------------------------
-// 管理者: 全ファイル一括削除
+// 管理者: 全ファイル・カテゴリ別一括削除
 // -------------------------------------------------------------
 async function handleBulkDeleteFiles(request, env) {
   try {
@@ -11972,22 +12040,42 @@ async function handleBulkDeleteFiles(request, env) {
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
-          const folder = key.metadata?.folder || '';
+          const meta = key.metadata || {};
+          const folder = (meta.folder || '').toLowerCase();
+          const cat = categorizeKvFile(meta);
 
-          if (deleteType === "messages_only") {
-             if (folder !== 'simplechat/messages') continue;
-          } else if (deleteType === "all_safe") {
-             if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars' || 
-                 folder === 'stamps' || folder === 'simplechat/stamps' || 
-                 folder === 'server_icons' || folder === 'simplechat/server_icons') {
-               continue;
-             }
+          let shouldDelete = false;
+
+          if (deleteType === "messages_only" || deleteType === "all_safe") {
+            // アイコンとスタンプは100%保護し、チャット添付ファイルのみ削除
+            if (cat !== "avatars" && cat !== "stamps" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "images_only") {
+            if (cat === "images" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "videos_only") {
+            if (cat === "videos") {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "documents_only") {
+            if (cat === "documents") {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "stamps_only") {
+            if (cat === "stamps" || folder.includes('stamp')) {
+              shouldDelete = true;
+            }
           } else if (deleteType === "all_danger") {
-             // No protection, delete everything
+            // 完全初期化: 全ファイルを残さず完全削除
+            shouldDelete = true;
           }
 
-          await env.FILES.delete(key.name);
-          kvDeleted++;
+          if (shouldDelete) {
+            await env.FILES.delete(key.name);
+            kvDeleted++;
+          }
         }
         cursor = listed.cursor;
         if (listed.list_complete) break;
@@ -16205,75 +16293,99 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       
   <!-- 共有管理者コンテンツ -->
   <div id="adminPanelSharedContent" class="hidden">
-    <div class="flex border-b border-gray-100 dark:border-gray-800 mb-4 flex-wrap gap-y-1">
-      <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-gray-200 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
-      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
-      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
-      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-bullhorn mr-1.5 text-xs"></i>お知らせ配信</button>
+    <!-- モダンなピル型タブ（ダークモード完全対応） -->
+    <div class="flex gap-1.5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl mb-4 flex-wrap border border-gray-200/60 dark:border-gray-700/60">
+      <button id="adminTabAllowedBtn" class="py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-sm"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
+      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
+      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
+      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
     </div>
     
-    <div class="pr-2">
+    <div class="pr-1 space-y-4">
       <div id="adminTabAllowedContent" class="space-y-4">
-        <p class="text-xs text-gray-400 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addAllowedEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addAllowedEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="allowedEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAdminsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="adminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabListAdminsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
         <div class="flex gap-2">
-          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addListAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAnnouncementsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
-        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-200 dark:border-gray-700/60">
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
+        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-5 rounded-2xl border border-gray-200 dark:border-gray-700/60 shadow-sm">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">バージョン</label>
-              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">バージョン</label>
+              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm font-mono" />
             </div>
             <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">カテゴリ</label>
-              <select id="announcementCategorySelect" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none">
-                <option value="update">🚀 新機能・改善 (UPDATE)</option>
-                <option value="bugfix">🐛 バグ修正 (BUG FIX)</option>
-                <option value="notice">⚠️ 重要なお知らせ (NOTICE)</option>
-              </select>
+              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">カテゴリー</label>
+              <!-- 独自UIカスタムプルダウン（単色シンプルアイコン仕様） -->
+              <div class="covo-custom-select w-full" id="announcementCategorySelectContainer">
+                <div class="covo-select-trigger" onclick="toggleCustomDropdown('announcementCategorySelectContainer')">
+                  <span id="announcementCategorySelectedLabel" class="flex items-center gap-2">
+                    <i class="fas fa-sparkles text-xs opacity-70"></i>新機能・改善 (UPDATE)
+                  </span>
+                  <i class="fas fa-chevron-down text-xs opacity-60"></i>
+                </div>
+                <div class="covo-select-options">
+                  <div class="covo-select-option selected" data-value="update" onclick="selectAnnouncementCategory('update', '新機能・改善 (UPDATE)', 'fas fa-sparkles')">
+                    <span class="flex items-center gap-2"><i class="fas fa-sparkles text-xs opacity-70"></i>新機能・改善 (UPDATE)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="bugfix" onclick="selectAnnouncementCategory('bugfix', 'バグ修正 (BUG FIX)', 'fas fa-wrench')">
+                    <span class="flex items-center gap-2"><i class="fas fa-wrench text-xs opacity-70"></i>バグ修正 (BUG FIX)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="notice" onclick="selectAnnouncementCategory('notice', '重要なお知らせ (NOTICE)', 'fas fa-circle-exclamation')">
+                    <span class="flex items-center gap-2"><i class="fas fa-circle-exclamation text-xs opacity-70"></i>重要なお知らせ (NOTICE)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="none" onclick="selectAnnouncementCategory('none', 'カテゴリーなし', 'fas fa-minus')">
+                    <span class="flex items-center gap-2"><i class="fas fa-minus text-xs opacity-70"></i>カテゴリーなし</span>
+                  </div>
+                  <div class="covo-select-option" data-value="custom" onclick="selectAnnouncementCategory('custom', 'カスタム指定...', 'fas fa-pen')">
+                    <span class="flex items-center gap-2"><i class="fas fa-pen text-xs opacity-70"></i>カスタム指定...</span>
+                  </div>
+                </div>
+                <input type="hidden" id="announcementCategorySelect" value="update" />
+              </div>
+              <div id="announcementCustomCategoryWrapper" class="hidden mt-2">
+                <input type="text" id="announcementCustomCategoryInput" placeholder="カスタムカテゴリ名（例: メンテナンス）" class="w-full px-3.5 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
+              </div>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">タイトル</label>
-            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+            <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">タイトル</label>
+            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">内容</label>
-            <textarea id="announcementContentInput" rows="4" placeholder="・新機能の概要&#10;・修正されたバグの内容&#10;・注意点など" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none resize-none"></textarea>
+            <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">内容</label>
+            <textarea id="announcementContentInput" rows="4" placeholder="・新機能の概要&#10;・修正されたバグの内容&#10;・注意点など" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none shadow-sm"></textarea>
           </div>
-          <button id="publishAnnouncementButton" onclick="publishAdminAnnouncement()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow transition-all flex items-center justify-center gap-2">
-            <i class="fas fa-paper-plane"></i> 全体に配信する
+          <!-- ライト/ダーク両モードに最適化された全体配信ボタン -->
+          <button id="publishAnnouncementButton" onclick="publishAdminAnnouncement()" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+            <i class="fas fa-paper-plane text-xs"></i> 全体に配信する
           </button>
         </div>
         <div>
-          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">配信済みお知らせ一覧</h4>
+          <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">配信済みお知らせ一覧</h4>
           <div id="adminAnnouncementsList" class="space-y-2"></div>
         </div>
       </div>
-
-
-
     </div>
     
     <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
@@ -16287,33 +16399,54 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
   <div id="storageSharedContent" class="hidden">
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <p class="text-xs text-gray-400 leading-relaxed">添付ファイルのストレージ使用状況</p>
-        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors">
+        <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">添付ファイルのストレージ使用状況</p>
+        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-xl transition-all shadow-sm">
           <i class="fas fa-sync-alt text-xs"></i>更新
         </button>
       </div>
-      <div style="background:#1e293b;" class="rounded-2xl p-4">
-        <div class="flex items-center gap-2 mb-3">
-          <i class="fas fa-server text-white text-sm"></i>
-          <span class="text-white text-sm font-bold">Cloudflare Workers KV</span>
-          <span class="ml-auto text-white/40 text-xs">上限 1 GB</span>
+
+      <!-- iPhone風ストレージ使用量メーター -->
+      <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-200 dark:border-gray-700/60 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-hard-drive text-indigo-500 dark:text-indigo-400 text-base"></i>
+            <span class="text-gray-900 dark:text-white text-sm font-bold">ストレージ容量</span>
+          </div>
+          <span id="kvUsageText" class="text-gray-600 dark:text-gray-300 text-xs font-bold font-mono">読み込み中...</span>
         </div>
-        <div style="background:rgba(255,255,255,0.12);" class="rounded-full h-2.5 overflow-hidden mb-2">
-          <div id="kvUsageBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:rgba(255,255,255,0.85);"></div>
+
+        <!-- マルチカラーセグメントバー (iPhone風) -->
+        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden flex shadow-inner relative" id="storageSegmentsBar">
+          <div id="seg-images" class="h-full bg-blue-500 transition-all duration-500" style="width: 0%" title="画像"></div>
+          <div id="seg-videos" class="h-full bg-purple-500 transition-all duration-500" style="width: 0%" title="動画・音声"></div>
+          <div id="seg-documents" class="h-full bg-amber-500 transition-all duration-500" style="width: 0%" title="書類・PDF"></div>
+          <div id="seg-avatars" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%" title="アイコン"></div>
+          <div id="seg-stamps" class="h-full bg-pink-500 transition-all duration-500" style="width: 0%" title="スタンプ"></div>
+          <div id="seg-others" class="h-full bg-slate-400 transition-all duration-500" style="width: 0%" title="その他"></div>
         </div>
-        <div class="flex justify-between items-center">
-          <span id="kvUsageText" class="text-white/70 text-xs">読み込み中...</span>
-          <span id="kvFileCount" class="text-white/40 text-xs"></span>
+
+        <!-- 凡例 (Legends) -->
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0"></span><span class="truncate">画像</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 flex-shrink-0"></span><span class="truncate">動画</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0"></span><span class="truncate">書類</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0"></span><span class="truncate">アイコン</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-pink-500 flex-shrink-0"></span><span class="truncate">スタンプ</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-400 flex-shrink-0"></span><span class="truncate">その他</span></div>
         </div>
       </div>
-      <div class="pt-2 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
-        <button id="bulkDeleteMessagesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.9);">
-          <i class="fas fa-file-image"></i> 添付ファイルのみを一括削除
+
+      <!-- カテゴリ別内訳リスト & 個別削除ボタン -->
+      <div class="space-y-2" id="storageCategoryItemsList"></div>
+
+      <!-- 一括削除アクション -->
+      <div class="pt-3 border-t border-gray-100 dark:border-gray-700/60 space-y-2">
+        <button id="bulkDeleteMessagesBtn" class="w-full py-3 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 active:scale-98">
+          <i class="fas fa-paperclip"></i> 添付ファイルのみを一括削除 (アイコン・スタンプは保持)
         </button>
-        <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 mt-2" style="background:#4b111b;color:rgba(255,255,255,0.8);">
-          <i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)
+        <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/40 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
+          <i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)
         </button>
-        <p class="text-xs text-gray-400 mt-2 text-center">ストレージの管理を行えます</p>
       </div>
     </div>
   </div>
@@ -17799,13 +17932,11 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
   
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
-    <div class="mobile-profile-header">
-      <div class="mobile-detail-back mr-2 text-white cursor-pointer" onclick="closeMobileProfileScreen()"><i class="fas fa-chevron-left text-lg"></i></div>
-      <div class="mobile-profile-avatar" id="mobileProfileAvatar"></div>
-      <div class="flex-1 min-w-0">
-        <div class="mobile-profile-name" id="mobileProfileName">...</div>
-        <div class="mobile-profile-sub">設定</div>
+    <div class="mobile-profile-header flex items-center justify-between">
+      <div class="mobile-detail-back text-white cursor-pointer flex items-center gap-2" onclick="closeMobileProfileScreen()">
+        <i class="fas fa-chevron-left text-lg"></i>
       </div>
+      <span class="text-white font-bold text-base flex-1 text-center pr-6">設定</span>
     </div>
     <div class="mobile-settings-section">
       <div class="mobile-settings-label">アカウント</div>
@@ -18035,26 +18166,39 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     </div>
   </div>
 
-<!-- 全体お知らせ / What's New モーダル -->
+<!-- 全体お知らせ / What's New モーダル（洗練されたシンプル＆ダーク/ライト完全対応デザイン） -->
   <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
-    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
-      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
-        <div class="relative z-10">
-          <div class="flex items-center gap-2 mb-1">
-            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
-            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700/80 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh] relative" onclick="event.stopPropagation()">
+      <!-- 上品でミニマルなヘッダー -->
+      <div class="p-6 pb-4 border-b border-gray-100 dark:border-gray-800 flex items-start justify-between flex-shrink-0 bg-gray-50/50 dark:bg-black/20">
+        <div class="flex items-start gap-3.5 flex-1 min-w-0 pr-3">
+          <div class="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs">
+            <i id="whatsNewIcon" class="fas fa-sparkles"></i>
           </div>
-          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
-          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 tracking-wider uppercase">UPDATE</span>
+              <span id="whatsNewVersion" class="text-xs font-mono font-bold text-gray-500 dark:text-gray-400"></span>
+              <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
+              <span id="whatsNewDate" class="text-xs text-gray-400 dark:text-gray-500 font-medium"></span>
+            </div>
+            <h2 id="whatsNewTitle" class="text-lg font-bold text-gray-900 dark:text-white tracking-tight leading-snug truncate">お知らせ</h2>
+          </div>
         </div>
-        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
-          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
-        </div>
+        <button onclick="closeWhatsNewModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex-shrink-0" title="閉じる">
+          <i class="fas fa-times text-sm"></i>
+        </button>
       </div>
-      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
-      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
-        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
-        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+
+      <!-- 本文エリア -->
+      <div class="p-6 overflow-y-auto flex-1">
+        <div class="bg-gray-50/70 dark:bg-black/20 border border-gray-100 dark:border-white/5 rounded-2xl p-4 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans shadow-xs" id="whatsNewContent"></div>
+      </div>
+
+      <!-- フッター -->
+      <div class="p-4 px-6 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-black/20 flex-shrink-0">
+        <span class="text-[11px] text-gray-400 font-medium">アプリ情報からいつでも再確認できます</span>
+        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95">
           確認しました
         </button>
       </div>
@@ -19236,9 +19380,8 @@ if (openAdminModalBtn) {
 // ストレージ統計
 
 async function loadStorageStats() {
-  const kvBar = document.getElementById('kvUsageBar');
   const kvText = document.getElementById('kvUsageText');
-  const kvCount = document.getElementById('kvFileCount');
+  const catList = document.getElementById('storageCategoryItemsList');
   if (!kvText) return;
   kvText.textContent = '読み込み中...';
   try {
@@ -19249,22 +19392,108 @@ async function loadStorageStats() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    // KV（Cloudflare）
+    
+    // KV（Cloudflare 1GB）
     const kvLimitBytes = 1 * 1024 * 1024 * 1024;
     const kvUsed = data.kv?.totalBytes || 0;
-    const kvPct = Math.min((kvUsed / kvLimitBytes) * 100, 100);
-    kvBar.style.width = kvPct + '%';
-    kvText.textContent = formatBytes(kvUsed) + ' / 1 GB';
-    kvCount.textContent = (data.kv?.fileCount || 0) + ' ファイル';
+    kvText.textContent = `${formatBytes(kvUsed)} / 1 GB (${((kvUsed / kvLimitBytes) * 100).toFixed(1)}%)`;
+
+    // iPhone風マルチカラーセグメントバーの更新
+    const categories = data.kv?.categories || {};
+    const segImages = document.getElementById('seg-images');
+    const segVideos = document.getElementById('seg-videos');
+    const segDocs = document.getElementById('seg-documents');
+    const segAvatars = document.getElementById('seg-avatars');
+    const segStamps = document.getElementById('seg-stamps');
+    const segOthers = document.getElementById('seg-others');
+
+    const getPct = (bytes) => (Math.max(0, Math.min(100, (bytes / kvLimitBytes) * 100))).toFixed(2) + '%';
+
+    if (segImages) segImages.style.width = getPct(categories.images?.bytes || 0);
+    if (segVideos) segVideos.style.width = getPct(categories.videos?.bytes || 0);
+    if (segDocs) segDocs.style.width = getPct(categories.documents?.bytes || 0);
+    if (segAvatars) segAvatars.style.width = getPct(categories.avatars?.bytes || 0);
+    if (segStamps) segStamps.style.width = getPct(categories.stamps?.bytes || 0);
+    if (segOthers) segOthers.style.width = getPct(categories.others?.bytes || 0);
+
+    // カテゴリ別内訳リスト＆個別削除ボタンの描画
+    if (catList) {
+      catList.innerHTML = '';
+      const catDefs = [
+        { key: 'images', label: '画像ファイル', icon: 'fa-file-image', color: 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/20', deleteType: 'images_only' },
+        { key: 'videos', label: '動画・音声', icon: 'fa-file-video', color: 'text-purple-500 bg-purple-500/10 dark:bg-purple-500/20', deleteType: 'videos_only' },
+        { key: 'documents', label: '書類・PDF', icon: 'fa-file-lines', color: 'text-amber-500 bg-amber-500/10 dark:bg-amber-500/20', deleteType: 'documents_only' },
+        { key: 'avatars', label: 'アイコン画像', icon: 'fa-user-circle', color: 'text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/20', deleteType: 'avatars_only' },
+        { key: 'stamps', label: 'スタンプ', icon: 'fa-icons', color: 'text-pink-500 bg-pink-500/10 dark:bg-pink-500/20', deleteType: 'stamps_only' },
+        { key: 'others', label: 'その他ファイル', icon: 'fa-folder', color: 'text-slate-400 bg-slate-500/10 dark:bg-slate-500/20', deleteType: 'others_only' }
+      ];
+
+      catDefs.forEach(def => {
+        const catData = categories[def.key] || { bytes: 0, count: 0 };
+        const row = document.createElement('div');
+        row.className = 'p-3 bg-white dark:bg-gray-800/80 rounded-xl border border-gray-100 dark:border-gray-700/60 flex items-center justify-between gap-3 shadow-xs';
+        
+        row.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-sm ${def.color} flex-shrink-0">
+              <i class="fas ${def.icon}"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${def.label}</div>
+              <div class="text-[10px] text-gray-400 font-medium">${catData.count} 件 • ${formatBytes(catData.bytes)}</div>
+            </div>
+          </div>
+          <button onclick="deleteStorageCategory('${def.deleteType}', '${def.label}')" ${catData.count === 0 ? 'disabled' : ''} class="px-2.5 py-1 text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 dark:hover:bg-red-600 disabled:opacity-30 disabled:pointer-events-none rounded-lg border border-red-200 dark:border-red-800/40 transition-all flex items-center gap-1 flex-shrink-0">
+            <i class="fas fa-trash text-[10px]"></i> 削除
+          </button>
+        `;
+        catList.appendChild(row);
+      });
+    }
   } catch (e) {
-    kvText.textContent = '取得に失敗しました';
+    if (kvText) kvText.textContent = '取得に失敗しました';
     console.error('[storageStats] fetch error:', e);
   }
 }
 
-document.getElementById('refreshStorageStatsBtn').addEventListener('click', loadStorageStats);
+window.deleteStorageCategory = async function(deleteType, label) {
+  const confirmed = await showCustomConfirm(
+    `「${label}」のみを一括削除しますか？`,
+    '削除する',
+    'キャンセル',
+    'このカテゴリに属するファイルが完全に削除されます。'
+  );
+  if (!confirmed) return;
 
-async function cleanupFirestoreMessages() {
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+  if (!idToken) return;
+
+  try {
+    const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=${deleteType}`, {
+      method: 'DELETE',
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      // 添付ファイル系であればFirestoreメッセージの参照もクリーンアップ
+      let msgDeleted = 0;
+      if (deleteType === 'images_only' || deleteType === 'videos_only' || deleteType === 'documents_only') {
+        msgDeleted = await cleanupFirestoreMessages(deleteType);
+      }
+      alertMessage(`${label}を削除しました (KV ${data.kvDeleted}件${msgDeleted > 0 ? `、メッセージ ${msgDeleted}件` : ''})`, 'success');
+      loadStorageStats();
+    } else {
+      alertMessage('削除に失敗しました: ' + (data.error || '不明なエラー'), 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    alertMessage('通信エラーが発生しました', 'error');
+  }
+};
+
+document.getElementById('refreshStorageStatsBtn')?.addEventListener('click', loadStorageStats);
+
+async function cleanupFirestoreMessages(filterType = null) {
   let msgDeleted = 0;
   try {
     const kvWorkerPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/[A-Za-z0-9_]+');
@@ -19276,10 +19505,23 @@ async function cleanupFirestoreMessages() {
         for (const msgDoc of msgsSnap.docs) {
           const d = msgDoc.data();
           const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
-          // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
           const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
           const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
+
+          let shouldDelete = false;
           if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
+            if (!filterType) {
+              shouldDelete = true;
+            } else if (filterType === 'images_only' && d.fileType && d.fileType.startsWith('image/')) {
+              shouldDelete = true;
+            } else if (filterType === 'videos_only' && d.fileType && (d.fileType.startsWith('video/') || d.fileType.startsWith('audio/'))) {
+              shouldDelete = true;
+            } else if (filterType === 'documents_only' && d.fileType && (d.fileType.includes('pdf') || d.fileType.includes('document') || d.fileType.includes('text'))) {
+              shouldDelete = true;
+            }
+          }
+
+          if (shouldDelete) {
             await deleteDoc(msgDoc.ref);
             msgDeleted++;
           }
@@ -19292,8 +19534,8 @@ async function cleanupFirestoreMessages() {
   return msgDeleted;
 }
 
-document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async () => {
-  const first = await showCustomConfirm('チャットの「添付ファイルのみ」を削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等のシステムファイルは保持されます。');
+document.getElementById('bulkDeleteMessagesBtn')?.addEventListener('click', async () => {
+  const first = await showCustomConfirm('チャットの「添付ファイルのみ」を一括削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等の基本ファイルは完全に保護されます。');
   if (!first) return;
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
@@ -19310,7 +19552,7 @@ document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async
     if (data.success) {
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
       const msgDeleted = await cleanupFirestoreMessages();
-      alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+      alertMessage(`添付ファイル削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
       loadStorageStats();
     } else {
       alertMessage('削除に失敗しました: ' + data.error, 'error');
@@ -19320,14 +19562,14 @@ document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async
     alertMessage('通信エラーが発生しました', 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-file-image"></i> 添付ファイルのみを一括削除';
+    btn.innerHTML = '<i class="fas fa-paperclip"></i> 添付ファイルのみを一括削除 (アイコン・スタンプは保持)';
   }
 });
 
-document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
-  const first = await showCustomConfirm('【警告】アイコンやスタンプも含めた全ファイルを完全に削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+document.getElementById('bulkDeleteAllFilesBtn')?.addEventListener('click', async () => {
+  const first = await showCustomConfirm('【警告】全ファイルを1つも残さず完全に削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプを含むすべてのストレージファイルが完全に消去されます。');
   if (!first) return;
-  const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'ユーザーアイコンやサーバーアイコン等も無効になります。');
+  const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'この操作は絶対に取り消せません。');
   if (!second) return;
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
@@ -19344,7 +19586,7 @@ document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async
     if (data.success) {
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
       const msgDeleted = await cleanupFirestoreMessages();
-      alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+      alertMessage(`全削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
       loadStorageStats();
     } else {
       alertMessage('削除に失敗しました: ' + data.error, 'error');
@@ -19354,7 +19596,7 @@ document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async
     alertMessage('通信エラーが発生しました', 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)';
+    btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)';
   }
 });
 
@@ -28154,6 +28396,10 @@ window.minimizePinnedAnnouncement = function() {
 
 window.restorePinnedAnnouncement = function() {
   sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+  if (currentPinnedMessages && currentPinnedMessages.length > 0) {
+    const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
+    localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+  }
   renderPinnedMessages();
 };
 
@@ -28211,6 +28457,11 @@ function renderPinnedMessages() {
     return;
   }
 
+  // 最新（直近）のピン留めメッセージ
+  const latestMsg = pinnedMessages[pinnedMessages.length - 1];
+  const count = pinnedMessages.length;
+  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${currentRoomId}`);
+
   // セッションから最小化状態を復元
   const isMinimized = sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true";
 
@@ -28233,13 +28484,29 @@ function renderPinnedMessages() {
       }
     }
 
-    const badgeCount = pinnedMessages.length;
+    // 未確認のピン留め（新しいピン留め）がある場合のみバッジを表示
+    let unseenCount = 0;
+    if (!lastSeenPinId) {
+      unseenCount = pinnedMessages.length;
+    } else {
+      const lastSeenIndex = pinnedMessages.findIndex(m => m.id === lastSeenPinId);
+      if (lastSeenIndex === -1) {
+        unseenCount = pinnedMessages.length;
+      } else {
+        unseenCount = pinnedMessages.length - 1 - lastSeenIndex;
+      }
+    }
+
     floatIcon.innerHTML = `
       <i class="fas fa-bullhorn"></i>
-      ${badgeCount > 1 ? `<div class="minimized-pin-badge">${badgeCount}</div>` : ''}
+      ${unseenCount > 0 ? `<div class="minimized-pin-badge">${unseenCount}</div>` : ''}
     `;
     return;
   } else {
+    // 最小化されていない（バーが表示されている）状態 = ユーザーが確認したとみなし、lastSeenPinId を更新
+    if (latestMsg) {
+      localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+    }
     // 最小化されていない場合はフローティングアイコンを消去
     if (floatIcon) floatIcon.remove();
   }
@@ -28249,10 +28516,6 @@ function renderPinnedMessages() {
   // LINE完全準拠 アナウンスコンテナ
   const container = document.createElement("div");
   container.className = "pinned-announcement-container";
-
-  // 最新（直近）のピン留めメッセージ
-  const latestMsg = pinnedMessages[pinnedMessages.length - 1];
-  const count = pinnedMessages.length;
 
   const headerRow = document.createElement("div");
   headerRow.className = "pinned-announcement-header";
@@ -28309,16 +28572,16 @@ function renderPinnedMessages() {
   headerRow.appendChild(actionsWrap);
   container.appendChild(headerRow);
 
-  // 複数件のアナウンス展開アコーディオンリスト
+  // 複数件のアナウンス展開アコーディオンリスト（一番上に latestMsg があるため、過去ピンのみ表示して二重表示を解消）
   if (isPinnedMessagesExpanded && count > 1) {
     const listWrap = document.createElement("div");
     listWrap.className = "pinned-announcement-list";
 
-    // 新しい順（最新が上）で一覧表示
-    const reversedPins = [...pinnedMessages].reverse();
-    reversedPins.forEach((msg) => {
+    // 最新以外の過去ピン留めメッセージを新しい順（直近が上）で一覧表示
+    const pastPins = [...pinnedMessages].reverse().filter(msg => msg.id !== latestMsg.id);
+    pastPins.forEach((msg) => {
       const itemRow = document.createElement("div");
-      itemRow.className = "pinned-announcement-item" + (msg.id === latestMsg.id ? " active-latest" : "");
+      itemRow.className = "pinned-announcement-item";
 
       const itemIcon = document.createElement("div");
       itemIcon.className = "announcement-item-icon";
@@ -30334,6 +30597,32 @@ window.emergencyCheckUpdate = async function (btn) {
 };
 
 // === 全体お知らせ・What's New 配信＆表示システム ===
+window.selectAnnouncementCategory = function (val, label, iconClass) {
+  const hiddenInput = document.getElementById("announcementCategorySelect");
+  const labelEl = document.getElementById("announcementCategorySelectedLabel");
+  const customWrapper = document.getElementById("announcementCustomCategoryWrapper");
+
+  if (hiddenInput) hiddenInput.value = val;
+  if (labelEl) {
+    labelEl.innerHTML = `<i class="${iconClass} text-xs opacity-70"></i>${label}`;
+  }
+
+  document.querySelectorAll('#announcementCategorySelectContainer .covo-select-option').forEach(opt => {
+    opt.classList.toggle('selected', opt.getAttribute('data-value') === val);
+  });
+
+  if (customWrapper) {
+    if (val === 'custom') {
+      customWrapper.classList.remove('hidden');
+      document.getElementById('announcementCustomCategoryInput')?.focus();
+    } else {
+      customWrapper.classList.add('hidden');
+    }
+  }
+
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+};
+
 window.loadAdminAnnouncements = async function () {
   const listEl = document.getElementById("adminAnnouncementsList");
   if (!listEl) return;
@@ -30351,11 +30640,13 @@ window.loadAdminAnnouncements = async function () {
       const data = d.data();
       const dt = data.publishedAt?.toDate ? data.publishedAt.toDate().toLocaleDateString() : '不明';
       const item = document.createElement("div");
-      item.className = "p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm text-xs flex items-center justify-between gap-3";
+      item.className = "p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xs text-xs flex items-center justify-between gap-3";
       
-      let badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">${escapeHtml(data.version || 'UPDATE')}</span>`;
-      if (data.category === 'bugfix') badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">BUGFIX</span>`;
-      if (data.category === 'notice') badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">NOTICE</span>`;
+      let badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1"><i class="fas fa-sparkles text-[9px]"></i>${escapeHtml(data.version || 'UPDATE')}</span>`;
+      if (data.category === 'bugfix') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 flex items-center gap-1"><i class="fas fa-wrench text-[9px]"></i>BUGFIX</span>`;
+      else if (data.category === 'notice') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 flex items-center gap-1"><i class="fas fa-circle-exclamation text-[9px]"></i>NOTICE</span>`;
+      else if (data.category && data.category !== 'update' && data.category !== 'none') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-tag text-[9px]"></i>${escapeHtml(data.category)}</span>`;
+      else if (!data.category || data.category === 'none') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">${escapeHtml(data.version || 'お知らせ')}</span>`;
 
       item.innerHTML = `
         <div class="flex-1 min-w-0">
@@ -30380,12 +30671,19 @@ window.loadAdminAnnouncements = async function () {
 window.publishAdminAnnouncement = async function () {
   const versionInput = document.getElementById("announcementVersionInput");
   const catSelect = document.getElementById("announcementCategorySelect");
+  const customCatInput = document.getElementById("announcementCustomCategoryInput");
   const titleInput = document.getElementById("announcementTitleInput");
   const contentInput = document.getElementById("announcementContentInput");
   const btn = document.getElementById("publishAnnouncementButton");
 
   const version = versionInput?.value.trim() || _appVersion || "v最新";
-  const category = catSelect?.value || "update";
+  let category = catSelect?.value || "update";
+  if (category === "custom") {
+    category = customCatInput?.value.trim() || "";
+  } else if (category === "none") {
+    category = "";
+  }
+
   const title = titleInput?.value.trim();
   const content = contentInput?.value.trim();
 
@@ -30399,7 +30697,7 @@ window.publishAdminAnnouncement = async function () {
 
   try {
     const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    await addDoc(collection(db, `artifacts/${appId}/announcements`), {
+    const docRef = await addDoc(collection(db, `artifacts/${appId}/announcements`), {
       version,
       category,
       title,
@@ -30409,8 +30707,25 @@ window.publishAdminAnnouncement = async function () {
       active: true
     });
 
+    // RTDBに軽量トリガー（数十バイト）のみを書き込み、全ユーザーへリアルタイム配信通知をブロードキャスト（超省通信）
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await set(ref(rtdb, `artifacts/${appId}/latestAnnouncement`), {
+        id: docRef.id,
+        version,
+        title,
+        category,
+        content,
+        publishedAt: Date.now()
+      });
+    } catch (rtdbErr) {
+      console.warn("RTDB announcement trigger error:", rtdbErr);
+    }
+
     titleInput.value = "";
     contentInput.value = "";
+    if (customCatInput) customCatInput.value = "";
     alertMessage("全体にお知らせを配信しました！", "success");
     loadAdminAnnouncements();
   } catch (e) {
@@ -30418,7 +30733,7 @@ window.publishAdminAnnouncement = async function () {
     alertMessage("配信に失敗しました: " + e.message, "error");
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-paper-plane"></i> 全体に配信する';
+    btn.innerHTML = '<i class="fas fa-paper-plane text-xs"></i> 全体に配信する';
   }
 };
 
@@ -30434,6 +30749,30 @@ window.deleteAdminAnnouncement = async function (id) {
     alertMessage("削除に失敗しました", "error");
   }
 };
+
+let _announcementListenerUnsub = null;
+async function setupGlobalAnnouncementListener() {
+  if (_announcementListenerUnsub) return;
+  try {
+    const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const annRef = ref(rtdb, `artifacts/${appId}/latestAnnouncement`);
+    
+    const onAnn = (snap) => {
+      const data = snap.val();
+      if (!data || !data.id) return;
+      const lastSeenId = localStorage.getItem('covo_last_seen_announcement_id');
+      if (lastSeenId !== data.id && data.active !== false) {
+        showAnnouncementModal(data, data.id);
+      }
+    };
+    onValue(annRef, onAnn);
+    _announcementListenerUnsub = () => off(annRef, 'value', onAnn);
+  } catch (e) {
+    console.warn("setupGlobalAnnouncementListener error, fallback to checkLatestAnnouncement:", e);
+    checkLatestAnnouncement();
+  }
+}
 
 window.checkLatestAnnouncement = async function () {
   try {
@@ -30466,7 +30805,9 @@ window.showAnnouncementModal = function (data, id) {
   if (verEl) verEl.textContent = data.version || "";
   if (titleEl) titleEl.textContent = data.title || "最新アップデートのお知らせ";
   if (dateEl) {
-    const dt = data.publishedAt?.toDate ? data.publishedAt.toDate().toLocaleDateString() : '';
+    let dt = '';
+    if (data.publishedAt?.toDate) dt = data.publishedAt.toDate().toLocaleDateString();
+    else if (typeof data.publishedAt === 'number') dt = new Date(data.publishedAt).toLocaleDateString();
     dateEl.textContent = dt;
   }
   if (contentEl) contentEl.textContent = data.content || "";
@@ -30479,7 +30820,11 @@ window.showAnnouncementModal = function (data, id) {
     } else if (data.category === 'notice') {
       typeBadge.textContent = "NOTICE";
       typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/30 text-red-200 tracking-wider uppercase";
-      if (iconEl) iconEl.className = "fas fa-exclamation-triangle";
+      if (iconEl) iconEl.className = "fas fa-circle-exclamation";
+    } else if (data.category && data.category !== 'update' && data.category !== 'none') {
+      typeBadge.textContent = data.category.toUpperCase();
+      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase";
+      if (iconEl) iconEl.className = "fas fa-tag";
     } else {
       typeBadge.textContent = "UPDATE";
       typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase";
@@ -31801,9 +32146,11 @@ document.addEventListener("keydown", (e) => {
       setDiscordUIMode(isDiscordMode);
     }
 
-    // 6. 全体お知らせ (What's New) のチェック
+    // 6. 全体お知らせ (What's New) のリアルタイムリスナー＆初期チェック起動
     setTimeout(() => {
-      if (typeof checkLatestAnnouncement === 'function') {
+      if (typeof setupGlobalAnnouncementListener === 'function') {
+        setupGlobalAnnouncementListener();
+      } else if (typeof checkLatestAnnouncement === 'function') {
         checkLatestAnnouncement();
       }
     }, 1500);
@@ -31818,7 +32165,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.70",
+  "version": "1.1.71",
   "force": false
 }
 </file>
@@ -31827,7 +32174,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.70",
+  "version": "1.1.71",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

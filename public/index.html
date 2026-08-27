@@ -807,75 +807,99 @@
       
   <!-- 共有管理者コンテンツ -->
   <div id="adminPanelSharedContent" class="hidden">
-    <div class="flex border-b border-gray-100 dark:border-gray-800 mb-4 flex-wrap gap-y-1">
-      <button id="adminTabAllowedBtn" class="py-2 px-3 text-sm font-semibold border-b-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-gray-200 transition-colors mr-2"><i class="fas fa-envelope mr-1.5 text-xs"></i>許可リスト</button>
-      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-user-shield mr-1.5 text-xs"></i>管理者</button>
-      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-list-check mr-1.5 text-xs"></i>リスト管理者</button>
-      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3 text-sm font-semibold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mr-2"><i class="fas fa-bullhorn mr-1.5 text-xs"></i>お知らせ配信</button>
+    <!-- モダンなピル型タブ（ダークモード完全対応） -->
+    <div class="flex gap-1.5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl mb-4 flex-wrap border border-gray-200/60 dark:border-gray-700/60">
+      <button id="adminTabAllowedBtn" class="py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-sm"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
+      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
+      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
+      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
     </div>
     
-    <div class="pr-2">
+    <div class="pr-1 space-y-4">
       <div id="adminTabAllowedContent" class="space-y-4">
-        <p class="text-xs text-gray-400 leading-relaxed">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addAllowedEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addAllowedEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="allowedEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAdminsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="adminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabListAdminsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
         <div class="flex gap-2">
-          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none focus:border-gray-400" />
-          <button id="addListAdminEmailButton" class="px-4 py-2 bg-gray-900 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-semibold rounded-lg">追加</button>
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
+          <button id="addListAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAnnouncementsContent" class="space-y-4 hidden">
-        <p class="text-xs text-gray-400 leading-relaxed">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
-        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-200 dark:border-gray-700/60">
+        <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
+        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-5 rounded-2xl border border-gray-200 dark:border-gray-700/60 shadow-sm">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">バージョン</label>
-              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">バージョン</label>
+              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm font-mono" />
             </div>
             <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">カテゴリ</label>
-              <select id="announcementCategorySelect" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none">
-                <option value="update">🚀 新機能・改善 (UPDATE)</option>
-                <option value="bugfix">🐛 バグ修正 (BUG FIX)</option>
-                <option value="notice">⚠️ 重要なお知らせ (NOTICE)</option>
-              </select>
+              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">カテゴリー</label>
+              <!-- 独自UIカスタムプルダウン（単色シンプルアイコン仕様） -->
+              <div class="covo-custom-select w-full" id="announcementCategorySelectContainer">
+                <div class="covo-select-trigger" onclick="toggleCustomDropdown('announcementCategorySelectContainer')">
+                  <span id="announcementCategorySelectedLabel" class="flex items-center gap-2">
+                    <i class="fas fa-sparkles text-xs opacity-70"></i>新機能・改善 (UPDATE)
+                  </span>
+                  <i class="fas fa-chevron-down text-xs opacity-60"></i>
+                </div>
+                <div class="covo-select-options">
+                  <div class="covo-select-option selected" data-value="update" onclick="selectAnnouncementCategory('update', '新機能・改善 (UPDATE)', 'fas fa-sparkles')">
+                    <span class="flex items-center gap-2"><i class="fas fa-sparkles text-xs opacity-70"></i>新機能・改善 (UPDATE)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="bugfix" onclick="selectAnnouncementCategory('bugfix', 'バグ修正 (BUG FIX)', 'fas fa-wrench')">
+                    <span class="flex items-center gap-2"><i class="fas fa-wrench text-xs opacity-70"></i>バグ修正 (BUG FIX)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="notice" onclick="selectAnnouncementCategory('notice', '重要なお知らせ (NOTICE)', 'fas fa-circle-exclamation')">
+                    <span class="flex items-center gap-2"><i class="fas fa-circle-exclamation text-xs opacity-70"></i>重要なお知らせ (NOTICE)</span>
+                  </div>
+                  <div class="covo-select-option" data-value="none" onclick="selectAnnouncementCategory('none', 'カテゴリーなし', 'fas fa-minus')">
+                    <span class="flex items-center gap-2"><i class="fas fa-minus text-xs opacity-70"></i>カテゴリーなし</span>
+                  </div>
+                  <div class="covo-select-option" data-value="custom" onclick="selectAnnouncementCategory('custom', 'カスタム指定...', 'fas fa-pen')">
+                    <span class="flex items-center gap-2"><i class="fas fa-pen text-xs opacity-70"></i>カスタム指定...</span>
+                  </div>
+                </div>
+                <input type="hidden" id="announcementCategorySelect" value="update" />
+              </div>
+              <div id="announcementCustomCategoryWrapper" class="hidden mt-2">
+                <input type="text" id="announcementCustomCategoryInput" placeholder="カスタムカテゴリ名（例: メンテナンス）" class="w-full px-3.5 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
+              </div>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">タイトル</label>
-            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none" />
+            <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">タイトル</label>
+            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">内容</label>
-            <textarea id="announcementContentInput" rows="4" placeholder="・新機能の概要&#10;・修正されたバグの内容&#10;・注意点など" class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-gray-200 focus:outline-none resize-none"></textarea>
+            <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">内容</label>
+            <textarea id="announcementContentInput" rows="4" placeholder="・新機能の概要&#10;・修正されたバグの内容&#10;・注意点など" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none shadow-sm"></textarea>
           </div>
-          <button id="publishAnnouncementButton" onclick="publishAdminAnnouncement()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow transition-all flex items-center justify-center gap-2">
-            <i class="fas fa-paper-plane"></i> 全体に配信する
+          <!-- ライト/ダーク両モードに最適化された全体配信ボタン -->
+          <button id="publishAnnouncementButton" onclick="publishAdminAnnouncement()" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+            <i class="fas fa-paper-plane text-xs"></i> 全体に配信する
           </button>
         </div>
         <div>
-          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">配信済みお知らせ一覧</h4>
+          <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">配信済みお知らせ一覧</h4>
           <div id="adminAnnouncementsList" class="space-y-2"></div>
         </div>
       </div>
-
-
-
     </div>
     
     <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
@@ -889,33 +913,54 @@
   <div id="storageSharedContent" class="hidden">
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <p class="text-xs text-gray-400 leading-relaxed">添付ファイルのストレージ使用状況</p>
-        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors">
+        <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">添付ファイルのストレージ使用状況</p>
+        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-xl transition-all shadow-sm">
           <i class="fas fa-sync-alt text-xs"></i>更新
         </button>
       </div>
-      <div style="background:#1e293b;" class="rounded-2xl p-4">
-        <div class="flex items-center gap-2 mb-3">
-          <i class="fas fa-server text-white text-sm"></i>
-          <span class="text-white text-sm font-bold">Cloudflare Workers KV</span>
-          <span class="ml-auto text-white/40 text-xs">上限 1 GB</span>
+
+      <!-- iPhone風ストレージ使用量メーター -->
+      <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-200 dark:border-gray-700/60 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-hard-drive text-indigo-500 dark:text-indigo-400 text-base"></i>
+            <span class="text-gray-900 dark:text-white text-sm font-bold">ストレージ容量</span>
+          </div>
+          <span id="kvUsageText" class="text-gray-600 dark:text-gray-300 text-xs font-bold font-mono">読み込み中...</span>
         </div>
-        <div style="background:rgba(255,255,255,0.12);" class="rounded-full h-2.5 overflow-hidden mb-2">
-          <div id="kvUsageBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:rgba(255,255,255,0.85);"></div>
+
+        <!-- マルチカラーセグメントバー (iPhone風) -->
+        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden flex shadow-inner relative" id="storageSegmentsBar">
+          <div id="seg-images" class="h-full bg-blue-500 transition-all duration-500" style="width: 0%" title="画像"></div>
+          <div id="seg-videos" class="h-full bg-purple-500 transition-all duration-500" style="width: 0%" title="動画・音声"></div>
+          <div id="seg-documents" class="h-full bg-amber-500 transition-all duration-500" style="width: 0%" title="書類・PDF"></div>
+          <div id="seg-avatars" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%" title="アイコン"></div>
+          <div id="seg-stamps" class="h-full bg-pink-500 transition-all duration-500" style="width: 0%" title="スタンプ"></div>
+          <div id="seg-others" class="h-full bg-slate-400 transition-all duration-500" style="width: 0%" title="その他"></div>
         </div>
-        <div class="flex justify-between items-center">
-          <span id="kvUsageText" class="text-white/70 text-xs">読み込み中...</span>
-          <span id="kvFileCount" class="text-white/40 text-xs"></span>
+
+        <!-- 凡例 (Legends) -->
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0"></span><span class="truncate">画像</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 flex-shrink-0"></span><span class="truncate">動画</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0"></span><span class="truncate">書類</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0"></span><span class="truncate">アイコン</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-pink-500 flex-shrink-0"></span><span class="truncate">スタンプ</span></div>
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-400 flex-shrink-0"></span><span class="truncate">その他</span></div>
         </div>
       </div>
-      <div class="pt-2 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
-        <button id="bulkDeleteMessagesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2" style="background:#1e293b;color:rgba(255,255,255,0.9);">
-          <i class="fas fa-file-image"></i> 添付ファイルのみを一括削除
+
+      <!-- カテゴリ別内訳リスト & 個別削除ボタン -->
+      <div class="space-y-2" id="storageCategoryItemsList"></div>
+
+      <!-- 一括削除アクション -->
+      <div class="pt-3 border-t border-gray-100 dark:border-gray-700/60 space-y-2">
+        <button id="bulkDeleteMessagesBtn" class="w-full py-3 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 active:scale-98">
+          <i class="fas fa-paperclip"></i> 添付ファイルのみを一括削除 (アイコン・スタンプは保持)
         </button>
-        <button id="bulkDeleteAllFilesBtn" class="w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 mt-2" style="background:#4b111b;color:rgba(255,255,255,0.8);">
-          <i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)
+        <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/40 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
+          <i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)
         </button>
-        <p class="text-xs text-gray-400 mt-2 text-center">ストレージの管理を行えます</p>
       </div>
     </div>
   </div>
@@ -2300,8 +2345,8 @@
     </div>
   </div>
 
-  <!-- 通話相手選択モーダル -->
-  <div id="callPickerModal" onclick="closeCallPicker()">
+  <!-- 通話・ファイル共有相手選択モーダル（スマホはボトムシート統一） -->
+  <div id="callPickerModal" class="bottom-sheet-overlay" onclick="closeCallPicker()">
     <div class="call-picker-box covo-bottom-sheet" onclick="event.stopPropagation()">
       <div class="call-picker-handle" id="callPickerHandle">
         <div class="bottom-sheet-handle-bar"></div>
@@ -2401,12 +2446,20 @@
   
   <!-- ===== Mobile Profile Screen ===== -->
   <div id="mobileProfileScreen">
-    <div class="mobile-profile-header">
-      <div class="mobile-detail-back mr-2 text-white cursor-pointer" onclick="closeMobileProfileScreen()"><i class="fas fa-chevron-left text-lg"></i></div>
-      <div class="mobile-profile-avatar" id="mobileProfileAvatar"></div>
-      <div class="flex-1 min-w-0">
-        <div class="mobile-profile-name" id="mobileProfileName">...</div>
-        <div class="mobile-profile-sub">設定</div>
+    <div class="mobile-profile-header flex items-center justify-between">
+      <div class="mobile-detail-back text-white cursor-pointer flex items-center gap-2" onclick="closeMobileProfileScreen()">
+        <i class="fas fa-chevron-left text-lg"></i>
+      </div>
+      <span class="text-white font-bold text-base flex-1 text-center pr-6">設定</span>
+    </div>
+    <!-- ユーザー情報サマリーカード -->
+    <div class="mobile-settings-section mt-3">
+      <div class="p-4 bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-200/80 dark:border-white/5 flex items-center gap-3.5 shadow-sm">
+        <div class="mobile-profile-avatar w-12 h-12 rounded-full overflow-hidden flex-shrink-0" id="mobileProfileAvatar"></div>
+        <div class="flex-1 min-w-0">
+          <div class="mobile-profile-name text-base font-bold text-gray-900 dark:text-white truncate" id="mobileProfileName"></div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 font-medium truncate mt-0.5">オンライン</div>
+        </div>
       </div>
     </div>
     <div class="mobile-settings-section">
@@ -2637,26 +2690,39 @@
     </div>
   </div>
 
-<!-- 全体お知らせ / What's New モーダル -->
+<!-- 全体お知らせ / What's New モーダル（洗練されたシンプル＆ダーク/ライト完全対応デザイン） -->
   <div id="whatsNewModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4" onclick="if(event.target===this) closeWhatsNewModal()">
-    <div class="bg-white dark:bg-[#313338] border border-gray-200 dark:border-[#202225] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in text-gray-800 dark:text-gray-200 max-h-[85vh]">
-      <div class="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between flex-shrink-0 relative overflow-hidden">
-        <div class="relative z-10">
-          <div class="flex items-center gap-2 mb-1">
-            <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase">UPDATE</span>
-            <span id="whatsNewVersion" class="text-xs font-mono font-bold text-white/90"></span>
+    <div class="whatsnew-card w-full max-w-lg overflow-hidden flex flex-col modal-box animate-pop-in max-h-[85vh] relative" onclick="event.stopPropagation()">
+      <!-- 上品でミニマルなヘッダー -->
+      <div class="whatsnew-header">
+        <div class="flex items-start gap-3.5 flex-1 min-w-0 pr-3">
+          <div id="whatsNewIconWrap" class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors">
+            <i id="whatsNewIcon" class="fas fa-sparkles"></i>
           </div>
-          <h2 id="whatsNewTitle" class="text-xl font-black tracking-tight text-white">最新アップデートのお知らせ</h2>
-          <p id="whatsNewDate" class="text-[11px] text-white/75 mt-0.5"></p>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span id="whatsNewTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase transition-colors">UPDATE</span>
+              <span id="whatsNewVersion" class="text-xs font-mono font-bold text-gray-500 dark:text-gray-400"></span>
+              <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
+              <span id="whatsNewDate" class="text-xs text-gray-400 dark:text-gray-500 font-medium"></span>
+            </div>
+            <h2 id="whatsNewTitle" class="text-lg font-bold text-gray-900 dark:text-white tracking-tight leading-snug truncate">お知らせ</h2>
+          </div>
         </div>
-        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-white text-2xl flex-shrink-0 relative z-10">
-          <i id="whatsNewIcon" class="fas fa-sparkles"></i>
-        </div>
+        <button onclick="closeWhatsNewModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex-shrink-0" title="閉じる">
+          <i class="fas fa-times text-sm"></i>
+        </button>
       </div>
-      <div class="p-6 overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap select-text text-gray-700 dark:text-gray-300 font-sans" id="whatsNewContent"></div>
-      <div class="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#2b2d31]/50 flex-shrink-0">
-        <span class="text-[11px] text-gray-400">アプリ情報からいつでも再確認できます</span>
-        <button onclick="closeWhatsNewModal()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+
+      <!-- 本文エリア -->
+      <div class="p-6 overflow-y-auto flex-1">
+        <div class="whatsnew-body-box select-text font-sans shadow-xs" id="whatsNewContent"></div>
+      </div>
+
+      <!-- フッター -->
+      <div class="whatsnew-footer">
+        <span class="text-[11px] text-gray-400 font-medium hidden sm:inline">アプリ情報からいつでも再確認できます</span>
+        <button onclick="closeWhatsNewModal()" class="w-full sm:w-auto px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95 text-center">
           確認しました
         </button>
       </div>

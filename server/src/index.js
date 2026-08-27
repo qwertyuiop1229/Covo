@@ -1162,6 +1162,29 @@ async function handleServeFile(request, env, url) {
 // -------------------------------------------------------------
 // 管理者: ストレージ使用状況取得
 // -------------------------------------------------------------
+function categorizeKvFile(meta) {
+  const folder = (meta?.folder || '').toLowerCase();
+  const type = (meta?.type || '').toLowerCase();
+  const name = (meta?.name || '').toLowerCase();
+
+  if (folder.includes('avatar') || folder.includes('icon') || folder === 'avatars' || folder === 'icons' || folder === 'server_icons') {
+    return 'avatars';
+  }
+  if (folder.includes('stamp') || folder === 'stamps') {
+    return 'stamps';
+  }
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|heic|heif|bmp|ico)$/i.test(name)) {
+    return 'images';
+  }
+  if (type.startsWith('video/') || type.startsWith('audio/') || /\.(mp4|mov|webm|avi|mkv|mp3|wav|m4a|ogg|aac|flac)$/i.test(name)) {
+    return 'videos';
+  }
+  if (type === 'application/pdf' || type.includes('pdf') || type.includes('document') || type.includes('text') || /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|json|md|zip|tar|gz|7z)$/i.test(name)) {
+    return 'documents';
+  }
+  return 'others';
+}
+
 async function handleStorageStats(request, env) {
   try {
     const authHeader = request.headers.get("Authorization") || "";
@@ -1190,19 +1213,37 @@ async function handleStorageStats(request, env) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const kvStats = { fileCount: 0, totalBytes: 0 };
+    const kvStats = {
+      fileCount: 0,
+      totalBytes: 0,
+      categories: {
+        images: { bytes: 0, count: 0, label: "画像", color: "#3b82f6" },
+        videos: { bytes: 0, count: 0, label: "動画・音声", color: "#a855f7" },
+        documents: { bytes: 0, count: 0, label: "書類・PDF", color: "#f59e0b" },
+        avatars: { bytes: 0, count: 0, label: "アイコン", color: "#10b981" },
+        stamps: { bytes: 0, count: 0, label: "スタンプ", color: "#ec4899" },
+        others: { bytes: 0, count: 0, label: "その他", color: "#64748b" }
+      }
+    };
+
     if (env.FILES) {
       let cursor;
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
-          const folder = key.metadata?.folder || '';
-          if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars') {
-            continue; // Ignore icons/avatars
-          }
+          const meta = key.metadata || {};
+          const size = meta.size || 0;
+          const cat = categorizeKvFile(meta);
+
           kvStats.fileCount++;
-          if (key.metadata && key.metadata.size) {
-            kvStats.totalBytes += key.metadata.size;
+          kvStats.totalBytes += size;
+
+          if (kvStats.categories[cat]) {
+            kvStats.categories[cat].bytes += size;
+            kvStats.categories[cat].count++;
+          } else {
+            kvStats.categories.others.bytes += size;
+            kvStats.categories.others.count++;
           }
         }
         cursor = listed.cursor;
@@ -1221,7 +1262,7 @@ async function handleStorageStats(request, env) {
 }
 
 // -------------------------------------------------------------
-// 管理者: 全ファイル一括削除
+// 管理者: 全ファイル・カテゴリ別一括削除
 // -------------------------------------------------------------
 async function handleBulkDeleteFiles(request, env) {
   try {
@@ -1259,22 +1300,42 @@ async function handleBulkDeleteFiles(request, env) {
       do {
         const listed = await env.FILES.list({ cursor, limit: 1000 });
         for (const key of listed.keys) {
-          const folder = key.metadata?.folder || '';
+          const meta = key.metadata || {};
+          const folder = (meta.folder || '').toLowerCase();
+          const cat = categorizeKvFile(meta);
 
-          if (deleteType === "messages_only") {
-             if (folder !== 'simplechat/messages') continue;
-          } else if (deleteType === "all_safe") {
-             if (folder === 'simplechat/avatars' || folder === 'icons' || folder === 'avatars' || 
-                 folder === 'stamps' || folder === 'simplechat/stamps' || 
-                 folder === 'server_icons' || folder === 'simplechat/server_icons') {
-               continue;
-             }
+          let shouldDelete = false;
+
+          if (deleteType === "messages_only" || deleteType === "all_safe") {
+            // アイコンとスタンプは100%保護し、チャット添付ファイルのみ削除
+            if (cat !== "avatars" && cat !== "stamps" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "images_only") {
+            if (cat === "images" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "videos_only") {
+            if (cat === "videos") {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "documents_only") {
+            if (cat === "documents") {
+              shouldDelete = true;
+            }
+          } else if (deleteType === "stamps_only") {
+            if (cat === "stamps" || folder.includes('stamp')) {
+              shouldDelete = true;
+            }
           } else if (deleteType === "all_danger") {
-             // No protection, delete everything
+            // 完全初期化: 全ファイルを残さず完全削除
+            shouldDelete = true;
           }
 
-          await env.FILES.delete(key.name);
-          kvDeleted++;
+          if (shouldDelete) {
+            await env.FILES.delete(key.name);
+            kvDeleted++;
+          }
         }
         cursor = listed.cursor;
         if (listed.list_complete) break;

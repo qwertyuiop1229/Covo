@@ -1125,9 +1125,8 @@ if (openAdminModalBtn) {
 // ストレージ統計
 
 async function loadStorageStats() {
-  const kvBar = document.getElementById('kvUsageBar');
   const kvText = document.getElementById('kvUsageText');
-  const kvCount = document.getElementById('kvFileCount');
+  const catList = document.getElementById('storageCategoryItemsList');
   if (!kvText) return;
   kvText.textContent = '読み込み中...';
   try {
@@ -1138,22 +1137,108 @@ async function loadStorageStats() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    // KV（Cloudflare）
+    
+    // KV（Cloudflare 1GB）
     const kvLimitBytes = 1 * 1024 * 1024 * 1024;
     const kvUsed = data.kv?.totalBytes || 0;
-    const kvPct = Math.min((kvUsed / kvLimitBytes) * 100, 100);
-    kvBar.style.width = kvPct + '%';
-    kvText.textContent = formatBytes(kvUsed) + ' / 1 GB';
-    kvCount.textContent = (data.kv?.fileCount || 0) + ' ファイル';
+    kvText.textContent = `${formatBytes(kvUsed)} / 1 GB (${((kvUsed / kvLimitBytes) * 100).toFixed(1)}%)`;
+
+    // iPhone風マルチカラーセグメントバーの更新
+    const categories = data.kv?.categories || {};
+    const segImages = document.getElementById('seg-images');
+    const segVideos = document.getElementById('seg-videos');
+    const segDocs = document.getElementById('seg-documents');
+    const segAvatars = document.getElementById('seg-avatars');
+    const segStamps = document.getElementById('seg-stamps');
+    const segOthers = document.getElementById('seg-others');
+
+    const getPct = (bytes) => (Math.max(0, Math.min(100, (bytes / kvLimitBytes) * 100))).toFixed(2) + '%';
+
+    if (segImages) segImages.style.width = getPct(categories.images?.bytes || 0);
+    if (segVideos) segVideos.style.width = getPct(categories.videos?.bytes || 0);
+    if (segDocs) segDocs.style.width = getPct(categories.documents?.bytes || 0);
+    if (segAvatars) segAvatars.style.width = getPct(categories.avatars?.bytes || 0);
+    if (segStamps) segStamps.style.width = getPct(categories.stamps?.bytes || 0);
+    if (segOthers) segOthers.style.width = getPct(categories.others?.bytes || 0);
+
+    // カテゴリ別内訳リスト＆個別削除ボタンの描画
+    if (catList) {
+      catList.innerHTML = '';
+      const catDefs = [
+        { key: 'images', label: '画像ファイル', icon: 'fa-file-image', color: 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/20', deleteType: 'images_only' },
+        { key: 'videos', label: '動画・音声', icon: 'fa-file-video', color: 'text-purple-500 bg-purple-500/10 dark:bg-purple-500/20', deleteType: 'videos_only' },
+        { key: 'documents', label: '書類・PDF', icon: 'fa-file-lines', color: 'text-amber-500 bg-amber-500/10 dark:bg-amber-500/20', deleteType: 'documents_only' },
+        { key: 'avatars', label: 'アイコン画像', icon: 'fa-user-circle', color: 'text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/20', deleteType: 'avatars_only' },
+        { key: 'stamps', label: 'スタンプ', icon: 'fa-icons', color: 'text-pink-500 bg-pink-500/10 dark:bg-pink-500/20', deleteType: 'stamps_only' },
+        { key: 'others', label: 'その他ファイル', icon: 'fa-folder', color: 'text-slate-400 bg-slate-500/10 dark:bg-slate-500/20', deleteType: 'others_only' }
+      ];
+
+      catDefs.forEach(def => {
+        const catData = categories[def.key] || { bytes: 0, count: 0 };
+        const row = document.createElement('div');
+        row.className = 'p-3 bg-white dark:bg-gray-800/80 rounded-xl border border-gray-100 dark:border-gray-700/60 flex items-center justify-between gap-3 shadow-xs';
+        
+        row.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-sm ${def.color} flex-shrink-0">
+              <i class="fas ${def.icon}"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${def.label}</div>
+              <div class="text-[10px] text-gray-400 font-medium">${catData.count} 件 • ${formatBytes(catData.bytes)}</div>
+            </div>
+          </div>
+          <button onclick="deleteStorageCategory('${def.deleteType}', '${def.label}')" ${catData.count === 0 ? 'disabled' : ''} class="px-2.5 py-1 text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 dark:hover:bg-red-600 disabled:opacity-30 disabled:pointer-events-none rounded-lg border border-red-200 dark:border-red-800/40 transition-all flex items-center gap-1 flex-shrink-0">
+            <i class="fas fa-trash text-[10px]"></i> 削除
+          </button>
+        `;
+        catList.appendChild(row);
+      });
+    }
   } catch (e) {
-    kvText.textContent = '取得に失敗しました';
+    if (kvText) kvText.textContent = '取得に失敗しました';
     console.error('[storageStats] fetch error:', e);
   }
 }
 
-document.getElementById('refreshStorageStatsBtn').addEventListener('click', loadStorageStats);
+window.deleteStorageCategory = async function(deleteType, label) {
+  const confirmed = await showCustomConfirm(
+    `「${label}」のみを一括削除しますか？`,
+    '削除する',
+    'キャンセル',
+    'このカテゴリに属するファイルが完全に削除されます。'
+  );
+  if (!confirmed) return;
 
-async function cleanupFirestoreMessages() {
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+  if (!idToken) return;
+
+  try {
+    const res = await fetch(`${WORKER_BASE_URL}/api/admin/bulkDeleteFiles?appId=${appId}&deleteType=${deleteType}`, {
+      method: 'DELETE',
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      // 添付ファイル系であればFirestoreメッセージの参照もクリーンアップ
+      let msgDeleted = 0;
+      if (deleteType === 'images_only' || deleteType === 'videos_only' || deleteType === 'documents_only') {
+        msgDeleted = await cleanupFirestoreMessages(deleteType);
+      }
+      alertMessage(`${label}を削除しました (KV ${data.kvDeleted}件${msgDeleted > 0 ? `、メッセージ ${msgDeleted}件` : ''})`, 'success');
+      loadStorageStats();
+    } else {
+      alertMessage('削除に失敗しました: ' + (data.error || '不明なエラー'), 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    alertMessage('通信エラーが発生しました', 'error');
+  }
+};
+
+document.getElementById('refreshStorageStatsBtn')?.addEventListener('click', loadStorageStats);
+
+async function cleanupFirestoreMessages(filterType = null) {
   let msgDeleted = 0;
   try {
     const kvWorkerPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/[A-Za-z0-9_]+');
@@ -1165,10 +1250,23 @@ async function cleanupFirestoreMessages() {
         for (const msgDoc of msgsSnap.docs) {
           const d = msgDoc.data();
           const hasKvFile = d.kvFileUrl || (d.text && kvWorkerPattern.test(d.text));
-          // fileData が Cloudflare(KV) URL の画像・ファイル（新形式）も対象に含める
           const hasFileDataKv = d.fileData && d.fileData.indexOf('/api/file/') >= 0;
           const hasCloudinaryFile = d.fileData && d.fileData.includes('res.cloudinary.com');
+
+          let shouldDelete = false;
           if (hasKvFile || hasFileDataKv || hasCloudinaryFile) {
+            if (!filterType) {
+              shouldDelete = true;
+            } else if (filterType === 'images_only' && d.fileType && d.fileType.startsWith('image/')) {
+              shouldDelete = true;
+            } else if (filterType === 'videos_only' && d.fileType && (d.fileType.startsWith('video/') || d.fileType.startsWith('audio/'))) {
+              shouldDelete = true;
+            } else if (filterType === 'documents_only' && d.fileType && (d.fileType.includes('pdf') || d.fileType.includes('document') || d.fileType.includes('text'))) {
+              shouldDelete = true;
+            }
+          }
+
+          if (shouldDelete) {
             await deleteDoc(msgDoc.ref);
             msgDeleted++;
           }
@@ -1181,8 +1279,8 @@ async function cleanupFirestoreMessages() {
   return msgDeleted;
 }
 
-document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async () => {
-  const first = await showCustomConfirm('チャットの「添付ファイルのみ」を削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等のシステムファイルは保持されます。');
+document.getElementById('bulkDeleteMessagesBtn')?.addEventListener('click', async () => {
+  const first = await showCustomConfirm('チャットの「添付ファイルのみ」を一括削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプ等の基本ファイルは完全に保護されます。');
   if (!first) return;
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
@@ -1199,7 +1297,7 @@ document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async
     if (data.success) {
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
       const msgDeleted = await cleanupFirestoreMessages();
-      alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+      alertMessage(`添付ファイル削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
       loadStorageStats();
     } else {
       alertMessage('削除に失敗しました: ' + data.error, 'error');
@@ -1209,14 +1307,14 @@ document.getElementById('bulkDeleteMessagesBtn').addEventListener('click', async
     alertMessage('通信エラーが発生しました', 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-file-image"></i> 添付ファイルのみを一括削除';
+    btn.innerHTML = '<i class="fas fa-paperclip"></i> 添付ファイルのみを一括削除 (アイコン・スタンプは保持)';
   }
 });
 
-document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async () => {
-  const first = await showCustomConfirm('【警告】アイコンやスタンプも含めた全ファイルを完全に削除しますか？', '削除する', 'キャンセル', 'この操作は取り消せません。');
+document.getElementById('bulkDeleteAllFilesBtn')?.addEventListener('click', async () => {
+  const first = await showCustomConfirm('【警告】全ファイルを1つも残さず完全に削除しますか？', '削除する', 'キャンセル', 'アイコンやスタンプを含むすべてのストレージファイルが完全に消去されます。');
   if (!first) return;
-  const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'ユーザーアイコンやサーバーアイコン等も無効になります。');
+  const second = await showCustomConfirm('本当によろしいですか？', '全て削除', 'キャンセル', 'この操作は絶対に取り消せません。');
   if (!second) return;
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
@@ -1233,7 +1331,7 @@ document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async
     if (data.success) {
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> メッセージ削除中...';
       const msgDeleted = await cleanupFirestoreMessages();
-      alertMessage(`削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
+      alertMessage(`全削除完了: KV ${data.kvDeleted} ファイル、メッセージ ${msgDeleted} 件`, 'success');
       loadStorageStats();
     } else {
       alertMessage('削除に失敗しました: ' + data.error, 'error');
@@ -1243,7 +1341,7 @@ document.getElementById('bulkDeleteAllFilesBtn').addEventListener('click', async
     alertMessage('通信エラーが発生しました', 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-skull-crossbones"></i> 全ファイルを一括削除 (危険)';
+    btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)';
   }
 });
 
@@ -1953,12 +2051,11 @@ function updateMobileProfileScreen() {
   const at = document.getElementById('mobileAvatarText');
   const ap = document.getElementById('mobileAvatarPreview');
   const ni = document.getElementById('mobileNicknameInput');
-  if (ne) ne.textContent = userNickname || '';
-  if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname);
+  if (ne) ne.textContent = userNickname || 'ユーザー';
+  if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname, { style: 'width:100%;height:100%;object-fit:cover;' });
   if (at) at.textContent = (userNickname || '?').charAt(0).toUpperCase();
   if (ap) {
     if (isUsableAvatarUrl(userAvatarUrl)) {
-      const _u = userAvatarUrl;
       try { ap.referrerPolicy = 'no-referrer'; } catch (_) { }
       try { ap.decoding = 'async'; } catch (_) { }
       ap.onerror = function () {
@@ -1971,7 +2068,13 @@ function updateMobileProfileScreen() {
     }
   }
   if (ni) ni.value = userNickname || '';
-  if (isAdmin || isListAdmin) { const as2 = document.getElementById('mobileAdminRowSection'); if (as2) as2.style.display = ''; }
+  if (isAdmin || isListAdmin) {
+    const as2 = document.getElementById('mobileAdminRowSection');
+    if (as2) {
+      as2.style.display = '';
+      as2.classList.remove('hidden');
+    }
+  }
 }
 
 window.mobileProfileSave = async function () {
@@ -9830,29 +9933,38 @@ document.addEventListener("contextmenu", (e) => {
   }
 });
 
-// --- 汎用ボトムシート（Drawer）管理 & ネイティブ風弾力ジェスチャー ---
+// --- 汎用ボトムシート（Drawer）管理 & ネイティブ風慣性・反動スプリングジェスチャー ---
 function initBottomSheetGestures(sheetEl, overlayEl, closeFn, scrollContainerEl) {
   if (!sheetEl) return;
+
   let startY = 0;
   let currentY = 0;
   let isDragging = false;
   let isHandleTouch = false;
-  let startTime = 0;
+  let touchHistory = []; // [{ y, t }]
+  let isAnimating = false;
 
   const getScrollTop = () => scrollContainerEl ? scrollContainerEl.scrollTop : 0;
 
   sheetEl.addEventListener('touchstart', (e) => {
     if (window.innerWidth >= 768) return;
     if (e.touches.length !== 1) return;
+    if (isAnimating) return;
+
     const handle = e.target.closest('.bottom-sheet-handle, .call-picker-handle, #bottomSheetHandle');
     isHandleTouch = !!handle;
 
-    if (isHandleTouch || getScrollTop() <= 0) {
+    const scrollTop = getScrollTop();
+    if (isHandleTouch || scrollTop <= 0) {
       startY = e.touches[0].clientY;
       currentY = startY;
-      startTime = Date.now();
+      touchHistory = [{ y: startY, t: Date.now() }];
       isDragging = true;
       sheetEl.style.transition = 'none';
+      sheetEl.style.willChange = 'transform';
+      if (overlayEl) {
+        overlayEl.style.transition = 'none';
+      }
     } else {
       isDragging = false;
     }
@@ -9862,21 +9974,26 @@ function initBottomSheetGestures(sheetEl, overlayEl, closeFn, scrollContainerEl)
     if (!isDragging || e.touches.length !== 1) return;
     const clientY = e.touches[0].clientY;
     const deltaY = clientY - startY;
+    const now = Date.now();
+
+    touchHistory.push({ y: clientY, t: now });
+    if (touchHistory.length > 5) touchHistory.shift();
 
     if (deltaY < 0) {
-      // 上方向のラバーバンド（弾力抵抗）
+      // 上方向への引っ張り（極上の対数ラバーバンド抵抗）
       if (isHandleTouch || getScrollTop() <= 0) {
         if (e.cancelable) e.preventDefault();
-        const rubber = -Math.min(60, Math.pow(-deltaY, 0.75));
+        const rubber = -Math.min(75, Math.log1p(-deltaY * 0.4) * 18);
         sheetEl.style.transform = `translateY(${rubber}px)`;
+        if (overlayEl) overlayEl.style.opacity = '1';
       }
     } else if (deltaY > 0) {
-      // 下方向へのドラッグ
+      // 下方向へのドラッグ（スムーズな指追従と暗幕フェード）
       if (isHandleTouch || getScrollTop() <= 0) {
         if (e.cancelable) e.preventDefault();
         sheetEl.style.transform = `translateY(${deltaY}px)`;
         if (overlayEl) {
-          const progress = Math.max(0, 1 - deltaY / 350);
+          const progress = Math.max(0, 1 - (deltaY / (window.innerHeight * 0.6)));
           overlayEl.style.opacity = progress.toString();
         }
       } else {
@@ -9889,19 +10006,49 @@ function initBottomSheetGestures(sheetEl, overlayEl, closeFn, scrollContainerEl)
   sheetEl.addEventListener('touchend', (e) => {
     if (!isDragging) return;
     isDragging = false;
-    isHandleTouch = false;
-    const deltaY = (e.changedTouches[0]?.clientY || currentY) - startY;
-    const elapsed = Date.now() - startTime;
-    const velocity = deltaY / (elapsed || 1); // px/ms
+    sheetEl.style.willChange = 'auto';
 
-    sheetEl.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease';
-    if (overlayEl) overlayEl.style.transition = 'opacity 0.35s ease';
+    const endY = e.changedTouches[0]?.clientY || currentY;
+    const deltaY = endY - startY;
+    const now = Date.now();
 
-    if (deltaY > 80 || velocity > 0.45) {
-      closeFn();
+    // 移動履歴から指を離した瞬間の正確なフリック初速度 (px/ms) を算出
+    let velocity = 0;
+    if (touchHistory.length >= 2) {
+      const recent = touchHistory[0];
+      const timeDiff = now - recent.t;
+      if (timeDiff > 0 && timeDiff < 200) {
+        velocity = (endY - recent.y) / timeDiff;
+      }
+    }
+
+    const sheetHeight = sheetEl.offsetHeight || 400;
+    const shouldClose = deltaY > sheetHeight * 0.28 || (deltaY > 35 && velocity > 0.42);
+
+    if (shouldClose) {
+      isAnimating = true;
+      // 速度を引き継ぐスムーズな減速スライドアウト
+      sheetEl.style.transition = 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease';
+      sheetEl.style.transform = 'translateY(100%)';
+      if (overlayEl) {
+        overlayEl.style.transition = 'opacity 0.25s ease';
+        overlayEl.style.opacity = '0';
+      }
+      setTimeout(() => {
+        isAnimating = false;
+        closeFn();
+      }, 260);
     } else {
+      // 心地よい反動スプリング（Spring bounce）で「ポンッ」と跳ね返って元位置に吸着
+      sheetEl.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
       sheetEl.style.transform = 'translateY(0)';
-      if (overlayEl) overlayEl.style.opacity = '1';
+      if (overlayEl) {
+        overlayEl.style.transition = 'opacity 0.25s ease';
+        overlayEl.style.opacity = '1';
+      }
+      setTimeout(() => {
+        sheetEl.style.transition = '';
+      }, 400);
     }
   }, { passive: true });
 }
@@ -10851,7 +10998,7 @@ function _fsCleanup() {
   _fsRecv = null;
 }
 
-// 送信側: 相手選択ピッカーを開く（通話ピッカーと同デザインを流用）
+// 送信側: 相手選択ピッカーを開く（通話ピッカーと同デザインを流用・ボトムシート完全統一）
 window.openFileSharePicker = function () {
   if (!currentServerData || !userId) return;
   const modal = document.getElementById('callPickerModal');
@@ -10869,8 +11016,15 @@ window.openFileSharePicker = function () {
       _fsPickFileAndSend(uid, nameRaw);
     });
   }
-  modal.classList.remove('hidden');
+  const box = modal.querySelector('.call-picker-box');
+  modal.classList.remove('hidden', 'closing');
   modal.classList.add('show');
+  modal.style.opacity = '1';
+  if (box) {
+    box.classList.remove('closing');
+    box.style.transform = '';
+  }
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 };
 
 // ファイル選択 → 送信開始
@@ -12244,6 +12398,32 @@ window.emergencyCheckUpdate = async function (btn) {
 };
 
 // === 全体お知らせ・What's New 配信＆表示システム ===
+window.selectAnnouncementCategory = function (val, label, iconClass) {
+  const hiddenInput = document.getElementById("announcementCategorySelect");
+  const labelEl = document.getElementById("announcementCategorySelectedLabel");
+  const customWrapper = document.getElementById("announcementCustomCategoryWrapper");
+
+  if (hiddenInput) hiddenInput.value = val;
+  if (labelEl) {
+    labelEl.innerHTML = `<i class="${iconClass} text-xs opacity-70"></i>${label}`;
+  }
+
+  document.querySelectorAll('#announcementCategorySelectContainer .covo-select-option').forEach(opt => {
+    opt.classList.toggle('selected', opt.getAttribute('data-value') === val);
+  });
+
+  if (customWrapper) {
+    if (val === 'custom') {
+      customWrapper.classList.remove('hidden');
+      document.getElementById('announcementCustomCategoryInput')?.focus();
+    } else {
+      customWrapper.classList.add('hidden');
+    }
+  }
+
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+};
+
 window.loadAdminAnnouncements = async function () {
   const listEl = document.getElementById("adminAnnouncementsList");
   if (!listEl) return;
@@ -12261,11 +12441,13 @@ window.loadAdminAnnouncements = async function () {
       const data = d.data();
       const dt = data.publishedAt?.toDate ? data.publishedAt.toDate().toLocaleDateString() : '不明';
       const item = document.createElement("div");
-      item.className = "p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm text-xs flex items-center justify-between gap-3";
+      item.className = "p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xs text-xs flex items-center justify-between gap-3";
       
-      let badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">${escapeHtml(data.version || 'UPDATE')}</span>`;
-      if (data.category === 'bugfix') badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">BUGFIX</span>`;
-      if (data.category === 'notice') badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">NOTICE</span>`;
+      let badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1"><i class="fas fa-sparkles text-[9px]"></i>${escapeHtml(data.version || 'UPDATE')}</span>`;
+      if (data.category === 'bugfix') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 flex items-center gap-1"><i class="fas fa-wrench text-[9px]"></i>BUGFIX</span>`;
+      else if (data.category === 'notice') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 flex items-center gap-1"><i class="fas fa-circle-exclamation text-[9px]"></i>NOTICE</span>`;
+      else if (data.category && data.category !== 'update' && data.category !== 'none') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-tag text-[9px]"></i>${escapeHtml(data.category)}</span>`;
+      else if (!data.category || data.category === 'none') badge = `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">${escapeHtml(data.version || 'お知らせ')}</span>`;
 
       item.innerHTML = `
         <div class="flex-1 min-w-0">
@@ -12290,12 +12472,19 @@ window.loadAdminAnnouncements = async function () {
 window.publishAdminAnnouncement = async function () {
   const versionInput = document.getElementById("announcementVersionInput");
   const catSelect = document.getElementById("announcementCategorySelect");
+  const customCatInput = document.getElementById("announcementCustomCategoryInput");
   const titleInput = document.getElementById("announcementTitleInput");
   const contentInput = document.getElementById("announcementContentInput");
   const btn = document.getElementById("publishAnnouncementButton");
 
   const version = versionInput?.value.trim() || _appVersion || "v最新";
-  const category = catSelect?.value || "update";
+  let category = catSelect?.value || "update";
+  if (category === "custom") {
+    category = customCatInput?.value.trim() || "";
+  } else if (category === "none") {
+    category = "";
+  }
+
   const title = titleInput?.value.trim();
   const content = contentInput?.value.trim();
 
@@ -12309,7 +12498,7 @@ window.publishAdminAnnouncement = async function () {
 
   try {
     const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    await addDoc(collection(db, `artifacts/${appId}/announcements`), {
+    const docRef = await addDoc(collection(db, `artifacts/${appId}/announcements`), {
       version,
       category,
       title,
@@ -12319,8 +12508,25 @@ window.publishAdminAnnouncement = async function () {
       active: true
     });
 
+    // RTDBに軽量トリガー（数十バイト）のみを書き込み、全ユーザーへリアルタイム配信通知をブロードキャスト（超省通信）
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await set(ref(rtdb, `artifacts/${appId}/latestAnnouncement`), {
+        id: docRef.id,
+        version,
+        title,
+        category,
+        content,
+        publishedAt: Date.now()
+      });
+    } catch (rtdbErr) {
+      console.warn("RTDB announcement trigger error:", rtdbErr);
+    }
+
     titleInput.value = "";
     contentInput.value = "";
+    if (customCatInput) customCatInput.value = "";
     alertMessage("全体にお知らせを配信しました！", "success");
     loadAdminAnnouncements();
   } catch (e) {
@@ -12328,7 +12534,7 @@ window.publishAdminAnnouncement = async function () {
     alertMessage("配信に失敗しました: " + e.message, "error");
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-paper-plane"></i> 全体に配信する';
+    btn.innerHTML = '<i class="fas fa-paper-plane text-xs"></i> 全体に配信する';
   }
 };
 
@@ -12344,6 +12550,30 @@ window.deleteAdminAnnouncement = async function (id) {
     alertMessage("削除に失敗しました", "error");
   }
 };
+
+let _announcementListenerUnsub = null;
+async function setupGlobalAnnouncementListener() {
+  if (_announcementListenerUnsub) return;
+  try {
+    const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const annRef = ref(rtdb, `artifacts/${appId}/latestAnnouncement`);
+    
+    const onAnn = (snap) => {
+      const data = snap.val();
+      if (!data || !data.id) return;
+      const lastSeenId = localStorage.getItem('covo_last_seen_announcement_id');
+      if (lastSeenId !== data.id && data.active !== false) {
+        showAnnouncementModal(data, data.id);
+      }
+    };
+    onValue(annRef, onAnn);
+    _announcementListenerUnsub = () => off(annRef, 'value', onAnn);
+  } catch (e) {
+    console.warn("setupGlobalAnnouncementListener error, fallback to checkLatestAnnouncement:", e);
+    checkLatestAnnouncement();
+  }
+}
 
 window.checkLatestAnnouncement = async function () {
   try {
@@ -12367,6 +12597,7 @@ window.showAnnouncementModal = function (data, id) {
   if (!modal) return;
 
   const typeBadge = document.getElementById("whatsNewTypeBadge");
+  const iconWrap = document.getElementById("whatsNewIconWrap");
   const verEl = document.getElementById("whatsNewVersion");
   const titleEl = document.getElementById("whatsNewTitle");
   const dateEl = document.getElementById("whatsNewDate");
@@ -12376,30 +12607,51 @@ window.showAnnouncementModal = function (data, id) {
   if (verEl) verEl.textContent = data.version || "";
   if (titleEl) titleEl.textContent = data.title || "最新アップデートのお知らせ";
   if (dateEl) {
-    const dt = data.publishedAt?.toDate ? data.publishedAt.toDate().toLocaleDateString() : '';
+    let dt = '';
+    if (data.publishedAt?.toDate) dt = data.publishedAt.toDate().toLocaleDateString('ja-JP');
+    else if (typeof data.publishedAt === 'number') dt = new Date(data.publishedAt).toLocaleDateString('ja-JP');
     dateEl.textContent = dt;
   }
-  if (contentEl) contentEl.textContent = data.content || "";
 
+  // 本文のリッチフォーマット処理（Markdown風の箇条書き・太字・コード・リンク化）
+  if (contentEl) {
+    const rawText = data.content || "";
+    if (typeof escapeHtmlAndLinkUrls === 'function') {
+      contentEl.innerHTML = escapeHtmlAndLinkUrls(rawText);
+    } else {
+      contentEl.textContent = rawText;
+    }
+  }
+
+  // カテゴリバッジ・アイコンのライト＆ダーク両対応スタイリング
   if (typeBadge) {
     if (data.category === 'bugfix') {
       typeBadge.textContent = "BUG FIX";
-      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/30 text-amber-200 tracking-wider uppercase";
+      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 tracking-wider uppercase";
       if (iconEl) iconEl.className = "fas fa-wrench";
+      if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-100 dark:border-amber-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
     } else if (data.category === 'notice') {
       typeBadge.textContent = "NOTICE";
-      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/30 text-red-200 tracking-wider uppercase";
-      if (iconEl) iconEl.className = "fas fa-exclamation-triangle";
+      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300 tracking-wider uppercase";
+      if (iconEl) iconEl.className = "fas fa-circle-exclamation";
+      if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-100 dark:border-rose-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
+    } else if (data.category && data.category !== 'update' && data.category !== 'none') {
+      typeBadge.textContent = String(data.category).toUpperCase();
+      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 tracking-wider uppercase";
+      if (iconEl) iconEl.className = "fas fa-tag";
+      if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-slate-50 text-slate-600 dark:bg-slate-900/60 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
     } else {
       typeBadge.textContent = "UPDATE";
-      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white tracking-wider uppercase";
+      typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 tracking-wider uppercase";
       if (iconEl) iconEl.className = "fas fa-sparkles";
+      if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
     }
   }
 
   modal.dataset.currentId = id || "";
   modal.classList.remove("hidden");
   modal.style.display = "flex";
+  if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 };
 
 window.closeWhatsNewModal = function () {
@@ -13711,9 +13963,11 @@ document.addEventListener("keydown", (e) => {
       setDiscordUIMode(isDiscordMode);
     }
 
-    // 6. 全体お知らせ (What's New) のチェック
+    // 6. 全体お知らせ (What's New) のリアルタイムリスナー＆初期チェック起動
     setTimeout(() => {
-      if (typeof checkLatestAnnouncement === 'function') {
+      if (typeof setupGlobalAnnouncementListener === 'function') {
+        setupGlobalAnnouncementListener();
+      } else if (typeof checkLatestAnnouncement === 'function') {
         checkLatestAnnouncement();
       }
     }, 1500);

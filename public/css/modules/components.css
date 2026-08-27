@@ -475,3 +475,79 @@
       flex-shrink: 0;
       letter-spacing: 0.03em;
     }
+
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
+    }
