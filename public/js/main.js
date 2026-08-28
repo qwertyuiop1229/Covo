@@ -114,6 +114,48 @@ function _reportTelemetryError(type, message, stack) {
     // 外部拡張機能の無関係なエラーは除外
     if (msgStr.includes('chrome-extension://') || msgStr.includes('Disconnected port') || msgStr.includes('beforeinstallprompt')) return;
 
+    const signature = _createErrorSignature(type, msgStr, stack);
+    const now = Date.now();
+    const lastReported = _reportedSignaturesRecently.get(signature) || 0;
+    if (now - lastReported < 2500) return; // 2.5秒間ローカル重複排除
+    _reportedSignaturesRecently.set(signature, now);
+
+    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
+
+    // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
+    if (typeof _cachedTelemetryErrors !== 'undefined') {
+      const existingIdx = _cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
+      if (existingIdx >= 0) {
+        _cachedTelemetryErrors[existingIdx].count = (_cachedTelemetryErrors[existingIdx].count || 1) + 1;
+        _cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+      } else {
+        _cachedTelemetryErrors.unshift({
+          id: signature,
+          signature: signature,
+          type: type || 'error',
+          message: msgStr.substring(0, 3000),
+          stack: String(stack || '').substring(0, 6000),
+          firstOccurredAt: new Date(),
+          lastOccurredAt: new Date(),
+          count: 1,
+          affectedEmails: [email],
+          environment: {
+            userAgent: navigator.userAgent || 'unknown',
+            appVersion: _appVersion || 'web',
+            screenSize: `${window.innerWidth}x${window.innerHeight}`
+          }
+        });
+      }
+      const badgeEl = document.getElementById("telemetryCountBadge");
+      if (badgeEl) {
+        badgeEl.textContent = _cachedTelemetryErrors.length;
+        badgeEl.classList.remove('hidden');
+      }
+      if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
+        renderTelemetryErrorsList();
+      }
+    }
+
     if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
       if (_pendingTelemetryErrors.length < 50) {
         _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
@@ -121,13 +163,6 @@ function _reportTelemetryError(type, message, stack) {
       return;
     }
 
-    const signature = _createErrorSignature(type, msgStr, stack);
-    const now = Date.now();
-    const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 8000) return; // 8秒間ローカル重複排除
-    _reportedSignaturesRecently.set(signature, now);
-
-    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
     const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
 
     const envInfo = {
@@ -147,7 +182,9 @@ function _reportTelemetryError(type, message, stack) {
       count: increment(1),
       affectedEmails: arrayUnion(email),
       environment: envInfo
-    }, { merge: true }).catch(() => {});
+    }, { merge: true }).catch(err => {
+      console.warn('[Telemetry] Firestore setDoc warning:', err?.message || err);
+    });
   } catch (e) {}
 }
 
@@ -1329,26 +1366,26 @@ window.downloadRecoveryKitFile = function () {
   const dateStr = new Date().toLocaleString('ja-JP');
 
   const content = `================================================================
-  COVO EMERGENCY ACCOUNT RECOVERY KIT (緊急アカウント復旧キット)
+  COVO ACCOUNT RECOVERY KIT (アカウント復旧キット)
 ================================================================
 
 このファイルには、登録メールアドレスの受信ができない場合や
 パスワードを忘れた際にアカウントを安全に復旧するための
-緊急リカバリーキーが記載されています。
+リカバリーキーが記載されています。
 
 ■ アカウント情報
 - 対象メールアドレス: ${email}
 - 発行日時: ${dateStr}
 
-■ あなたの緊急リカバリーキー
+■ あなたのリカバリーキー
   ${key}
 
 ----------------------------------------------------------------
 ■ 使い方
 1. Covo ログイン画面を開く
 2. 「パスワードをお忘れですか？」をクリック
-3. 「緊急リカバリーキーで復旧 (メール不要)」タブを選択
-4. 上記のメールアドレスと緊急リカバリーキーを入力して復旧
+3. 「キー復旧」タブを選択
+4. 上記のメールアドレスとリカバリーキーを入力して復旧
 
 ※ このキーは第三者に絶対に教えないでください。
 ================================================================`;
@@ -1357,14 +1394,14 @@ window.downloadRecoveryKitFile = function () {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `covo-emergency-recovery-kit-${email.replace(/[@.]/g, '_')}.txt`;
+  a.download = `covo-recovery-kit-${email.replace(/[@.]/g, '_')}.txt`;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 100);
-  alertMessage('緊急リカバリーキット (.txt) を保存しました。', 'success');
+  alertMessage('リカバリーキット (.txt) を保存しました。', 'success');
 };
 
 window.generateNewRecoveryKey = async function (showPrompt = false) {
@@ -1742,15 +1779,15 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
     }
 
     const modalHtml = `
-      <div id="adminPinModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] p-4">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 space-y-4">
+      <div id="adminPinModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] p-4" style="background:rgba(15,23,42,0.75);backdrop-filter:blur(8px);">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 flex items-center justify-center text-lg">
+            <div class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 flex items-center justify-center text-lg flex-shrink-0">
               <i class="fas fa-key"></i>
             </div>
             <div>
-              <h3 class="text-base font-bold text-gray-900 dark:text-white">復旧ワンタイムPINを発行しました</h3>
-              <p class="text-xs text-gray-500 dark:text-slate-400">10分間有効のワンタイムPINコードです</p>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">復旧用PINを発行しました</h3>
+              <p class="text-xs text-gray-500 dark:text-slate-400">10分間有効のPINコードです</p>
             </div>
           </div>
           <div class="p-3 bg-gray-50 dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 text-xs space-y-2">
@@ -1764,13 +1801,13 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
             </div>
           </div>
           <div class="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-center space-y-1">
-            <div class="text-xs text-emerald-700 dark:text-emerald-400 font-bold">6桁の管理者復旧PIN</div>
+            <div class="text-xs text-emerald-700 dark:text-emerald-400 font-bold">復旧用PINコード</div>
             <div class="text-3xl font-black font-mono tracking-widest text-emerald-600 dark:text-emerald-400 select-all">${pin}</div>
           </div>
           <p class="text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
-            このPINをお友達に伝えてください。ログイン画面の「パスワードをお忘れですか？ ＞ 管理者支援」にメールアドレスとこのPINを入力することで、即座にパスワードを復旧できます。
+            このPINをユーザーに伝えてください。ログイン画面の「パスワードをお忘れですか？ ＞ 管理者支援」にメールアドレスとこのPINを入力することで、即座にパスワードを再設定できます。
           </p>
-          <div class="flex gap-2">
+          <div class="flex gap-2 pt-1">
             <button onclick="navigator.clipboard.writeText('【Covoパスワード復旧PIN】\\n対象: ${cleanEmail}\\nPIN: ${pin}\\n有効期限: 10分間\\nログイン画面の「管理者支援」タブから入力してください。'); alertMessage('復旧案内テキストをコピーしました！', 'success');" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 shadow-sm">
               <i class="fas fa-copy"></i> PIN案内をコピー
             </button>
@@ -2026,10 +2063,6 @@ function renderAdminRecoveryUsersList() {
     const item = document.createElement('div');
     item.className = 'p-3 bg-white dark:bg-slate-900/70 border border-gray-200/80 dark:border-slate-700/60 rounded-xl shadow-xs text-xs flex items-center justify-between gap-3';
 
-    const avatarHtml = u.avatarUrl
-      ? `<img src="${escapeHtml(u.avatarUrl)}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" />`
-      : `<div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs flex-shrink-0">${escapeHtml(u.nickname.charAt(0) || '?')}</div>`;
-
     let statusBadge = '';
     if (u.activeReq) {
       const mins = Math.ceil((u.activeReq.expiresAt - Date.now()) / 60000);
@@ -2037,9 +2070,9 @@ function renderAdminRecoveryUsersList() {
     }
 
     item.innerHTML = `
-      <div class="flex items-center gap-2.5 min-w-0">
-        ${avatarHtml}
-        <div class="min-w-0">
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="user-avatar-wrap w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs flex-shrink-0 overflow-hidden shadow-xs"></div>
+        <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span class="font-bold text-gray-900 dark:text-white truncate">${escapeHtml(u.nickname)}</span>
             ${isSelf ? '<span class="text-[10px] text-gray-400 font-semibold">あなた</span>' : ''}
@@ -2049,9 +2082,18 @@ function renderAdminRecoveryUsersList() {
         </div>
       </div>
       <button type="button" class="issue-pin-btn px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-xl shadow-xs transition flex items-center gap-1 flex-shrink-0 active:scale-95">
-        <i class="fas fa-key text-[10px]"></i><span>10分復旧PIN発行</span>
+        <i class="fas fa-key text-[10px]"></i><span>復旧PIN発行</span>
       </button>
     `;
+
+    const avatarWrap = item.querySelector('.user-avatar-wrap');
+    if (avatarWrap) {
+      if (isUsableAvatarUrl(u.avatarUrl)) {
+        __setAvatarImg(avatarWrap, u.avatarUrl, u.nickname, { className: 'w-full h-full rounded-full object-cover' });
+      } else {
+        avatarWrap.textContent = (u.nickname || '?').charAt(0).toUpperCase();
+      }
+    }
 
     const btn = item.querySelector('.issue-pin-btn');
     if (btn) {
@@ -2124,10 +2166,27 @@ window.loadErrorTelemetry = function () {
     }
     const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
     _telemetryErrorsUnsub = onSnapshot(q, (snap) => {
-      _cachedTelemetryErrors = [];
+      const remoteMap = new Map();
       snap.forEach(d => {
-        _cachedTelemetryErrors.push({ id: d.id, ...d.data() });
+        remoteMap.set(d.id, { id: d.id, ...d.data() });
       });
+
+      // ローカルで発生したエラーも保持して結合
+      if (Array.isArray(_cachedTelemetryErrors)) {
+        _cachedTelemetryErrors.forEach(loc => {
+          if (!remoteMap.has(loc.id)) {
+            remoteMap.set(loc.id, loc);
+          }
+        });
+      }
+
+      _cachedTelemetryErrors = Array.from(remoteMap.values());
+      _cachedTelemetryErrors.sort((a, b) => {
+        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+        return timeB - timeA;
+      });
+
       if (badgeEl) {
         if (_cachedTelemetryErrors.length > 0) {
           badgeEl.textContent = _cachedTelemetryErrors.length;
@@ -2138,12 +2197,13 @@ window.loadErrorTelemetry = function () {
       }
       renderTelemetryErrorsList();
     }, (err) => {
-      console.error("[Telemetry] loadErrorTelemetry snapshot error:", err);
-      listEl.innerHTML = `<p class='text-xs text-rose-500 text-center py-4'>ログのリアルタイム取得に失敗しました: ${escapeHtml(err.message)}</p>`;
+      console.warn("[Telemetry] loadErrorTelemetry snapshot warning:", err);
+      // リモート取得制限時でもローカルエラーは必ず表示
+      renderTelemetryErrorsList();
     });
   } catch (err) {
     console.error("[Telemetry] loadErrorTelemetry error:", err);
-    listEl.innerHTML = `<p class='text-xs text-rose-500 text-center py-4'>ログの読み込みに失敗しました: ${escapeHtml(err.message)}</p>`;
+    renderTelemetryErrorsList();
   }
 };
 

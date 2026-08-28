@@ -563,17 +563,17 @@
             </button>
           </form>
 
-          <!-- ② 緊急リカバリーキーで復旧 (メールが届かない・見れない場合) -->
+          <!-- ② リカバリーキーで復旧 (メール不要) -->
           <form id="resetViaKeyForm" onsubmit="event.preventDefault(); submitEmergencyKeyReset();" class="space-y-3.5 hidden">
-            <div class="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-              <i class="fas fa-info-circle mr-1"></i>メールを確認できない場合でも、設定で発行した<strong>緊急リカバリーキー</strong>を入力することで安全にアカウントを復旧できます。
+            <div class="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-900 dark:text-amber-300 leading-relaxed">
+              <i class="fas fa-info-circle mr-1"></i>設定で発行した<strong>リカバリーキー</strong>を入力することで安全にパスワードを再設定できます。
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
               <input type="email" id="resetKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">緊急リカバリーキー (24文字)</label>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">リカバリーキー (24文字)</label>
               <input type="text" id="resetKeyInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
@@ -591,17 +591,17 @@
             </button>
           </form>
 
-          <!-- ③ 管理者・オーナー支援で復旧 (10分間ワンタイムPIN) -->
+          <!-- ③ 管理者支援で復旧 (10分間復旧PIN) -->
           <form id="resetViaAdminForm" onsubmit="event.preventDefault(); submitAdminAssistReset();" class="space-y-3.5 hidden">
-            <div class="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
-              <i class="fas fa-user-shield mr-1"></i>アプリオーナー（管理者）から伝えられた<strong>10分間有効のワンタイムPIN（6桁）</strong>を入力して、パスワードを即時復旧・再設定できます。
+            <div class="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-[11px] text-emerald-900 dark:text-emerald-300 leading-relaxed">
+              <i class="fas fa-user-shield mr-1"></i>管理者から発行された<strong>10分間有効の復旧PIN（6桁）</strong>を入力して、パスワードを即時復旧・再設定できます。
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
               <input type="email" id="resetAdminEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">管理者発行のワンタイムPIN (6桁)</label>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">復旧PIN (6桁)</label>
               <input type="text" id="resetAdminPinInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" required />
             </div>
             <div>
@@ -615,7 +615,7 @@
             </div>
             <div id="resetAdminMessage" class="text-xs min-h-[1rem]"></div>
             <button id="submitAdminResetBtn" type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-shield-halved text-xs"></i> 管理者承認PINでパスワードを復旧
+              <i class="fas fa-shield-halved text-xs"></i> 復旧PINでパスワードを復旧
             </button>
           </form>
         </div>
@@ -684,31 +684,31 @@
         </div>
       </div>
 
-      <!-- 緊急リカバリーキー管理モーダル -->
+      <!-- リカバリーキー管理モーダル (ダークモード最適化) -->
       <div id="recoveryKeyManagerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4">
         <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200 space-y-4">
           <button onclick="closeRecoveryKeyManagerModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition">
             <i class="fas fa-times"></i>
           </button>
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900 flex items-center justify-center text-lg flex-shrink-0">
+            <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-lg flex-shrink-0">
               <i class="fas fa-shield-halved"></i>
             </div>
             <div>
-              <h3 class="text-base font-bold text-gray-900 dark:text-white">緊急リカバリーキーの管理</h3>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">リカバリーキーの管理</h3>
               <p class="text-xs text-gray-500 dark:text-slate-400">メール受信ができない時のアカウント復旧用</p>
             </div>
           </div>
 
-          <div class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-            <i class="fas fa-info-circle mr-1"></i>パスワードを忘れ、登録メールも受信できない場合にアカウントを復旧できる暗号化キーです。安全な場所に保存してください。
+          <div class="p-3 bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed font-medium">
+            <i class="fas fa-info-circle mr-1 text-amber-600 dark:text-amber-400"></i>パスワードを忘れ、登録メールも受信できない場合にアカウントを復旧できる暗号化キーです。安全な場所に保存してください。
           </div>
 
           <!-- キー表示カード -->
           <div class="p-4 bg-gray-50 dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 space-y-2.5">
             <div class="flex justify-between items-center text-xs">
               <span class="text-gray-500 dark:text-slate-400 font-bold">あなたのリカバリーキー</span>
-              <span id="modalRecoveryStatusBadge" class="px-2 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">有効 (保護中)</span>
+              <span id="modalRecoveryStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">有効 (保護中)</span>
             </div>
             <div class="p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 font-mono text-xs font-bold text-gray-900 dark:text-white tracking-widest text-center select-all" id="modalRecoveryKeyDisplay">
               COVO-••••-••••-••••-••••
@@ -728,7 +728,7 @@
             <button onclick="downloadRecoveryKitFile()" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 active:scale-98">
               <i class="fas fa-download text-xs"></i> キット保存 (.txt)
             </button>
-            <button onclick="generateNewRecoveryKey(true)" class="px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-800/50 transition active:scale-98">
+            <button onclick="generateNewRecoveryKey(true)" class="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-xl border border-amber-300 dark:border-amber-800/60 transition active:scale-98">
               <i class="fas fa-arrows-rotate mr-1"></i>再発行
             </button>
           </div>
@@ -896,29 +896,20 @@
                     </button>
                   </div>
 
-                  <!-- 緊急リカバリーキー カード -->
+                  <!-- リカバリーキー カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap">
                     <div class="flex items-center gap-3">
-                      <div class="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-sm flex-shrink-0">
+                      <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-sm flex-shrink-0">
                         <i class="fas fa-shield-halved"></i>
                       </div>
                       <div>
-                        <div class="text-xs font-bold text-gray-800 dark:text-white">緊急リカバリーキー</div>
+                        <div class="text-xs font-bold text-gray-800 dark:text-white">リカバリーキー</div>
                         <div class="text-[11px] text-gray-500 dark:text-slate-400">メール不要のアカウント復旧用キー</div>
                       </div>
                     </div>
                     <button onclick="openRecoveryKeyManagerModal()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95 flex items-center gap-1.5">
                       <i class="fas fa-sliders text-xs"></i><span>キーを管理</span>
                     </button>
-                  </div>
-
-                  <!-- セキュリティガイダンス -->
-                  <div class="p-3.5 bg-indigo-50/50 dark:bg-slate-950/60 rounded-xl border border-indigo-100 dark:border-slate-800 text-[11px] text-gray-600 dark:text-slate-400 space-y-1">
-                    <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
-                      <i class="fas fa-shield-halved text-indigo-500"></i>
-                      <span>セキュリティ保護について</span>
-                    </div>
-                    <p class="leading-relaxed">Covoのアカウントは強固な一方向暗号化（Firebase Authentication）で保護されています。パスワードを忘れた場合でも、登録メール宛の日本語再設定リンクまたは緊急リカバリーキーからいつでも安全にリセット・復旧できます。</p>
                   </div>
                 </div>
               </div>
@@ -1155,22 +1146,22 @@
     
     <div class="pr-1 space-y-4">
       <!-- 復旧PIN支援タブ (全体管理者専用) -->
-      <div id="adminTabRecoveryContent" class="space-y-4 hidden">
-        <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/50 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed">
+      <div id="adminTabRecoveryContent" class="space-y-4 hidden flex-1 flex flex-col min-h-0">
+        <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/50 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed flex-shrink-0">
           <div class="font-bold mb-1 flex items-center gap-1.5"><i class="fas fa-shield-halved"></i>全体管理者専用 パスワード復旧支援</div>
-          パスワードを忘れ、登録メールも受信できないユーザーに対して、10分間有効の「緊急復旧ワンタイムPIN」を発行できます。
+          パスワードを忘れ、登録メールも受信できないユーザーに対して、10分間有効の「復旧用PIN」を発行できます。
         </div>
 
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
+        <div class="space-y-2 flex-1 flex flex-col min-h-0">
+          <div class="flex items-center justify-between flex-shrink-0">
             <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300">ユーザー一覧からPINを発行</h4>
             <span class="text-[11px] text-gray-400" id="adminRecoveryUserCount">0名</span>
           </div>
-          <div class="relative">
+          <div class="relative flex-shrink-0">
             <input type="text" id="adminRecoverySearchInput" oninput="filterAdminRecoveryUsers()" placeholder="ユーザー名またはメールで絞り込み..." class="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs" />
             <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
           </div>
-          <div id="adminRecoveryUsersList" class="space-y-2 max-h-72 overflow-y-auto no-scrollbar">
+          <div id="adminRecoveryUsersList" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[220px]">
             <!-- ユーザーリストがJSでレンダリングされる -->
           </div>
         </div>
