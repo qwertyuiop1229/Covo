@@ -110,6 +110,16 @@ service cloud.firestore {
         allow write: if isAuthenticated();
       }
 
+      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if true; // ログイン前のPIN照合検証用
+        allow write: if isGlobalAdmin(appId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']));
+      }
+
       // 招待コードインデックス（コード→サーバーID の逆引き）
       // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
       match /inviteIndex/{code} {

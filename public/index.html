@@ -523,8 +523,8 @@
       </div>
 
       <!-- パスワード再設定 & 緊急リカバリーモーダル -->
-      <div id="passwordResetModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[100] hidden p-4">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200">
+      <div id="passwordResetModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[100] hidden p-3 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200 max-h-[92vh] overflow-y-auto">
           <button onclick="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
             <i class="fas fa-times"></i>
           </button>
@@ -534,17 +534,20 @@
             </div>
             <div>
               <h3 class="text-base font-bold text-gray-900 dark:text-white">アカウント復旧・再設定</h3>
-              <p class="text-xs text-gray-500 dark:text-slate-400">メールまたは暗号化リカバリーキーで復旧できます</p>
+              <p class="text-xs text-gray-500 dark:text-slate-400">メール・リカバリーキー・管理者支援から選択できます</p>
             </div>
           </div>
 
-          <!-- 再設定方法タブ -->
-          <div class="flex p-1 bg-gray-100 dark:bg-slate-950 rounded-xl mb-4 border border-gray-200/60 dark:border-slate-800">
-            <button id="resetTabEmailBtn" type="button" onclick="switchPasswordResetMethod('email')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1.5">
-              <i class="fas fa-envelope text-[11px]"></i> メールで再設定
+          <!-- 再設定方法タブ (3タブ対応) -->
+          <div class="grid grid-cols-3 gap-1 p-1 bg-gray-100 dark:bg-slate-950 rounded-xl mb-4 border border-gray-200/60 dark:border-slate-800 text-[11px]">
+            <button id="resetTabEmailBtn" type="button" onclick="switchPasswordResetMethod('email')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1 truncate">
+              <i class="fas fa-envelope text-[10px]"></i> メール
             </button>
-            <button id="resetTabKeyBtn" type="button" onclick="switchPasswordResetMethod('key')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1.5">
-              <i class="fas fa-shield-halved text-[11px]"></i> リカバリーキーで復旧
+            <button id="resetTabKeyBtn" type="button" onclick="switchPasswordResetMethod('key')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1 truncate">
+              <i class="fas fa-shield-halved text-[10px]"></i> キー復旧
+            </button>
+            <button id="resetTabAdminBtn" type="button" onclick="switchPasswordResetMethod('admin')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1 truncate">
+              <i class="fas fa-user-shield text-[10px]"></i> 管理者支援
             </button>
           </div>
 
@@ -563,28 +566,56 @@
           <!-- ② 緊急リカバリーキーで復旧 (メールが届かない・見れない場合) -->
           <form id="resetViaKeyForm" onsubmit="event.preventDefault(); submitEmergencyKeyReset();" class="space-y-3.5 hidden">
             <div class="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-              <i class="fas fa-info-circle mr-1"></i>メールを確認できない場合でも、設定で発行した<strong>緊急リカバリーキー</strong>を入力することで安全にアカウントを復旧・パスワード更新できます。
+              <i class="fas fa-info-circle mr-1"></i>メールを確認できない場合でも、設定で発行した<strong>緊急リカバリーキー</strong>を入力することで安全にアカウントを復旧できます。
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
-              <input type="email" id="recoveryKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              <input type="email" id="resetKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">緊急リカバリーキー (24文字)</label>
-              <input type="text" id="recoveryKeySecretInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              <input type="text" id="resetKeyInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
               <div class="relative">
-                <input type="password" id="recoveryKeyNewPasswordInput" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
-                <button type="button" onclick="toggleRecoveryPasswordVisibility()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
-                  <i id="recoveryKeyEyeIcon" class="fas fa-eye"></i>
+                <input type="password" id="resetKeyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <button type="button" onclick="toggleRecoveryPasswordVisibility('resetKeyNewPassword', 'recoveryPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
+                  <i id="recoveryPasswordEyeIcon" class="fas fa-eye"></i>
                 </button>
               </div>
             </div>
-            <div id="recoveryKeyMessage" class="text-xs min-h-[1rem]"></div>
-            <button id="submitRecoveryKeyBtn" type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-unlock-keyhole text-xs"></i> リカバリーキーで復旧 & ログイン
+            <div id="resetKeyMessage" class="text-xs min-h-[1rem]"></div>
+            <button id="submitKeyResetBtn" type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+              <i class="fas fa-unlock-keyhole text-xs"></i> リカバリーキーでパスワードを復旧
+            </button>
+          </form>
+
+          <!-- ③ 管理者・オーナー支援で復旧 (10分間ワンタイムPIN) -->
+          <form id="resetViaAdminForm" onsubmit="event.preventDefault(); submitAdminAssistReset();" class="space-y-3.5 hidden">
+            <div class="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
+              <i class="fas fa-user-shield mr-1"></i>アプリオーナー（管理者）から伝えられた<strong>10分間有効のワンタイムPIN（6桁）</strong>を入力して、パスワードを即時復旧・再設定できます。
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
+              <input type="email" id="resetAdminEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">管理者発行のワンタイムPIN (6桁)</label>
+              <input type="text" id="resetAdminPinInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" required />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
+              <div class="relative">
+                <input type="password" id="resetAdminNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <button type="button" onclick="toggleRecoveryPasswordVisibility('resetAdminNewPassword', 'adminPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
+                  <i id="adminPasswordEyeIcon" class="fas fa-eye"></i>
+                </button>
+              </div>
+            </div>
+            <div id="resetAdminMessage" class="text-xs min-h-[1rem]"></div>
+            <button id="submitAdminResetBtn" type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+              <i class="fas fa-shield-halved text-xs"></i> 管理者承認PINでパスワードを復旧
             </button>
           </form>
         </div>
@@ -779,6 +810,11 @@
 
                     <!-- パスワード変更フォーム -->
                     <form onsubmit="event.preventDefault(); submitChangePassword();" class="space-y-3 pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
+                      <!-- 管理者パスワード変更バイパス告知バナー -->
+                      <div id="adminBypassNoticeBanner" class="hidden p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
+                        <span class="flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i>管理者によるパスワード変更バイパスが有効です（現在パスワード不要）</span>
+                        <span id="adminBypassTimerText" class="font-mono text-emerald-600 dark:text-emerald-400 text-[10px]"></span>
+                      </div>
                       <div id="changePasswordCurrentRow">
                         <label class="block text-[11px] font-bold text-gray-500 dark:text-slate-400 mb-1">現在のパスワード</label>
                         <input type="password" id="currentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
@@ -809,7 +845,6 @@
                     <p class="leading-relaxed">Covoのアカウントは強固な一方向暗号化（Firebase Authentication）で保護されています。パスワードを忘れた場合でも、登録メール宛の日本語再設定リンクまたは緊急リカバリーキーからいつでも安全にリセット・復旧できます。</p>
                   </div>
                 </div>
-              </div>
               </div>
 
               <!-- 設定セクション -->
@@ -2872,6 +2907,12 @@
               <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
             </div>
             <button onclick="downloadRecoveryKitFile()" class="px-3 py-1 bg-white dark:bg-slate-800 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs">キット保存</button>
+          </div>
+
+          <!-- 管理者バイパス告知バナー (モバイル) -->
+          <div id="mobileAdminBypassNoticeBanner" class="hidden p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-lg text-[10px] text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
+            <span class="flex items-center gap-1"><i class="fas fa-shield-halved text-emerald-500"></i>管理者パスワード変更支援が有効です</span>
+            <span id="mobileAdminBypassTimerText" class="font-mono text-emerald-600 dark:text-emerald-400"></span>
           </div>
 
           <div class="pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
