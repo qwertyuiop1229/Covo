@@ -2013,23 +2013,60 @@ window.loadAdminRecoveryUsers = async function () {
     });
 
     _cachedRecoveryUsers = [];
+    const fallbackPromises = [];
+
     usersSnap.forEach(d => {
       const data = d.data();
       const email = (data.email || '').toLowerCase().trim();
       const uid = d.id;
-      const nickname = data.nickname || data.displayName || '名無し';
-      const avatarUrl = data.avatarUrl || data.photoURL || '';
+      let nickname = data.nickname || data.displayName || null;
+      let avatarUrl = data.avatarUrl || data.photoURL || '';
       const activeReq = activeReqsMap.get(email) || activeReqsMap.get(uid) || null;
-      _cachedRecoveryUsers.push({
+
+      const userObj = {
         uid,
         email,
-        nickname,
+        nickname: nickname || (email ? email.split('@')[0] : 'ユーザー'),
         avatarUrl,
-        activeReq
-      });
+        activeReq,
+        isResolved: !!nickname
+      };
+      _cachedRecoveryUsers.push(userObj);
+
+      // ルートドキュメントにニックネームが無い場合、profile/nicknameDoc からフォールバック取得し自動バックフィル
+      if (!nickname) {
+        fallbackPromises.push(
+          getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).then(pSnap => {
+            if (pSnap.exists()) {
+              const pData = pSnap.data();
+              if (pData.nickname) {
+                userObj.nickname = pData.nickname;
+                userObj.isResolved = true;
+                // ルートの users/{uid} にも同期保存（自己修復・バックフィル）
+                setDoc(doc(db, `artifacts/${appId}/users`, uid), {
+                  nickname: pData.nickname,
+                  avatarUrl: pData.avatarUrl || userObj.avatarUrl || null,
+                  ...(email ? { email } : {})
+                }, { merge: true }).catch(() => {});
+              }
+              if (pData.avatarUrl) {
+                userObj.avatarUrl = pData.avatarUrl;
+              }
+            }
+          }).catch(() => {})
+        );
+      }
     });
 
-    _cachedRecoveryUsers.sort((a, b) => a.email.localeCompare(b.email));
+    if (fallbackPromises.length > 0) {
+      await Promise.all(fallbackPromises);
+    }
+
+    _cachedRecoveryUsers.sort((a, b) => {
+      const aName = a.nickname || a.email;
+      const bName = b.nickname || b.email;
+      return aName.localeCompare(bName);
+    });
 
     if (countEl) countEl.textContent = `${_cachedRecoveryUsers.length}名`;
     renderAdminRecoveryUsersList();
@@ -2061,7 +2098,7 @@ function renderAdminRecoveryUsersList() {
   filtered.forEach(u => {
     const isSelf = auth.currentUser && (auth.currentUser.uid === u.uid || auth.currentUser.email?.toLowerCase() === u.email);
     const item = document.createElement('div');
-    item.className = 'p-3 bg-white dark:bg-slate-900/70 border border-gray-200/80 dark:border-slate-700/60 rounded-xl shadow-xs text-xs flex items-center justify-between gap-3';
+    item.className = 'p-3 bg-white dark:bg-slate-800/40 border border-gray-200/80 dark:border-transparent rounded-xl shadow-xs text-xs flex items-center justify-between gap-3 transition-colors';
 
     let statusBadge = '';
     if (u.activeReq) {
@@ -2071,11 +2108,11 @@ function renderAdminRecoveryUsersList() {
 
     item.innerHTML = `
       <div class="flex items-center gap-2.5 min-w-0 flex-1">
-        <div class="user-avatar-wrap w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs flex-shrink-0 overflow-hidden shadow-xs"></div>
+        <div class="user-avatar-wrap w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-bold flex items-center justify-center text-xs flex-shrink-0 overflow-hidden shadow-xs"></div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span class="font-bold text-gray-900 dark:text-white truncate">${escapeHtml(u.nickname)}</span>
-            ${isSelf ? '<span class="text-[10px] text-gray-400 font-semibold">あなた</span>' : ''}
+            ${isSelf ? '<span class="text-[10px] text-gray-400 dark:text-slate-500 font-semibold">あなた</span>' : ''}
             ${statusBadge}
           </div>
           <div class="text-[11px] text-gray-500 dark:text-slate-400 font-mono truncate">${escapeHtml(u.email || '未設定')}</div>
@@ -2486,23 +2523,23 @@ window.loadAdminFeedbacks = async function () {
 // リストアイテムのDOMを生成（ユーザーネーム＆アイコン対応版）
 function makeEmailListItem(email, isSelf, onRemove) {
   const div = document.createElement("div");
-  div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50 transition-colors";
+  div.className = "flex items-center gap-3 px-3 py-2.5 bg-gray-50 dark:bg-slate-800/40 rounded-xl border border-gray-100 dark:border-transparent transition-colors";
 
   const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
   // username: username → nickname → displayName の優先順で取得
-  let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? "未設定" : "未参加");
+  let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? (email ? `${email.split('@')[0]} (未設定)` : "未設定") : "未参加");
   // iconUrl: iconUrl → avatarUrl → photoURL の優先順で取得
   let iconUrl = userData?.iconUrl || userData?.avatarUrl || userData?.photoURL || null;
 
   const avatar = document.createElement("div");
-  avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300";
+  avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-slate-700 text-gray-700 dark:text-gray-300";
   if (isUsableAvatarUrl(iconUrl)) {
     __setAvatarImg(avatar, iconUrl, username || email, { className: "w-full h-full object-cover rounded-full" });
   } else {
     if (userData) {
       avatar.textContent = emailInitial(email);
     } else {
-      avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-200 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500";
+      avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500";
       avatar.innerHTML = `<i class="fas fa-question"></i>`;
     }
   }
@@ -2515,7 +2552,7 @@ function makeEmailListItem(email, isSelf, onRemove) {
   emailSpan.textContent = email;
 
   const userSpan = document.createElement("span");
-  userSpan.className = "text-[11px] text-gray-500 dark:text-gray-400 font-medium truncate mt-0.5 transition-colors";
+  userSpan.className = "text-[11px] text-gray-500 dark:text-slate-400 font-medium truncate mt-0.5 transition-colors";
   if (userData) {
     userSpan.textContent = `ユーザーネーム: ${username}`;
   } else {
@@ -2530,12 +2567,12 @@ function makeEmailListItem(email, isSelf, onRemove) {
 
   if (isSelf) {
     const badge = document.createElement("span");
-    badge.className = "text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 font-semibold";
+    badge.className = "text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 font-semibold";
     badge.textContent = "あなた";
     div.appendChild(badge);
   } else {
     const btn = document.createElement("button");
-    btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex-shrink-0";
+    btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex-shrink-0";
     btn.innerHTML = `<i class="fas fa-times text-xs"></i>`;
     btn.addEventListener("click", onRemove);
     div.appendChild(btn);
@@ -2547,7 +2584,7 @@ function renderAllowedEmails(emails) {
   allowedEmailsList.innerHTML = "";
   if (emails.length === 0) {
     const empty = document.createElement("p");
-    empty.className = "text-xs text-gray-400 text-center py-4";
+    empty.className = "text-xs text-gray-400 dark:text-gray-500 text-center py-4";
     empty.textContent = "リストが空です。誰でも登録可能な状態です。";
     allowedEmailsList.appendChild(empty);
     return;
@@ -2561,7 +2598,7 @@ function renderAdminEmails(emails) {
   adminEmailsList.innerHTML = "";
   if (emails.length === 0) {
     const empty = document.createElement("p");
-    empty.className = "text-xs text-gray-400 text-center py-4";
+    empty.className = "text-xs text-gray-400 dark:text-gray-500 text-center py-4";
     empty.textContent = "管理者がいません。";
     adminEmailsList.appendChild(empty);
     return;
@@ -2591,7 +2628,14 @@ async function fetchAllAdminData() {
             getDoc(doc(db, `artifacts/${appId}/users/${d.id}/profile`, "nicknameDoc")).then(pSnap => {
               if (pSnap.exists()) {
                 const pData = pSnap.data();
-                if (pData.nickname) window.__adminUsersByEmail[u.email].username = pData.nickname;
+                if (pData.nickname) {
+                  window.__adminUsersByEmail[u.email].username = pData.nickname;
+                  // ルートドキュメントにもバックフィル
+                  setDoc(doc(db, `artifacts/${appId}/users`, d.id), {
+                    nickname: pData.nickname,
+                    avatarUrl: pData.avatarUrl || u.avatarUrl || null
+                  }, { merge: true }).catch(() => {});
+                }
                 if (pData.avatarUrl) window.__adminUsersByEmail[u.email].iconUrl = pData.avatarUrl;
               }
             }).catch(() => { })
@@ -3653,6 +3697,9 @@ function updateMobileProfileScreen() {
     }
   }
   if (ni) ni.value = userNickname || '';
+  if (auth.currentUser && typeof updateAccountSecurityUI === 'function') {
+    updateAccountSecurityUI(auth.currentUser);
+  }
   if (isAdmin || isListAdmin) {
     const as2 = document.getElementById('mobileAdminRowSection');
     if (as2) {
