@@ -1524,10 +1524,13 @@ window.updateAccountSecurityUI = function (user) {
 
   // 管理者による10分間パスワード変更バイパスの確認
   window._adminBypassActive = false;
+  window._adminBypassMinsLeft = 0;
   const adminBypassBanner = document.getElementById('adminBypassNoticeBanner');
   const mobileAdminBypassBanner = document.getElementById('mobileAdminBypassNoticeBanner');
   const adminBypassTimer = document.getElementById('adminBypassTimerText');
   const mobileAdminBypassTimer = document.getElementById('mobileAdminBypassTimerText');
+  const adminBypassBadge = document.getElementById('adminBypassBadge');
+  const mobileAdminBypassBadge = document.getElementById('mobileAdminBypassBadge');
   
   if (user && user.uid) {
     const adminReqRef = doc(db, `artifacts/${appId}/admin_recovery_requests`, user.uid);
@@ -1537,14 +1540,19 @@ window.updateAccountSecurityUI = function (user) {
         if (!d.used && d.expiresAt && Date.now() < d.expiresAt) {
           window._adminBypassActive = true;
           const minsLeft = Math.ceil((d.expiresAt - Date.now()) / 60000);
+          window._adminBypassMinsLeft = minsLeft;
           if (adminBypassBanner) adminBypassBanner.classList.remove('hidden');
           if (mobileAdminBypassBanner) mobileAdminBypassBanner.classList.remove('hidden');
+          if (adminBypassBadge) adminBypassBadge.classList.remove('hidden');
+          if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.remove('hidden');
           if (adminBypassTimer) adminBypassTimer.textContent = `残り ${minsLeft}分`;
           if (mobileAdminBypassTimer) mobileAdminBypassTimer.textContent = `残り ${minsLeft}分`;
           if (currPwdRow) currPwdRow.style.display = 'none'; // 現在のパスワード不要！
         } else {
           if (adminBypassBanner) adminBypassBanner.classList.add('hidden');
           if (mobileAdminBypassBanner) mobileAdminBypassBanner.classList.add('hidden');
+          if (adminBypassBadge) adminBypassBadge.classList.add('hidden');
+          if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.add('hidden');
         }
       }
     }).catch(() => {});
@@ -1554,14 +1562,147 @@ window.updateAccountSecurityUI = function (user) {
   _loadOrCreateUserRecoveryKey(user);
 };
 
+// ============ パスワード変更モーダル コントローラー ============
+window.openChangePasswordModal = function () {
+  const modal = document.getElementById('changePasswordModal');
+  if (!modal) return;
+  const msg = document.getElementById('modalChangePasswordMessage');
+  if (msg) { msg.textContent = ''; msg.className = ''; }
+  const currInput = document.getElementById('modalCurrentPasswordInput');
+  const newInput = document.getElementById('modalNewPasswordInput');
+  const confirmInput = document.getElementById('modalConfirmNewPasswordInput');
+  if (currInput) currInput.value = '';
+  if (newInput) newInput.value = '';
+  if (confirmInput) confirmInput.value = '';
+
+  const currRow = document.getElementById('changePasswordCurrentRowModal');
+  const banner = document.getElementById('adminBypassNoticeBannerModal');
+  const timer = document.getElementById('adminBypassTimerTextModal');
+
+  const user = auth.currentUser;
+  const hasPasswordProvider = user && user.providerData && user.providerData.some(p => p.providerId === 'password');
+
+  if (window._adminBypassActive) {
+    if (banner) banner.classList.remove('hidden');
+    if (timer && window._adminBypassMinsLeft) timer.textContent = `残り ${window._adminBypassMinsLeft}分`;
+    if (currRow) currRow.style.display = 'none';
+  } else {
+    if (banner) banner.classList.add('hidden');
+    if (currRow) currRow.style.display = hasPasswordProvider ? 'block' : 'none';
+  }
+
+  modal.classList.remove('hidden');
+};
+
+window.closeChangePasswordModal = function () {
+  const modal = document.getElementById('changePasswordModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.submitChangePasswordModalAction = async function () {
+  const user = auth.currentUser;
+  if (!user) return;
+  const currInput = document.getElementById('modalCurrentPasswordInput');
+  const newInput = document.getElementById('modalNewPasswordInput');
+  const confirmInput = document.getElementById('modalConfirmNewPasswordInput');
+  const msg = document.getElementById('modalChangePasswordMessage');
+  const btn = document.getElementById('modalChangePasswordBtn');
+
+  const currPwd = currInput?.value || '';
+  const newPwd = newInput?.value || '';
+  const confirmPwd = confirmInput?.value || '';
+
+  const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
+
+  if (hasPasswordProvider && !currPwd && !window._adminBypassActive) {
+    if (msg) { msg.textContent = '現在のパスワードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    if (msg) { msg.textContent = '新しいパスワードが一致しません。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> 更新中...'; }
+    if (hasPasswordProvider && user.email && !window._adminBypassActive) {
+      const cred = EmailAuthProvider.credential(user.email, currPwd);
+      await reauthenticateWithCredential(user, cred);
+    }
+    await updatePassword(user, newPwd);
+    
+    // バイパス使用済み処理
+    if (window._adminBypassActive) {
+      window._adminBypassActive = false;
+      const reqRef = doc(db, `artifacts/${appId}/admin_recovery_requests`, user.uid);
+      updateDoc(reqRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
+      const badge = document.getElementById('adminBypassBadge');
+      const mobileBadge = document.getElementById('mobileAdminBypassBadge');
+      if (badge) badge.classList.add('hidden');
+      if (mobileBadge) mobileBadge.classList.add('hidden');
+    }
+
+    alertMessage('パスワードを正常に更新しました！', 'success');
+    closeChangePasswordModal();
+  } catch (err) {
+    console.error('[Auth] Update password modal error:', err);
+    let errMsg = 'パスワードの更新に失敗しました。';
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errMsg = '現在のパスワードが正しくありません。';
+    else if (err.code === 'auth/requires-recent-login') errMsg = 'セキュリティのため、一度ログアウトして再ログインしてからお試しください。';
+    else if (err.code === 'auth/weak-password') errMsg = 'パスワードが弱すぎます（6文字以上）。';
+    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check text-xs"></i> パスワードを更新'; }
+  }
+};
+
+// ============ 緊急リカバリーキー管理モーダル コントローラー ============
+let _isModalRecoveryKeyVisible = false;
+window.openRecoveryKeyManagerModal = function () {
+  const modal = document.getElementById('recoveryKeyManagerModal');
+  if (!modal) return;
+  _isModalRecoveryKeyVisible = false;
+  const keyDisplay = document.getElementById('modalRecoveryKeyDisplay');
+  const btnText = document.getElementById('modalToggleKeyVisText');
+  if (keyDisplay) keyDisplay.textContent = 'COVO-••••-••••-••••-••••';
+  if (btnText) btnText.textContent = 'キーを表示';
+  modal.classList.remove('hidden');
+};
+
+window.closeRecoveryKeyManagerModal = function () {
+  const modal = document.getElementById('recoveryKeyManagerModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.toggleModalRecoveryKeyVisibility = function () {
+  _isModalRecoveryKeyVisible = !_isModalRecoveryKeyVisible;
+  const keyDisplay = document.getElementById('modalRecoveryKeyDisplay');
+  const btnText = document.getElementById('modalToggleKeyVisText');
+  if (_isModalRecoveryKeyVisible) {
+    if (keyDisplay) keyDisplay.textContent = _currentUserRecoveryKey || 'キーがありません';
+    if (btnText) btnText.textContent = 'キーを隠す';
+  } else {
+    if (keyDisplay) keyDisplay.textContent = 'COVO-••••-••••-••••-••••';
+    if (btnText) btnText.textContent = 'キーを表示';
+  }
+};
+
 // 管理者（オーナー）による緊急復旧ワンタイムPIN発行
 window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
+  if (!isAdmin) {
+    alertMessage('復旧PINの発行権限はアプリ全体管理者（オーナー）のみに限定されています。', 'error');
+    return;
+  }
   if (!targetEmail) {
     alertMessage('メールアドレスが指定されていません。', 'error');
     return;
   }
   const cleanEmail = targetEmail.toLowerCase().trim();
-  const confirmMsg = `【管理者サポート】\n\n対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のパスワード復旧ワンタイムPIN」を発行しますか？\n（ユーザーはメールを確認できなくても、このPINでパスワードを再設定できます）`;
+  const confirmMsg = `【全体管理者サポート】\n\n対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のパスワード復旧ワンタイムPIN」を発行しますか？\n（ユーザーはメールを確認できなくても、このPINでパスワードを再設定できます）`;
   if (!confirm(confirmMsg)) return;
 
   try {
@@ -1785,9 +1926,13 @@ function switchAdminTab(tab) {
     { id: "adminTabAdminsBtn", content: "adminTabAdminsContent", key: "admins" },
     { id: "adminTabListAdminsBtn", content: "adminTabListAdminsContent", key: "listAdmins" },
     { id: "adminTabAnnouncementsBtn", content: "adminTabAnnouncementsContent", key: "announcements" },
+    { id: "adminTabRecoveryBtn", content: "adminTabRecoveryContent", key: "recovery" },
   ];
   if (tab === 'announcements') {
     loadAdminAnnouncements();
+  }
+  if (tab === 'recovery') {
+    loadAdminRecoveryUsers();
   }
   tabs.forEach(t => {
     const btn = document.getElementById(t.id);
@@ -1806,6 +1951,118 @@ document.getElementById("adminTabAllowedBtn")?.addEventListener("click", () => s
 document.getElementById("adminTabAdminsBtn")?.addEventListener("click", () => switchAdminTab("admins"));
 document.getElementById("adminTabListAdminsBtn")?.addEventListener("click", () => switchAdminTab("listAdmins"));
 document.getElementById("adminTabAnnouncementsBtn")?.addEventListener("click", () => switchAdminTab("announcements"));
+document.getElementById("adminTabRecoveryBtn")?.addEventListener("click", () => switchAdminTab("recovery"));
+
+// ============ 管理者専用 復旧PIN支援タブ コントローラー ============
+let _cachedRecoveryUsers = [];
+window.loadAdminRecoveryUsers = async function () {
+  if (!isAdmin) return;
+  const listEl = document.getElementById('adminRecoveryUsersList');
+  const countEl = document.getElementById('adminRecoveryUserCount');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div class="text-center py-6 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-1.5"></i>ユーザー情報を取得中...</div>';
+
+  try {
+    const usersSnap = await getDocs(collection(db, `artifacts/${appId}/users`));
+    const activeReqsSnap = await getDocs(collection(db, `artifacts/${appId}/admin_recovery_requests`));
+    const activeReqsMap = new Map();
+    activeReqsSnap.forEach(d => {
+      const data = d.data();
+      if (!data.used && data.expiresAt && Date.now() < data.expiresAt) {
+        if (data.email) activeReqsMap.set(data.email.toLowerCase(), data);
+        if (data.userId) activeReqsMap.set(data.userId, data);
+      }
+    });
+
+    _cachedRecoveryUsers = [];
+    usersSnap.forEach(d => {
+      const data = d.data();
+      const email = (data.email || '').toLowerCase().trim();
+      const uid = d.id;
+      const nickname = data.nickname || data.displayName || '名無し';
+      const avatarUrl = data.avatarUrl || data.photoURL || '';
+      const activeReq = activeReqsMap.get(email) || activeReqsMap.get(uid) || null;
+      _cachedRecoveryUsers.push({
+        uid,
+        email,
+        nickname,
+        avatarUrl,
+        activeReq
+      });
+    });
+
+    _cachedRecoveryUsers.sort((a, b) => a.email.localeCompare(b.email));
+
+    if (countEl) countEl.textContent = `${_cachedRecoveryUsers.length}名`;
+    renderAdminRecoveryUsersList();
+  } catch (err) {
+    console.error('[Admin] loadAdminRecoveryUsers error:', err);
+    listEl.innerHTML = `<div class="text-center py-4 text-xs text-rose-500">ユーザー一覧の取得に失敗しました: ${escapeHtml(err.message)}</div>`;
+  }
+};
+
+window.filterAdminRecoveryUsers = function () {
+  renderAdminRecoveryUsersList();
+};
+
+function renderAdminRecoveryUsersList() {
+  const listEl = document.getElementById('adminRecoveryUsersList');
+  if (!listEl) return;
+  const search = (document.getElementById('adminRecoverySearchInput')?.value || '').toLowerCase().trim();
+  const filtered = _cachedRecoveryUsers.filter(u => {
+    if (!search) return true;
+    return (u.email && u.email.includes(search)) || (u.nickname && u.nickname.toLowerCase().includes(search));
+  });
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="text-center py-6 text-xs text-gray-400 dark:text-gray-500">該当するユーザーは見つかりませんでした</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  filtered.forEach(u => {
+    const isSelf = auth.currentUser && (auth.currentUser.uid === u.uid || auth.currentUser.email?.toLowerCase() === u.email);
+    const item = document.createElement('div');
+    item.className = 'p-3 bg-white dark:bg-slate-900/70 border border-gray-200/80 dark:border-slate-700/60 rounded-xl shadow-xs text-xs flex items-center justify-between gap-3';
+
+    const avatarHtml = u.avatarUrl
+      ? `<img src="${escapeHtml(u.avatarUrl)}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" />`
+      : `<div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs flex-shrink-0">${escapeHtml(u.nickname.charAt(0) || '?')}</div>`;
+
+    let statusBadge = '';
+    if (u.activeReq) {
+      const mins = Math.ceil((u.activeReq.expiresAt - Date.now()) / 60000);
+      statusBadge = `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1"><i class="fas fa-key text-[8px]"></i>PIN有効 (残り${mins}分)</span>`;
+    }
+
+    item.innerHTML = `
+      <div class="flex items-center gap-2.5 min-w-0">
+        ${avatarHtml}
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-bold text-gray-900 dark:text-white truncate">${escapeHtml(u.nickname)}</span>
+            ${isSelf ? '<span class="text-[10px] text-gray-400 font-semibold">あなた</span>' : ''}
+            ${statusBadge}
+          </div>
+          <div class="text-[11px] text-gray-500 dark:text-slate-400 font-mono truncate">${escapeHtml(u.email || '未設定')}</div>
+        </div>
+      </div>
+      <button type="button" class="issue-pin-btn px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-xl shadow-xs transition flex items-center gap-1 flex-shrink-0 active:scale-95">
+        <i class="fas fa-key text-[10px]"></i><span>10分復旧PIN発行</span>
+      </button>
+    `;
+
+    const btn = item.querySelector('.issue-pin-btn');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        issueAdminRecoveryPin(u.email, u.uid);
+      });
+    }
+
+    listEl.appendChild(item);
+  });
+}
 
 // === システムレポート & 自動エラー集約テレメトリ コントローラー ===
 let _currentReportSubTab = 'errors';
@@ -2217,18 +2474,6 @@ function makeEmailListItem(email, isSelf, onRemove) {
     badge.textContent = "あなた";
     div.appendChild(badge);
   } else {
-    // 管理者復旧PIN発行ボタン
-    const pinBtn = document.createElement("button");
-    pinBtn.type = "button";
-    pinBtn.className = "px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center gap-1 transition flex-shrink-0 active:scale-95 shadow-xs";
-    pinBtn.title = "このユーザーの10分間緊急パスワード復旧PINを発行";
-    pinBtn.innerHTML = `<i class="fas fa-key text-[10px]"></i><span>復旧支援PIN</span>`;
-    pinBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      issueAdminRecoveryPin(email, userData?.id || userData?.uid || '');
-    });
-    div.appendChild(pinBtn);
-
     const btn = document.createElement("button");
     btn.className = "w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex-shrink-0";
     btn.innerHTML = `<i class="fas fa-times text-xs"></i>`;
