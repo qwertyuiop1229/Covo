@@ -131,8 +131,7 @@ service cloud.firestore {
 
       // 2. ユーザー情報
       match /users/{userId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
+        allow get, list: if isAuthenticated();
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
 
@@ -156,6 +155,51 @@ service cloud.firestore {
       // 既読状態の同期
       match /users/{userId}/readStates/{docId} {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // フレンド関係性 (relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            request.resource.data.status == 'pending_received' ||
+            request.resource.data.status == 'friends'
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
+        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
+        match /keys/{keyUserId} {
+          allow get, list: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+          allow write: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+        }
+      }
+
+      // 端末間データ完全移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        match /{subcollection}/{docId} {
+          allow get, list: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+          allow write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+        }
       }
 
       // 3. グローバルオンライン状態

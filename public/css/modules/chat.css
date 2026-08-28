@@ -1035,3 +1035,206 @@
         display: flex;
       }
     }
+
+    /* === DM & フレンド機能 UI スタイル (Discord準拠) === */
+    .dm-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.65rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      user-select: none;
+    }
+    .dm-sidebar-item:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+    .dark-server-theme .dm-sidebar-item:hover,
+    .discord-dark-theme .dm-sidebar-item:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+    .dm-sidebar-item.active {
+      background-color: rgba(99, 102, 241, 0.12) !important;
+    }
+    .dark-server-theme .dm-sidebar-item.active,
+    .discord-dark-theme .dm-sidebar-item.active {
+      background-color: rgba(99, 102, 241, 0.22) !important;
+    }
+    .dm-sidebar-item .dm-close-btn {
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .dm-sidebar-item:hover .dm-close-btn {
+      opacity: 1;
+    }
+
+    /* フレンドカード */
+    .friend-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-radius: 0.85rem;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #ffffff;
+      transition: all 0.15s ease;
+    }
+    .dark-server-theme .friend-card,
+    .discord-dark-theme .friend-card {
+      background: #1e293b;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    .friend-card:hover {
+      border-color: rgba(99, 102, 241, 0.3);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .friend-action-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      background: #f1f5f9;
+      color: #475569;
+      transition: all 0.15s ease;
+    }
+    .dark-server-theme .friend-action-btn,
+    .discord-dark-theme .friend-action-btn {
+      background: #334155;
+      color: #cbd5e1;
+    }
+    .friend-action-btn:hover {
+      background: #6366f1;
+      color: #ffffff;
+      transform: scale(1.05);
+    }
+
+    /* DM ウェルカムバナー */
+    .dm-welcome-banner {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 2rem 1rem 1.5rem 1rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      margin-bottom: 1.5rem;
+    }
+    .dark-server-theme .dm-welcome-banner,
+    .discord-dark-theme .dm-welcome-banner {
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    /* 100件終端バナー */
+    .history-terminal-banner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin: 1.5rem auto;
+      padding: 0.65rem 1.25rem;
+      border-radius: 0.75rem;
+      background: rgba(0, 0, 0, 0.03);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #64748b;
+      max-width: 90%;
+      text-align: center;
+    }
+    .dark-server-theme .history-terminal-banner,
+    .discord-dark-theme .history-terminal-banner {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+
+    /* Discord DM Hero Welcome Header */
+    .dm-welcome-banner {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 2.5rem 1.5rem 1.5rem 1.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      margin-bottom: 1.5rem;
+    }
+    .dark-server-theme .dm-welcome-banner,
+    .discord-dark-theme .dm-welcome-banner {
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Discord DM Sidebar Item Active & Hover */
+    .dm-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.55rem;
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      position: relative;
+      user-select: none;
+      color: #4e5058;
+    }
+    .dm-sidebar-item:hover {
+      background-color: #e0e2e5;
+      color: #313338;
+    }
+    .dark-server-theme .dm-sidebar-item,
+    .discord-dark-theme .dm-sidebar-item {
+      color: #949ba4;
+    }
+    .dark-server-theme .dm-sidebar-item:hover,
+    .discord-dark-theme .dm-sidebar-item:hover {
+      background-color: #35373c;
+      color: #dbdee1;
+    }
+    .dm-sidebar-item.active {
+      background-color: #d7d9dc !important;
+      color: #060607 !important;
+    }
+    .dark-server-theme .dm-sidebar-item.active,
+    .discord-dark-theme .dm-sidebar-item.active {
+      background-color: #404249 !important;
+      color: #ffffff !important;
+    }
+
+    /* Friend Card Hover Transitions */
+    .friend-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #ffffff;
+      transition: all 0.15s ease;
+    }
+    .friend-card:hover {
+      border-color: rgba(88, 101, 242, 0.4);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      transform: translateY(-1px);
+    }
+    .dark-server-theme .friend-card,
+    .discord-dark-theme .friend-card {
+      background: #2b2d31;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    .dark-server-theme .friend-card:hover,
+    .discord-dark-theme .friend-card:hover {
+      background: #313338;
+      border-color: rgba(88, 101, 242, 0.5);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+
+    .friend-search-input {
+      transition: all 0.2s ease;
+    }
+    .friend-search-input:focus {
+      border-color: #5865f2;
+      box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.2);
+    }
+

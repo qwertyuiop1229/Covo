@@ -47,6 +47,32 @@
             }
           }
         },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            ".write": "auth != null && $dmId.contains(auth.uid)",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
         "users": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",

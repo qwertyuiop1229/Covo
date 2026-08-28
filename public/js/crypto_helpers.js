@@ -26,9 +26,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       publicKeyJwk: null, // JWK (Firestore保存・他者配布用)
       mem: {},            // localStorage不可時のメモリ退避
       roomKeyCache: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
+      dmKeyCache: {},     // dmId -> CryptoKey(AES-GCM) 復号済みキャッシュ
       pubKeyCache: {},    // _getUserId() -> CryptoKey(public) インポート済みキャッシュ
       _initPromise: null,
       _roomKeyPromises: {},
+      _dmKeyPromises: {},
       _rescueRequestFlags: {}, // roomId -> timestamp 救済リクエストのデバウンス用
     };
 
@@ -627,3 +629,202 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         set('準備中…', '#d97706');
       }
     }
+
+    // =========================================================================
+    // 【要件 D】個チャ (DM) 専用 E2EE エンドツーエンド暗号化システム
+    // =========================================================================
+
+    /**
+     * DM共通鍵 (AES-GCM 256bit) を取得または生成・配布
+     * @param {string} dmId - 2人のUIDを結合したDM ID (例: uidA_uidB)
+     * @param {Array<string>} participants - 参加者2名のUID
+     * @returns {Promise<Object|null>} keysObj { latest, latestVersion, "1": CryptoKey, ... }
+     */
+    export async function _getOrCreateDmKey(dmId, participants) {
+      if (!_subtleOK || !dmId) return null;
+      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
+      if (_e2ee._dmKeyPromises[dmId]) return _e2ee._dmKeyPromises[dmId];
+
+      _e2ee._dmKeyPromises[dmId] = (async () => {
+        const res = await __getOrCreateDmKeyImpl(dmId, participants);
+        if (!res) delete _e2ee._dmKeyPromises[dmId];
+        return res;
+      })();
+      return _e2ee._dmKeyPromises[dmId];
+    }
+
+    export async function __getOrCreateDmKeyImpl(dmId, participants) {
+      if (!_subtleOK || !dmId) return null;
+      const currentUid = _getUserId();
+      if (!currentUid) return null;
+
+      try {
+        const ok = await _ensureE2EEKeys();
+        if (!ok) return null;
+
+        const keysObj = {};
+
+        // 1) Firestoreの自分宛て wrappedKey から復元を試行
+        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${currentUid}`));
+        if (myWrapSnap.exists()) {
+          const data = myWrapSnap.data() || {};
+          const versionsMap = {};
+          if (data.versions && typeof data.versions === 'object') {
+            Object.assign(versionsMap, data.versions);
+          }
+          for (const key of Object.keys(data)) {
+            if (key.startsWith('versions.')) {
+              versionsMap[key.slice(9)] = data[key];
+            }
+          }
+          if (Object.keys(versionsMap).length === 0 && data.wrappedKey) {
+            versionsMap["1"] = data.wrappedKey;
+          }
+
+          for (const ver in versionsMap) {
+            try {
+              const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(versionsMap[ver]));
+              keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+            } catch (_) {}
+          }
+
+          if (Object.keys(keysObj).length > 0) {
+            const sortedVers = Object.keys(keysObj).sort((a, b) => Number(b) - Number(a));
+            keysObj.latest = keysObj[sortedVers[0]];
+            keysObj.latestVersion = sortedVers[0];
+            _e2ee.dmKeyCache[dmId] = keysObj;
+            return keysObj;
+          }
+        }
+
+        // 2) 新規DM鍵を生成して参加者全員（2名）に配布
+        const memberUids = Array.from(new Set(participants && participants.length ? participants : dmId.split('_'))).filter(Boolean);
+        const newKey = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+        const rawKey = await window.crypto.subtle.exportKey("raw", newKey);
+
+        const writePromises = [];
+        for (const uid of memberUids) {
+          const pub = (uid === currentUid) ? _e2ee.publicKey : await __getUserPublicKey(uid);
+          if (pub) {
+            try {
+              const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+              const b64Wrapped = _abToB64(wrapped);
+              writePromises.push(
+                setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${uid}`), {
+                  versions: { "1": b64Wrapped },
+                  latestVersion: "1",
+                  wrappedKey: b64Wrapped,
+                  updatedAt: serverTimestamp()
+                }, { merge: true }).catch(() => {})
+              );
+            } catch (err) {
+              console.warn(`[E2EE] DM鍵の配布失敗 (target=${uid}):`, err);
+            }
+          }
+        }
+
+        if (writePromises.length > 0) {
+          await Promise.all(writePromises);
+        }
+
+        keysObj["1"] = newKey;
+        keysObj.latest = newKey;
+        keysObj.latestVersion = "1";
+        _e2ee.dmKeyCache[dmId] = keysObj;
+        return keysObj;
+      } catch (e) {
+        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${dmId}):`, e);
+        return null;
+      }
+    }
+
+    export async function _getDmKeyWithWait(dmId, participants, maxWaitMs = 2000) {
+      if (!_subtleOK || !dmId) return null;
+      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
+      const deadline = Date.now() + maxWaitMs;
+      let attempt = 0;
+      while (true) {
+        const keyObj = await _getOrCreateDmKey(dmId, participants);
+        if (keyObj) return keyObj;
+        if (Date.now() >= deadline) return null;
+        const delay = Math.min(150 * Math.pow(2, attempt++), 500);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+
+    /**
+     * DMメッセージの暗号化
+     */
+    export async function _encryptDmText(plaintext, dmKeyObj) {
+      return await _encryptText(plaintext, dmKeyObj);
+    }
+
+    /**
+     * DMメッセージの復号化
+     */
+    export async function _decryptDmText(text, dmId, participants) {
+      if (!_isEncrypted(text)) return text;
+      if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      try {
+        const dmKeyObj = await _getOrCreateDmKey(dmId, participants);
+        if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
+
+        const parts = text.split("::");
+        if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
+        const version = parts[1].replace('v', '');
+        let keyToUse = dmKeyObj[version];
+        const iv = new Uint8Array(_b64ToAb(parts[2]));
+        const ctBuf = _b64ToAb(parts[3]);
+
+        if (keyToUse) {
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, keyToUse, ctBuf);
+            return _td.decode(pt);
+          } catch(e) {}
+        }
+
+        for (const ver in dmKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, dmKeyObj[ver], ctBuf);
+            return _td.decode(pt);
+          } catch(e) {}
+        }
+
+        return `（復号化エラー：DM鍵が一致しません）`;
+      } catch (e) {
+        return "（復号化エラー：メッセージを解読できません）";
+      }
+    }
+
+    /**
+     * DMメッセージ配列の一括復号
+     */
+    export async function _decryptDmMessagesInPlace(messages, dmId, participants) {
+      if (!_subtleOK || !Array.isArray(messages)) return;
+      await Promise.all(messages.map(async (m) => {
+        if (!m || typeof m.text !== "string") return;
+        if (m._decrypted) return;
+
+        if (!m._originalText && _isEncrypted(m.text)) {
+          m._originalText = m.text;
+        }
+        const textToDecrypt = m._originalText || m.text;
+
+        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
+        try {
+          const decrypted = await _decryptDmText(textToDecrypt, dmId, participants);
+          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+            m._decryptedErrorText = decrypted;
+            m._decrypted = false;
+          } else {
+            m.text = decrypted;
+            m._decryptedErrorText = null;
+            m._decrypted = true;
+          }
+        } catch (e) {
+          m.text = "（復号化エラー：メッセージを解読できません）";
+          m._decrypted = false;
+        }
+      }));
+    }

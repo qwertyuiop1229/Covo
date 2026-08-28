@@ -777,6 +777,9 @@
               <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
                 <i class="fas fa-screwdriver-wrench fa-fw"></i>ツール
               </button>
+              <button class="settings-nav-item" id="snav-migration" onclick="switchDiscordSettingsTab('migration')">
+                <i class="fas fa-mobile-screen-button fa-fw"></i>端末データ移行
+              </button>
               <div class="settings-nav-divider"></div>
               <div id="adminPanelContainer" class="hidden">
                 <div class="settings-nav-label">管理</div>
@@ -1124,6 +1127,81 @@
                 </div>
               </div>
 
+              <!-- 端末間データ完全移行セクション (migrationSection) -->
+              <div id="migrationSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">端末データ完全移行 (P2P)</div>
+                <p class="text-xs text-gray-500 dark:text-slate-400 leading-relaxed">
+                  機種変更や新端末への引継ぎ時、同一アカウント間で直接P2P通信を行い、暗号化過去ログ・設定・暗号鍵をファイル操作なしで完全移行します。
+                </p>
+
+                <!-- カード 1: 新しい端末として受け取る -->
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 border border-gray-200/80 dark:border-slate-700/60 space-y-4 transition-colors">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-center text-base flex-shrink-0">
+                      <i class="fas fa-download"></i>
+                    </div>
+                    <div>
+                      <div class="text-sm font-bold text-gray-800 dark:text-white">新しい端末としてデータを受け取る</div>
+                      <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">移行コードを発行し、旧端末からの送信を待機します</div>
+                    </div>
+                  </div>
+
+                  <div id="migrationReceiveInitialState">
+                    <button id="startReceiveMigrationBtn" onclick="initiateMigrationReceive()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center gap-2">
+                      <i class="fas fa-qrcode"></i> 受信コードを発行する
+                    </button>
+                  </div>
+
+                  <div id="migrationReceiveActiveState" class="hidden space-y-3 pt-2">
+                    <div class="p-4 bg-white dark:bg-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-900/60 flex flex-col items-center justify-center text-center">
+                      <div class="text-xs text-gray-500 dark:text-slate-400 mb-1">旧端末で以下の6桁コードを入力してください</div>
+                      <div id="migrationSessionCodeDisplay" class="text-3xl font-mono font-extrabold tracking-widest text-indigo-600 dark:text-indigo-400 my-2 select-all">------</div>
+                      <div class="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-slate-400">
+                        <i class="fas fa-clock text-amber-500"></i>
+                        <span>有効期限: <span id="migrationExpiryCountdown" class="font-mono">05:00</span></span>
+                      </div>
+                    </div>
+                    <!-- 受信進行状況 -->
+                    <div id="migrationReceiveProgressArea" class="hidden space-y-2">
+                      <div class="w-full bg-gray-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                        <div id="migrationReceiveProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                      </div>
+                      <div id="migrationReceiveStatus" class="text-xs text-center font-bold text-indigo-500 dark:text-indigo-400">接続待機中...</div>
+                    </div>
+                    <button onclick="cancelMigrationReceive()" class="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">キャンセル</button>
+                  </div>
+                </div>
+
+                <!-- カード 2: 別の端末へ送る -->
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 border border-gray-200/80 dark:border-slate-700/60 space-y-4 transition-colors">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-center text-base flex-shrink-0">
+                      <i class="fas fa-paper-plane"></i>
+                    </div>
+                    <div>
+                      <div class="text-sm font-bold text-gray-800 dark:text-white">別の端末へ全データを送る</div>
+                      <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">新端末に表示された6桁コードを入力して送信します</div>
+                    </div>
+                  </div>
+
+                  <div class="space-y-3">
+                    <div class="flex gap-2 max-w-sm">
+                      <input type="text" id="migrationSendCodeInput" placeholder="例: COVO-1234" maxlength="12" class="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-sm font-mono text-gray-800 dark:text-white uppercase placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition shadow-inner" />
+                      <button id="startSendMigrationBtn" onclick="initiateMigrationSend()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
+                        <i class="fas fa-link"></i> 接続して送信
+                      </button>
+                    </div>
+                    <!-- 送信進行状況 -->
+                    <div id="migrationSendProgressArea" class="hidden space-y-2 max-w-sm">
+                      <div class="w-full bg-gray-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                        <div id="migrationSendProgressBar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                      </div>
+                      <div id="migrationSendStatus" class="text-xs text-center font-bold text-emerald-600 dark:text-emerald-400">接続中...</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 
             </div>
           </div>
@@ -1140,11 +1218,32 @@
       <button id="adminTabAllowedBtn" class="flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-slate-700 dark:text-white shadow-xs"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
       <button id="adminTabAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
+      <button id="adminTabFeaturesBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-toggle-on text-xs"></i>機能公開設定</button>
       <button id="adminTabAnnouncementsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
       <button id="adminTabRecoveryBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-key text-xs"></i>復旧PIN支援</button>
     </div>
     
     <div class="pr-1 space-y-4">
+      <!-- 機能公開設定タブ (全体管理者専用) -->
+      <div id="adminTabFeaturesContent" class="space-y-4 hidden">
+        <div class="p-4 bg-gray-50 dark:bg-slate-800/40 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-4">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                <i class="fas fa-comments text-indigo-500"></i>
+                個別チャット (DM) & フレンド機能の公開
+              </div>
+              <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                オンにすると、一般ユーザーもダイレクトメッセージ (DM) およびフレンド追加・通話・ファイル共有を利用できるようになります。
+              </div>
+            </div>
+            <label class="toggle-switch flex-shrink-0 cursor-pointer">
+              <input type="checkbox" id="adminDmFeatureToggle" onchange="toggleAdminDmFeature(event)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
       <!-- 復旧PIN支援タブ (全体管理者専用) -->
       <div id="adminTabRecoveryContent" class="space-y-4 hidden flex-1 flex flex-col min-h-0">
         <div class="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-transparent rounded-xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed flex-shrink-0">
@@ -2108,23 +2207,21 @@
             </div>
             <!-- フレンドボタン -->
             <div class="p-2">
-              <div class="px-3 py-2.5 rounded-xl bg-gray-200/70 dark:bg-white/10 font-bold text-gray-800 dark:text-white flex items-center gap-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-white/15 transition-colors" onclick="openDmHomeView()">
+              <div id="dmFriendsSidebarBtn" class="px-3 py-2.5 rounded-xl bg-gray-200/70 dark:bg-white/10 font-bold text-gray-800 dark:text-white flex items-center gap-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-white/15 transition-colors" onclick="openDmHomeView()">
                 <i class="fas fa-user-friends text-base text-indigo-500 w-5 text-center"></i>
                 <span class="flex-1">フレンド</span>
+                <span id="dmFriendsPendingBadge" class="hidden px-2 py-0.5 text-[10px] font-bold bg-rose-500 text-white rounded-full">0</span>
               </div>
             </div>
             
             <div class="pt-3 px-3 pb-1 flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-wider">
               <span>ダイレクトメッセージ</span>
-              <button class="text-gray-400 hover:text-gray-200 transition-colors text-xs" title="DMを作成"><i class="fas fa-plus"></i></button>
+              <button class="text-gray-400 hover:text-gray-200 transition-colors text-xs" title="フレンドを追加 / DM作成" onclick="switchDmTab('add')"><i class="fas fa-plus"></i></button>
             </div>
             
-            <!-- 個別チャットプレースホルダー / 一覧 -->
-            <div class="px-2 py-1 space-y-1">
-              <div class="p-4 text-center text-xs text-gray-400 dark:text-gray-500 bg-gray-50/50 dark:bg-[#1e1f22]/50 rounded-xl border border-gray-200/50 dark:border-gray-800/50 m-1">
-                <i class="fas fa-comments text-2xl text-gray-300 dark:text-gray-600 mb-2 block"></i>
-                <span>ダイレクトメッセージは<br>現在準備中です</span>
-              </div>
+            <!-- DM会話一覧 (動的レンダリング) -->
+            <div id="dmConversationsList" class="px-2 py-1 space-y-1">
+              <!-- JSで動的に追加されます -->
             </div>
           </div>
 
@@ -2168,12 +2265,15 @@
               </div>
               <div class="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1 flex-shrink-0"></div>
               <!-- タブ一覧 -->
-              <div class="flex items-center gap-1 flex-shrink-0 text-xs font-semibold">
-                <button class="px-2.5 py-1 rounded-md bg-gray-200/80 dark:bg-white/10 text-gray-900 dark:text-white font-bold transition-colors whitespace-nowrap">オンライン</button>
-                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">全員</button>
-                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">待機中</button>
-                <button class="px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">ブロック中</button>
-                <button class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap">
+              <div class="flex items-center gap-1 flex-shrink-0 text-xs font-semibold" id="dmTabsContainer">
+                <button id="dmTabOnlineBtn" onclick="switchDmTab('online')" class="dm-tab-btn active px-2.5 py-1 rounded-md bg-gray-200/80 dark:bg-white/10 text-gray-900 dark:text-white font-bold transition-colors whitespace-nowrap">オンライン</button>
+                <button id="dmTabAllBtn" onclick="switchDmTab('all')" class="dm-tab-btn px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">全員</button>
+                <button id="dmTabPendingBtn" onclick="switchDmTab('pending')" class="dm-tab-btn px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap flex items-center gap-1.5">
+                  <span>待機中</span>
+                  <span id="dmTabPendingCountBadge" class="hidden px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">0</span>
+                </button>
+                <button id="dmTabBlockedBtn" onclick="switchDmTab('blocked')" class="dm-tab-btn px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">ブロック中</button>
+                <button id="dmTabAddBtn" onclick="switchDmTab('add')" class="dm-tab-btn px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap">
                   <i class="fas fa-user-plus text-[10px]"></i> <span>フレンド追加</span>
                 </button>
               </div>
@@ -2189,26 +2289,85 @@
             </div>
           </div>
 
-          <!-- フレンド・個チャメインコンテンツ (準備中プレースホルダー) -->
-          <div class="flex-1 overflow-y-auto p-6 sm:p-12 flex flex-col items-center justify-center text-center">
-            <div class="max-w-md w-full flex flex-col items-center">
-              <div class="w-24 h-24 rounded-3xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 flex items-center justify-center text-4xl mb-6 shadow-inner border border-indigo-100 dark:border-indigo-800/40">
-                <i class="fas fa-comments"></i>
+          <!-- フレンド・個チャメインコンテンツ -->
+          <div id="dmMainScrollContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 select-text">
+            <!-- フレンドリアルタイム検索バー (Discord完全準拠) -->
+            <div class="mb-4">
+              <div class="relative flex items-center">
+                <i class="fas fa-search absolute left-3 text-gray-400 text-xs pointer-events-none"></i>
+                <input type="text" id="friendListSearchInput" placeholder="フレンドを検索..." oninput="window.filterFriendsList(this.value)" class="w-full pl-8 pr-8 py-2 bg-gray-100 dark:bg-[#1e1f22] border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition shadow-inner" />
+                <button id="clearFriendSearchBtn" onclick="window.clearFriendSearch()" class="absolute right-2.5 text-gray-400 hover:text-gray-200 text-xs hidden w-5 h-5 rounded-full flex items-center justify-center"><i class="fas fa-times"></i></button>
               </div>
-              <span class="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-full text-xs font-bold mb-3 tracking-wider">COMING SOON</span>
-              <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">個別チャット & フレンド機能</h2>
-              <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
-                1対1のダイレクトメッセージやフレンドの追加・オンライン状況確認機能は現在準備中です。身内同士でさらに快適に繋がれる機能が近日登場します！
-              </p>
-              <div class="p-4 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200 dark:border-[#202225] text-left w-full space-y-2.5 shadow-sm">
-                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
-                  <i class="fas fa-check text-emerald-500"></i> エンドツーエンド暗号化 (E2EE) 個別チャット
+            </div>
+
+            <!-- 1. オンラインタブ -->
+            <div id="dmTabOnlineContent" class="dm-tab-content space-y-2">
+              <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">オンライン — <span id="dmOnlineFriendsCount">0</span>人</div>
+              <div id="dmOnlineFriendsList" class="space-y-1.5">
+                <!-- オンラインフレンド要素 -->
+              </div>
+            </div>
+
+            <!-- 2. 全員タブ -->
+            <div id="dmTabAllContent" class="dm-tab-content space-y-2 hidden">
+              <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">すべてのフレンド — <span id="dmAllFriendsCount">0</span>人</div>
+              <div id="dmAllFriendsList" class="space-y-1.5">
+                <!-- 全フレンド要素 -->
+              </div>
+            </div>
+
+            <!-- 3. 待機中タブ -->
+            <div id="dmTabPendingContent" class="dm-tab-content space-y-6 hidden">
+              <div>
+                <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">受信したフレンド申請 — <span id="dmPendingReceivedCount">0</span>件</div>
+                <div id="dmPendingReceivedList" class="space-y-1.5"></div>
+              </div>
+              <div class="pt-4 border-t border-gray-200 dark:border-slate-800">
+                <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">送信済みのフレンド申請 — <span id="dmPendingSentCount">0</span>件</div>
+                <div id="dmPendingSentList" class="space-y-1.5"></div>
+              </div>
+            </div>
+
+            <!-- 4. ブロック中タブ -->
+            <div id="dmTabBlockedContent" class="dm-tab-content space-y-2 hidden">
+              <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">ブロック中のユーザー — <span id="dmBlockedCount">0</span>人</div>
+              <div id="dmBlockedList" class="space-y-1.5"></div>
+            </div>
+
+            <!-- 5. フレンド追加タブ -->
+            <div id="dmTabAddContent" class="dm-tab-content max-w-xl space-y-4 hidden">
+              <div>
+                <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">フレンドを追加</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400">ニックネーム#1234 または メールアドレス を入力してフレンド申請を送信できます。</p>
+              </div>
+              <div class="bg-gray-100 dark:bg-[#1e1f22] p-3 rounded-2xl border border-gray-200 dark:border-slate-700/60 flex items-center gap-2 shadow-inner">
+                <input type="text" id="dmAddFriendInput" placeholder="例: ニックネーム#1234 または user@example.com" class="flex-1 bg-transparent border-none text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-2" />
+                <button id="dmAddFriendSubmitBtn" onclick="submitFriendRequest()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition active:scale-95 whitespace-nowrap">フレンド申請を送信</button>
+              </div>
+              <div id="dmAddFriendFeedback" class="text-xs font-semibold px-2 min-h-[1.25rem]"></div>
+            </div>
+
+            <!-- 一般ユーザー向け 準備中パネル (管理者がトグルオフの時) -->
+            <div id="dmComingSoonPanel" class="hidden flex-1 flex-col items-center justify-center text-center py-12">
+              <div class="max-w-md w-full flex flex-col items-center">
+                <div class="w-24 h-24 rounded-3xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 flex items-center justify-center text-4xl mb-6 shadow-inner border border-indigo-100 dark:border-indigo-800/40">
+                  <i class="fas fa-comments"></i>
                 </div>
-                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
-                  <i class="fas fa-check text-emerald-500"></i> フレンド同士の1タップ通話・ファイル共有
-                </div>
-                <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
-                  <i class="fas fa-check text-emerald-500"></i> リアルタイムステータス表示
+                <span class="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-full text-xs font-bold mb-3 tracking-wider">COMING SOON</span>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">個別チャット & フレンド機能</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+                  ダイレクトメッセージおよびフレンド機能は現在開発・最終調整中です。全体管理者による一般公開をお待ちください！
+                </p>
+                <div class="p-4 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200 dark:border-[#202225] text-left w-full space-y-2.5 shadow-sm">
+                  <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                    <i class="fas fa-check text-emerald-500"></i> エンドツーエンド暗号化 (E2EE) 個別チャット
+                  </div>
+                  <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                    <i class="fas fa-check text-emerald-500"></i> フレンド同士の1タップ通話・ファイル共有
+                  </div>
+                  <div class="flex items-center gap-2.5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                    <i class="fas fa-check text-emerald-500"></i> リアルタイムステータス表示
+                  </div>
                 </div>
               </div>
             </div>
