@@ -747,7 +747,8 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
         return Err("Invalid tag format".to_string());
     }
 
-    let is_valid_url = url.starts_with("https://github.com/qwertyuiop1229/Covo/releases/download/")
+    let url_lower = url.to_lowercase();
+    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
         || url.starts_with("https://objects.githubusercontent.com/");
     if !is_valid_url {
         return Err("Invalid download URL: must be from official repository".to_string());

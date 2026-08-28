@@ -855,7 +855,8 @@ function initializeFirebase() {
     });
   } catch (error) {
     console.error("Firebase Init Error:", error);
-    authMessage.textContent = `エラー: ${error.message}`;
+    const authMsg = document.getElementById("authMessage");
+    if (authMsg) authMsg.textContent = `エラー: ${error.message}`;
   }
 }
 
@@ -1355,18 +1356,29 @@ async function _loadOrCreateUserRecoveryKey(user) {
 
     _currentUserRecoveryKey = key;
 
+    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
+    const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
     if (statusBadge) {
       statusBadge.textContent = '有効 (保護中)';
       statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+    }
+    if (modalBadge) {
+      modalBadge.textContent = '有効 (保護中)';
+      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
     }
     if (keyDisplay) {
       keyDisplay.textContent = key;
     }
   } catch (err) {
     console.error('[Recovery] Load/Create key error:', err);
+    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
     if (statusBadge) {
       statusBadge.textContent = 'ローカル保護中';
       statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+    }
+    if (modalBadge) {
+      modalBadge.textContent = 'ローカル保護中';
+      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
     }
   }
 }
@@ -3988,9 +4000,9 @@ avatarZoomSlider.addEventListener('input', () => {
   cropScale = newScale; clampCropOffset(); drawCropPreview();
 });
 
-document.getElementById('avatarCropCancel').addEventListener('click', closeCropModal);
+document.getElementById('avatarCropCancel')?.addEventListener('click', closeCropModal);
 
-document.getElementById('avatarCropConfirm').addEventListener('click', async () => {
+document.getElementById('avatarCropConfirm')?.addEventListener('click', async () => {
   if (!cropImage) return;
   // 解像度を 400→640 に上げ、高品質リサイズ＋JPEG品質0.92で鮮明に保存する
   // （Cloudflare はファイルをそのまま保存するだけなので、画質はここの設定で決まる）
@@ -5678,7 +5690,7 @@ window.submitFriendRequest = async function() {
     batch.set(targetRef, {
       targetUid: userId,
       targetNickname: userNickname || 'ユーザー',
-      targetAvatarUrl: currentUserAvatarUrl || '',
+      targetAvatarUrl: userAvatarUrl || '',
       targetEmail: auth.currentUser?.email || '',
       status: 'pending_received',
       updatedAt: serverTimestamp()

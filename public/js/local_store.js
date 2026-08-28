@@ -80,6 +80,22 @@ export async function initLocalDB() {
  * 単一メッセージの保存 / 更新
  * @param {Object} msg - メッセージオブジェクト
  */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+
 export async function putMessage(msg) {
   if (!msg || !msg.id || !msg.channelId) return;
   const db = await initLocalDB();
@@ -90,9 +106,7 @@ export async function putMessage(msg) {
       const tx = db.transaction("messages", "readwrite");
       const store = tx.objectStore("messages");
       const cleanMsg = { ...msg };
-      if (typeof cleanMsg.timestamp !== 'number') {
-        cleanMsg.timestamp = typeof cleanMsg.timestamp === 'string' ? new Date(cleanMsg.timestamp).getTime() : (cleanMsg.timestamp?.seconds ? cleanMsg.timestamp.seconds * 1000 : Date.now());
-      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => {
@@ -122,9 +136,7 @@ export async function upsertMessagesBatch(msgs) {
       for (const msg of msgs) {
         if (!msg || !msg.id || !msg.channelId) continue;
         const cleanMsg = { ...msg };
-        if (typeof cleanMsg.timestamp !== 'number') {
-          cleanMsg.timestamp = typeof cleanMsg.timestamp === 'string' ? new Date(cleanMsg.timestamp).getTime() : (cleanMsg.timestamp?.seconds ? cleanMsg.timestamp.seconds * 1000 : Date.now());
-        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
         store.put(cleanMsg);
       }
       tx.oncomplete = () => resolve(true);

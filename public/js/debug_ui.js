@@ -209,11 +209,14 @@ export function getSystemDiagnosticInfo() {
   const info = {
     timestamp: new Date().toLocaleString('ja-JP'),
     appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
     appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
     userAgent: navigator.userAgent,
     language: navigator.language || 'ja',
-    online: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    online: navigator.onLine,
+    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
     screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    screenSize: `${window.innerWidth}x${window.innerHeight}`,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
     touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
     memory: (window.performance && window.performance.memory) ? {

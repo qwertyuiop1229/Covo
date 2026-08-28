@@ -762,11 +762,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     /**
      * DMメッセージの復号化
      */
-    export async function _decryptDmText(text, dmId, participants) {
+    export async function _decryptDmText(text, dmIdOrKey, participants) {
       if (!_isEncrypted(text)) return text;
       if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
       try {
-        const dmKeyObj = await _getOrCreateDmKey(dmId, participants);
+        let dmKeyObj = null;
+        if (dmIdOrKey && typeof dmIdOrKey === 'object' && (dmIdOrKey.latest || dmIdOrKey['1'])) {
+          dmKeyObj = dmIdOrKey;
+        } else if (typeof dmIdOrKey === 'string') {
+          dmKeyObj = await _getOrCreateDmKey(dmIdOrKey, participants);
+        }
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
 
         const parts = text.split("::");
@@ -827,4 +832,4 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           m._decrypted = false;
         }
       }));
-    }
+    }

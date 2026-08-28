@@ -508,10 +508,10 @@ async function handleSendCallNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: corsHeaders });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
     }
     const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
@@ -573,8 +573,8 @@ async function handleSendCallNotification(request, env) {
               notification: {
                 title,
                 body,
-                icon: "/icon-192x192.png?v=5",
-                badge: "/icon-192x192.png?v=5",
+                icon: "/img/icon-192x192.png?v=6",
+                badge: "/img/icon-192x192.png?v=6",
                 tag: `call-${callId}`,
                 requireInteraction: true,
                 renotify: true
@@ -1090,9 +1090,9 @@ async function handleDeleteFile(request, env, url) {
     let isPrivilegedAdmin = false;
     if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
       isPrivilegedAdmin = true;
-    } else if (env.DB) {
+    } else {
       const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
-      isPrivilegedAdmin = await isD1Admin(appId, verifiedUser, env);
+      isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
     }
 
     if (forceDelete) {
@@ -1463,7 +1463,7 @@ async function verifyFirebaseIdToken(idToken, env) {
 }
 
 async function isD1Admin(appId, verifiedUser, env) {
-  if (!appId || !verifiedUser) return false;
+  if (!appId || !verifiedUser || !env.DB) return false;
   try {
     const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
     if (row && row.setting_data) {
@@ -1476,6 +1476,35 @@ async function isD1Admin(appId, verifiedUser, env) {
     }
   } catch(e) {
     console.error("isD1Admin error:", e);
+  }
+  return false;
+}
+
+async function isAppAdmin(appId, verifiedUser, env) {
+  if (!appId || !verifiedUser) return false;
+  if (env.DB) {
+    const d1Result = await isD1Admin(appId, verifiedUser, env);
+    if (d1Result) return true;
+  }
+  try {
+    const workerToken = await getWorkerAuthToken(env);
+    if (workerToken) {
+      const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
+      const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+      const adminData = await adminRes.json();
+      if (!adminData.error && adminData.fields) {
+        if (adminData.fields.emails?.arrayValue?.values) {
+          const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
+          if (verifiedUser.email && emails.includes(verifiedUser.email)) return true;
+        }
+        if (adminData.fields.admins?.arrayValue?.values) {
+          const admins = adminData.fields.admins.arrayValue.values.map(v => v.stringValue);
+          if (verifiedUser.uid && admins.includes(verifiedUser.uid)) return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("isAppAdmin error:", e);
   }
   return false;
 }

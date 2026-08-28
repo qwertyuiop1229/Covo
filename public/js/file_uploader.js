@@ -28,7 +28,14 @@ export function checkFileAllowed(file) {
  */
 export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
   return new Promise(async (resolve, reject) => {
-    const idToken = auth && auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
     const fd = new FormData();
     fd.append('file', file);
     fd.append('uploaderId', userId || '');
