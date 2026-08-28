@@ -12,6 +12,10 @@
           ".read": "auth != null",
           ".write": "false"
         },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
         "servers": {
           "$serverId": {
             ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",

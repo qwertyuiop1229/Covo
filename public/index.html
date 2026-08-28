@@ -467,10 +467,27 @@
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
       <!-- 認証フォーム -->
       <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
-        <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md modal-box animate-pop-in">
+        <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100">
+
+          <!-- Google ログインボタン -->
+          <button id="googleAuthButton" type="button" class="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-xl border border-gray-300 shadow-sm transition-all mb-4 active:scale-98">
+            <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span class="text-sm font-semibold">Google でログイン / 登録</span>
+          </button>
+
+          <div class="flex items-center my-4">
+            <div class="flex-1 border-t border-gray-200"></div>
+            <span class="px-3 text-xs text-gray-400 font-medium">またはメールアドレスで</span>
+            <div class="flex-1 border-t border-gray-200"></div>
+          </div>
 
           <!-- タブ -->
-          <div class="flex mb-6 border-b border-gray-300">
+          <div class="flex mb-6 border-b border-gray-200">
             <button id="tabLogin"
               class="flex-1 pb-2 font-bold text-gray-800 border-b-2 border-gray-800 transition-colors">ログイン</button>
             <button id="tabSignup"
@@ -480,25 +497,56 @@
           <!-- ログインフォーム -->
           <form id="loginFormArea" onsubmit="event.preventDefault();">
             <input type="email" id="emailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
+              class="w-full p-3 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
             <input type="password" id="passwordInput" placeholder="パスワード" autocomplete="current-password"
-              class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none" />
+              class="w-full p-3 mb-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+            <div class="flex justify-end mb-4">
+              <button type="button" id="forgotPasswordBtn" onclick="openPasswordResetModal()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline transition">パスワードをお忘れですか？</button>
+            </div>
             <button id="authButton"
-              class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors duration-200 mb-4">ログイン</button>
+              class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">ログイン</button>
           </form>
 
           <!-- 新規登録フォーム -->
           <form id="signupFormArea" class="hidden" onsubmit="event.preventDefault();">
-            <p class="text-sm text-gray-600 mb-4 text-center">メールアドレスとパスワードでアカウントを作成します。</p>
+            <p class="text-xs text-gray-500 mb-4 text-center">メールアドレスとパスワードで新しいアカウントを作成します。</p>
             <input type="email" id="signupEmailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none" />
-            <input type="password" id="signupPasswordInput" placeholder="新規パスワードを設定" autocomplete="new-password"
-              class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none" />
+              class="w-full p-3 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+            <input type="password" id="signupPasswordInput" placeholder="新規パスワード（6文字以上）" autocomplete="new-password"
+              class="w-full p-3 mb-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
             <button id="signupButton"
-              class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors duration-200 mb-4">アカウント作成</button>
+              class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">アカウント作成</button>
           </form>
 
-          <div id="authMessage" class="text-red-600 text-center mt-2"></div>
+          <div id="authMessage" class="text-rose-600 text-center text-xs mt-2 min-h-[1.2rem]"></div>
+        </div>
+      </div>
+
+      <!-- パスワード再設定モーダル -->
+      <div id="passwordResetModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[100] hidden p-4">
+        <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
+          <button onclick="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+            <i class="fas fa-times"></i>
+          </button>
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg flex-shrink-0">
+              <i class="fas fa-key"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">パスワードの再設定</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400">登録メールアドレス宛に再設定リンク（日本語）を送信します</p>
+            </div>
+          </div>
+          <form onsubmit="event.preventDefault(); submitPasswordReset();" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">メールアドレス</label>
+              <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" required />
+            </div>
+            <div id="resetEmailMessage" class="text-xs min-h-[1rem]"></div>
+            <button id="sendResetEmailBtn" type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+              <i class="fas fa-paper-plane text-xs"></i> 再設定メールを送信
+            </button>
+          </form>
         </div>
       </div>
 
@@ -599,6 +647,84 @@
                 <div class="mt-6">
                   <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm font-bold rounded-xl transition-all">保存</button>
                 </div>
+
+                <!-- アカウント & セキュリティ -->
+                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/60 space-y-6">
+                  <div class="settings-section-title text-sm !mb-2">アカウント & セキュリティ</div>
+                  
+                  <!-- メールアドレス & Google連携 -->
+                  <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-4 border border-gray-200/80 dark:border-gray-700/60 space-y-3.5">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">メールアドレス</div>
+                        <div id="settingsEmailDisplay" class="text-sm font-semibold text-gray-800 dark:text-gray-200 font-mono mt-0.5">取得中...</div>
+                      </div>
+                      <span id="settingsEmailVerifiedBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">認証済み</span>
+                    </div>
+                    
+                    <div class="pt-3 border-t border-gray-200/60 dark:border-gray-700/50 flex items-center justify-between flex-wrap gap-2">
+                      <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                        </svg>
+                        <div>
+                          <div class="text-xs font-bold text-gray-800 dark:text-gray-200">Google アカウント連携</div>
+                          <div id="settingsGoogleStatusText" class="text-[11px] text-gray-500 dark:text-gray-400">未連携</div>
+                        </div>
+                      </div>
+                      <button id="settingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3.5 py-1.5 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-gray-600 transition shadow-xs">
+                        連携する
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- パスワード変更 & 再設定 -->
+                  <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-4 border border-gray-200/80 dark:border-gray-700/60 space-y-4">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <i class="fas fa-lock text-gray-600 dark:text-gray-300 text-sm"></i>
+                        <span class="text-xs font-bold text-gray-800 dark:text-gray-200">パスワードの管理</span>
+                      </div>
+                      <button type="button" onclick="sendPasswordResetToCurrentUser()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:underline">
+                        再設定メールを送信
+                      </button>
+                    </div>
+
+                    <!-- パスワード変更フォーム -->
+                    <form onsubmit="event.preventDefault(); submitChangePassword();" class="space-y-3 pt-2 border-t border-gray-200/60 dark:border-gray-700/50">
+                      <div id="changePasswordCurrentRow">
+                        <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">現在のパスワード</label>
+                        <input type="password" id="currentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">新しいパスワード</label>
+                          <input type="password" id="newPasswordInput" placeholder="6文字以上" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                        </div>
+                        <div>
+                          <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">新しいパスワード (確認)</label>
+                          <input type="password" id="confirmNewPasswordInput" placeholder="もう一度入力" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                        </div>
+                      </div>
+                      <div id="changePasswordMessage" class="text-xs min-h-[1rem]"></div>
+                      <button id="changePasswordBtn" type="submit" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-98">
+                        パスワードを変更
+                      </button>
+                    </form>
+                  </div>
+
+                  <!-- セキュリティガイダンス -->
+                  <div class="p-3.5 bg-blue-50/50 dark:bg-slate-900/60 rounded-xl border border-blue-100 dark:border-slate-800 text-[11px] text-gray-600 dark:text-gray-400 space-y-1">
+                    <div class="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                      <i class="fas fa-shield-halved text-indigo-500"></i>
+                      <span>セキュリティ保護について</span>
+                    </div>
+                    <p class="leading-relaxed">Covoのアカウントは強固な一方向暗号化（Firebase Authentication）で保護されています。パスワードを忘れた場合でも、登録メール宛の安全な再設定リンクからいつでも安全にリセットできます。</p>
+                  </div>
+                </div>
               </div>
 
               <!-- 設定セクション -->
@@ -663,16 +789,24 @@
                       <span class="text-sm font-bold text-gray-500 dark:text-gray-400" id="appInfoE2EE">確認中…</span>
                     </div>
                     <div class="flex justify-between items-center">
-                      <button class="" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')" style="padding:7px 16px;background:#0f172a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">アップデートを確認</button>
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')">
+                        <i class="fas fa-sync-alt text-xs"></i>アップデートを確認
+                      </button>
                       <span id="pcCheckUpdateStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
                     <div class="flex justify-between items-center" id="pcCreateShortcutRow" style="display:none!important">
-                      <button class="" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')" style="padding:7px 16px;background:#0f172a;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">デスクトップにショートカットを作成</button>
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" id="pcCreateShortcutBtn" onclick="createDesktopShortcut('pcCreateShortcutBtn','pcCreateShortcutStatus')">
+                        <i class="fas fa-desktop text-xs"></i>デスクトップにショートカットを作成
+                      </button>
                       <span id="pcCreateShortcutStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
-                    <div class="flex justify-between items-center mt-2 gap-2">
-                      <button class="hover:bg-slate-700 transition-colors" onclick="showLatestAnnouncementModal(true)" style="padding:7px 16px;background:#334155;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">お知らせ・更新履歴</button>
-                      <button class="hover:bg-red-600 transition-colors" onclick="window.openFeedbackModal && window.openFeedbackModal()" style="padding:7px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">バグを報告する</button>
+                    <div class="flex justify-between items-center mt-2 gap-2 flex-wrap">
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="showLatestAnnouncementModal(true)">
+                        <i class="fas fa-bullhorn text-xs"></i>お知らせ・更新履歴
+                      </button>
+                      <button class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl border border-rose-500/30 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="window.openFeedbackModal && window.openFeedbackModal()">
+                        <i class="fas fa-bug text-xs"></i>バグを報告する
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -689,25 +823,29 @@
                   </label>
                 </div>
 
-                
-                <!-- Windows版を取得する -->
-                <div id="windowsDownloadContainer" class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/60 rounded-2xl flex items-center justify-between shadow-sm" style="display:none;">
+                <!-- Windows版を取得する (Web版向け) -->
+                <div id="windowsDownloadContainer" class="mb-4 p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/60 rounded-2xl flex items-center justify-between shadow-sm flex-wrap gap-3" style="display:none;">
                   <div>
-                    <div class="text-sm font-bold text-blue-700 dark:text-blue-400"><i class="fab fa-windows mr-2"></i>Windows版アプリを取得</div>
-                    <div class="text-xs text-blue-600 dark:text-blue-300 mt-1">デスクトップアプリをダウンロードして、より快適に利用しましょう。</div>
+                    <div class="text-sm font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2"><i class="fab fa-windows text-indigo-500 text-base"></i>Windows版アプリを取得</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">デスクトップアプリ（.exe）をダウンロードして、より高速＆快適に利用できます。</div>
                   </div>
-                  <button onclick="downloadLatestWindowsApp(this)" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
-                    最新版をダウンロード
-                  </button>
+                  <div class="flex items-center gap-2">
+                    <button onclick="downloadLatestWindowsApp(this)" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0 flex items-center gap-1.5 active:scale-95">
+                      <i class="fas fa-download"></i> 最新版 (.exe)
+                    </button>
+                    <button onclick="openPastVersionsModal()" class="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200 font-bold text-xs rounded-xl border border-gray-300 dark:border-slate-600 transition shadow-xs flex-shrink-0 flex items-center gap-1.5">
+                      <i class="fas fa-clock-rotate-left"></i> 過去バージョン
+                    </button>
+                  </div>
                 </div>
 
-                <!-- バージョン管理と履歴 -->
-                <div class="p-4 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/60 rounded-2xl flex items-center justify-between shadow-sm">
+                <!-- バージョン管理と履歴 (デスクトップ版用) -->
+                <div id="pastVersionsContainerDesktop" class="p-4 bg-gray-50 dark:bg-slate-900/60 border border-gray-200 dark:border-slate-700/60 rounded-2xl flex items-center justify-between shadow-sm">
                   <div>
-                    <div class="text-sm font-bold text-gray-800 dark:text-gray-100"><i class="fas fa-history mr-2"></i>過去のバージョン履歴</div>
+                    <div class="text-sm font-bold text-gray-800 dark:text-gray-100"><i class="fas fa-history mr-2 text-indigo-400"></i>過去のバージョン履歴</div>
                     <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">過去のリリース履歴の確認、および安定版へのサイレント復旧（ロールバック）が行えます。</div>
                   </div>
-                  <button onclick="openPastVersionsModal()" class="px-4 py-2 bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
+                  <button onclick="openPastVersionsModal()" class="px-4 py-2 bg-gray-800 dark:bg-slate-800 hover:bg-gray-700 dark:hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
                     過去のバージョン一覧を開く
                   </button>
                 </div>
@@ -807,42 +945,42 @@
       
   <!-- 共有管理者コンテンツ -->
   <div id="adminPanelSharedContent" class="hidden">
-    <!-- モダンなピル型タブ（ダークモード完全対応） -->
-    <div class="flex gap-1.5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl mb-4 flex-wrap border border-gray-200/60 dark:border-gray-700/60">
-      <button id="adminTabAllowedBtn" class="py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-sm"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
-      <button id="adminTabAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
-      <button id="adminTabListAdminsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
-      <button id="adminTabAnnouncementsBtn" class="admin-only-tab py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
+    <!-- 洗練されたセグメントピル型タブ（モバイル横スクロール・ダークモード完全対応） -->
+    <div class="flex gap-1 p-1 bg-gray-100/90 dark:bg-slate-900/80 rounded-2xl mb-4 overflow-x-auto no-scrollbar border border-gray-200/80 dark:border-slate-700/60 flex-nowrap">
+      <button id="adminTabAllowedBtn" class="flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
+      <button id="adminTabAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
+      <button id="adminTabListAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
+      <button id="adminTabAnnouncementsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
     </div>
     
     <div class="pr-1 space-y-4">
       <div id="adminTabAllowedContent" class="space-y-4">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
-          <button id="addAllowedEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900/80 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <button id="addAllowedEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="allowedEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
-          <button id="addAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900/80 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <button id="addAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="adminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabListAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
         <div class="flex gap-2">
-          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-sm" />
-          <button id="addListAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95">追加</button>
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900/80 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <button id="addListAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
       </div>
       <div id="adminTabAnnouncementsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">全ユーザーに向けて、新機能の追加・バグ修正・注意事項などの「アップデートお知らせ」を配信できます。</p>
-        <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-5 rounded-2xl border border-gray-200 dark:border-gray-700/60 shadow-sm">
+        <div class="space-y-3 bg-gray-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-gray-200 dark:border-slate-700/60 shadow-xs">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">バージョン</label>
@@ -860,19 +998,19 @@
                 </div>
                 <div class="covo-select-options">
                   <div class="covo-select-option selected" data-value="update" onclick="selectAnnouncementCategory('update', '新機能・改善 (UPDATE)', 'fas fa-sparkles')">
-                    <span class="flex items-center gap-2"><i class="fas fa-sparkles text-xs opacity-70"></i>新機能・改善 (UPDATE)</span>
+                    <i class="fas fa-sparkles mr-2 opacity-70"></i>新機能・改善 (UPDATE)
                   </div>
                   <div class="covo-select-option" data-value="bugfix" onclick="selectAnnouncementCategory('bugfix', 'バグ修正 (BUG FIX)', 'fas fa-wrench')">
-                    <span class="flex items-center gap-2"><i class="fas fa-wrench text-xs opacity-70"></i>バグ修正 (BUG FIX)</span>
+                    <i class="fas fa-wrench mr-2 opacity-70"></i>バグ修正 (BUG FIX)
                   </div>
                   <div class="covo-select-option" data-value="notice" onclick="selectAnnouncementCategory('notice', '重要なお知らせ (NOTICE)', 'fas fa-circle-exclamation')">
-                    <span class="flex items-center gap-2"><i class="fas fa-circle-exclamation text-xs opacity-70"></i>重要なお知らせ (NOTICE)</span>
+                    <i class="fas fa-circle-exclamation mr-2 opacity-70"></i>重要なお知らせ (NOTICE)
                   </div>
-                  <div class="covo-select-option" data-value="none" onclick="selectAnnouncementCategory('none', 'カテゴリーなし', 'fas fa-minus')">
-                    <span class="flex items-center gap-2"><i class="fas fa-minus text-xs opacity-70"></i>カテゴリーなし</span>
+                  <div class="covo-select-option" data-value="custom" onclick="selectAnnouncementCategory('custom', 'カスタムカテゴリ...', 'fas fa-tag')">
+                    <i class="fas fa-tag mr-2 opacity-70"></i>カスタムカテゴリ...
                   </div>
-                  <div class="covo-select-option" data-value="custom" onclick="selectAnnouncementCategory('custom', 'カスタム指定...', 'fas fa-pen')">
-                    <span class="flex items-center gap-2"><i class="fas fa-pen text-xs opacity-70"></i>カスタム指定...</span>
+                  <div class="covo-select-option" data-value="none" onclick="selectAnnouncementCategory('none', 'カテゴリなし', 'fas fa-minus')">
+                    <i class="fas fa-minus mr-2 opacity-70"></i>カテゴリなし
                   </div>
                 </div>
                 <input type="hidden" id="announcementCategorySelect" value="update" />
@@ -914,13 +1052,13 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">添付ファイルのストレージ使用状況</p>
-        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-xl transition-all shadow-sm">
+        <button id="refreshStorageStatsBtn" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-xl transition-all shadow-xs border border-transparent dark:border-slate-700/60">
           <i class="fas fa-sync-alt text-xs"></i>更新
         </button>
       </div>
 
-      <!-- iPhone風ストレージ使用量メーター -->
-      <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-200 dark:border-gray-700/60 shadow-sm space-y-3">
+      <!-- ストレージ使用量メーター（ダークモード完全調和） -->
+      <div class="bg-gray-50 dark:bg-slate-900/70 rounded-2xl p-5 border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <i class="fas fa-hard-drive text-indigo-500 dark:text-indigo-400 text-base"></i>
@@ -929,8 +1067,8 @@
           <span id="kvUsageText" class="text-gray-600 dark:text-gray-300 text-xs font-bold font-mono">読み込み中...</span>
         </div>
 
-        <!-- マルチカラーセグメントバー (iPhone風) -->
-        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden flex shadow-inner relative" id="storageSegmentsBar">
+        <!-- マルチカラーセグメントバー -->
+        <div class="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-3 overflow-hidden flex shadow-inner relative" id="storageSegmentsBar">
           <div id="seg-images" class="h-full bg-blue-500 transition-all duration-500" style="width: 0%" title="画像"></div>
           <div id="seg-videos" class="h-full bg-purple-500 transition-all duration-500" style="width: 0%" title="動画・音声"></div>
           <div id="seg-documents" class="h-full bg-amber-500 transition-all duration-500" style="width: 0%" title="書類・PDF"></div>
@@ -940,7 +1078,7 @@
         </div>
 
         <!-- 凡例 (Legends) -->
-        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1 text-[11px] text-gray-500 dark:text-slate-400 font-medium">
           <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0"></span><span class="truncate">画像</span></div>
           <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 flex-shrink-0"></span><span class="truncate">動画</span></div>
           <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0"></span><span class="truncate">書類</span></div>
@@ -954,25 +1092,94 @@
       <div class="space-y-2" id="storageCategoryItemsList"></div>
 
       <!-- 一括削除アクション -->
-      <div class="pt-3 border-t border-gray-100 dark:border-gray-700/60 space-y-2">
-        <button id="bulkDeleteMessagesBtn" class="w-full py-3 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 active:scale-98">
+      <div class="pt-3 border-t border-gray-100 dark:border-slate-800 space-y-2">
+        <button id="bulkDeleteMessagesBtn" class="w-full py-3 bg-slate-800 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 active:scale-98">
           <i class="fas fa-paperclip"></i> 添付ファイルのみを一括削除 (アイコン・スタンプは保持)
         </button>
-        <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/40 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
+        <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/30 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
           <i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)
         </button>
       </div>
     </div>
   </div>
 
-  <!-- 共有レポートコンテンツ -->
+  <!-- 共有レポートコンテンツ (3つのタブ: エラー収集・フィードバック・診断コンソール) -->
   <div id="reportsSharedContent" class="hidden h-full flex flex-col">
-    <div class="space-y-4 flex-1 flex flex-col min-h-0">
-      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+    <!-- レポートサブタブ -->
+    <div class="flex gap-1 p-1 bg-gray-100/90 dark:bg-slate-900/80 rounded-2xl mb-3 overflow-x-auto no-scrollbar border border-gray-200/80 dark:border-slate-700/60 flex-shrink-0 flex-nowrap">
+      <button id="reportSubTabErrorsBtn" onclick="switchReportSubTab('errors')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs">
+        <i class="fas fa-triangle-exclamation text-rose-500 text-xs"></i>
+        <span>エラー・警告ログ</span>
+        <span id="telemetryCountBadge" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-300 font-mono hidden">0</span>
+      </button>
+      <button id="reportSubTabFeedbacksBtn" onclick="switchReportSubTab('feedbacks')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
+        <i class="fas fa-comments text-indigo-500 text-xs"></i>
+        <span>ユーザー報告</span>
+      </button>
+      <button id="reportSubTabDiagBtn" onclick="switchReportSubTab('diag')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
+        <i class="fas fa-terminal text-emerald-500 text-xs"></i>
+        <span>診断 & コンソール</span>
+      </button>
+    </div>
+
+    <!-- 1. エラー・警告テレメトリ (全ユーザー自動集約) -->
+    <div id="reportSubTabErrorsContent" class="flex-1 flex flex-col min-h-0 space-y-3">
+      <div class="flex items-center justify-between gap-2 flex-wrap flex-shrink-0">
+        <div class="flex items-center gap-1.5">
+          <button id="errFilterAll" onclick="filterErrorTelemetry('all')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 transition">すべて</button>
+          <button id="errFilterErrors" onclick="filterErrorTelemetry('error')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition">エラーのみ</button>
+          <button id="errFilterWarns" onclick="filterErrorTelemetry('warn')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition">警告のみ</button>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button onclick="copyAllTelemetryErrors()" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 text-xs font-bold rounded-lg transition flex items-center gap-1">
+            <i class="fas fa-copy"></i> 全エラーを一括コピー
+          </button>
+          <button onclick="loadErrorTelemetry()" class="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+          <button onclick="clearAllTelemetryErrors()" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg transition" title="全エラーを解決済みにする">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div id="telemetryErrorsList" class="space-y-2.5 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[300px]"></div>
+    </div>
+
+    <!-- 2. ユーザーフィードバック -->
+    <div id="reportSubTabFeedbacksContent" class="flex-1 flex flex-col min-h-0 space-y-3 hidden">
+      <div class="flex items-center justify-between mb-1 flex-shrink-0">
         <p class="text-xs text-gray-400 leading-relaxed">ユーザーから寄せられたバグ報告や要望の一覧です。</p>
         <button onclick="loadAdminFeedbacks()" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors"><i class="fas fa-sync-alt mr-1"></i>更新</button>
       </div>
-      <div id="adminFeedbacksList" class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[350px]"></div>
+      <div id="adminFeedbacksList" class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[300px]"></div>
+    </div>
+
+    <!-- 3. 診断 & コンソール -->
+    <div id="reportSubTabDiagContent" class="flex-1 flex flex-col min-h-0 space-y-3 hidden">
+      <div class="flex items-center justify-between gap-2 flex-wrap flex-shrink-0">
+        <p class="text-xs text-gray-400">端末・ブラウザ環境と直近のコンソール出力です。</p>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button onclick="copySystemDiagnosticReport()" class="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-xs font-bold rounded-lg transition flex items-center gap-1">
+            <i class="fas fa-circle-info"></i> 環境情報をコピー
+          </button>
+          <button onclick="copyDevConsole()" class="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-xs font-bold rounded-lg transition flex items-center gap-1">
+            <i class="fas fa-terminal"></i> コンソールをコピー
+          </button>
+          <button onclick="copyFullDiagnosticAndConsoleReport()" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1 shadow-xs active:scale-95">
+            <i class="fas fa-clipboard-check"></i> 全てを一括コピー
+          </button>
+        </div>
+      </div>
+      <!-- 環境要約パネル -->
+      <div id="systemDiagSummaryPanel" class="p-3.5 bg-gray-50 dark:bg-slate-900/60 rounded-xl border border-gray-200/80 dark:border-slate-700/50 text-xs space-y-2"></div>
+      <!-- コンソールログ表示 -->
+      <div class="flex-1 flex flex-col min-h-0 bg-gray-900 rounded-xl p-3 border border-gray-800 shadow-inner">
+        <div class="flex items-center justify-between text-xs text-gray-400 pb-1.5 mb-1.5 border-b border-gray-800 flex-shrink-0">
+          <span class="font-mono font-bold text-gray-300"><i class="fas fa-terminal mr-1.5 text-emerald-400"></i>Console Stream</span>
+          <button onclick="renderReportsConsoleStream()" class="text-[11px] text-gray-400 hover:text-white transition"><i class="fas fa-sync-alt mr-1"></i>再読込</button>
+        </div>
+        <div id="reportsConsoleStreamBody" class="flex-1 overflow-y-auto font-mono text-[11px] space-y-0.5 text-gray-300 select-all pr-1 min-h-[160px]"></div>
+      </div>
     </div>
   </div>
 
@@ -1024,9 +1231,12 @@
         </div>
 
         <!-- ダウンロードボタン -->
-        <div class="pt-2 space-y-2">
+        <div class="pt-2 space-y-2.5">
           <button id="modalDownloadExeBtn" onclick="downloadLatestWindowsApp(this)" class="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 active:scale-98 text-white font-bold text-sm rounded-2xl shadow-xl shadow-indigo-500/25 transition-all flex items-center justify-center gap-2.5">
             <i class="fas fa-download text-base"></i> 最新版インストーラーをダウンロード (.exe)
+          </button>
+          <button type="button" onclick="document.getElementById('windowsDownloadModal').classList.add('hidden'); openPastVersionsModal();" class="w-full py-2.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold text-xs rounded-xl border border-gray-200 dark:border-slate-700 transition flex items-center justify-center gap-2 shadow-xs">
+            <i class="fas fa-clock-rotate-left"></i> 過去バージョンのインストーラー一覧を見る
           </button>
           <p class="text-[10px] text-gray-400 dark:text-gray-500">
             GitHub Releases 公式リポジトリより安全にダウンロードされます
@@ -2558,6 +2768,29 @@
       <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" style="width:100%;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;font-size:16px;outline:none;box-sizing:border-box" />
       <div id="mobileSettingsMessage" style="margin-top:10px;font-size:0.85rem;text-align:center;color:#6b7280"></div>
       <button class="" onclick="mobileProfileSave()" style="margin-top:14px;width:100%;padding:13px;background:#1f2937;color:white;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer">保存</button>
+
+      <!-- アカウント & セキュリティ (モバイル) -->
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb">
+        <div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px">アカウント & セキュリティ</div>
+        <div class="p-3.5 bg-gray-50 dark:bg-slate-900/60 rounded-xl border border-gray-200 dark:border-slate-700/60 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-500 dark:text-gray-400">ログイン中:</span>
+            <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-gray-200 truncate max-w-[180px]"></span>
+          </div>
+          <div class="flex items-center justify-between pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
+            <div class="flex items-center gap-1.5">
+              <i class="fab fa-google text-indigo-500 text-xs"></i>
+              <span class="text-xs font-bold text-gray-800 dark:text-gray-200">Google連携</span>
+            </div>
+            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-600 shadow-xs">連携する</button>
+          </div>
+          <div class="pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
+            <button onclick="sendPasswordResetToCurrentUser()" class="w-full py-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5">
+              <i class="fas fa-key text-xs"></i> パスワード再設定メールを送信
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2609,12 +2842,16 @@
           <span id="mobileAppInfoE2EE" style="font-size:0.85rem;font-weight:700;color:#6b7280;margin-left:auto">確認中…</span>
         </div>
         <div id="mobileCheckUpdateBtn" class="mobile-settings-row" onclick="manualCheckUpdate('mobileCheckUpdateBtn','mobileCheckUpdateStatus')">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-sync-alt"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#0f172a;color:#ffffff"><i class="fas fa-sync-alt"></i></div>
           <span class="mobile-settings-row-text">アップデートを確認</span>
           <span id="mobileCheckUpdateStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
         </div>
+        <div class="mobile-settings-row" onclick="showLatestAnnouncementModal(true)">
+          <div class="mobile-settings-row-icon" style="background:#0f172a;color:#ffffff"><i class="fas fa-bullhorn"></i></div>
+          <span class="mobile-settings-row-text">お知らせ・更新履歴</span>
+        </div>
         <div id="mobileCreateShortcutBtn" class="mobile-settings-row" style="display:none" onclick="createDesktopShortcut('mobileCreateShortcutBtn','mobileCreateShortcutStatus')">
-          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-desktop"></i></div>
+          <div class="mobile-settings-row-icon" style="background:#0f172a;color:#ffffff"><i class="fas fa-desktop"></i></div>
           <span class="mobile-settings-row-text">デスクトップにショートカットを作成</span>
           <span id="mobileCreateShortcutStatus" style="font-size:0.75rem;color:#6b7280;margin-left:auto"></span>
         </div>
@@ -2711,6 +2948,17 @@
         </div>
         <button onclick="closeWhatsNewModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex-shrink-0" title="閉じる">
           <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+
+      <!-- 過去お知らせナビゲーションバー -->
+      <div id="whatsNewNavRow" class="px-6 py-2 bg-gray-50/80 dark:bg-slate-900/60 border-b border-gray-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 hidden">
+        <button id="whatsNewPrevBtn" onclick="navigateAnnouncement(-1)" class="hover:text-gray-800 dark:hover:text-white font-bold flex items-center gap-1 transition">
+          <i class="fas fa-chevron-left text-xs"></i> <span>新しいお知らせ</span>
+        </button>
+        <span id="whatsNewIndexDisplay" class="font-mono text-[11px] font-bold text-gray-600 dark:text-gray-300">1 / 1</span>
+        <button id="whatsNewNextBtn" onclick="navigateAnnouncement(1)" class="hover:text-gray-800 dark:hover:text-white font-bold flex items-center gap-1 transition">
+          <span>過去のお知らせ</span> <i class="fas fa-chevron-right text-xs"></i>
         </button>
       </div>
 

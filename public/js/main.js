@@ -11,7 +11,15 @@ import {
   signOut,
   onAuthStateChanged,
   onIdTokenChanged,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  linkWithPopup,
+  unlink,
+  sendPasswordResetEmail,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore,
@@ -57,7 +65,7 @@ import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFa
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
 import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText } from './debug_ui.js';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 
 
 // === コンソールログの自動収集 & ネットワーク一時エラーのフィルタリング ===
@@ -77,6 +85,77 @@ function isTransientNetworkError(args) {
     return false;
   }
 }
+
+// === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・発生メアド集約) ===
+const _reportedSignaturesRecently = new Map();
+
+function _createErrorSignature(type, message, stack) {
+  const normType = String(type || 'error').toLowerCase();
+  const normMsg = String(message || '').substring(0, 250).replace(/\s+/g, ' ').trim();
+  const stackTop = String(stack || '').split('\n').slice(0, 3).map(l => l.replace(/:\d+:\d+/g, '')).join('|');
+  const raw = `${normType}:::${normMsg}:::${stackTop}`;
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const chr = raw.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0;
+  }
+  return 'err_' + Math.abs(hash).toString(36);
+}
+
+function _reportTelemetryError(type, message, stack) {
+  try {
+    if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
+    if (isTransientNetworkError([message, stack])) return;
+    const msgStr = typeof message === 'object' ? (message instanceof Error ? message.message : JSON.stringify(message)) : String(message || '');
+    if (!msgStr || msgStr === '[object Object]' || msgStr.includes('ResizeObserver loop') || msgStr.includes('Script error.')) return;
+
+    const signature = _createErrorSignature(type, msgStr, stack);
+    const now = Date.now();
+    const lastReported = _reportedSignaturesRecently.get(signature) || 0;
+    if (now - lastReported < 15000) return; // 15秒間ローカル重複排除
+    _reportedSignaturesRecently.set(signature, now);
+
+    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
+    const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
+
+    const envInfo = {
+      userAgent: navigator.userAgent || 'unknown',
+      appVersion: _appVersion || 'web',
+      screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      isElectron: Boolean(window.electronAPI)
+    };
+
+    setDoc(errorDocRef, {
+      signature: signature,
+      type: type || 'error',
+      message: msgStr.substring(0, 3000),
+      stack: String(stack || '').substring(0, 6000),
+      firstOccurredAt: serverTimestamp(),
+      lastOccurredAt: serverTimestamp(),
+      count: increment(1),
+      affectedEmails: arrayUnion(email),
+      environment: envInfo
+    }, { merge: true }).catch(() => {});
+  } catch (e) {}
+}
+
+window.addEventListener('error', (event) => {
+  if (event.error) {
+    _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
+  } else if (event.message) {
+    _reportTelemetryError('error', event.message, `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`);
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  if (reason instanceof Error) {
+    _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
+  } else {
+    _reportTelemetryError('unhandledrejection', String(reason || 'Unhandled Promise Rejection'), '');
+  }
+});
 
 const _pushLog = (type, args) => {
   try {
@@ -99,16 +178,28 @@ const _pushLog = (type, args) => {
     }
   } catch (e) { }
 };
+
 console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
 console.warn = function (...args) {
   if (isTransientNetworkError(args)) return;
   _pushLog('WARN', args);
   _orgWarn.apply(console, args);
+  try {
+    const str = Array.from(args).map(a => (a instanceof Error ? a.message : String(a))).join(' ');
+    if (str.length > 5 && !str.startsWith('[Auth]')) {
+      _reportTelemetryError('warn', str, (new Error()).stack || '');
+    }
+  } catch (_) {}
 };
 console.error = function (...args) {
   if (isTransientNetworkError(args)) return;
   _pushLog('ERR', args);
   _orgErr.apply(console, args);
+  try {
+    const errObj = args.find(a => a instanceof Error);
+    const str = Array.from(args).map(a => (a instanceof Error ? (a.message + '\n' + (a.stack || '')) : String(a))).join(' ');
+    _reportTelemetryError('error', errObj ? errObj.message : str, errObj ? errObj.stack : (new Error()).stack || '');
+  } catch (_) {}
 };
 
 // ========= Cloudflare Worker ベースURL =========
@@ -401,6 +492,7 @@ function initializeFirebase() {
         }
       }
       auth = getAuth(app);
+      auth.languageCode = 'ja';
     }
     onIdTokenChanged(auth, async (user) => {
       if (user) {
@@ -426,11 +518,13 @@ function initializeFirebase() {
           // 同一ユーザーIDで既に初期化済みならスキップ（FCM再登録等の無駄な処理を防止）
           if (_lastAuthUserId === user.uid && userNickname) {
             _authHandlerBusy = false;
+            updateAccountSecurityUI(user);
             return;
           }
           userId = user.uid;
           userAuthEmail = user.email;
           isAuthReady = true;
+          updateAccountSecurityUI(user);
 
           // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
           await user.getIdToken();
@@ -750,12 +844,244 @@ if (signupButtonEl && signupEmailInputEl && signupPasswordInputEl) {
   });
 }
 
+// Google ログイン & 登録処理
+const googleAuthBtn = document.getElementById("googleAuthButton");
+if (googleAuthBtn) {
+  googleAuthBtn.addEventListener("click", async () => {
+    if (authMessageEl) authMessageEl.textContent = "";
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.error("[Auth] Google Sign-In Error:", err);
+      let msg = "Googleログインに失敗しました。";
+      if (err.code === "auth/popup-closed-by-user") msg = "Googleログインがキャンセルされました。";
+      else if (err.code === "auth/account-exists-with-different-credential") msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+      else if (err.code === "auth/popup-blocked") msg = "ポップアップがブロックされました。ポップアップを許可してください。";
+      else if (err.message) msg = `Googleログインエラー: ${err.message}`;
+      if (authMessageEl) authMessageEl.textContent = msg;
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+    }
+  });
+}
+
+// パスワード再設定モーダル
+window.openPasswordResetModal = function () {
+  const modal = document.getElementById('passwordResetModal');
+  const input = document.getElementById('resetEmailInput');
+  const msg = document.getElementById('resetEmailMessage');
+  const loginEmail = document.getElementById('emailInput')?.value?.trim();
+  if (input && loginEmail) input.value = loginEmail;
+  if (msg) { msg.textContent = ''; msg.className = 'text-xs min-h-[1rem]'; }
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.closePasswordResetModal = function () {
+  const modal = document.getElementById('passwordResetModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.submitPasswordReset = async function () {
+  const input = document.getElementById('resetEmailInput');
+  const msg = document.getElementById('resetEmailMessage');
+  const btn = document.getElementById('sendResetEmailBtn');
+  const email = (input?.value || '').trim();
+  if (!email) {
+    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600'; }
+    return;
+  }
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> 送信中...'; }
+    auth.languageCode = 'ja';
+    await sendPasswordResetEmail(auth, email);
+    if (msg) {
+      msg.textContent = '再設定メールを送信しました。受信トレイのリンクからパスワードを再設定してください。';
+      msg.className = 'text-xs text-emerald-600 font-semibold';
+    }
+  } catch (err) {
+    console.error('[Auth] Password Reset Error:', err);
+    let errMsg = '再設定メールの送信に失敗しました。';
+    if (err.code === 'auth/user-not-found') errMsg = 'このメールアドレスは登録されていません。';
+    else if (err.code === 'auth/invalid-email') errMsg = 'メールアドレスの形式が正しくありません。';
+    else if (err.code === 'auth/too-many-requests') errMsg = '送信回数が多すぎます。しばらく待ってからお試しください。';
+    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane text-xs"></i> 再設定メールを送信'; }
+  }
+};
+
+// アカウント & セキュリティ UI 同期
+window.updateAccountSecurityUI = function (user) {
+  const emailDisplay = document.getElementById('settingsEmailDisplay');
+  const mobileEmailDisplay = document.getElementById('mobileSettingsEmailDisplay');
+  const verifiedBadge = document.getElementById('settingsEmailVerifiedBadge');
+  const googleStatus = document.getElementById('settingsGoogleStatusText');
+  const googleBtn = document.getElementById('settingsGoogleLinkBtn');
+  const mobileGoogleBtn = document.getElementById('mobileSettingsGoogleLinkBtn');
+  const currPwdRow = document.getElementById('changePasswordCurrentRow');
+
+  if (!user) {
+    if (emailDisplay) emailDisplay.textContent = '未ログイン';
+    if (mobileEmailDisplay) mobileEmailDisplay.textContent = '未ログイン';
+    return;
+  }
+
+  const email = user.email || '未設定';
+  if (emailDisplay) emailDisplay.textContent = email;
+  if (mobileEmailDisplay) mobileEmailDisplay.textContent = email;
+
+  if (verifiedBadge) {
+    if (user.emailVerified) {
+      verifiedBadge.textContent = '認証済み';
+      verifiedBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+    } else {
+      verifiedBadge.textContent = '未認証';
+      verifiedBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+    }
+  }
+
+  const isGoogleLinked = user.providerData && user.providerData.some(p => p.providerId === 'google.com');
+  const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
+
+  if (googleStatus) {
+    googleStatus.textContent = isGoogleLinked ? '連携済み (Googleアカウント有効)' : '未連携';
+  }
+  if (googleBtn) {
+    if (isGoogleLinked) {
+      googleBtn.textContent = '連携を解除';
+      googleBtn.className = 'px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/40 transition shadow-xs';
+    } else {
+      googleBtn.textContent = '連携する';
+      googleBtn.className = 'px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-600 transition shadow-xs';
+    }
+  }
+  if (mobileGoogleBtn) {
+    mobileGoogleBtn.textContent = isGoogleLinked ? '連携を解除' : '連携する';
+  }
+  if (currPwdRow) {
+    currPwdRow.style.display = hasPasswordProvider ? 'block' : 'none';
+  }
+};
+
+window.toggleGoogleLinkAction = async function () {
+  const user = auth.currentUser;
+  if (!user) return;
+  const isGoogleLinked = user.providerData && user.providerData.some(p => p.providerId === 'google.com');
+  if (isGoogleLinked) {
+    if (user.providerData.length <= 1) {
+      alertMessage('Googleアカウントのみでログインしているため、連携を解除できません。先にパスワードを設定してください。', 'warning');
+      return;
+    }
+    if (!confirm('Googleアカウントとの連携を解除しますか？')) return;
+    try {
+      await unlink(user, 'google.com');
+      alertMessage('Google連携を解除しました。', 'success');
+      updateAccountSecurityUI(auth.currentUser);
+    } catch (err) {
+      console.error('[Auth] Unlink Google error:', err);
+      alertMessage(`連携解除エラー: ${err.message}`, 'error');
+    }
+  } else {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await linkWithPopup(user, provider);
+      alertMessage('Googleアカウントと正常に連携しました！', 'success');
+      updateAccountSecurityUI(auth.currentUser);
+    } catch (err) {
+      console.error('[Auth] Link Google error:', err);
+      if (err.code === 'auth/credential-already-in-use') {
+        alertMessage('このGoogleアカウントは既に別のアカウントで使用されています。', 'error');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        // user closed popup
+      } else {
+        alertMessage(`連携エラー: ${err.message}`, 'error');
+      }
+    }
+  }
+};
+
+window.sendPasswordResetToCurrentUser = async function () {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    alertMessage('ユーザーのメールアドレスが取得できませんでした。', 'error');
+    return;
+  }
+  try {
+    auth.languageCode = 'ja';
+    await sendPasswordResetEmail(auth, user.email);
+    alertMessage(`「${user.email}」宛にパスワード再設定メールを送信しました。メール内のリンクより再設定を行ってください。`, 'success');
+  } catch (err) {
+    console.error('[Auth] sendPasswordResetToCurrentUser error:', err);
+    alertMessage(`送信失敗: ${err.message}`, 'error');
+  }
+};
+
+window.submitChangePassword = async function () {
+  const user = auth.currentUser;
+  if (!user) return;
+  const currInput = document.getElementById('currentPasswordInput');
+  const newInput = document.getElementById('newPasswordInput');
+  const confirmInput = document.getElementById('confirmNewPasswordInput');
+  const msg = document.getElementById('changePasswordMessage');
+  const btn = document.getElementById('changePasswordBtn');
+
+  const currPwd = currInput?.value || '';
+  const newPwd = newInput?.value || '';
+  const confirmPwd = confirmInput?.value || '';
+
+  const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
+
+  if (hasPasswordProvider && !currPwd) {
+    if (msg) { msg.textContent = '現在のパスワードを入力してください。'; msg.className = 'text-xs text-rose-600'; }
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600'; }
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    if (msg) { msg.textContent = '新しいパスワードが一致しません。'; msg.className = 'text-xs text-rose-600'; }
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '更新中...'; }
+    if (hasPasswordProvider && user.email) {
+      const cred = EmailAuthProvider.credential(user.email, currPwd);
+      await reauthenticateWithCredential(user, cred);
+    }
+    await updatePassword(user, newPwd);
+    if (msg) {
+      msg.textContent = 'パスワードを正常に更新しました！';
+      msg.className = 'text-xs text-emerald-600 font-bold';
+    }
+    if (currInput) currInput.value = '';
+    if (newInput) newInput.value = '';
+    if (confirmInput) confirmInput.value = '';
+    alertMessage('パスワードを変更しました。', 'success');
+  } catch (err) {
+    console.error('[Auth] Update password error:', err);
+    let errMsg = 'パスワードの更新に失敗しました。';
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errMsg = '現在のパスワードが正しくありません。';
+    else if (err.code === 'auth/requires-recent-login') errMsg = 'セキュリティのため、一度ログアウトして再ログインしてからお試しください。';
+    else if (err.code === 'auth/weak-password') errMsg = 'パスワードが弱すぎます（6文字以上）。';
+    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'パスワードを変更'; }
+  }
+};
+
 // authEmail を保持するための変数
 let userAuthEmail = "";
 
 // --- 管理者パネルの処理 ---
 
-// タブ切り替え
+// タブ切り替え（洗練されたピル型タブ）
 let adminCurrentTab = "allowed";
 function switchAdminTab(tab) {
   adminCurrentTab = tab;
@@ -773,17 +1099,10 @@ function switchAdminTab(tab) {
     const cnt = document.getElementById(t.content);
     if (!btn || !cnt) return;
     if (t.key === tab) {
-      btn.classList.replace("border-transparent", "border-gray-900");
-      btn.classList.replace("text-gray-400", "text-gray-900");
-      // also support dark mode replacements
-      btn.classList.replace("dark:border-transparent", "dark:border-gray-300");
-      btn.classList.replace("dark:text-gray-400", "dark:text-gray-200");
+      btn.className = "flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs";
       cnt.classList.remove("hidden");
     } else {
-      btn.classList.replace("border-gray-900", "border-transparent");
-      btn.classList.replace("text-gray-900", "text-gray-400");
-      btn.classList.replace("dark:border-gray-300", "dark:border-transparent");
-      btn.classList.replace("dark:text-gray-200", "dark:text-gray-400");
+      btn.className = "flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
       cnt.classList.add("hidden");
     }
   });
@@ -792,6 +1111,250 @@ document.getElementById("adminTabAllowedBtn")?.addEventListener("click", () => s
 document.getElementById("adminTabAdminsBtn")?.addEventListener("click", () => switchAdminTab("admins"));
 document.getElementById("adminTabListAdminsBtn")?.addEventListener("click", () => switchAdminTab("listAdmins"));
 document.getElementById("adminTabAnnouncementsBtn")?.addEventListener("click", () => switchAdminTab("announcements"));
+
+// === システムレポート & 自動エラー集約テレメトリ コントローラー ===
+let _currentReportSubTab = 'errors';
+let _cachedTelemetryErrors = [];
+let _telemetryFilter = 'all';
+
+window.switchReportSubTab = function (tab) {
+  _currentReportSubTab = tab;
+  const tabs = ['errors', 'feedbacks', 'diag'];
+  tabs.forEach(t => {
+    const btn = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+    const content = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Content`);
+    if (t === tab) {
+      if (btn) {
+        btn.className = "flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs";
+      }
+      if (content) content.classList.remove('hidden');
+    } else {
+      if (btn) {
+        btn.className = "flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
+      }
+      if (content) content.classList.add('hidden');
+    }
+  });
+
+  if (tab === 'errors') loadErrorTelemetry();
+  else if (tab === 'feedbacks') loadAdminFeedbacks();
+  else if (tab === 'diag') renderReportsConsoleStream();
+};
+
+window.filterErrorTelemetry = function (filter) {
+  _telemetryFilter = filter;
+  ['all', 'errors', 'warns'].forEach(f => {
+    const btn = document.getElementById(`errFilter${f.charAt(0).toUpperCase() + f.slice(1)}`);
+    if (!btn) return;
+    const isSelected = (f === 'all' && filter === 'all') ||
+                       (f === 'errors' && filter === 'error') ||
+                       (f === 'warns' && filter === 'warn');
+    if (isSelected) {
+      btn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 transition';
+    } else {
+      btn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition';
+    }
+  });
+  renderTelemetryErrorsList();
+};
+
+window.loadErrorTelemetry = async function () {
+  const listEl = document.getElementById("telemetryErrorsList");
+  const badgeEl = document.getElementById("telemetryCountBadge");
+  if (!listEl) return;
+  listEl.innerHTML = "<p class='text-xs text-gray-400 text-center py-4'>読み込み中...</p>";
+  try {
+    const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
+    const snap = await getDocs(q);
+    _cachedTelemetryErrors = [];
+    snap.forEach(d => {
+      _cachedTelemetryErrors.push({ id: d.id, ...d.data() });
+    });
+    if (badgeEl) {
+      if (_cachedTelemetryErrors.length > 0) {
+        badgeEl.textContent = _cachedTelemetryErrors.length;
+        badgeEl.classList.remove('hidden');
+      } else {
+        badgeEl.classList.add('hidden');
+      }
+    }
+    renderTelemetryErrorsList();
+  } catch (err) {
+    console.error("[Telemetry] loadErrorTelemetry error:", err);
+    listEl.innerHTML = `<p class='text-xs text-rose-500 text-center py-4'>ログの読み込みに失敗しました: ${escapeHtml(err.message)}</p>`;
+  }
+};
+
+function renderTelemetryErrorsList() {
+  const listEl = document.getElementById("telemetryErrorsList");
+  if (!listEl) return;
+  const filtered = _cachedTelemetryErrors.filter(item => {
+    if (_telemetryFilter === 'error') return item.type === 'error' || item.type === 'unhandledrejection';
+    if (_telemetryFilter === 'warn') return item.type === 'warn';
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = "<div class='text-center py-8 text-xs text-gray-400 dark:text-gray-500'><i class='fas fa-circle-check text-emerald-500 text-xl mb-2 block'></i>記録されたエラーはありません。システムは正常です。</div>";
+    return;
+  }
+
+  listEl.innerHTML = "";
+  filtered.forEach(err => {
+    const item = document.createElement("div");
+    item.className = "p-3.5 bg-white dark:bg-slate-900/70 border border-gray-200/80 dark:border-slate-700/60 rounded-xl shadow-xs text-xs flex flex-col gap-2 relative group";
+
+    const lastTime = err.lastOccurredAt && typeof err.lastOccurredAt.toDate === 'function'
+      ? err.lastOccurredAt.toDate().toLocaleString('ja-JP')
+      : '不明';
+    const firstTime = err.firstOccurredAt && typeof err.firstOccurredAt.toDate === 'function'
+      ? err.firstOccurredAt.toDate().toLocaleString('ja-JP')
+      : lastTime;
+
+    const isWarn = err.type === 'warn';
+    const typeBadge = isWarn
+      ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300">警告 (WARN)</span>'
+      : '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-rose-600 bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300">エラー (ERROR)</span>';
+
+    const countBadge = (err.count && err.count > 1)
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white shadow-xs">${err.count}回発生</span>`
+      : '';
+
+    const affectedEmails = Array.isArray(err.affectedEmails) ? err.affectedEmails : (err.affectedEmails ? [err.affectedEmails] : ['不明']);
+    const emailsHtml = affectedEmails.map(e => `<span class="inline-block px-1.5 py-0.5 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded font-mono text-[10px] mr-1 mb-1">${escapeHtml(e)}</span>`).join('');
+
+    const formattedMd = `### [${err.type.toUpperCase()}] ${err.message}\n- **発生回数**: ${err.count || 1}回\n- **初回発生**: ${firstTime}\n- **最新発生**: ${lastTime}\n- **発生ユーザー**: ${affectedEmails.join(', ')}\n- **環境**: ${err.environment?.userAgent || '不明'} (${err.environment?.screenSize || ''})\n\n\`\`\`text\n${err.stack || 'スタックトレースなし'}\n\`\`\``;
+
+    item.innerHTML = `
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          ${typeBadge}
+          ${countBadge}
+          <span class="text-[11px] text-gray-400 font-mono">最終: ${lastTime}</span>
+        </div>
+        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button class="err-copy-item-btn px-2 py-1 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 text-[11px] font-bold rounded-lg transition" title="このエラーをMarkdownでコピー">
+            <i class="fas fa-copy"></i>
+          </button>
+          <button class="err-del-item-btn px-2 py-1 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 text-[11px] font-bold rounded-lg transition" title="解決済として削除">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="p-2.5 bg-gray-50 dark:bg-slate-950/60 rounded-xl border border-gray-100 dark:border-slate-800 text-gray-800 dark:text-gray-200 font-mono text-[11px] whitespace-pre-wrap break-all select-all">
+        ${escapeHtml(err.message)}
+      </div>
+      <div>
+        <div class="text-[11px] text-gray-400 mb-1 font-semibold">発生アカウント (${affectedEmails.length}人):</div>
+        <div class="flex flex-wrap">${emailsHtml}</div>
+      </div>
+      ${err.stack ? `
+        <details class="text-[11px] text-gray-400">
+          <summary class="cursor-pointer font-bold hover:text-gray-600 dark:hover:text-gray-200 transition">スタックトレースを表示</summary>
+          <pre class="mt-1.5 p-2 bg-gray-950 text-rose-300/90 rounded-lg overflow-x-auto text-[10px] font-mono whitespace-pre-wrap select-all">${escapeHtml(err.stack)}</pre>
+        </details>
+      ` : ''}
+    `;
+
+    item.querySelector(".err-copy-item-btn").addEventListener("click", () => {
+      navigator.clipboard.writeText(formattedMd).then(() => {
+        alertMessage("エラー詳細をコピーしました", "success");
+      }).catch(() => {
+        alertMessage("コピーに失敗しました", "error");
+      });
+    });
+
+    item.querySelector(".err-del-item-btn").addEventListener("click", async () => {
+      try {
+        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+        renderTelemetryErrorsList();
+        alertMessage("エラーログを削除しました", "success");
+      } catch (e) {
+        console.error(e);
+        alertMessage("削除に失敗しました", "error");
+      }
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+window.copyAllTelemetryErrors = function () {
+  if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) {
+    alertMessage("コピー対象のエラーがありません", "info");
+    return;
+  }
+  let out = `# Covo エラー・警告自動集約レポート\n生成日時: ${new Date().toLocaleString('ja-JP')}\n総件数: ${_cachedTelemetryErrors.length}件\n\n---\n\n`;
+  _cachedTelemetryErrors.forEach((err, idx) => {
+    const lastTime = err.lastOccurredAt && typeof err.lastOccurredAt.toDate === 'function' ? err.lastOccurredAt.toDate().toLocaleString('ja-JP') : '不明';
+    const emails = Array.isArray(err.affectedEmails) ? err.affectedEmails.join(', ') : (err.affectedEmails || '不明');
+    out += `## ${idx + 1}. [${err.type.toUpperCase()}] ${err.message}\n`;
+    out += `- **発生回数**: ${err.count || 1}回\n`;
+    out += `- **最新発生日時**: ${lastTime}\n`;
+    out += `- **影響を受けたメールアドレス**: ${emails}\n`;
+    out += `- **クライアント環境**: ${err.environment?.userAgent || '不明'}\n`;
+    if (err.stack) {
+      out += `\n\`\`\`text\n${err.stack}\n\`\`\`\n\n`;
+    }
+    out += `---\n\n`;
+  });
+
+  navigator.clipboard.writeText(out).then(() => {
+    alertMessage("全エラーの集約レポートを一括コピーしました", "success");
+  }).catch(() => {
+    alertMessage("コピーに失敗しました", "error");
+  });
+};
+
+window.clearAllTelemetryErrors = async function () {
+  if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
+  if (!confirm("記録されているすべてのエラーログを削除（解決済み）にしますか？")) return;
+  try {
+    const batch = writeBatch(db);
+    _cachedTelemetryErrors.forEach(err => {
+      batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+    });
+    await batch.commit();
+    _cachedTelemetryErrors = [];
+    renderTelemetryErrorsList();
+    alertMessage("全エラーログをクリアしました", "success");
+  } catch (err) {
+    console.error(err);
+    alertMessage("クリアに失敗しました: " + err.message, "error");
+  }
+};
+
+window.renderReportsConsoleStream = function () {
+  const panel = document.getElementById("systemDiagSummaryPanel");
+  const streamBody = document.getElementById("reportsConsoleStreamBody");
+  if (panel && typeof getSystemDiagnosticInfo === 'function') {
+    const diag = getSystemDiagnosticInfo();
+    panel.innerHTML = `
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+        <div><span class="text-gray-400">アプリバージョン:</span> <span class="font-mono font-bold text-gray-800 dark:text-gray-200">${escapeHtml(diag.appVersion)}</span></div>
+        <div><span class="text-gray-400">画面サイズ:</span> <span class="font-mono font-bold text-gray-800 dark:text-gray-200">${escapeHtml(diag.screenSize)}</span></div>
+        <div><span class="text-gray-400">プラットフォーム:</span> <span class="font-mono font-bold text-gray-800 dark:text-gray-200">${escapeHtml(diag.platform)}</span></div>
+        <div><span class="text-gray-400">ネットワーク:</span> <span class="font-mono font-bold ${diag.online ? 'text-emerald-500' : 'text-rose-500'}">${diag.online ? '接続中' : 'オフライン'}</span></div>
+      </div>
+    `;
+  }
+  if (streamBody) {
+    const logs = window._covoLogs || [];
+    if (logs.length === 0) {
+      streamBody.innerHTML = "<div class='text-gray-500 py-4 text-center'>コンソールログはありません</div>";
+    } else {
+      streamBody.innerHTML = logs.map(line => {
+        let colorClass = "text-gray-300";
+        if (line.startsWith("[ERR]")) colorClass = "text-rose-400";
+        else if (line.startsWith("[WARN]")) colorClass = "text-amber-400";
+        else if (line.startsWith("[INFO]")) colorClass = "text-blue-300";
+        return `<div class="${colorClass}">${escapeHtml(line)}</div>`;
+      }).join('');
+      streamBody.scrollTop = streamBody.scrollHeight;
+    }
+  }
+};
 
 // メールアドレスのアバター頭文字取得
 window.loadAdminFeedbacks = async function () {
@@ -12592,9 +13155,26 @@ window.checkLatestAnnouncement = async function () {
   }
 };
 
-window.showAnnouncementModal = function (data, id) {
+let _announcementsListCache = [];
+let _currentAnnouncementIndex = 0;
+
+window.showAnnouncementModal = function (data, id, allList = null, currentIndex = 0) {
   const modal = document.getElementById("whatsNewModal");
   if (!modal) return;
+
+  if (Array.isArray(allList) && allList.length > 0) {
+    _announcementsListCache = allList;
+    _currentAnnouncementIndex = currentIndex;
+  } else if (!allList && data) {
+    _announcementsListCache = [{ id, ...data }];
+    _currentAnnouncementIndex = 0;
+  }
+
+  const current = (_announcementsListCache.length > 0 && _announcementsListCache[_currentAnnouncementIndex])
+    ? _announcementsListCache[_currentAnnouncementIndex]
+    : data;
+
+  if (!current) return;
 
   const typeBadge = document.getElementById("whatsNewTypeBadge");
   const iconWrap = document.getElementById("whatsNewIconWrap");
@@ -12603,19 +13183,43 @@ window.showAnnouncementModal = function (data, id) {
   const dateEl = document.getElementById("whatsNewDate");
   const contentEl = document.getElementById("whatsNewContent");
   const iconEl = document.getElementById("whatsNewIcon");
+  const navRow = document.getElementById("whatsNewNavRow");
+  const indexDisplay = document.getElementById("whatsNewIndexDisplay");
+  const prevBtn = document.getElementById("whatsNewPrevBtn");
+  const nextBtn = document.getElementById("whatsNewNextBtn");
 
-  if (verEl) verEl.textContent = data.version || "";
-  if (titleEl) titleEl.textContent = data.title || "最新アップデートのお知らせ";
+  if (verEl) verEl.textContent = current.version || "";
+  if (titleEl) titleEl.textContent = current.title || "最新アップデートのお知らせ";
   if (dateEl) {
     let dt = '';
-    if (data.publishedAt?.toDate) dt = data.publishedAt.toDate().toLocaleDateString('ja-JP');
-    else if (typeof data.publishedAt === 'number') dt = new Date(data.publishedAt).toLocaleDateString('ja-JP');
+    if (current.publishedAt?.toDate) dt = current.publishedAt.toDate().toLocaleDateString('ja-JP');
+    else if (typeof current.publishedAt === 'number') dt = new Date(current.publishedAt).toLocaleDateString('ja-JP');
     dateEl.textContent = dt;
+  }
+
+  // ナビゲーションバーの更新
+  if (navRow) {
+    if (_announcementsListCache.length > 1) {
+      navRow.classList.remove("hidden");
+      if (indexDisplay) {
+        indexDisplay.textContent = `${_currentAnnouncementIndex + 1} / ${_announcementsListCache.length}`;
+      }
+      if (prevBtn) {
+        prevBtn.style.opacity = _currentAnnouncementIndex > 0 ? "1" : "0.35";
+        prevBtn.style.pointerEvents = _currentAnnouncementIndex > 0 ? "auto" : "none";
+      }
+      if (nextBtn) {
+        nextBtn.style.opacity = _currentAnnouncementIndex < _announcementsListCache.length - 1 ? "1" : "0.35";
+        nextBtn.style.pointerEvents = _currentAnnouncementIndex < _announcementsListCache.length - 1 ? "auto" : "none";
+      }
+    } else {
+      navRow.classList.add("hidden");
+    }
   }
 
   // 本文のリッチフォーマット処理（Markdown風の箇条書き・太字・コード・リンク化）
   if (contentEl) {
-    const rawText = data.content || "";
+    const rawText = current.content || "";
     if (typeof escapeHtmlAndLinkUrls === 'function') {
       contentEl.innerHTML = escapeHtmlAndLinkUrls(rawText);
     } else {
@@ -12625,18 +13229,18 @@ window.showAnnouncementModal = function (data, id) {
 
   // カテゴリバッジ・アイコンのライト＆ダーク両対応スタイリング
   if (typeBadge) {
-    if (data.category === 'bugfix') {
+    if (current.category === 'bugfix') {
       typeBadge.textContent = "BUG FIX";
       typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 tracking-wider uppercase";
       if (iconEl) iconEl.className = "fas fa-wrench";
       if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-100 dark:border-amber-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
-    } else if (data.category === 'notice') {
+    } else if (current.category === 'notice') {
       typeBadge.textContent = "NOTICE";
       typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300 tracking-wider uppercase";
       if (iconEl) iconEl.className = "fas fa-circle-exclamation";
       if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-100 dark:border-rose-800/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
-    } else if (data.category && data.category !== 'update' && data.category !== 'none') {
-      typeBadge.textContent = String(data.category).toUpperCase();
+    } else if (current.category && current.category !== 'update' && current.category !== 'none') {
+      typeBadge.textContent = String(current.category).toUpperCase();
       typeBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 tracking-wider uppercase";
       if (iconEl) iconEl.className = "fas fa-tag";
       if (iconWrap) iconWrap.className = "w-11 h-11 rounded-2xl bg-slate-50 text-slate-600 dark:bg-slate-900/60 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-xl flex-shrink-0 shadow-xs transition-colors";
@@ -12648,10 +13252,19 @@ window.showAnnouncementModal = function (data, id) {
     }
   }
 
-  modal.dataset.currentId = id || "";
+  modal.dataset.currentId = current.id || id || "";
   modal.classList.remove("hidden");
   modal.style.display = "flex";
   if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
+};
+
+window.navigateAnnouncement = function (delta) {
+  if (!_announcementsListCache || _announcementsListCache.length === 0) return;
+  const newIndex = _currentAnnouncementIndex + delta;
+  if (newIndex >= 0 && newIndex < _announcementsListCache.length) {
+    _currentAnnouncementIndex = newIndex;
+    showAnnouncementModal(null, null, _announcementsListCache, newIndex);
+  }
 };
 
 window.closeWhatsNewModal = function () {
@@ -12668,14 +13281,16 @@ window.closeWhatsNewModal = function () {
 window.showLatestAnnouncementModal = async function (force = false) {
   try {
     const { collection, query, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    const q = query(collection(db, `artifacts/${appId}/announcements`), orderBy('publishedAt', 'desc'), limit(1));
+    const q = query(collection(db, `artifacts/${appId}/announcements`), orderBy('publishedAt', 'desc'), limit(15));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      showAnnouncementModal(snap.docs[0].data(), snap.docs[0].id);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      showAnnouncementModal(list[0], list[0].id, list, 0);
     } else if (force) {
       alertMessage("配信されているお知らせはありません", "info");
     }
   } catch (e) {
+    console.error("showLatestAnnouncementModal error:", e);
     if (force) alertMessage("お知らせの取得に失敗しました", "error");
   }
 };

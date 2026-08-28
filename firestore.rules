@@ -93,6 +93,15 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
+      // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
+      match /error_reports/{docId} {
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read, delete: if isGlobalAdmin(appId);
+      }
+
       // 招待コードインデックス（コード→サーバーID の逆引き）
       // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
       match /inviteIndex/{code} {

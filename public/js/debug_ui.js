@@ -194,11 +194,74 @@ export function clearDevConsole() {
 export function copyDevConsole() {
   const body = document.getElementById('devConsoleBody');
   const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  if (!text || text.trim() === '') {
+    alertMessage('コピーするコンソールログがありません', 'info');
+    return;
+  }
   safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
 }
 
 export function copyDebugText(txt) {
   safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+
+export function getSystemDiagnosticInfo() {
+  const info = {
+    timestamp: new Date().toLocaleString('ja-JP'),
+    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    userAgent: navigator.userAgent,
+    language: navigator.language || 'ja',
+    online: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
+    memory: (window.performance && window.performance.memory) ? {
+      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
+      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
+      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
+    } : null,
+    network: navigator.connection ? {
+      type: navigator.connection.effectiveType || 'unknown',
+      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
+      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
+    } : null,
+    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
+    localStorageCount: (() => {
+      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
+    })()
+  };
+  return info;
+}
+
+export function formatDiagnosticMarkdown(info) {
+  let md = `### Covo システム診断レポート\n`;
+  md += `- **記録日時**: ${info.timestamp}\n`;
+  md += `- **アプリ種別**: ${info.appType}\n`;
+  md += `- **アプリバージョン**: ${info.appVersion}\n`;
+  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
+  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
+  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
+  if (info.memory) {
+    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
+  }
+  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
+  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
+  return md;
+}
+
+export function copySystemDiagnosticReport() {
+  const info = getSystemDiagnosticInfo();
+  const md = formatDiagnosticMarkdown(info);
+  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
+}
+
+export function copyFullDiagnosticAndConsoleReport() {
+  const info = getSystemDiagnosticInfo();
+  let md = formatDiagnosticMarkdown(info);
+  const logs = window._covoLogs || [];
+  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
+  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
 }
 
 if (typeof window !== 'undefined') {
@@ -207,5 +270,8 @@ if (typeof window !== 'undefined') {
   window.clearDevConsole = clearDevConsole;
   window.copyDevConsole = copyDevConsole;
   window.copyDebugText = copyDebugText;
+  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 
