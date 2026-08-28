@@ -3852,6 +3852,7 @@ async function startPresenceSystem() {
   if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
   // リアルタイムリスナーで変更管理されているため、不要な定期的再描画・ポーリングを撤廃
   renderMembersList(cachedUsers);
+  initP2PLogSyncListener();
 }
 
 const avatarUploadTrigger = document.getElementById("avatarUploadTrigger");
@@ -5203,6 +5204,13 @@ async function enterServer(serverId, serverData) {
 
   // サーバーに入室したタイミングで、対象メンバーを絞り込んでステータス監視を再設定
   subscribeToUserStatus();
+
+  // P2P 過去ログ補完（同室メンバーがオンラインならバックグラウンド同期）
+  try {
+    LocalStore.getOldestMessageTimestamp(`${currentServerId}_${roomId}`).then(oldestTs => {
+      requestP2PLogBackfill('server', roomId, oldestTs);
+    }).catch(() => {});
+  } catch (e) { }
 }
 
 // DM / フレンド画面を開く
@@ -5392,13 +5400,13 @@ window.switchDmTab = function(tabName) {
     if (btn) {
       if (k === tabName) {
         if (k === 'add') {
-          btn.className = 'dm-tab-btn px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap';
+          btn.className = 'dm-tab-btn px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap';
         } else {
           btn.className = 'dm-tab-btn active px-2.5 py-1 rounded-md bg-gray-200/80 dark:bg-white/10 text-gray-900 dark:text-white font-bold transition-colors whitespace-nowrap';
         }
       } else {
         if (k === 'add') {
-          btn.className = 'dm-tab-btn px-2.5 py-1 rounded-md text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-bold transition-all flex items-center gap-1 ml-1 whitespace-nowrap';
+          btn.className = 'dm-tab-btn px-2.5 py-1 rounded-md text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-bold transition-all flex items-center gap-1 ml-1 whitespace-nowrap';
         } else {
           btn.className = 'dm-tab-btn px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap';
         }
@@ -5446,7 +5454,7 @@ function renderFriendTabs() {
 
   const isOnline = (uid) => {
     const u = cachedUsers.find(cu => cu.id === uid);
-    return u && (u.status === 'online' || u.status === 'dnd' || u.status === 'away');
+    return u && (u.computedState === 'online' || u.computedState === 'away' || u.state === 'online' || u.state === 'away');
   };
 
   const onlineFriends = friends.filter(f => isOnline(f.targetUid));
@@ -5486,19 +5494,19 @@ function renderFriendTabs() {
       prListEl.innerHTML = pendingReceived.map(r => `
         <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0">
-              ${r.targetAvatarUrl ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0))}
+            <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
+              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
             </div>
             <div class="min-w-0">
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(r.targetNickname || 'ユーザー')}</div>
-              <div class="text-xs text-gray-400 truncate">${escapeHtml(r.targetEmail || '')}</div>
+              <div class="text-xs text-gray-400 dark:text-gray-500 truncate">${escapeHtml(r.targetEmail || '')}</div>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="acceptFriendRequest('${r.targetUid}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1">
-              <i class="fas fa-check"></i> 承認
+            <button onclick="acceptFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95">
+              <i class="fas fa-check text-xs"></i> 承認
             </button>
-            <button onclick="rejectFriendRequest('${r.targetUid}')" class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition">
+            <button onclick="rejectFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition active:scale-95">
               拒否
             </button>
           </div>
@@ -5517,15 +5525,15 @@ function renderFriendTabs() {
       psListEl.innerHTML = pendingSent.map(r => `
         <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0">
-              ${r.targetAvatarUrl ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0))}
+            <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
+              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
             </div>
             <div class="min-w-0">
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(r.targetNickname || 'ユーザー')}</div>
-              <div class="text-xs text-gray-400 truncate">送信済み申請</div>
+              <div class="text-xs text-gray-400 dark:text-gray-500 truncate">送信済み申請</div>
             </div>
           </div>
-          <button onclick="cancelFriendRequest('${r.targetUid}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition">
+          <button onclick="cancelFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition active:scale-95">
             キャンセル
           </button>
         </div>
@@ -5545,13 +5553,13 @@ function renderFriendTabs() {
         <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0">
-              ${escapeHtml((b.targetNickname || 'U').charAt(0))}
+              ${escapeHtml((b.targetNickname || 'U').charAt(0).toUpperCase())}
             </div>
             <div class="min-w-0">
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(b.targetNickname || 'ブロックされたユーザー')}</div>
             </div>
           </div>
-          <button onclick="unblockUser('${b.targetUid}')" class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition">
+          <button onclick="unblockUser('${b.targetUid}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition active:scale-95">
             ブロック解除
           </button>
         </div>
@@ -5562,17 +5570,17 @@ function renderFriendTabs() {
 
 function createFriendCardHtml(friend, online) {
   const safeName = escapeHtml(friend.targetNickname || 'ユーザー');
-  const safeAvatar = friend.targetAvatarUrl ? `<img src="${friend.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0);
+  const safeAvatar = isUsableAvatarUrl(friend.targetAvatarUrl) ? `<img src="${friend.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
   return `
     <div class="friend-card">
       <div class="flex items-center gap-3 min-w-0">
-        <div class="relative w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0">
+        <div class="relative w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
           ${safeAvatar}
           <div class="status-indicator ${online ? 'status-online' : 'status-offline'}"></div>
         </div>
         <div class="min-w-0">
           <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${safeName}</div>
-          <div class="text-xs text-gray-400">${online ? 'オンライン' : 'オフライン'}</div>
+          <div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>
         </div>
       </div>
       <div class="flex items-center gap-1.5">
@@ -5594,21 +5602,13 @@ function createFriendCardHtml(friend, online) {
 }
 
 window.openCallPickerWithTarget = function(targetUid) {
-  const targetUser = cachedUsers.find(u => u.id === targetUid) || { id: targetUid, nickname: friendRelationships[targetUid]?.targetNickname || 'ユーザー' };
-  if (typeof start1on1Call === 'function') {
-    start1on1Call(targetUser.id, targetUser.nickname || 'ユーザー');
-  } else {
-    alertMessage("通話を開始します", "info");
-  }
+  const targetUser = cachedUsers.find(u => u.id === targetUid) || { id: targetUid, nickname: friendRelationships[targetUid]?.targetNickname || 'ユーザー', avatarUrl: friendRelationships[targetUid]?.targetAvatarUrl || '' };
+  startCall(targetUser.id, targetUser.nickname || 'ユーザー', targetUser.avatarUrl || '');
 };
 
 window.openFileShareWithTarget = function(targetUid) {
   const targetUser = cachedUsers.find(u => u.id === targetUid) || { id: targetUid, nickname: friendRelationships[targetUid]?.targetNickname || 'ユーザー' };
-  if (typeof start1on1FileShare === 'function') {
-    start1on1FileShare(targetUser.id, targetUser.nickname || 'ユーザー');
-  } else {
-    alertMessage("P2Pファイル共有を開始します", "info");
-  }
+  _fsPickFileAndSend(targetUser.id, targetUser.nickname || 'ユーザー');
 };
 
 window.submitFriendRequest = async function() {
@@ -5860,11 +5860,17 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   const title = document.getElementById("currentRoomTitleText");
   if (title) title.textContent = targetNickname || 'ユーザー';
 
+  if (typeof updateTitleBarContext === 'function') {
+    updateTitleBarContext('dm', currentDmParticipant);
+  }
+
   if (messageInput) {
     messageInput.placeholder = `@${targetNickname || 'ユーザー'} へのメッセージ`;
     messageInput.disabled = false;
   }
   if (fileAttachButton) fileAttachButton.disabled = false;
+  { const sbtn = document.getElementById('stickerButton'); if (sbtn) sbtn.disabled = false; }
+  { const pbtn = document.getElementById('plusMenuButton'); if (pbtn) pbtn.disabled = false; }
   if (sendMessageButton) sendMessageButton.disabled = false;
 
   const callBtn = document.getElementById('callButton');
@@ -5889,6 +5895,13 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   }
 
   subscribeToMessages();
+  renderPinnedMessages();
+
+  // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
+  try {
+    const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
+    requestP2PLogBackfill('dm', dmId, oldestTs);
+  } catch (e) { }
 };
 
 window.hideDmConversation = async function(dmId) {
@@ -9493,8 +9506,12 @@ if (mobileBackButton) {
     document.body.classList.remove('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 
-    // ルーム退出処理（開いている判定を解除する）
+    const wasDm = Boolean(currentDmId);
     currentRoomId = null;
+    currentDmId = null;
+    currentDmParticipant = null;
+    currentDmParticipants = [];
+
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
@@ -9511,6 +9528,10 @@ if (mobileBackButton) {
     if (sendMessageButton) sendMessageButton.disabled = true;
     if (typeof clearAttachedFile === 'function') clearAttachedFile();
     if (typeof cancelReply === 'function') cancelReply();
+
+    if (wasDm) {
+      openDmHomeView();
+    }
   });
 }
 
@@ -11510,37 +11531,43 @@ function computeReadByCount(message, msgIndex) {
 }
 
 async function updateReadReceiptForCurrentUser() {
-  if (!currentRoomId || !userId) return;
+  if ((!currentRoomId && !currentDmId) || !userId) return;
   // バックグラウンド・最小化・非フォーカス時は既読にしない
   if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
-  // 読んでいるたびに covo_last_read を更新（60秒バッファ切れによる誤未読ドット防止）
+  const channelKey = currentRoomId || `dm_${currentDmId}`;
   if (typeof updateLocalAndRemoteReadState === 'function') {
-    updateLocalAndRemoteReadState(currentRoomId, Date.now() + 10000);
+    updateLocalAndRemoteReadState(channelKey, Date.now() + 10000);
   } else {
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[currentRoomId] = Date.now() + 10000;
+      rm[channelKey] = Date.now() + 10000;
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
   }
   const lastMsgId = lastMessagesData.length ? lastMessagesData[lastMessagesData.length - 1].id : null;
-  const currentReadMsgKey = `${currentRoomId}_${lastMsgId || 'empty'}`;
+  const currentReadMsgKey = `${channelKey}_${lastMsgId || 'empty'}`;
   if (currentReadMsgKey === _lastSentReadMessageId) return;
   _lastSentReadMessageId = currentReadMsgKey;
   try {
     const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const myReceiptRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts/${userId}`);
+    const myReceiptPath = currentDmId
+      ? `artifacts/${appId}/dm_readReceipts/${currentDmId}/${userId}`
+      : `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts/${userId}`;
+    const myReceiptRef = ref(rtdb, myReceiptPath);
     await set(myReceiptRef, { lastReadAt: Date.now(), lastReadMessageId: lastMsgId });
   } catch (error) { }
 }
 
 async function setTypingStatus(isTyping) {
-  if (!currentRoomId || !userId || !appId) return;
+  if ((!currentRoomId && !currentDmId) || !userId || !appId) return;
   try {
     const { ref, set, remove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const typingRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing/${userId}`);
+    const typingPath = currentDmId
+      ? `artifacts/${appId}/dm_typing/${currentDmId}/${userId}`
+      : `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing/${userId}`;
+    const typingRef = ref(rtdb, typingPath);
     if (isTyping) {
       await set(typingRef, { n: userNickname, t: serverTimestamp() });
     } else {
@@ -12900,9 +12927,10 @@ function subscribeToPinnedMessages(serverId, roomId) {
 }
 
 window.unpinMessage = async function(msgId) {
-  if (!currentServerId || !currentRoomId || !msgId) return;
+  if ((!currentServerId || !currentRoomId) && !currentDmId) return;
+  if (!msgId) return;
   const msgObj = currentPinnedMessages.find(m => m.id === msgId) || allLoadedMessages.find(m => m.id === msgId);
-  const canUnpin = isAdmin || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || (msgObj && msgObj.senderId === userId);
+  const canUnpin = isAdmin || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || (msgObj && msgObj.senderId === userId) || Boolean(currentDmId);
   if (!canUnpin) {
     alertMessage("ピン留めを解除する権限がありません", "warning");
     return;
@@ -12911,15 +12939,22 @@ window.unpinMessage = async function(msgId) {
   if (!confirmed) return;
 
   try {
-    const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-    await updateDoc(msgRef, { isPinned: false });
-    
-    try {
+    if (currentDmId) {
       const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: false });
-    } catch (e) {}
+      await update(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgId}`), { isPinned: false });
+      LocalStore.putMessage({ ...(msgObj || {}), isPinned: false, id: msgId, channelId: `dm_${currentDmId}` }).catch(() => {});
+    } else {
+      const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+      await updateDoc(msgRef, { isPinned: false });
+      try {
+        const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: false });
+      } catch (e) {}
+      LocalStore.putMessage({ ...(msgObj || {}), isPinned: false, id: msgId, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
+    }
 
     currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgId);
     const mInLoaded = allLoadedMessages.find(m => m.id === msgId);
@@ -12934,16 +12969,18 @@ window.unpinMessage = async function(msgId) {
 };
 
 window.minimizePinnedAnnouncement = function() {
-  sessionStorage.setItem(`minimized_pins_${currentRoomId}`, "true");
+  const pinKey = currentRoomId || currentDmId;
+  sessionStorage.setItem(`minimized_pins_${pinKey}`, "true");
   isPinnedMessagesExpanded = false;
   renderPinnedMessages();
 };
 
 window.restorePinnedAnnouncement = function() {
-  sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+  const pinKey = currentRoomId || currentDmId;
+  sessionStorage.removeItem(`minimized_pins_${pinKey}`);
   if (currentPinnedMessages && currentPinnedMessages.length > 0) {
     const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
-    localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+    localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
   }
   renderPinnedMessages();
 };
@@ -12951,7 +12988,7 @@ window.restorePinnedAnnouncement = function() {
 if (pinMessageBtn) {
   pinMessageBtn.addEventListener("click", async (e) => {
     if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-    if (selectedMessageForContext && currentServerId && currentRoomId) {
+    if (selectedMessageForContext && ((currentServerId && currentRoomId) || currentDmId)) {
       const targetId = selectedMessageForContext.id;
       const isPinned = !selectedMessageForContext.isPinned;
       selectedMessageForContext.isPinned = isPinned;
@@ -12960,25 +12997,36 @@ if (pinMessageBtn) {
       const mObj = allLoadedMessages.find(m => m.id === targetId);
       if (mObj) mObj.isPinned = isPinned;
 
+      const pinKey = currentRoomId || currentDmId;
+
       if (isPinned) {
         if (!currentPinnedMessages.some(m => m.id === targetId)) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
-        // 新しくピン留めした際は最小化を解除してバーを表示
-        sessionStorage.removeItem(`minimized_pins_${currentRoomId}`);
+        sessionStorage.removeItem(`minimized_pins_${pinKey}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
       renderPinnedMessages();
 
-      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, targetId);
-      await updateDoc(msgRef, { isPinned: isPinned });
-      try {
-        const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-        const rtdb = await _getOrInitRTDB();
-        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${targetId}`), { isPinned: isPinned });
-      } catch (e) { console.error("RTDB Pin Failed", e); }
+      if (currentDmId) {
+        try {
+          const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await update(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${targetId}`), { isPinned: isPinned });
+          LocalStore.putMessage({ ...selectedMessageForContext, isPinned, id: targetId, channelId: `dm_${currentDmId}` }).catch(() => {});
+        } catch (e) { console.error("RTDB DM Pin Failed", e); }
+      } else {
+        const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, targetId);
+        await updateDoc(msgRef, { isPinned: isPinned });
+        try {
+          const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${targetId}`), { isPinned: isPinned });
+        } catch (e) { console.error("RTDB Pin Failed", e); }
+        LocalStore.putMessage({ ...selectedMessageForContext, isPinned, id: targetId, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
+      }
       alertMessage(isPinned ? "アナウンスに固定しました" : "ピン留めを解除しました", "success");
     }
     if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
@@ -13669,6 +13717,10 @@ function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
 }
 
 async function openCallPicker() {
+  if (currentDmId && currentDmParticipant) {
+    startCall(currentDmParticipant.uid, currentDmParticipant.nickname, currentDmParticipant.avatarUrl || '');
+    return;
+  }
   if (!currentServerData || !userId) return;
   const modal = document.getElementById('callPickerModal');
   const list = document.getElementById('callPickerList');
@@ -13696,6 +13748,34 @@ async function openCallPicker() {
     box.style.transform = '';
   }
 }
+
+window.openDmCallPicker = function () {
+  const modal = document.getElementById('callPickerModal');
+  const list = document.getElementById('callPickerList');
+  const titleEl = document.getElementById('callPickerTitle');
+  if (titleEl) titleEl.textContent = '通話するフレンドを選択';
+  if (!list || !modal) return;
+  list.innerHTML = '';
+
+  const friendUids = Object.values(friendRelationships).filter(r => r.status === 'friends').map(r => r.targetUid);
+  if (friendUids.length === 0) {
+    list.innerHTML = '<div class="p-6 text-center text-xs text-gray-400">フレンドがいません</div>';
+  } else {
+    _renderPickerMembers(list, friendUids, (uid, nameRaw, avatarUrl) => {
+      closeCallPicker();
+      startCall(uid, nameRaw, avatarUrl);
+    });
+  }
+
+  const box = modal.querySelector('.call-picker-box');
+  modal.classList.remove('hidden', 'closing');
+  modal.classList.add('show');
+  modal.style.opacity = '1';
+  if (box) {
+    box.classList.remove('closing');
+    box.style.transform = '';
+  }
+};
 
 function closeCallPicker() {
   const modal = document.getElementById('callPickerModal');
@@ -13751,6 +13831,10 @@ function _fsCleanup() {
 
 // 送信側: 相手選択ピッカーを開く（通話ピッカーと同デザインを流用・ボトムシート完全統一）
 window.openFileSharePicker = function () {
+  if (currentDmId && currentDmParticipant) {
+    _fsPickFileAndSend(currentDmParticipant.uid, currentDmParticipant.nickname);
+    return;
+  }
   if (!currentServerData || !userId) return;
   const modal = document.getElementById('callPickerModal');
   const list = document.getElementById('callPickerList');
@@ -13777,6 +13861,279 @@ window.openFileSharePicker = function () {
   }
   if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
 };
+
+window.openDmFileSharePicker = function () {
+  const modal = document.getElementById('callPickerModal');
+  const list = document.getElementById('callPickerList');
+  const titleEl = document.getElementById('callPickerTitle');
+  if (titleEl) titleEl.textContent = 'ファイルを送るフレンドを選択';
+  if (!list || !modal) return;
+  list.innerHTML = '';
+
+  const friendUids = Object.values(friendRelationships).filter(r => r.status === 'friends').map(r => r.targetUid);
+  if (friendUids.length === 0) {
+    list.innerHTML = '<div class="p-6 text-center text-xs text-gray-400">フレンドがいません</div>';
+  } else {
+    _renderPickerMembers(list, friendUids, (uid, nameRaw, avatarUrl) => {
+      closeCallPicker();
+      _fsPickFileAndSend(uid, nameRaw);
+    });
+  }
+
+  const box = modal.querySelector('.call-picker-box');
+  modal.classList.remove('hidden', 'closing');
+  modal.classList.add('show');
+  modal.style.opacity = '1';
+  if (box) {
+    box.classList.remove('closing');
+    box.style.transform = '';
+  }
+};
+
+/* =====================================================================
+   【要件 F】安全なP2P過去ログ分散補完（長期間オフライン者へのバックグラウンド同期）
+   - 長期間オフラインでRTDBの100件ローテーションから消えたログを、オンラインの同室メンバーからP2Pで補完
+   - 暗号化されたまま（enc::v...）転送し、自端末の鍵で復号（機密性100%保護）
+   - 相手不在や接続失敗時は5秒タイムアウトで静かに終了（フェイルセーフ）
+   ===================================================================== */
+let _p2pLogSyncUnsub = null;
+const _p2pLogSyncThrottle = new Map();
+
+function initP2PLogSyncListener() {
+  if (_p2pLogSyncUnsub) { _p2pLogSyncUnsub(); _p2pLogSyncUnsub = null; }
+  if (!userId) return;
+  try {
+    const q = query(
+      collection(db, `artifacts/${appId}/p2p_log_sync`),
+      where('targetUid', '==', userId),
+      where('status', '==', 'offering')
+    );
+    _p2pLogSyncUnsub = onSnapshot(q, (snap) => {
+      snap.docChanges().forEach(async (change) => {
+        if (change.type === 'added') {
+          const reqDoc = change.doc;
+          const reqData = reqDoc.data();
+          _handleIncomingP2PLogRequest(reqDoc.id, reqData);
+        }
+      });
+    }, (err) => {
+      console.warn('[P2P LogSync] Listener warning:', err);
+    });
+  } catch (e) { }
+}
+
+async function _handleIncomingP2PLogRequest(syncId, reqData) {
+  if (!reqData || !reqData.requesterUid) return;
+  const { requesterUid, channelType, serverId, roomId, dmId, beforeTs } = reqData;
+
+  // 1. 厳格なアクセス権照合 (Security Boundary)
+  let isAuthorized = false;
+  if (channelType === 'dm' && dmId) {
+    const parts = dmId.split('_');
+    isAuthorized = parts.includes(requesterUid) && parts.includes(userId);
+  } else if (channelType === 'server' && serverId) {
+    try {
+      const sSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}`));
+      if (sSnap.exists()) {
+        const sData = sSnap.data();
+        isAuthorized = (sData.joinedUsers || []).includes(requesterUid) && (sData.joinedUsers || []).includes(userId);
+      }
+    } catch (e) { }
+  }
+
+  if (!isAuthorized) {
+    deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
+    return;
+  }
+
+  // 2. 自端末のIndexedDBから該当チャンネルのメッセージのみを抽出
+  const channelId = channelType === 'dm' ? `dm_${dmId}` : `${serverId}_${roomId}`;
+  const localMsgs = await LocalStore.getMessages(channelId, beforeTs || null, 100);
+
+  if (!localMsgs || localMsgs.length === 0) {
+    deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
+    return;
+  }
+
+  // 3. WebRTC DataChannel 経由で暗号化メッセージを送信
+  try {
+    const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    let dc = null;
+
+    pc.ondatachannel = (ev) => {
+      dc = ev.channel;
+      dc.onopen = () => {
+        // 暗号化された状態のメッセージ配列のみを送信（秘密鍵や別チャンネルのログは一切除外）
+        const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: localMsgs });
+        dc.send(payload);
+        setTimeout(() => {
+          try { pc.close(); } catch (e) {}
+          deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
+        }, 1000);
+      };
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        addDoc(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), e.candidate.toJSON()).catch(() => {});
+      }
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(reqData.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    await updateDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
+      answer: { type: answer.type, sdp: answer.sdp },
+      status: 'answered'
+    });
+
+    onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/requesterCandidates`), (snap) => {
+      snap.docChanges().forEach(async (ch) => {
+        if (ch.type === 'added') {
+          try { await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {}
+        }
+      });
+    });
+
+    setTimeout(() => {
+      try { pc.close(); } catch (e) {}
+      deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
+    }, 6000);
+
+  } catch (err) {
+    console.warn('[P2P LogSync] Responder error:', err);
+    deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
+  }
+}
+
+async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
+  if (!userId) return;
+  const channelKey = channelType === 'dm' ? `dm_${targetId}` : `${currentServerId}_${targetId}`;
+  
+  // デバウンス（同一チャンネルへの要求は45秒に1回）
+  const lastReq = _p2pLogSyncThrottle.get(channelKey) || 0;
+  if (Date.now() - lastReq < 45000) return;
+  _p2pLogSyncThrottle.set(channelKey, Date.now());
+
+  // オンラインの相手を選定
+  let targetUid = null;
+  if (channelType === 'dm') {
+    const otherUid = currentDmParticipants.find(id => id !== userId);
+    const u = cachedUsers.find(cu => cu.id === otherUid);
+    if (u && (u.computedState === 'online' || u.state === 'online')) {
+      targetUid = otherUid;
+    }
+  } else if (channelType === 'server' && currentServerData) {
+    const members = (currentServerData.joinedUsers || []).filter(id => id !== userId);
+    const onlineMems = members.filter(id => {
+      const u = cachedUsers.find(cu => cu.id === id);
+      return u && (u.computedState === 'online' || u.state === 'online');
+    });
+    if (onlineMems.length > 0) {
+      targetUid = onlineMems[Math.floor(Math.random() * onlineMems.length)];
+    }
+  }
+
+  if (!targetUid) return;
+
+  const syncDocRef = doc(collection(db, `artifacts/${appId}/p2p_log_sync`));
+  const syncId = syncDocRef.id;
+
+  try {
+    const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    const dc = pc.createDataChannel('logSync', { ordered: true });
+
+    dc.onmessage = async (ev) => {
+      try {
+        const res = JSON.parse(ev.data);
+        if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
+          console.log(`[P2P LogSync] Received ${res.messages.length} backfilled messages for ${res.channelId}`);
+          await LocalStore.upsertMessagesBatch(res.messages);
+
+          // 現在開いているチャンネルと一致していれば復号して即時画面反映
+          const activeChId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+          if (res.channelId === activeChId) {
+            const decryptInPlace = async (list) => {
+              if (currentServerId) {
+                const _members = (currentServerData && currentServerData.joinedUsers) || [];
+                await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
+              } else if (currentDmId) {
+                await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+              }
+            };
+            await decryptInPlace(res.messages);
+            res.messages.forEach(msg => {
+              const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
+              if (idx >= 0) allLoadedMessages[idx] = msg;
+              else allLoadedMessages.push(msg);
+            });
+            allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+            lastMessagesData = [...allLoadedMessages];
+            messagesIndexMap = {};
+            lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+            renderMessagesWithReadReceipts();
+          }
+        }
+      } catch (e) {
+        console.warn('[P2P LogSync] Parse error:', e);
+      } finally {
+        try { pc.close(); } catch (_) {}
+        deleteDoc(syncDocRef).catch(() => {});
+      }
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        addDoc(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/requesterCandidates`), e.candidate.toJSON()).catch(() => {});
+      }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    await setDoc(syncDocRef, {
+      requesterUid: userId,
+      targetUid: targetUid,
+      channelType,
+      serverId: currentServerId || null,
+      roomId: channelType === 'server' ? targetId : null,
+      dmId: channelType === 'dm' ? targetId : null,
+      beforeTs: oldestLocalTs || null,
+      offer: { type: offer.type, sdp: offer.sdp },
+      status: 'offering',
+      createdAt: serverTimestamp()
+    });
+
+    const unsubDoc = onSnapshot(syncDocRef, async (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (d.answer && !pc.currentRemoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+      }
+    });
+
+    const unsubCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), (snap) => {
+      snap.docChanges().forEach(async (ch) => {
+        if (ch.type === 'added') {
+          try { await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {}
+        }
+      });
+    });
+
+    // 5秒タイムアウト（ベストエフォート）
+    setTimeout(() => {
+      try { unsubDoc(); } catch (_) {}
+      try { unsubCands(); } catch (_) {}
+      try { pc.close(); } catch (_) {}
+      deleteDoc(syncDocRef).catch(() => {});
+    }, 5000);
+
+  } catch (err) {
+    console.warn('[P2P LogSync] Request failed (continuing normal operation):', err);
+    deleteDoc(syncDocRef).catch(() => {});
+  }
+}
 
 // ファイル選択 → 送信開始
 function _fsPickFileAndSend(targetUid, targetName) {

@@ -195,6 +195,75 @@ tailwind.input.css
 <files>
 This section contains the contents of the repository's files.
 
+<file path=".github/workflows/release.yml">
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+    
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri'
+          shared-key: 'tauri-build'
+
+      - name: install sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: setup sccache env
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $env:GITHUB_ENV
+
+      - name: install frontend dependencies
+        run: npm install
+
+      - name: build tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'App v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+</file>
+
 <file path="public/404.html">
 <!DOCTYPE html>
 <html>
@@ -1140,75 +1209,6 @@ tokio = { version = "1", features = ["time"] }
 }
 </file>
 
-<file path=".github/workflows/release.yml">
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
-
-permissions:
-  contents: write
-
-jobs:
-  release:
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [windows-latest]
-    
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: install Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: 'src-tauri'
-          shared-key: 'tauri-build'
-
-      - name: install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: setup sccache env
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $env:GITHUB_ENV
-
-      - name: install frontend dependencies
-        run: npm install
-
-      - name: build tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v__VERSION__
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
-</file>
-
 <file path="public/css/modules/layout.css">
 /* Main layout container styles */
 </file>
@@ -1332,606 +1332,6 @@ jobs:
   border: none !important;
   z-index: 0 !important;
   transform: none !important;
-}
-</file>
-
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-
-let _dbInstance = null;
-let _dbInitPromise = null;
-
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
-  if (_dbInitPromise) return _dbInitPromise;
-
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        _dbInstance.close();
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-
-    req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
-      resolve(null);
-    };
-
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-    };
-  });
-
-  return _dbInitPromise;
-}
-
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      if (typeof cleanMsg.timestamp !== 'number') {
-        cleanMsg.timestamp = typeof cleanMsg.timestamp === 'string' ? new Date(cleanMsg.timestamp).getTime() : (cleanMsg.timestamp?.seconds ? cleanMsg.timestamp.seconds * 1000 : Date.now());
-      }
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
-      resolve(false);
-    }
-  });
-}
-
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        if (typeof cleanMsg.timestamp !== 'number') {
-          cleanMsg.timestamp = typeof cleanMsg.timestamp === 'string' ? new Date(cleanMsg.timestamp).getTime() : (cleanMsg.timestamp?.seconds ? cleanMsg.timestamp.seconds * 1000 : Date.now());
-        }
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
-      resolve(false);
-    }
-  });
-}
-
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
-        resolve([]);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
-      resolve([]);
-    }
-  });
-}
-
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend || !friend.uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put(friend);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (f && f.uid) store.put(f);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData
-  };
 }
 </file>
 
@@ -3715,272 +3115,616 @@ iPhone等で開発者コンソールが無くてもデバッグできるよう�
 }
 </file>
 
-<file path="tailwind.config.js">
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: 'class',
-  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
-  theme: {
-    extend: {
-      transitionTimingFunction: {
-        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
-      },
-      keyframes: {
-        'fade-in-up': {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'fade-in-down': {
-          '0%': { opacity: '0', transform: 'translateY(-10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'pop-in': {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
-        }
-      },
-      animation: {
-        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+
+let _dbInstance = null;
+let _dbInitPromise = null;
+
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) return _dbInstance;
+  if (_dbInitPromise) return _dbInitPromise;
+
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
       }
-    },
-  },
-  plugins: [],
+
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        _dbInstance.close();
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+
+    req.onerror = () => {
+      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      resolve(null);
+    };
+
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+    };
+  });
+
+  return _dbInitPromise;
 }
-</file>
 
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.web.app",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-
-  switch (event.data.type) {
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
   }
-});
-
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
 }
 
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
-    if (activeClients.length === 0) {
-      // 全クライアントが非表示または存在しない → offlineビーコン
-      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] putMessage failed:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      resolve(false);
     }
+  });
+}
+
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        console.warn("[LocalStore] getMessages failed:", req.error);
+        resolve([]);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] getMessages exception:", e);
+      resolve([]);
+    }
+  });
+}
+
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend || !friend.uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put(friend);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (f && f.uid) store.put(f);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+
+    return true;
   } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
   }
 }
 
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
-  if (typeof body  === 'string' && body.indexOf('enc::v')  === 0) body  = '新しいメッセージがあります';
-  if (typeof title === 'string' && title.indexOf('enc::v') === 0) title = 'Covo';
-
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-
-  return self.registration.showNotification(title, notificationOptions);
-});
-
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData
+  };
+}
 </file>
 
 <file path="public/recovery.html">
@@ -4364,6 +4108,274 @@ self.addEventListener('notificationclick', (event) => {
 </html>
 </file>
 
+<file path="tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: 'class',
+  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
+  theme: {
+    extend: {
+      transitionTimingFunction: {
+        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
+      },
+      keyframes: {
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-down': {
+          '0%': { opacity: '0', transform: 'translateY(-10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        }
+      },
+      animation: {
+        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+      }
+    },
+  },
+  plugins: [],
+}
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.web.app",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+
+  switch (event.data.type) {
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
+    if (activeClients.length === 0) {
+      // 全クライアントが非表示または存在しない → offlineビーコン
+      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
+  if (typeof body  === 'string' && body.indexOf('enc::v')  === 0) body  = '新しいメッセージがあります';
+  if (typeof title === 'string' && title.indexOf('enc::v') === 0) title = 'Covo';
+
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+
+  return self.registration.showNotification(title, notificationOptions);
+});
+
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
+</file>
+
 <file path="public/css/main.css">
 @import url('./modules/base.css');
 @import url('./modules/sidebar.css');
@@ -4372,69 +4384,6 @@ self.addEventListener('notificationclick', (event) => {
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-
-/**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
-    return false;
-  }
-  return true;
-}
-
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
-  return new Promise(async (resolve, reject) => {
-    const idToken = auth && auth.currentUser ? await auth.currentUser.getIdToken() : "";
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
 </file>
 
 <file path="public/css/modules/animations.css">
@@ -5552,6 +5501,76 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     }
 </file>
 
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+/**
+ * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
 <file path="public/js/ui_helpers.js">
 /**
  * UI補助機能 (ui_helpers.js)
@@ -6580,7 +6599,8 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
         return Err("Invalid tag format".to_string());
     }
 
-    let is_valid_url = url.starts_with("https://github.com/qwertyuiop1229/Covo/releases/download/")
+    let url_lower = url.to_lowercase();
+    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
         || url.starts_with("https://objects.githubusercontent.com/");
     if !is_valid_url {
         return Err("Invalid download URL: must be from official repository".to_string());
@@ -6884,285 +6904,6 @@ pub fn run() {
         ))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-</file>
-
-<file path="public/js/debug_ui.js">
-import { safeCopy } from './utils.js';
-import { alertMessage } from './ui_helpers.js';
-
-export function _runShadowHunter() {
-      const lines = [];
-      try {
-        const desc = (el) => {
-          if (!el || !el.tagName) return '?';
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-          return el.tagName.toLowerCase() + id + cls;
-        };
-        // 影・境界・グラデを持つか判定し、持つなら記録
-        const inspect = (el, tag) => {
-          if (!el) return;
-          const cs = getComputedStyle(el);
-          const hits = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
-          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
-          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
-          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
-          // ::after / ::before も調べる
-          for (const pseudo of ['::before', '::after']) {
-            const pcs = getComputedStyle(el, pseudo);
-            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
-              const ph = [];
-              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
-              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
-              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
-              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
-            }
-          }
-          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
-        };
-
-        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
-        const input = document.getElementById('messageInputArea');
-        const nav = document.getElementById('mobileBottomNav');
-        inspect(input, 'IN');
-        inspect(input && input.parentElement, 'IN.parent');
-        inspect(nav, 'NAV');
-        inspect(document.getElementById('chatArea'), 'chat');
-        inspect(document.getElementById('messageInputInner'), 'inner');
-
-        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
-        if (input) {
-          const ir = input.getBoundingClientRect();
-          const x = Math.round(ir.left + ir.width / 2);
-          for (const dy of [-2, 0, 2, 4, 8]) {
-            const y = Math.round(ir.bottom + dy);
-            const stack = document.elementsFromPoint(x, y) || [];
-            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
-          }
-        }
-
-        const uniq = [...new Set(lines)];
-        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-
-export function _updateLayoutDebugUI() {
-  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
-  if (!els.length) return;
-  const txt = _runShadowHunter();
-  const n = txt.split('\n').length;
-  els.forEach(el => {
-    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
-    el.style.cursor = 'pointer';
-    el.style.textDecoration = 'underline';
-    el.style.whiteSpace = 'normal';
-    el.title = 'タップでコピー';
-    el.onclick = () => copyDebugText(txt, el);
-  });
-}
-
-let _inspectHL = null;
-
-export function __clearInspectHighlight() {
-      if (_inspectHL) { _inspectHL.style.display = 'none'; }
-    }
-
-export function __showInspectHighlight(rect) {
-      if (!_inspectHL) {
-        _inspectHL = document.createElement('div');
-        _inspectHL.setAttribute('data-inspect-ignore', '1');
-        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
-        document.body.appendChild(_inspectHL);
-      }
-      _inspectHL.style.display = 'block';
-      _inspectHL.style.left = rect.left + 'px';
-      _inspectHL.style.top = rect.top + 'px';
-      _inspectHL.style.width = rect.width + 'px';
-      _inspectHL.style.height = rect.height + 'px';
-    }
-
-export function _inspectPoint(x, y) {
-      try {
-        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
-        const out = [];
-        stack.forEach((el, i) => {
-          const cs = getComputedStyle(el);
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
-          const name = el.tagName.toLowerCase() + id + cls;
-          const r = el.getBoundingClientRect();
-          const props = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
-          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
-          // 擬似要素
-          for (const ps of ['::before', '::after']) {
-            const p = getComputedStyle(el, ps);
-            if (p.content && p.content !== 'none' && p.content !== 'normal') {
-              const pp = [];
-              if (p.boxShadow !== 'none') pp.push('shadow');
-              if (p.backgroundImage !== 'none') pp.push('bg');
-              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
-              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
-            }
-          }
-          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
-        });
-        return out.join('\n');
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-
-export function _lineColor(line) {
-      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
-      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
-      if (line.includes('[E2EE]')) return '#34d399';
-      if (line.includes('[INFO]')) return '#60a5fa';
-      return '#cbd5e1';
-    }
-
-export function _appendConsoleLine(line) {
-      const body = document.getElementById('devConsoleBody');
-      if (!body) return;
-      const div = document.createElement('div');
-      div.textContent = line;
-      div.style.color = _lineColor(line);
-      div.style.padding = '2px 0';
-      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
-      body.appendChild(div);
-      body.scrollTop = body.scrollHeight;
-    }
-
-let _inspectMode = false;
-export function setInspectMode(enabled) {
-  _inspectMode = !!enabled;
-  const bar = document.getElementById('inspectModeBar');
-  const pcCb = document.getElementById('pcToggleInspectMode');
-  const mobileCb = document.getElementById('toggleInspectMode');
-  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
-  if (pcCb) pcCb.checked = _inspectMode;
-  if (mobileCb) mobileCb.checked = _inspectMode;
-  if (!_inspectMode) {
-    __clearInspectHighlight();
-  }
-}
-
-export function toggleDevConsole() {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel) return;
-  const isHidden = panel.style.display === 'none' || !panel.style.display;
-  panel.style.display = isHidden ? 'flex' : 'none';
-  if (isHidden) {
-    const body = document.getElementById('devConsoleBody');
-    if (body) {
-      body.innerHTML = '';
-      const logs = window._covoLogs || [];
-      if (logs.length === 0) {
-        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
-      } else {
-        logs.forEach(line => _appendConsoleLine(line));
-      }
-    }
-  }
-}
-
-export function clearDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  if (body) body.innerHTML = '';
-  window._covoLogs = [];
-}
-
-export function copyDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
-  if (!text || text.trim() === '') {
-    alertMessage('コピーするコンソールログがありません', 'info');
-    return;
-  }
-  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
-}
-
-export function copyDebugText(txt) {
-  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
-}
-
-export function getSystemDiagnosticInfo() {
-  const info = {
-    timestamp: new Date().toLocaleString('ja-JP'),
-    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
-    userAgent: navigator.userAgent,
-    language: navigator.language || 'ja',
-    online: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
-    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
-    viewport: `${window.innerWidth}x${window.innerHeight}`,
-    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
-    memory: (window.performance && window.performance.memory) ? {
-      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
-      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
-      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
-    } : null,
-    network: navigator.connection ? {
-      type: navigator.connection.effectiveType || 'unknown',
-      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
-      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
-    } : null,
-    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
-    localStorageCount: (() => {
-      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
-    })()
-  };
-  return info;
-}
-
-export function formatDiagnosticMarkdown(info) {
-  let md = `### Covo システム診断レポート\n`;
-  md += `- **記録日時**: ${info.timestamp}\n`;
-  md += `- **アプリ種別**: ${info.appType}\n`;
-  md += `- **アプリバージョン**: ${info.appVersion}\n`;
-  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
-  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
-  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
-  if (info.memory) {
-    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
-  }
-  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
-  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
-  return md;
-}
-
-export function copySystemDiagnosticReport() {
-  const info = getSystemDiagnosticInfo();
-  const md = formatDiagnosticMarkdown(info);
-  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
-}
-
-export function copyFullDiagnosticAndConsoleReport() {
-  const info = getSystemDiagnosticInfo();
-  let md = formatDiagnosticMarkdown(info);
-  const logs = window._covoLogs || [];
-  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
-  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
-}
-
-if (typeof window !== 'undefined') {
-  window.setInspectMode = setInspectMode;
-  window.toggleDevConsole = toggleDevConsole;
-  window.clearDevConsole = clearDevConsole;
-  window.copyDevConsole = copyDevConsole;
-  window.copyDebugText = copyDebugText;
-  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
-  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
-  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 </file>
 
@@ -7569,6 +7310,288 @@ if (typeof window !== 'undefined') {
       height: 14px;
       pointer-events: none;
     }
+</file>
+
+<file path="public/js/debug_ui.js">
+import { safeCopy } from './utils.js';
+import { alertMessage } from './ui_helpers.js';
+
+export function _runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+export function _updateLayoutDebugUI() {
+  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+  if (!els.length) return;
+  const txt = _runShadowHunter();
+  const n = txt.split('\n').length;
+  els.forEach(el => {
+    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+    el.style.cursor = 'pointer';
+    el.style.textDecoration = 'underline';
+    el.style.whiteSpace = 'normal';
+    el.title = 'タップでコピー';
+    el.onclick = () => copyDebugText(txt, el);
+  });
+}
+
+let _inspectHL = null;
+
+export function __clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+
+export function __showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+
+export function _inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+export function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
+      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      if (line.includes('[INFO]')) return '#60a5fa';
+      return '#cbd5e1';
+    }
+
+export function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      div.style.padding = '2px 0';
+      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+      body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
+    }
+
+let _inspectMode = false;
+export function setInspectMode(enabled) {
+  _inspectMode = !!enabled;
+  const bar = document.getElementById('inspectModeBar');
+  const pcCb = document.getElementById('pcToggleInspectMode');
+  const mobileCb = document.getElementById('toggleInspectMode');
+  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+  if (pcCb) pcCb.checked = _inspectMode;
+  if (mobileCb) mobileCb.checked = _inspectMode;
+  if (!_inspectMode) {
+    __clearInspectHighlight();
+  }
+}
+
+export function toggleDevConsole() {
+  const panel = document.getElementById('devConsolePanel');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    const body = document.getElementById('devConsoleBody');
+    if (body) {
+      body.innerHTML = '';
+      const logs = window._covoLogs || [];
+      if (logs.length === 0) {
+        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
+      } else {
+        logs.forEach(line => _appendConsoleLine(line));
+      }
+    }
+  }
+}
+
+export function clearDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  if (body) body.innerHTML = '';
+  window._covoLogs = [];
+}
+
+export function copyDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  if (!text || text.trim() === '') {
+    alertMessage('コピーするコンソールログがありません', 'info');
+    return;
+  }
+  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
+}
+
+export function copyDebugText(txt) {
+  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+
+export function getSystemDiagnosticInfo() {
+  const info = {
+    timestamp: new Date().toLocaleString('ja-JP'),
+    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    userAgent: navigator.userAgent,
+    language: navigator.language || 'ja',
+    online: navigator.onLine,
+    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    screenSize: `${window.innerWidth}x${window.innerHeight}`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
+    memory: (window.performance && window.performance.memory) ? {
+      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
+      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
+      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
+    } : null,
+    network: navigator.connection ? {
+      type: navigator.connection.effectiveType || 'unknown',
+      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
+      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
+    } : null,
+    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
+    localStorageCount: (() => {
+      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
+    })()
+  };
+  return info;
+}
+
+export function formatDiagnosticMarkdown(info) {
+  let md = `### Covo システム診断レポート\n`;
+  md += `- **記録日時**: ${info.timestamp}\n`;
+  md += `- **アプリ種別**: ${info.appType}\n`;
+  md += `- **アプリバージョン**: ${info.appVersion}\n`;
+  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
+  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
+  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
+  if (info.memory) {
+    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
+  }
+  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
+  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
+  return md;
+}
+
+export function copySystemDiagnosticReport() {
+  const info = getSystemDiagnosticInfo();
+  const md = formatDiagnosticMarkdown(info);
+  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
+}
+
+export function copyFullDiagnosticAndConsoleReport() {
+  const info = getSystemDiagnosticInfo();
+  let md = formatDiagnosticMarkdown(info);
+  const logs = window._covoLogs || [];
+  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
+  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
+}
+
+if (typeof window !== 'undefined') {
+  window.setInspectMode = setInspectMode;
+  window.toggleDevConsole = toggleDevConsole;
+  window.clearDevConsole = clearDevConsole;
+  window.copyDevConsole = copyDevConsole;
+  window.copyDebugText = copyDebugText;
+  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
+}
 </file>
 
 <file path="public/js/geo_study.js">
@@ -11950,10 +11973,10 @@ async function handleSendCallNotification(request, env) {
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 200, headers: corsHeaders });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
     }
     const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
@@ -12015,8 +12038,8 @@ async function handleSendCallNotification(request, env) {
               notification: {
                 title,
                 body,
-                icon: "/icon-192x192.png?v=5",
-                badge: "/icon-192x192.png?v=5",
+                icon: "/img/icon-192x192.png?v=6",
+                badge: "/img/icon-192x192.png?v=6",
                 tag: `call-${callId}`,
                 requireInteraction: true,
                 renotify: true
@@ -12532,9 +12555,9 @@ async function handleDeleteFile(request, env, url) {
     let isPrivilegedAdmin = false;
     if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
       isPrivilegedAdmin = true;
-    } else if (env.DB) {
+    } else {
       const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
-      isPrivilegedAdmin = await isD1Admin(appId, verifiedUser, env);
+      isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
     }
 
     if (forceDelete) {
@@ -12905,7 +12928,7 @@ async function verifyFirebaseIdToken(idToken, env) {
 }
 
 async function isD1Admin(appId, verifiedUser, env) {
-  if (!appId || !verifiedUser) return false;
+  if (!appId || !verifiedUser || !env.DB) return false;
   try {
     const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
     if (row && row.setting_data) {
@@ -12918,6 +12941,35 @@ async function isD1Admin(appId, verifiedUser, env) {
     }
   } catch(e) {
     console.error("isD1Admin error:", e);
+  }
+  return false;
+}
+
+async function isAppAdmin(appId, verifiedUser, env) {
+  if (!appId || !verifiedUser) return false;
+  if (env.DB) {
+    const d1Result = await isD1Admin(appId, verifiedUser, env);
+    if (d1Result) return true;
+  }
+  try {
+    const workerToken = await getWorkerAuthToken(env);
+    if (workerToken) {
+      const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
+      const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+      const adminData = await adminRes.json();
+      if (!adminData.error && adminData.fields) {
+        if (adminData.fields.emails?.arrayValue?.values) {
+          const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
+          if (verifiedUser.email && emails.includes(verifiedUser.email)) return true;
+        }
+        if (adminData.fields.admins?.arrayValue?.values) {
+          const admins = adminData.fields.admins.arrayValue.values.map(v => v.stringValue);
+          if (verifiedUser.uid && admins.includes(verifiedUser.uid)) return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("isAppAdmin error:", e);
   }
   return false;
 }
@@ -13839,6 +13891,412 @@ async function handleD1Api(request, env, url) {
 }
 </file>
 
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- ユーティリティ関数 ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isGlobalAdmin(appId));
+    }
+
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          || isGlobalAdmin(appId));
+    }
+
+    // --- 各コレクションのルール ---
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定
+      match /settings/{docId} {
+        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
+      match /allowedEmails/{emailId} {
+        // 全体管理者はフルアクセス。
+        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
+        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
+        allow get: if isGlobalAdmin(appId) ||
+                   (isAuthenticated() && request.auth.token.email == emailId) ||
+                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000;
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
+      match /error_reports/{docId} {
+        allow create, update: if request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
+      match /recovery_vault/{userDocId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if true; // ログイン前の暗号照合検証用
+        allow write: if isAuthenticated();
+      }
+
+      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if true; // ログイン前のPIN照合検証用
+        allow write: if isGlobalAdmin(appId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']));
+      }
+
+      // 招待コードインデックス（コード→サーバーID の逆引き）
+      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報
+      match /users/{userId} {
+        allow get, list: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // サーバー作成クォータ（本人のみ読み書き）
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == qUserId;
+        allow write: if false; // クライアントからの直接更新を禁止
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // フレンド関係性 (relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            request.resource.data.status == 'pending_received' ||
+            request.resource.data.status == 'friends'
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
+        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
+        match /keys/{keyUserId} {
+          allow get, list: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+          allow write: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+        }
+      }
+
+      // 端末間データ完全移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        match /{subcollection}/{docId} {
+          allow get, list: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+          allow write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+        }
+      }
+
+      // 3. グローバルオンライン状態
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 4. P2P音声通話シグナリング
+      match /calls/{callId} {
+        allow read, delete: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.caller.uid == request.auth.uid ||
+           resource.data.callee.uid == request.auth.uid ||
+           resource.data.calleeUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.caller.uid == request.auth.uid;
+        match /callerCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+        match /calleeCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      match /fileshares/{shareId} {
+        allow read, delete: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid);
+        allow update: if isAuthenticated() &&
+          (resource.data.sender.uid == request.auth.uid ||
+           resource.data.receiverUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+        allow create: if isAuthenticated() &&
+          request.resource.data.sender.uid == request.auth.uid;
+        match /senderCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+        match /receiverCandidates/{candId} {
+          allow read, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+        }
+      }
+
+      // ============================================================
+      // サーバーベース構造
+      // ============================================================
+
+      match /servers/{serverId} {
+        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
+        allow get: if isAuthenticated();
+        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
+
+        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.serverAdmins == [request.auth.uid] &&
+          request.resource.data.joinedUsers == [request.auth.uid];
+
+        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+
+        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          request.resource.data.memberCount == resource.data.memberCount - 1;
+
+        // サーバー削除: グローバル管理者またはサーバー管理者
+        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+
+        // サーバー内の秘密情報（管理者のみ）
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId);
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
+              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
+            )
+          );
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+
+          // ルーム内メッセージ
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              request.resource.data.senderId == request.auth.uid;
+            allow update: if isJoinedServer(appId, serverId) && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
+              || (isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+            );
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          }
+
+          // 既読レシート
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              request.auth.uid == receiptUserId;
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
+          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
+          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId);
+          }
+
+          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow delete: if isJoinedServer(appId, serverId);
+          }
+
+          // タイピングインジケーター（サーバー参加者のみ）
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+          }
+        }
+
+        // サーバー別プロフィール
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            request.auth.uid == profileUserId;
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string &&
+            request.resource.data.url is string;
+          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
+          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ（古い形式 / 拡張形式）
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+    }
+
+  }
+}
+</file>
+
 <file path="public/js/crypto_helpers.js">
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
@@ -14604,11 +15062,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     /**
      * DMメッセージの復号化
      */
-    export async function _decryptDmText(text, dmId, participants) {
+    export async function _decryptDmText(text, dmIdOrKey, participants) {
       if (!_isEncrypted(text)) return text;
       if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
       try {
-        const dmKeyObj = await _getOrCreateDmKey(dmId, participants);
+        let dmKeyObj = null;
+        if (dmIdOrKey && typeof dmIdOrKey === 'object' && (dmIdOrKey.latest || dmIdOrKey['1'])) {
+          dmKeyObj = dmIdOrKey;
+        } else if (typeof dmIdOrKey === 'string') {
+          dmKeyObj = await _getOrCreateDmKey(dmIdOrKey, participants);
+        }
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
 
         const parts = text.split("::");
@@ -14670,412 +15133,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
       }));
     }
-</file>
-
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // --- ユーティリティ関数 ---
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          || isGlobalAdmin(appId));
-    }
-
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          || isGlobalAdmin(appId));
-    }
-
-    // --- 各コレクションのルール ---
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定
-      match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
-      match /allowedEmails/{emailId} {
-        // 全体管理者はフルアクセス。
-        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
-        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
-        allow get: if isGlobalAdmin(appId) ||
-                   (isAuthenticated() && request.auth.token.email == emailId) ||
-                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000;
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
-      match /error_reports/{docId} {
-        allow create, update: if request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
-      match /recovery_vault/{userDocId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if true; // ログイン前の暗号照合検証用
-        allow write: if isAuthenticated();
-      }
-
-      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if true; // ログイン前のPIN照合検証用
-        allow write: if isGlobalAdmin(appId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']));
-      }
-
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報
-      match /users/{userId} {
-        allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // サーバー作成クォータ（本人のみ読み書き）
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // フレンド関係性 (relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == userId;
-        allow write: if isAuthenticated() && (
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            request.resource.data.status == 'pending_received' ||
-            request.resource.data.status == 'friends'
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル
-      match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
-        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
-
-        match /keys/{keyUserId} {
-          allow get, list: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
-          allow write: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
-        }
-      }
-
-      // 端末間データ完全移行 (P2P Device Transfers)
-      match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-        match /{subcollection}/{docId} {
-          allow get, list: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-          allow write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-        }
-      }
-
-      // 3. グローバルオンライン状態
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 4. P2P音声通話シグナリング
-      match /calls/{callId} {
-        allow read, delete: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.caller.uid == request.auth.uid;
-        match /callerCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-        match /calleeCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
-      match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
-        allow update: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
-        allow create: if isAuthenticated() &&
-          request.resource.data.sender.uid == request.auth.uid;
-        match /senderCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-        match /receiverCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
-        }
-      }
-
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
-
-      match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
-        allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
-
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
-
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
-
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          request.resource.data.memberCount == resource.data.memberCount - 1;
-
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
-
-        // サーバー内の秘密情報（管理者のみ）
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
-              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
-            )
-          );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-
-          // ルーム内メッセージ
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
-            allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
-            );
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
-          }
-
-          // 既読レシート
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId);
-            allow update, delete: if isServerAdmin(appId, serverId);
-          }
-
-          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
-          match /rescueRequests/{reqUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
-            allow delete: if isJoinedServer(appId, serverId);
-          }
-
-          // タイピングインジケーター（サーバー参加者のみ）
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-          }
-        }
-
-        // サーバー別プロフィール
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string &&
-            request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ（古い形式 / 拡張形式）
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-    }
-
-  }
-}
 </file>
 
 <file path="public/css/modules/sidebar.css">
@@ -21078,7 +21135,8 @@ function initializeFirebase() {
     });
   } catch (error) {
     console.error("Firebase Init Error:", error);
-    authMessage.textContent = `エラー: ${error.message}`;
+    const authMsg = document.getElementById("authMessage");
+    if (authMsg) authMsg.textContent = `エラー: ${error.message}`;
   }
 }
 
@@ -21578,18 +21636,29 @@ async function _loadOrCreateUserRecoveryKey(user) {
 
     _currentUserRecoveryKey = key;
 
+    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
+    const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
     if (statusBadge) {
       statusBadge.textContent = '有効 (保護中)';
       statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+    }
+    if (modalBadge) {
+      modalBadge.textContent = '有効 (保護中)';
+      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
     }
     if (keyDisplay) {
       keyDisplay.textContent = key;
     }
   } catch (err) {
     console.error('[Recovery] Load/Create key error:', err);
+    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
     if (statusBadge) {
       statusBadge.textContent = 'ローカル保護中';
       statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+    }
+    if (modalBadge) {
+      modalBadge.textContent = 'ローカル保護中';
+      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
     }
   }
 }
@@ -24211,9 +24280,9 @@ avatarZoomSlider.addEventListener('input', () => {
   cropScale = newScale; clampCropOffset(); drawCropPreview();
 });
 
-document.getElementById('avatarCropCancel').addEventListener('click', closeCropModal);
+document.getElementById('avatarCropCancel')?.addEventListener('click', closeCropModal);
 
-document.getElementById('avatarCropConfirm').addEventListener('click', async () => {
+document.getElementById('avatarCropConfirm')?.addEventListener('click', async () => {
   if (!cropImage) return;
   // 解像度を 400→640 に上げ、高品質リサイズ＋JPEG品質0.92で鮮明に保存する
   // （Cloudflare はファイルをそのまま保存するだけなので、画質はここの設定で決まる）
@@ -25901,7 +25970,7 @@ window.submitFriendRequest = async function() {
     batch.set(targetRef, {
       targetUid: userId,
       targetNickname: userNickname || 'ユーザー',
-      targetAvatarUrl: currentUserAvatarUrl || '',
+      targetAvatarUrl: userAvatarUrl || '',
       targetEmail: auth.currentUser?.email || '',
       status: 'pending_received',
       updatedAt: serverTimestamp()
@@ -36996,7 +37065,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.81",
+  "version": "1.1.82",
   "force": false
 }
 </file>
@@ -37005,7 +37074,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.81",
+  "version": "1.1.82",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

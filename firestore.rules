@@ -202,6 +202,18 @@ service cloud.firestore {
         }
       }
 
+      // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
+      match /p2p_log_sync/{syncId} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.requesterUid == request.auth.uid || resource.data.targetUid == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.requesterUid == request.auth.uid || resource.data.targetUid == request.auth.uid);
+        match /{subcollection}/{docId} {
+          allow get, list, write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid);
+        }
+      }
+
       // 3. グローバルオンライン状態
       match /status/{userId} {
         allow read: if isAuthenticated();

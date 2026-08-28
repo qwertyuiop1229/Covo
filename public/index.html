@@ -2273,17 +2273,17 @@
                   <span id="dmTabPendingCountBadge" class="hidden px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">0</span>
                 </button>
                 <button id="dmTabBlockedBtn" onclick="switchDmTab('blocked')" class="dm-tab-btn px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors whitespace-nowrap">ブロック中</button>
-                <button id="dmTabAddBtn" onclick="switchDmTab('add')" class="dm-tab-btn px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap">
+                <button id="dmTabAddBtn" onclick="switchDmTab('add')" class="dm-tab-btn px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white font-bold transition-all shadow-sm flex items-center gap-1 ml-1 whitespace-nowrap">
                   <i class="fas fa-user-plus text-[10px]"></i> <span>フレンド追加</span>
                 </button>
               </div>
             </div>
             <!-- 右側アイコンツール (Discord共通トップバー) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
-              <button class="topbar-btn" id="dmCallButton" title="音声通話" onclick="openCallPicker()">
+              <button class="topbar-btn" id="dmCallButton" title="音声通話" onclick="openDmCallPicker()">
                 <i class="fas fa-phone"></i>
               </button>
-              <button class="topbar-btn" id="dmFileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()">
+              <button class="topbar-btn" id="dmFileShareButton" title="P2Pでファイルを送る" onclick="openDmFileSharePicker()">
                 <i class="fas fa-share-from-square"></i>
               </button>
             </div>
