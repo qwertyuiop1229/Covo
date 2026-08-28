@@ -92,6 +92,7 @@ function isTransientNetworkError(args) {
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 const _reportedSignaturesRecently = new Map();
 const _pendingTelemetryErrors = [];
+let _isReportingTelemetry = false;
 
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
@@ -108,6 +109,8 @@ function _createErrorSignature(type, message, stack) {
 }
 
 function _reportTelemetryError(type, message, stack) {
+  if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
+  _isReportingTelemetry = true;
   try {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]' || msgStr.includes('ResizeObserver loop') || msgStr.includes('Script error.')) return;
@@ -120,7 +123,7 @@ function _reportTelemetryError(type, message, stack) {
     if (now - lastReported < 2500) return; // 2.5秒間ローカル重複排除
     _reportedSignaturesRecently.set(signature, now);
 
-    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
+    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (auth?.currentUser?.uid ? `uid:${auth.currentUser.uid}` : '未ログイン');
 
     // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
     if (typeof _cachedTelemetryErrors !== 'undefined') {
@@ -157,7 +160,7 @@ function _reportTelemetryError(type, message, stack) {
     }
 
     if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
-      if (_pendingTelemetryErrors.length < 50) {
+      if (_pendingTelemetryErrors.length < 100) {
         _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
       }
       return;
@@ -183,18 +186,28 @@ function _reportTelemetryError(type, message, stack) {
       affectedEmails: arrayUnion(email),
       environment: envInfo
     }, { merge: true }).catch(err => {
-      console.warn('[Telemetry] Firestore setDoc warning:', err?.message || err);
+      // 送信失敗時はキューに退避して再送
+      if (_pendingTelemetryErrors.length < 100) {
+        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+      }
     });
-  } catch (e) {}
+  } catch (e) {
+  } finally {
+    _isReportingTelemetry = false;
+  }
 }
 
 function _flushPendingTelemetryErrors() {
   if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
-  while (_pendingTelemetryErrors.length > 0) {
-    const item = _pendingTelemetryErrors.shift();
+  const items = _pendingTelemetryErrors.splice(0, _pendingTelemetryErrors.length);
+  for (const item of items) {
     _reportTelemetryError(item.type, item.message, item.stack);
   }
 }
+
+// オンライン復帰時および定期的なフラッシュ
+window.addEventListener('online', _flushPendingTelemetryErrors);
+setInterval(_flushPendingTelemetryErrors, 15000);
 
 window.addEventListener('error', (event) => {
   if (event.error) {
@@ -2254,7 +2267,7 @@ function renderTelemetryErrorsList() {
   });
 
   if (filtered.length === 0) {
-    listEl.innerHTML = "<div class='text-center py-8 text-xs text-gray-400 dark:text-gray-500'><i class='fas fa-circle-check text-emerald-500 text-xl mb-2 block'></i>記録されたエラーはありません。システムは正常です。</div>";
+    listEl.innerHTML = "<div class='text-center py-8 text-xs text-gray-400 dark:text-gray-500'>記録されたエラーはありません。システムは正常です。</div>";
     return;
   }
 

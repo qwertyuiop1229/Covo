@@ -825,7 +825,7 @@
                 <div class="space-y-4">
                   <div>
                     <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム</label>
-                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all" />
                   </div>
                 </div>
                 <div id="settingsMessage" class="mt-4 text-sm font-medium text-center"></div>
@@ -833,14 +833,14 @@
                   <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition-all shadow-xs active:scale-95">保存</button>
                 </div>
 
-                <!-- アカウント & セキュリティ (洗練されたカード型デザイン) -->
+                <!-- アカウント & セキュリティ (ダークネイビー最適化・カード型デザイン) -->
                 <div class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800/60 space-y-3.5">
                   <div class="settings-section-title text-sm !mb-2">アカウント & セキュリティ</div>
                   
                   <!-- メールアドレス カード -->
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-transparent flex items-center justify-between gap-3 transition-colors">
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 transition-colors">
                     <div class="flex items-center gap-3 min-w-0">
-                      <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-transparent flex items-center justify-center text-sm flex-shrink-0">
+                      <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-center text-sm flex-shrink-0">
                         <i class="fas fa-envelope"></i>
                       </div>
                       <div class="min-w-0">
@@ -852,9 +852,9 @@
                   </div>
 
                   <!-- Google 連携 カード -->
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-transparent flex items-center justify-between gap-3 flex-wrap transition-colors">
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
-                      <div id="settingsGoogleIconWrap" class="w-9 h-9 rounded-full bg-white dark:bg-slate-700 border border-gray-200 dark:border-transparent flex items-center justify-center flex-shrink-0 shadow-xs relative overflow-hidden">
+                      <div id="settingsGoogleIconWrap" class="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 shadow-xs relative overflow-hidden">
                         <img id="settingsGoogleAvatar" src="" class="w-full h-full rounded-full object-cover hidden" alt="Google Avatar" />
                         <svg id="settingsGoogleSvgIcon" class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -872,15 +872,15 @@
                         <div id="settingsGoogleEmail" class="text-[11px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
                       </div>
                     </div>
-                    <button id="settingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3.5 py-1.5 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-transparent transition shadow-xs active:scale-95">
+                    <button id="settingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95">
                       連携する
                     </button>
                   </div>
 
                   <!-- パスワード管理 カード -->
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-transparent flex items-center justify-between gap-3 flex-wrap transition-colors">
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
-                      <div class="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-transparent flex items-center justify-center text-sm flex-shrink-0">
+                      <div class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm flex-shrink-0">
                         <i class="fas fa-lock"></i>
                       </div>
                       <div>
@@ -891,15 +891,15 @@
                         <div class="text-[11px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
                       </div>
                     </div>
-                    <button type="button" onclick="openChangePasswordModal()" class="px-3.5 py-1.5 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-transparent transition shadow-xs active:scale-95">
+                    <button type="button" onclick="openChangePasswordModal()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95">
                       パスワードを変更
                     </button>
                   </div>
 
                   <!-- リカバリーキー カード -->
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-transparent flex items-center justify-between gap-3 flex-wrap transition-colors">
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
-                      <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200/60 dark:border-transparent flex items-center justify-center text-sm flex-shrink-0">
+                      <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-sm flex-shrink-0">
                         <i class="fas fa-shield-halved"></i>
                       </div>
                       <div>
@@ -907,7 +907,7 @@
                         <div class="text-[11px] text-gray-500 dark:text-slate-400">メール不要のアカウント復旧用キー</div>
                       </div>
                     </div>
-                    <button onclick="openRecoveryKeyManagerModal()" class="px-3.5 py-1.5 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-transparent transition shadow-xs active:scale-95 flex items-center gap-1.5">
+                    <button onclick="openRecoveryKeyManagerModal()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95 flex items-center gap-1.5">
                       <i class="fas fa-sliders text-xs"></i><span>キーを管理</span>
                     </button>
                   </div>
@@ -918,7 +918,7 @@
 
               <!-- 管理者セクション (adminNavSection) -->
               <div id="adminNavSection" class="settings-content-section space-y-3">
-                <div class="settings-section-title">ユーザー管理</div>
+                <div class="settings-section-title">管理</div>
                 <div id="pcAdminContainer">
                   <!-- 共有コンテンツはここに挿入される -->
                 </div>
@@ -943,7 +943,7 @@
               <!-- ツールセクション (admintoolsSection) -->
               <div id="admintoolsSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">ツール</div>
-                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-4 border border-gray-100 dark:border-transparent transition-colors">
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-4 border border-gray-200/80 dark:border-slate-700/60 transition-colors">
                   <div class="flex justify-between items-center">
                     <div>
                       <div class="text-sm font-bold text-gray-800 dark:text-white">要素を検査</div>
@@ -964,9 +964,9 @@
               <!-- アプリ情報セクション -->
               <div id="appinfoSection" class="settings-content-section space-y-4">
                 <div class="settings-section-title">アプリ情報</div>
-                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-transparent space-y-4 transition-colors">
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 space-y-4 transition-colors">
                   <div class="flex items-center gap-4">
-                    <img src="img/icon-192x192.png?v=6" alt="Covo" class="w-16 h-16 rounded-2xl shadow-sm border border-gray-200 dark:border-transparent p-1 bg-white dark:bg-gray-800" />
+                    <img src="img/icon-192x192.png?v=6" alt="Covo" class="w-16 h-16 rounded-2xl shadow-sm border border-gray-200/80 dark:border-slate-700/60 object-cover flex-shrink-0" />
                     <div>
                       <h3 class="text-base font-bold text-gray-800 dark:text-gray-100">Covo</h3>
                       <p class="text-xs text-gray-500 dark:text-gray-400">次世代型プライベートコミュニケーションアプリ</p>
@@ -982,7 +982,7 @@
                       <span class="text-sm font-bold text-gray-500 dark:text-gray-400" id="appInfoE2EE">確認中…</span>
                     </div>
                     <div class="flex justify-between items-center">
-                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-transparent shadow-sm transition-all flex items-center gap-1.5 active:scale-95" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')">
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700/80 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" id="pcCheckUpdateBtn" onclick="manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus')">
                         <i class="fas fa-sync-alt text-xs"></i>アップデートを確認
                       </button>
                       <span id="pcCheckUpdateStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
@@ -2877,7 +2877,7 @@
     </div>
     <!-- ユーザー情報サマリーカード -->
     <div class="mobile-settings-section mt-3">
-      <div class="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-gray-200/80 dark:border-transparent flex items-center gap-3.5 shadow-sm transition-colors">
+      <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 flex items-center gap-3.5 shadow-sm transition-colors">
         <div class="mobile-profile-avatar w-12 h-12 rounded-full overflow-hidden flex-shrink-0" id="mobileProfileAvatar"></div>
         <div class="flex-1 min-w-0">
           <div class="mobile-profile-name text-base font-bold text-gray-900 dark:text-white truncate" id="mobileProfileName"></div>
@@ -2974,18 +2974,18 @@
         <div>
           <p class="text-sm font-bold text-gray-900 dark:text-white">アイコン</p>
           <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">タップして変更</p>
-          <button class="hidden mt-1.5 px-3 py-1 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-gray-200 dark:border-transparent cursor-pointer transition active:scale-95" id="mobileResetAvatarBtn"><i class="fas fa-undo mr-1"></i>リセット</button>
+          <button class="hidden mt-1.5 px-3 py-1 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-gray-200 dark:border-slate-700 cursor-pointer transition active:scale-95" id="mobileResetAvatarBtn"><i class="fas fa-undo mr-1"></i>リセット</button>
         </div>
       </div>
       <label class="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">ニックネーム</label>
-      <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-gray-800 dark:text-white text-base outline-none box-border focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+      <input type="text" id="mobileNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white text-base outline-none box-border focus:ring-2 focus:ring-indigo-500/20 transition-all" />
       <div id="mobileSettingsMessage" class="mt-3 text-sm text-center font-medium"></div>
       <button class="w-full mt-4 p-3.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer active:scale-98" onclick="mobileProfileSave()">保存</button>
 
       <!-- アカウント & セキュリティ (モバイル) -->
       <div class="mt-6 pt-5 border-t border-gray-200 dark:border-slate-800/60">
         <div class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">アカウント & セキュリティ</div>
-        <div class="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-gray-200/80 dark:border-transparent space-y-3.5 text-xs shadow-xs transition-colors">
+        <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-3.5 text-xs shadow-xs transition-colors">
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-500 dark:text-slate-400 font-medium">ログイン中:</span>
             <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[200px]"></span>
@@ -2994,7 +2994,7 @@
           <!-- Google連携 -->
           <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
             <div class="flex items-center gap-2.5">
-              <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-700 border border-gray-200 dark:border-transparent flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
+              <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
                 <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
                 <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -3008,7 +3008,7 @@
                 <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
               </div>
             </div>
-            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-transparent shadow-xs transition active:scale-95">連携する</button>
+            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">連携する</button>
           </div>
 
           <!-- パスワード管理 (モバイル) -->
@@ -3020,7 +3020,7 @@
               </div>
               <div class="text-[10px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
             </div>
-            <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-transparent shadow-xs transition active:scale-95">変更</button>
+            <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">変更</button>
           </div>
 
           <!-- 緊急リカバリーキー (モバイル) -->
@@ -3029,7 +3029,7 @@
               <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
               <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
             </div>
-            <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-transparent shadow-xs transition active:scale-95">管理</button>
+            <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
           </div>
         </div>
       </div>

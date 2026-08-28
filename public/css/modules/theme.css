@@ -571,10 +571,10 @@
     body.dark-server-theme .settings-content .border-slate-200,
     body.dark-server-theme .settings-content .border-slate-300,
     body.dark-server-theme .settings-content .border-t {
-      border-color: transparent !important;
+      border-color: rgba(255,255,255,0.08) !important;
     }
     body.dark-server-theme .settings-content .setting-row {
-      border-bottom-color: rgba(255,255,255,0.05) !important;
+      border-bottom-color: rgba(255,255,255,0.06) !important;
     }
     body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
     body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
@@ -582,7 +582,7 @@
     body.dark-server-theme .settings-content input[type="email"],
     body.dark-server-theme .settings-content input[type="password"] {
       background: #101726 !important;
-      border-color: transparent !important;
+      border-color: rgba(255,255,255,0.12) !important;
       color: #e2e8f0 !important;
     }
     body.dark-server-theme #avatarUploadTrigger .border-white,
@@ -593,7 +593,7 @@
     }
     body.dark-server-theme #windowsDownloadContainer {
       background: #162032 !important;
-      border-color: transparent !important;
+      border-color: rgba(255,255,255,0.08) !important;
       color: #f8fafc !important;
     }
     body.dark-server-theme #windowsDownloadContainer .text-gray-800 {
@@ -604,7 +604,7 @@
     }
     body.dark-server-theme #pastVersionsContainerDesktop {
       background: #162032 !important;
-      border-color: transparent !important;
+      border-color: rgba(255,255,255,0.08) !important;
       color: #f8fafc !important;
     }
     body.dark-server-theme #pastVersionsContainerDesktop .text-gray-800 {
@@ -623,7 +623,7 @@
     body.discord-dark-theme #windowsDownloadContainer,
     body.discord-dark-theme #pastVersionsContainerDesktop {
       background: #2b2d31 !important;
-      border-color: transparent !important;
+      border-color: #383a40 !important;
       color: #f2f3f5 !important;
     }
     body.discord-dark-theme #windowsDownloadContainer .text-gray-800,
@@ -640,7 +640,7 @@
     body.dark-server-theme .mobile-settings-detail { background: #111827; }
     body.dark-server-theme .mobile-settings-group {
       background: #1e293b !important;
-      border-color: transparent !important;
+      border-color: rgba(255,255,255,0.07) !important;
     }
     body.dark-server-theme .mobile-settings-row {
       border-bottom-color: rgba(255,255,255,0.05) !important;
