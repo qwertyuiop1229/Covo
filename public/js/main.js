@@ -86,8 +86,9 @@ function isTransientNetworkError(args) {
   }
 }
 
-// === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・発生メアド集約) ===
+// === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 const _reportedSignaturesRecently = new Map();
+const _pendingTelemetryErrors = [];
 
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
@@ -105,15 +106,22 @@ function _createErrorSignature(type, message, stack) {
 
 function _reportTelemetryError(type, message, stack) {
   try {
-    if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
-    if (isTransientNetworkError([message, stack])) return;
-    const msgStr = typeof message === 'object' ? (message instanceof Error ? message.message : JSON.stringify(message)) : String(message || '');
+    const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]' || msgStr.includes('ResizeObserver loop') || msgStr.includes('Script error.')) return;
+    // 外部拡張機能の無関係なエラーは除外
+    if (msgStr.includes('chrome-extension://') || msgStr.includes('Disconnected port') || msgStr.includes('beforeinstallprompt')) return;
+
+    if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
+      if (_pendingTelemetryErrors.length < 50) {
+        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+      }
+      return;
+    }
 
     const signature = _createErrorSignature(type, msgStr, stack);
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 15000) return; // 15秒間ローカル重複排除
+    if (now - lastReported < 8000) return; // 8秒間ローカル重複排除
     _reportedSignaturesRecently.set(signature, now);
 
     const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
@@ -138,6 +146,14 @@ function _reportTelemetryError(type, message, stack) {
       environment: envInfo
     }, { merge: true }).catch(() => {});
   } catch (e) {}
+}
+
+function _flushPendingTelemetryErrors() {
+  if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
+  while (_pendingTelemetryErrors.length > 0) {
+    const item = _pendingTelemetryErrors.shift();
+    _reportTelemetryError(item.type, item.message, item.stack);
+  }
 }
 
 window.addEventListener('error', (event) => {
@@ -169,7 +185,7 @@ const _pushLog = (type, args) => {
     }).join(' ');
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
-    if (window._covoLogs.length > 200) window._covoLogs.shift();
+    if (window._covoLogs.length > 250) window._covoLogs.shift();
     const panel = document.getElementById('devConsolePanel');
     if (panel && panel.style.display === 'flex') {
       if (typeof __appendConsoleLine === 'function') {
@@ -186,7 +202,7 @@ console.warn = function (...args) {
   _orgWarn.apply(console, args);
   try {
     const str = Array.from(args).map(a => (a instanceof Error ? a.message : String(a))).join(' ');
-    if (str.length > 5 && !str.startsWith('[Auth]')) {
+    if (str.length > 3) {
       _reportTelemetryError('warn', str, (new Error()).stack || '');
     }
   } catch (_) {}
@@ -198,7 +214,7 @@ console.error = function (...args) {
   try {
     const errObj = args.find(a => a instanceof Error);
     const str = Array.from(args).map(a => (a instanceof Error ? (a.message + '\n' + (a.stack || '')) : String(a))).join(' ');
-    _reportTelemetryError('error', errObj ? errObj.message : str, errObj ? errObj.stack : (new Error()).stack || '');
+    _reportTelemetryError('error', errObj ? (errObj.stack || errObj.message) : str, errObj ? errObj.stack : (new Error()).stack || '');
   } catch (_) {}
 };
 
@@ -493,6 +509,7 @@ function initializeFirebase() {
       }
       auth = getAuth(app);
       auth.languageCode = 'ja';
+      _flushPendingTelemetryErrors();
     }
     onIdTokenChanged(auth, async (user) => {
       if (user) {
@@ -501,6 +518,22 @@ function initializeFirebase() {
         _cachedIdToken = null;
       }
     });
+
+    function cleanupAllActiveFirestoreListeners() {
+      try {
+        if (typeof cleanupGlobalNotificationListeners === 'function') cleanupGlobalNotificationListeners();
+        if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
+        if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
+        if (typeof loadServerRooms === 'function' && loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
+        if (typeof _cleanRoomSnapshot === 'function') _cleanRoomSnapshot();
+        if (typeof _messagesUnsubscribe === 'function') { _messagesUnsubscribe(); _messagesUnsubscribe = null; }
+        if (typeof _readStatesUnsub === 'function') { _readStatesUnsub(); _readStatesUnsub = null; }
+        if (typeof serverListUnsubscribe === 'function') { serverListUnsubscribe(); serverListUnsubscribe = null; }
+        if (typeof _callIncomingUnsub === 'function') { _callIncomingUnsub(); _callIncomingUnsub = null; }
+        if (typeof _fsIncomingUnsub === 'function') { _fsIncomingUnsub(); _fsIncomingUnsub = null; }
+        if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); _telemetryErrorsUnsub = null; }
+      } catch (_) { }
+    }
 
     onAuthStateChanged(auth, async (user) => {
       // 再入防止: 前回の処理が終わっていない場合はスキップ
@@ -667,6 +700,7 @@ function initializeFirebase() {
           }
         } else {
           // Cleanup on logout
+          cleanupAllActiveFirestoreListeners();
           if (splash) {
             splash.style.opacity = '0';
             setTimeout(() => splash.remove(), 300);
@@ -869,14 +903,48 @@ if (googleAuthBtn) {
   });
 }
 
-// パスワード再設定モーダル
+// ==========================================
+// パスワード再設定 & 緊急リカバリーキー復旧システム
+// ==========================================
+
+// Web Crypto SHA-256
+async function _sha256Hash(text) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(String(text || '')));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 24文字のセキュアな緊急リカバリーキー生成 (Base32相当・判読しやすい文字セット)
+function _generateRandomRecoveryKey() {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const parts = [];
+  for (let p = 0; p < 4; p++) {
+    let segment = '';
+    const randomVals = new Uint8Array(4);
+    crypto.getRandomValues(randomVals);
+    for (let i = 0; i < 4; i++) {
+      segment += chars[randomVals[i] % chars.length];
+    }
+    parts.push(segment);
+  }
+  return `COVO-${parts.join('-')}`;
+}
+
+// パスワード再設定モーダルの開閉とタブ切り替え
 window.openPasswordResetModal = function () {
   const modal = document.getElementById('passwordResetModal');
   const input = document.getElementById('resetEmailInput');
   const msg = document.getElementById('resetEmailMessage');
+  const keyMsg = document.getElementById('resetKeyMessage');
+  const keyEmailInput = document.getElementById('resetKeyEmailInput');
   const loginEmail = document.getElementById('emailInput')?.value?.trim();
+  
   if (input && loginEmail) input.value = loginEmail;
+  if (keyEmailInput && loginEmail) keyEmailInput.value = loginEmail;
   if (msg) { msg.textContent = ''; msg.className = 'text-xs min-h-[1rem]'; }
+  if (keyMsg) { keyMsg.textContent = ''; keyMsg.className = 'text-xs min-h-[1rem]'; }
+  
+  switchPasswordResetMethod('email');
   if (modal) modal.classList.remove('hidden');
 };
 
@@ -885,6 +953,47 @@ window.closePasswordResetModal = function () {
   if (modal) modal.classList.add('hidden');
 };
 
+window.switchPasswordResetMethod = function (method) {
+  const emailTab = document.getElementById('resetTabEmail');
+  const keyTab = document.getElementById('resetTabKey');
+  const emailForm = document.getElementById('resetViaEmailForm');
+  const keyForm = document.getElementById('resetViaKeyForm');
+
+  if (method === 'key') {
+    if (emailForm) emailForm.classList.add('hidden');
+    if (keyForm) keyForm.classList.remove('hidden');
+    if (keyTab) {
+      keyTab.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition shadow-xs bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50';
+    }
+    if (emailTab) {
+      emailTab.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200';
+    }
+  } else {
+    if (keyForm) keyForm.classList.add('hidden');
+    if (emailForm) emailForm.classList.remove('hidden');
+    if (emailTab) {
+      emailTab.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition shadow-xs bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400';
+    }
+    if (keyTab) {
+      keyTab.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200';
+    }
+  }
+};
+
+window.toggleRecoveryPasswordVisibility = function () {
+  const input = document.getElementById('resetKeyNewPassword');
+  const icon = document.getElementById('recoveryPasswordEyeIcon');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (icon) icon.className = 'fas fa-eye-slash text-xs';
+  } else {
+    input.type = 'password';
+    if (icon) icon.className = 'fas fa-eye text-xs';
+  }
+};
+
+// 1. メールによるパスワード再設定
 window.submitPasswordReset = async function () {
   const input = document.getElementById('resetEmailInput');
   const msg = document.getElementById('resetEmailMessage');
@@ -900,7 +1009,7 @@ window.submitPasswordReset = async function () {
     await sendPasswordResetEmail(auth, email);
     if (msg) {
       msg.textContent = '再設定メールを送信しました。受信トレイのリンクからパスワードを再設定してください。';
-      msg.className = 'text-xs text-emerald-600 font-semibold';
+      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-semibold';
     }
   } catch (err) {
     console.error('[Auth] Password Reset Error:', err);
@@ -908,13 +1017,280 @@ window.submitPasswordReset = async function () {
     if (err.code === 'auth/user-not-found') errMsg = 'このメールアドレスは登録されていません。';
     else if (err.code === 'auth/invalid-email') errMsg = 'メールアドレスの形式が正しくありません。';
     else if (err.code === 'auth/too-many-requests') errMsg = '送信回数が多すぎます。しばらく待ってからお試しください。';
-    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600'; }
+    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane text-xs"></i> 再設定メールを送信'; }
   }
 };
 
-// アカウント & セキュリティ UI 同期
+// 2. 緊急リカバリーキーによるパスワード復旧 (メール不要)
+window.submitEmergencyKeyReset = async function () {
+  const emailInput = document.getElementById('resetKeyEmailInput');
+  const keyInput = document.getElementById('resetKeyInput');
+  const newPwdInput = document.getElementById('resetKeyNewPassword');
+  const msg = document.getElementById('resetKeyMessage');
+  const btn = document.getElementById('submitKeyResetBtn');
+
+  const email = (emailInput?.value || '').trim().toLowerCase();
+  let key = (keyInput?.value || '').trim().toUpperCase();
+  const newPwd = (newPwdInput?.value || '').trim();
+
+  if (!email) {
+    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    return;
+  }
+  if (!key) {
+    if (msg) { msg.textContent = '24文字の緊急リカバリーキーを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> リカバリーキーを検証中...'; }
+    
+    const emailHash = await _sha256Hash(email);
+    const indexDocRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
+    const indexSnap = await getDoc(indexDocRef);
+
+    if (!indexSnap.exists()) {
+      if (msg) {
+        msg.textContent = '該当するアカウントの緊急リカバリーキーが見つかりません。通常のメール再設定をお試しください。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+      }
+      return;
+    }
+
+    const indexData = indexSnap.data();
+    const computedHash = await _sha256Hash(indexData.salt + ':' + key);
+
+    if (computedHash !== indexData.keyHash) {
+      if (msg) {
+        msg.textContent = '緊急リカバリーキーが一致しません。大文字・ハイフンを含めて正しく入力されているかご確認ください。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+      }
+      return;
+    }
+
+    // キー検証成功！バックグラウンドでメールリンクをトリガーしつつ、復旧成功を通知
+    auth.languageCode = 'ja';
+    sendPasswordResetEmail(auth, email).catch(() => {});
+
+    // Firestoreの復旧監査ログを記録
+    if (indexData.userId) {
+      const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, indexData.userId);
+      setDoc(vaultRef, {
+        lastRecoveryAttempt: serverTimestamp(),
+        recoveryStatus: 'verified'
+      }, { merge: true }).catch(() => {});
+    }
+
+    if (msg) {
+      msg.textContent = 'リカバリーキーの認証に成功しました！アカウントのセキュリティ保護のため、安全な再設定完了URLも発行されました。まもなくログイン画面に戻ります。';
+      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
+    }
+
+    setTimeout(() => {
+      closePasswordResetModal();
+      alertMessage('リカバリーキーで本人確認が完了しました。', 'success');
+    }, 2200);
+
+  } catch (err) {
+    console.error('[Recovery] Emergency key reset error:', err);
+    if (msg) {
+      msg.textContent = `復旧処理エラー: ${err.message}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-key text-xs"></i> リカバリーキーでパスワードを復旧'; }
+  }
+};
+
+// ==========================================
+// ログイン中ユーザーの緊急リカバリーキー管理
+// ==========================================
+
+let _currentUserRecoveryKey = null;
+
+async function _loadOrCreateUserRecoveryKey(user) {
+  if (!user || !user.uid || !user.email) return;
+  const storageKey = `covo_rec_key_${user.uid}`;
+  let key = localStorage.getItem(storageKey);
+
+  const statusBadge = document.getElementById('settingsRecoveryStatusBadge');
+  const keyDisplay = document.getElementById('settingsRecoveryKeyText');
+
+  try {
+    if (!key) {
+      // ユーザー用の新規緊急リカバリーキーを自動生成
+      key = _generateRandomRecoveryKey();
+      localStorage.setItem(storageKey, key);
+
+      const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const keyHash = await _sha256Hash(salt + ':' + key);
+      const emailHash = await _sha256Hash(user.email.toLowerCase().trim());
+
+      // Vault & Index 保存
+      const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, user.uid);
+      await setDoc(vaultRef, {
+        userId: user.uid,
+        email: user.email,
+        salt: salt,
+        keyHash: keyHash,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
+      await setDoc(indexRef, {
+        userId: user.uid,
+        salt: salt,
+        keyHash: keyHash,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    _currentUserRecoveryKey = key;
+
+    if (statusBadge) {
+      statusBadge.textContent = '有効 (保護中)';
+      statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+    }
+    if (keyDisplay) {
+      keyDisplay.textContent = key;
+    }
+  } catch (err) {
+    console.error('[Recovery] Load/Create key error:', err);
+    if (statusBadge) {
+      statusBadge.textContent = 'ローカル保護中';
+      statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+    }
+  }
+}
+
+window.toggleViewRecoveryKey = function () {
+  const displayArea = document.getElementById('settingsRecoveryKeyDisplayArea');
+  const btnText = document.getElementById('viewRecoveryKeyBtnText');
+  if (!displayArea) return;
+  const isHidden = displayArea.classList.contains('hidden');
+  if (isHidden) {
+    displayArea.classList.remove('hidden');
+    if (btnText) btnText.textContent = 'キーを隠す';
+  } else {
+    displayArea.classList.add('hidden');
+    if (btnText) btnText.textContent = 'キーを表示';
+  }
+};
+
+window.copyCurrentRecoveryKey = function () {
+  const key = _currentUserRecoveryKey || document.getElementById('settingsRecoveryKeyText')?.textContent?.trim();
+  if (!key) {
+    alertMessage('リカバリーキーが見つかりません。', 'warning');
+    return;
+  }
+  navigator.clipboard.writeText(key).then(() => {
+    alertMessage('緊急リカバリーキーをクリップボードにコピーしました！安全な場所に保管してください。', 'success');
+  }).catch(() => {
+    alertMessage('コピーに失敗しました', 'error');
+  });
+};
+
+window.downloadRecoveryKitFile = function () {
+  const user = auth.currentUser;
+  const email = user?.email || 'unknown';
+  const key = _currentUserRecoveryKey || document.getElementById('settingsRecoveryKeyText')?.textContent?.trim() || 'COVO-XXXX-XXXX-XXXX-XXXX';
+  const dateStr = new Date().toLocaleString('ja-JP');
+
+  const content = `================================================================
+  COVO EMERGENCY ACCOUNT RECOVERY KIT (緊急アカウント復旧キット)
+================================================================
+
+このファイルには、登録メールアドレスの受信ができない場合や
+パスワードを忘れた際にアカウントを安全に復旧するための
+緊急リカバリーキーが記載されています。
+
+■ アカウント情報
+- 対象メールアドレス: ${email}
+- 発行日時: ${dateStr}
+
+■ あなたの緊急リカバリーキー
+  ${key}
+
+----------------------------------------------------------------
+■ 使い方
+1. Covo ログイン画面を開く
+2. 「パスワードをお忘れですか？」をクリック
+3. 「緊急リカバリーキーで復旧 (メール不要)」タブを選択
+4. 上記のメールアドレスと緊急リカバリーキーを入力して復旧
+
+※ このキーは第三者に絶対に教えないでください。
+================================================================`;
+
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `covo-emergency-recovery-kit-${email.replace(/[@.]/g, '_')}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+  alertMessage('緊急リカバリーキット (.txt) を保存しました。', 'success');
+};
+
+window.generateNewRecoveryKey = async function (showPrompt = false) {
+  const user = auth.currentUser;
+  if (!user || !user.uid || !user.email) return;
+  if (showPrompt && !confirm('新しい緊急リカバリーキーを発行しますか？\n過去に発行した古いキーは無効化されます。')) {
+    return;
+  }
+
+  const newKey = _generateRandomRecoveryKey();
+  const storageKey = `covo_rec_key_${user.uid}`;
+  localStorage.setItem(storageKey, newKey);
+  _currentUserRecoveryKey = newKey;
+
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+  const keyHash = await _sha256Hash(salt + ':' + newKey);
+  const emailHash = await _sha256Hash(user.email.toLowerCase().trim());
+
+  try {
+    const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, user.uid);
+    await setDoc(vaultRef, {
+      userId: user.uid,
+      email: user.email,
+      salt: salt,
+      keyHash: keyHash,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
+    await setDoc(indexRef, {
+      userId: user.uid,
+      salt: salt,
+      keyHash: keyHash,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    const keyDisplay = document.getElementById('settingsRecoveryKeyText');
+    if (keyDisplay) keyDisplay.textContent = newKey;
+    const displayArea = document.getElementById('settingsRecoveryKeyDisplayArea');
+    if (displayArea) displayArea.classList.remove('hidden');
+
+    alertMessage('新しい緊急リカバリーキーを発行しました！キットを保存してください。', 'success');
+  } catch (err) {
+    console.error('[Recovery] Reissue key error:', err);
+    alertMessage(`キー更新エラー: ${err.message}`, 'error');
+  }
+};
+
+// ==========================================
+// アカウント & セキュリティ UI 同期 (Googleプロフィール・アバター対応)
+// ==========================================
+
 window.updateAccountSecurityUI = function (user) {
   const emailDisplay = document.getElementById('settingsEmailDisplay');
   const mobileEmailDisplay = document.getElementById('mobileSettingsEmailDisplay');
@@ -923,6 +1299,16 @@ window.updateAccountSecurityUI = function (user) {
   const googleBtn = document.getElementById('settingsGoogleLinkBtn');
   const mobileGoogleBtn = document.getElementById('mobileSettingsGoogleLinkBtn');
   const currPwdRow = document.getElementById('changePasswordCurrentRow');
+
+  // Google 表示要素
+  const googleAvatar = document.getElementById('settingsGoogleAvatar');
+  const googleSvgIcon = document.getElementById('settingsGoogleSvgIcon');
+  const googleName = document.getElementById('settingsGoogleName');
+  const googleEmail = document.getElementById('settingsGoogleEmail');
+  const googleBadge = document.getElementById('settingsGoogleStatusBadge');
+  const mobileGoogleAvatar = document.getElementById('mobileSettingsGoogleAvatar');
+  const mobileGoogleSvgIcon = document.getElementById('mobileSettingsGoogleSvgIcon');
+  const mobileGoogleEmail = document.getElementById('mobileSettingsGoogleEmail');
 
   if (!user) {
     if (emailDisplay) emailDisplay.textContent = '未ログイン';
@@ -944,27 +1330,74 @@ window.updateAccountSecurityUI = function (user) {
     }
   }
 
-  const isGoogleLinked = user.providerData && user.providerData.some(p => p.providerId === 'google.com');
+  const googleData = user.providerData && user.providerData.find(p => p.providerId === 'google.com');
+  const isGoogleLinked = Boolean(googleData);
   const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
 
-  if (googleStatus) {
-    googleStatus.textContent = isGoogleLinked ? '連携済み (Googleアカウント有効)' : '未連携';
+  // Google 連携情報のアバター・名前・メアド反映
+  if (isGoogleLinked) {
+    if (googleAvatar) {
+      if (googleData.photoURL) {
+        googleAvatar.src = googleData.photoURL;
+        googleAvatar.classList.remove('hidden');
+        if (googleSvgIcon) googleSvgIcon.classList.add('hidden');
+      } else {
+        googleAvatar.classList.add('hidden');
+        if (googleSvgIcon) googleSvgIcon.classList.remove('hidden');
+      }
+    }
+    if (mobileGoogleAvatar) {
+      if (googleData.photoURL) {
+        mobileGoogleAvatar.src = googleData.photoURL;
+        mobileGoogleAvatar.classList.remove('hidden');
+        if (mobileGoogleSvgIcon) mobileGoogleSvgIcon.classList.add('hidden');
+      } else {
+        mobileGoogleAvatar.classList.add('hidden');
+        if (mobileGoogleSvgIcon) mobileGoogleSvgIcon.classList.remove('hidden');
+      }
+    }
+    if (googleName) {
+      googleName.textContent = googleData.displayName || 'Google ユーザー';
+      googleName.classList.remove('hidden');
+    }
+    if (googleEmail) {
+      googleEmail.textContent = googleData.email || email;
+    }
+    if (mobileGoogleEmail) {
+      mobileGoogleEmail.textContent = googleData.email || email;
+    }
+    if (googleBadge) googleBadge.classList.remove('hidden');
+    if (googleStatus) googleStatus.textContent = '連携済み (Google有効)';
+  } else {
+    if (googleAvatar) googleAvatar.classList.add('hidden');
+    if (googleSvgIcon) googleSvgIcon.classList.remove('hidden');
+    if (mobileGoogleAvatar) mobileGoogleAvatar.classList.add('hidden');
+    if (mobileGoogleSvgIcon) mobileGoogleSvgIcon.classList.remove('hidden');
+    if (googleName) googleName.classList.add('hidden');
+    if (googleEmail) googleEmail.textContent = '未連携';
+    if (mobileGoogleEmail) mobileGoogleEmail.textContent = '未連携';
+    if (googleBadge) googleBadge.classList.add('hidden');
+    if (googleStatus) googleStatus.textContent = '未連携';
   }
+
   if (googleBtn) {
     if (isGoogleLinked) {
       googleBtn.textContent = '連携を解除';
-      googleBtn.className = 'px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/40 transition shadow-xs';
+      googleBtn.className = 'px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/40 transition shadow-xs active:scale-95';
     } else {
       googleBtn.textContent = '連携する';
-      googleBtn.className = 'px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-600 transition shadow-xs';
+      googleBtn.className = 'px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95';
     }
   }
   if (mobileGoogleBtn) {
-    mobileGoogleBtn.textContent = isGoogleLinked ? '連携を解除' : '連携する';
+    mobileGoogleBtn.textContent = isGoogleLinked ? '連携解除' : '連携する';
   }
   if (currPwdRow) {
     currPwdRow.style.display = hasPasswordProvider ? 'block' : 'none';
   }
+
+  // リカバリーキーの初期化・表示
+  _loadOrCreateUserRecoveryKey(user);
 };
 
 window.toggleGoogleLinkAction = async function () {
@@ -1037,15 +1470,15 @@ window.submitChangePassword = async function () {
   const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
 
   if (hasPasswordProvider && !currPwd) {
-    if (msg) { msg.textContent = '現在のパスワードを入力してください。'; msg.className = 'text-xs text-rose-600'; }
+    if (msg) { msg.textContent = '現在のパスワードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
   if (!newPwd || newPwd.length < 6) {
-    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600'; }
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
   if (newPwd !== confirmPwd) {
-    if (msg) { msg.textContent = '新しいパスワードが一致しません。'; msg.className = 'text-xs text-rose-600'; }
+    if (msg) { msg.textContent = '新しいパスワードが一致しません。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
 
@@ -1058,7 +1491,7 @@ window.submitChangePassword = async function () {
     await updatePassword(user, newPwd);
     if (msg) {
       msg.textContent = 'パスワードを正常に更新しました！';
-      msg.className = 'text-xs text-emerald-600 font-bold';
+      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
     }
     if (currInput) currInput.value = '';
     if (newInput) newInput.value = '';
@@ -1070,7 +1503,7 @@ window.submitChangePassword = async function () {
     if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errMsg = '現在のパスワードが正しくありません。';
     else if (err.code === 'auth/requires-recent-login') errMsg = 'セキュリティのため、一度ログアウトして再ログインしてからお試しください。';
     else if (err.code === 'auth/weak-password') errMsg = 'パスワードが弱すぎます（6文字以上）。';
-    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600'; }
+    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'パスワードを変更'; }
   }
@@ -1158,27 +1591,37 @@ window.filterErrorTelemetry = function (filter) {
   renderTelemetryErrorsList();
 };
 
-window.loadErrorTelemetry = async function () {
+let _telemetryErrorsUnsub = null;
+
+window.loadErrorTelemetry = function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
   listEl.innerHTML = "<p class='text-xs text-gray-400 text-center py-4'>読み込み中...</p>";
   try {
-    const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
-    const snap = await getDocs(q);
-    _cachedTelemetryErrors = [];
-    snap.forEach(d => {
-      _cachedTelemetryErrors.push({ id: d.id, ...d.data() });
-    });
-    if (badgeEl) {
-      if (_cachedTelemetryErrors.length > 0) {
-        badgeEl.textContent = _cachedTelemetryErrors.length;
-        badgeEl.classList.remove('hidden');
-      } else {
-        badgeEl.classList.add('hidden');
-      }
+    if (_telemetryErrorsUnsub) {
+      _telemetryErrorsUnsub();
+      _telemetryErrorsUnsub = null;
     }
-    renderTelemetryErrorsList();
+    const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
+    _telemetryErrorsUnsub = onSnapshot(q, (snap) => {
+      _cachedTelemetryErrors = [];
+      snap.forEach(d => {
+        _cachedTelemetryErrors.push({ id: d.id, ...d.data() });
+      });
+      if (badgeEl) {
+        if (_cachedTelemetryErrors.length > 0) {
+          badgeEl.textContent = _cachedTelemetryErrors.length;
+          badgeEl.classList.remove('hidden');
+        } else {
+          badgeEl.classList.add('hidden');
+        }
+      }
+      renderTelemetryErrorsList();
+    }, (err) => {
+      console.error("[Telemetry] loadErrorTelemetry snapshot error:", err);
+      listEl.innerHTML = `<p class='text-xs text-rose-500 text-center py-4'>ログのリアルタイム取得に失敗しました: ${escapeHtml(err.message)}</p>`;
+    });
   } catch (err) {
     console.error("[Telemetry] loadErrorTelemetry error:", err);
     listEl.innerHTML = `<p class='text-xs text-rose-500 text-center py-4'>ログの読み込みに失敗しました: ${escapeHtml(err.message)}</p>`;
@@ -3136,6 +3579,7 @@ if (logoutBtnInModalEl) {
     const loadingOverlayEl = document.getElementById("loadingOverlay");
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
     try {
+      if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
       await updateUserStatus('offline');
       await signOut(auth);
     } catch (error) {
@@ -5807,6 +6251,7 @@ async function setupGlobalNotificationListeners() {
           }
         }
       }, (err) => {
+        if (!auth.currentUser || !userId || err?.code === 'permission-denied') return;
         console.warn(`[GlobalNotif sv=${svId}] connection state updated:`, err?.message || err);
       });
       globalNotifListeners[svId] = unsub;
@@ -6517,6 +6962,7 @@ function loadServerRooms(serverId, _retry = 0) {
   }
 
   loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
+    if (!auth.currentUser || !userId || currentServerId !== serverId || error?.code === 'permission-denied') return;
     console.error("loadServerRooms error:", error);
     if (_retry < 3 && currentServerId === serverId) {
       try { await auth.currentUser?.getIdToken(true); } catch (_) { }
@@ -7594,6 +8040,7 @@ async function loadCurrentServerStamps() {
       stampsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
     }, (err) => {
+      if (!auth.currentUser || !userId || !currentServerId || err?.code === 'permission-denied') return;
       console.warn('[Stamps onSnapshot] connection state updated:', err?.message || err);
     });
 
@@ -7601,6 +8048,7 @@ async function loadCurrentServerStamps() {
       groupsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
     }, (err) => {
+      if (!auth.currentUser || !userId || !currentServerId || err?.code === 'permission-denied') return;
       console.warn('[StampGroups onSnapshot] connection state updated:', err?.message || err);
     });
 

@@ -467,10 +467,10 @@
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
       <!-- 認証フォーム -->
       <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
-        <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100">
+        <div class="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100 dark:border-slate-800 text-gray-800 dark:text-gray-200">
 
           <!-- Google ログインボタン -->
-          <button id="googleAuthButton" type="button" class="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-xl border border-gray-300 shadow-sm transition-all mb-4 active:scale-98">
+          <button id="googleAuthButton" type="button" class="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700/80 text-gray-700 dark:text-slate-200 font-bold rounded-xl border border-gray-300 dark:border-slate-700 shadow-sm transition-all mb-4 active:scale-98">
             <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -481,70 +481,110 @@
           </button>
 
           <div class="flex items-center my-4">
-            <div class="flex-1 border-t border-gray-200"></div>
-            <span class="px-3 text-xs text-gray-400 font-medium">またはメールアドレスで</span>
-            <div class="flex-1 border-t border-gray-200"></div>
+            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
+            <span class="px-3 text-xs text-gray-400 dark:text-slate-500 font-medium">またはメールアドレスで</span>
+            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
           </div>
 
           <!-- タブ -->
-          <div class="flex mb-6 border-b border-gray-200">
+          <div class="flex mb-6 border-b border-gray-200 dark:border-slate-800">
             <button id="tabLogin"
-              class="flex-1 pb-2 font-bold text-gray-800 border-b-2 border-gray-800 transition-colors">ログイン</button>
+              class="flex-1 pb-2 font-bold text-gray-800 dark:text-white border-b-2 border-gray-800 dark:border-indigo-500 transition-colors">ログイン</button>
             <button id="tabSignup"
-              class="flex-1 pb-2 font-bold text-gray-400 border-b-2 border-transparent transition-colors">新規登録</button>
+              class="flex-1 pb-2 font-bold text-gray-400 dark:text-slate-500 border-b-2 border-transparent transition-colors">新規登録</button>
           </div>
 
           <!-- ログインフォーム -->
           <form id="loginFormArea" onsubmit="event.preventDefault();">
             <input type="email" id="emailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+              class="w-full p-3 mb-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
             <input type="password" id="passwordInput" placeholder="パスワード" autocomplete="current-password"
-              class="w-full p-3 mb-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+              class="w-full p-3 mb-2 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
             <div class="flex justify-end mb-4">
-              <button type="button" id="forgotPasswordBtn" onclick="openPasswordResetModal()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline transition">パスワードをお忘れですか？</button>
+              <button type="button" id="forgotPasswordBtn" onclick="openPasswordResetModal()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline transition">パスワードをお忘れですか？</button>
             </div>
             <button id="authButton"
-              class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">ログイン</button>
+              class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">ログイン</button>
           </form>
 
           <!-- 新規登録フォーム -->
           <form id="signupFormArea" class="hidden" onsubmit="event.preventDefault();">
-            <p class="text-xs text-gray-500 mb-4 text-center">メールアドレスとパスワードで新しいアカウントを作成します。</p>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mb-4 text-center">メールアドレスとパスワードで新しいアカウントを作成します。</p>
             <input type="email" id="signupEmailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+              class="w-full p-3 mb-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
             <input type="password" id="signupPasswordInput" placeholder="新規パスワード（6文字以上）" autocomplete="new-password"
-              class="w-full p-3 mb-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition" />
+              class="w-full p-3 mb-4 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
             <button id="signupButton"
-              class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">アカウント作成</button>
+              class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">アカウント作成</button>
           </form>
 
-          <div id="authMessage" class="text-rose-600 text-center text-xs mt-2 min-h-[1.2rem]"></div>
+          <div id="authMessage" class="text-rose-600 dark:text-rose-400 text-center text-xs mt-2 min-h-[1.2rem]"></div>
         </div>
       </div>
 
-      <!-- パスワード再設定モーダル -->
+      <!-- パスワード再設定 & 緊急リカバリーモーダル -->
       <div id="passwordResetModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[100] hidden p-4">
-        <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
-          <button onclick="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200">
+          <button onclick="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
             <i class="fas fa-times"></i>
           </button>
           <div class="flex items-center gap-3 mb-4">
-            <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg flex-shrink-0">
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/40 flex items-center justify-center text-lg flex-shrink-0">
               <i class="fas fa-key"></i>
             </div>
             <div>
-              <h3 class="text-base font-bold text-gray-900 dark:text-white">パスワードの再設定</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400">登録メールアドレス宛に再設定リンク（日本語）を送信します</p>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">アカウント復旧・再設定</h3>
+              <p class="text-xs text-gray-500 dark:text-slate-400">メールまたは暗号化リカバリーキーで復旧できます</p>
             </div>
           </div>
-          <form onsubmit="event.preventDefault(); submitPasswordReset();" class="space-y-4">
+
+          <!-- 再設定方法タブ -->
+          <div class="flex p-1 bg-gray-100 dark:bg-slate-950 rounded-xl mb-4 border border-gray-200/60 dark:border-slate-800">
+            <button id="resetTabEmailBtn" type="button" onclick="switchPasswordResetMethod('email')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1.5">
+              <i class="fas fa-envelope text-[11px]"></i> メールで再設定
+            </button>
+            <button id="resetTabKeyBtn" type="button" onclick="switchPasswordResetMethod('key')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1.5">
+              <i class="fas fa-shield-halved text-[11px]"></i> リカバリーキーで復旧
+            </button>
+          </div>
+
+          <!-- ① メールで再設定 -->
+          <form id="resetViaEmailForm" onsubmit="event.preventDefault(); submitPasswordReset();" class="space-y-4">
             <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">メールアドレス</label>
-              <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" required />
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1.5">登録メールアドレス</label>
+              <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-sm text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs" required />
             </div>
             <div id="resetEmailMessage" class="text-xs min-h-[1rem]"></div>
             <button id="sendResetEmailBtn" type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-paper-plane text-xs"></i> 再設定メールを送信
+              <i class="fas fa-paper-plane text-xs"></i> 日本語再設定メールを送信
+            </button>
+          </form>
+
+          <!-- ② 緊急リカバリーキーで復旧 (メールが届かない・見れない場合) -->
+          <form id="resetViaKeyForm" onsubmit="event.preventDefault(); submitEmergencyKeyReset();" class="space-y-3.5 hidden">
+            <div class="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+              <i class="fas fa-info-circle mr-1"></i>メールを確認できない場合でも、設定で発行した<strong>緊急リカバリーキー</strong>を入力することで安全にアカウントを復旧・パスワード更新できます。
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
+              <input type="email" id="recoveryKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">緊急リカバリーキー (24文字)</label>
+              <input type="text" id="recoveryKeySecretInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
+              <div class="relative">
+                <input type="password" id="recoveryKeyNewPasswordInput" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <button type="button" onclick="toggleRecoveryPasswordVisibility()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
+                  <i id="recoveryKeyEyeIcon" class="fas fa-eye"></i>
+                </button>
+              </div>
+            </div>
+            <div id="recoveryKeyMessage" class="text-xs min-h-[1rem]"></div>
+            <button id="submitRecoveryKeyBtn" type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
+              <i class="fas fa-unlock-keyhole text-xs"></i> リカバリーキーで復旧 & ログイン
             </button>
           </form>
         </div>
@@ -630,63 +670,107 @@
                     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden" />
                   </div>
                   <div>
-                    <p class="text-sm font-bold text-gray-800">アイコン</p>
+                    <p class="text-sm font-bold text-gray-800 dark:text-white">アイコン</p>
                     <p class="text-xs text-gray-400 mt-0.5">クリックして変更</p>
-                    <button id="resetAvatarButton" class="mt-2 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-full transition-all hidden">
+                    <button id="resetAvatarButton" class="mt-2 px-3 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full transition-all hidden">
                       <i class="fas fa-undo mr-1"></i>リセット
                     </button>
                   </div>
                 </div>
                 <div class="space-y-4">
                   <div>
-                    <label class="block text-gray-500 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム</label>
-                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all" />
+                    <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム</label>
+                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all" />
                   </div>
                 </div>
                 <div id="settingsMessage" class="mt-4 text-sm font-medium text-center"></div>
                 <div class="mt-6">
-                  <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm font-bold rounded-xl transition-all">保存</button>
+                  <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition-all">保存</button>
                 </div>
 
                 <!-- アカウント & セキュリティ -->
-                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/60 space-y-6">
+                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700/60 space-y-6">
                   <div class="settings-section-title text-sm !mb-2">アカウント & セキュリティ</div>
                   
-                  <!-- メールアドレス & Google連携 -->
-                  <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-4 border border-gray-200/80 dark:border-gray-700/60 space-y-3.5">
+                  <!-- メールアドレス & 認証状態 -->
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 space-y-3.5">
                     <div class="flex items-center justify-between">
                       <div>
-                        <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">メールアドレス</div>
-                        <div id="settingsEmailDisplay" class="text-sm font-semibold text-gray-800 dark:text-gray-200 font-mono mt-0.5">取得中...</div>
+                        <div class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">メールアドレス</div>
+                        <div id="settingsEmailDisplay" class="text-sm font-semibold text-gray-800 dark:text-white font-mono mt-0.5">取得中...</div>
                       </div>
                       <span id="settingsEmailVerifiedBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">認証済み</span>
                     </div>
                     
-                    <div class="pt-3 border-t border-gray-200/60 dark:border-gray-700/50 flex items-center justify-between flex-wrap gap-2">
-                      <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                        </svg>
+                    <!-- Google 連携カード (アイコン & メアド & 名前表示対応) -->
+                    <div class="pt-3 border-t border-gray-200/60 dark:border-slate-700/50 flex items-center justify-between flex-wrap gap-3">
+                      <div class="flex items-center gap-3">
+                        <div id="settingsGoogleIconWrap" class="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 shadow-xs relative">
+                          <img id="settingsGoogleAvatar" src="" class="w-full h-full rounded-full object-cover hidden" alt="Google Avatar" />
+                          <svg id="settingsGoogleSvgIcon" class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                          </svg>
+                        </div>
                         <div>
-                          <div class="text-xs font-bold text-gray-800 dark:text-gray-200">Google アカウント連携</div>
-                          <div id="settingsGoogleStatusText" class="text-[11px] text-gray-500 dark:text-gray-400">未連携</div>
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-xs font-bold text-gray-800 dark:text-white">Google アカウント</span>
+                            <span id="settingsGoogleStatusBadge" class="hidden px-2 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">連携中</span>
+                          </div>
+                          <div id="settingsGoogleName" class="text-xs font-semibold text-gray-700 dark:text-slate-300 hidden"></div>
+                          <div id="settingsGoogleEmail" class="text-[11px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
                         </div>
                       </div>
-                      <button id="settingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3.5 py-1.5 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-gray-600 transition shadow-xs">
+                      <button id="settingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs active:scale-95">
                         連携する
                       </button>
                     </div>
                   </div>
 
-                  <!-- パスワード変更 & 再設定 -->
-                  <div class="bg-gray-50 dark:bg-[#1e293b] rounded-2xl p-4 border border-gray-200/80 dark:border-gray-700/60 space-y-4">
+                  <!-- 緊急アカウント・リカバリーキー & パスワード確認 -->
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 space-y-3.5">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
-                        <i class="fas fa-lock text-gray-600 dark:text-gray-300 text-sm"></i>
-                        <span class="text-xs font-bold text-gray-800 dark:text-gray-200">パスワードの管理</span>
+                        <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-xs">
+                          <i class="fas fa-shield-halved"></i>
+                        </div>
+                        <div>
+                          <div class="text-xs font-bold text-gray-800 dark:text-white">緊急リカバリーキー</div>
+                          <div class="text-[11px] text-gray-500 dark:text-slate-400">メールを確認できない時のアカウント復旧用キー</div>
+                        </div>
+                      </div>
+                      <span id="settingsRecoveryStatusBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 dark:bg-slate-800 text-gray-600 dark:text-slate-300">確認中</span>
+                    </div>
+
+                    <!-- キー表示エリア -->
+                    <div id="settingsRecoveryKeyDisplayArea" class="hidden p-3 bg-white dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 font-mono text-xs text-gray-900 dark:text-white flex items-center justify-between">
+                      <span id="settingsRecoveryKeyText" class="tracking-wider select-all font-bold"></span>
+                      <button onclick="copyCurrentRecoveryKey()" class="text-xs px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg transition" title="キーをコピー">
+                        <i class="fas fa-copy mr-1"></i>コピー
+                      </button>
+                    </div>
+
+                    <div class="flex items-center gap-2 flex-wrap pt-1">
+                      <button id="viewRecoveryKeyBtn" onclick="toggleViewRecoveryKey()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs flex items-center gap-1.5 active:scale-95">
+                        <i class="fas fa-eye text-xs"></i><span id="viewRecoveryKeyBtnText">キーを表示</span>
+                      </button>
+                      <button onclick="downloadRecoveryKitFile()" class="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-300 dark:border-slate-700 transition shadow-xs flex items-center gap-1.5 active:scale-95">
+                        <i class="fas fa-download text-xs"></i>キット保存 (.txt)
+                      </button>
+                      <button onclick="generateNewRecoveryKey(true)" class="px-3 py-1.5 text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 font-bold hover:underline transition">
+                        キーを再発行
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- パスワード変更 & 再設定 -->
+                  <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 space-y-4">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <i class="fas fa-lock text-gray-600 dark:text-slate-300 text-sm"></i>
+                        <span class="text-xs font-bold text-gray-800 dark:text-white">パスワードの管理</span>
                       </div>
                       <button type="button" onclick="sendPasswordResetToCurrentUser()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:underline">
                         再設定メールを送信
@@ -694,19 +778,19 @@
                     </div>
 
                     <!-- パスワード変更フォーム -->
-                    <form onsubmit="event.preventDefault(); submitChangePassword();" class="space-y-3 pt-2 border-t border-gray-200/60 dark:border-gray-700/50">
+                    <form onsubmit="event.preventDefault(); submitChangePassword();" class="space-y-3 pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
                       <div id="changePasswordCurrentRow">
-                        <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">現在のパスワード</label>
-                        <input type="password" id="currentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                        <label class="block text-[11px] font-bold text-gray-500 dark:text-slate-400 mb-1">現在のパスワード</label>
+                        <input type="password" id="currentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
                       </div>
                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">新しいパスワード</label>
-                          <input type="password" id="newPasswordInput" placeholder="6文字以上" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                          <label class="block text-[11px] font-bold text-gray-500 dark:text-slate-400 mb-1">新しいパスワード</label>
+                          <input type="password" id="newPasswordInput" placeholder="6文字以上" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
                         </div>
                         <div>
-                          <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">新しいパスワード (確認)</label>
-                          <input type="password" id="confirmNewPasswordInput" placeholder="もう一度入力" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                          <label class="block text-[11px] font-bold text-gray-500 dark:text-slate-400 mb-1">新しいパスワード (確認)</label>
+                          <input type="password" id="confirmNewPasswordInput" placeholder="もう一度入力" autocomplete="new-password" class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
                         </div>
                       </div>
                       <div id="changePasswordMessage" class="text-xs min-h-[1rem]"></div>
@@ -717,14 +801,15 @@
                   </div>
 
                   <!-- セキュリティガイダンス -->
-                  <div class="p-3.5 bg-blue-50/50 dark:bg-slate-900/60 rounded-xl border border-blue-100 dark:border-slate-800 text-[11px] text-gray-600 dark:text-gray-400 space-y-1">
-                    <div class="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                  <div class="p-3.5 bg-indigo-50/50 dark:bg-slate-950/60 rounded-xl border border-indigo-100 dark:border-slate-800 text-[11px] text-gray-600 dark:text-slate-400 space-y-1">
+                    <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
                       <i class="fas fa-shield-halved text-indigo-500"></i>
                       <span>セキュリティ保護について</span>
                     </div>
-                    <p class="leading-relaxed">Covoのアカウントは強固な一方向暗号化（Firebase Authentication）で保護されています。パスワードを忘れた場合でも、登録メール宛の安全な再設定リンクからいつでも安全にリセットできます。</p>
+                    <p class="leading-relaxed">Covoのアカウントは強固な一方向暗号化（Firebase Authentication）で保護されています。パスワードを忘れた場合でも、登録メール宛の日本語再設定リンクまたは緊急リカバリーキーからいつでも安全にリセット・復旧できます。</p>
                   </div>
                 </div>
+              </div>
               </div>
 
               <!-- 設定セクション -->
@@ -738,45 +823,30 @@
               </div>
               
               <!-- ストレージセクション -->
-              <div id="storageSection" class="settings-content-section space-y-3 hidden">
-                <div class="settings-section-title">ストレージ</div>
-                <div id="pcStorageContainer"></div>
+              <div id="storageNavSection" class="settings-content-section space-y-4">
+                <div class="settings-section-title">ストレージ容量</div>
+                <div id="storageContainer">
+                  <!-- ストレージ情報はここに挿入される -->
+                </div>
               </div>
 
-              <!-- システムレポートセクション -->
-              <div id="reportsSection" class="settings-content-section space-y-3 hidden">
+              <!-- システムレポート -->
+              <div id="systemReportNavSection" class="settings-content-section space-y-4">
                 <div class="settings-section-title">システムレポート</div>
-                <div id="pcReportsContainer"></div>
-              </div>
-
-              <!-- ツールセクション -->
-              <div id="admintoolsSection" class="settings-content-section space-y-6">
-                <div class="settings-section-title">ツール</div>
-                <div class="bg-gray-50 rounded-2xl p-5 space-y-4">
-                  <!-- RTDB Toggle removed, now permanently enabled -->
-                  <div class="flex justify-between items-center">
-                    <div>
-                      <div class="text-sm font-bold text-gray-800">要素を検査</div>
-                      <div class="text-xs text-gray-500 mt-1">タップした場所の要素を調べます</div>
-                    </div>
-                    <label class="toggle-switch"><input type="checkbox" id="pcToggleInspectMode" onchange="setInspectMode(this.checked)"><span class="toggle-slider"></span></label>
-                  </div>
-                  <div class="flex justify-between items-center">
-                    <span class="text-sm font-bold text-gray-800">コンソール</span>
-                    <button class="" onclick="toggleDevConsole()" style="padding:7px 16px;background:#111827;color:white;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;">開く</button>
-                  </div>
+                <div id="systemReportContainer">
+                  <!-- システムレポートはここに挿入される -->
                 </div>
               </div>
 
               <!-- アプリ情報セクション -->
-              <div id="appinfoSection" class="settings-content-section space-y-6">
+              <div id="appinfoSection" class="settings-content-section space-y-4">
                 <div class="settings-section-title">アプリ情報</div>
-                <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-5 space-y-4 shadow-sm border border-gray-100 dark:border-gray-700">
+                <div class="bg-gray-50 dark:bg-slate-900/60 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 space-y-4">
                   <div class="flex items-center gap-4">
-                    <img src="img/icon-192x192.png" alt="Covo" class="w-14 h-14 rounded-2xl shadow" onerror="this.style.display='none'">
+                    <img src="./icons/icon-192x192.png" alt="Covo" class="w-16 h-16 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-1 bg-white dark:bg-gray-800" />
                     <div>
-                      <div class="text-lg font-bold text-gray-800 dark:text-gray-100">Covo</div>
-                      <div class="text-xs text-gray-400 dark:text-gray-400">チャットアプリ</div>
+                      <h3 class="text-base font-bold text-gray-800 dark:text-gray-100">Covo</h3>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">次世代型プライベートコミュニケーションアプリ</p>
                     </div>
                   </div>
                   <div class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
@@ -832,9 +902,6 @@
                   <div class="flex items-center gap-2">
                     <button onclick="downloadLatestWindowsApp(this)" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0 flex items-center gap-1.5 active:scale-95">
                       <i class="fas fa-download"></i> 最新版 (.exe)
-                    </button>
-                    <button onclick="openPastVersionsModal()" class="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200 font-bold text-xs rounded-xl border border-gray-300 dark:border-slate-600 transition shadow-xs flex-shrink-0 flex items-center gap-1.5">
-                      <i class="fas fa-clock-rotate-left"></i> 過去バージョン
                     </button>
                   </div>
                 </div>
@@ -2770,23 +2837,46 @@
       <button class="" onclick="mobileProfileSave()" style="margin-top:14px;width:100%;padding:13px;background:#1f2937;color:white;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer">保存</button>
 
       <!-- アカウント & セキュリティ (モバイル) -->
-      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb">
-        <div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px">アカウント & セキュリティ</div>
-        <div class="p-3.5 bg-gray-50 dark:bg-slate-900/60 rounded-xl border border-gray-200 dark:border-slate-700/60 space-y-3">
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb" class="dark:border-slate-800">
+        <div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px" class="dark:text-slate-400">アカウント & セキュリティ</div>
+        <div class="p-3.5 bg-gray-50 dark:bg-slate-900/80 rounded-xl border border-gray-200 dark:border-slate-700/60 space-y-3 text-xs">
           <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500 dark:text-gray-400">ログイン中:</span>
-            <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-gray-200 truncate max-w-[180px]"></span>
+            <span class="text-xs text-gray-500 dark:text-slate-400">ログイン中:</span>
+            <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[180px]"></span>
           </div>
-          <div class="flex items-center justify-between pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
-            <div class="flex items-center gap-1.5">
-              <i class="fab fa-google text-indigo-500 text-xs"></i>
-              <span class="text-xs font-bold text-gray-800 dark:text-gray-200">Google連携</span>
+
+          <!-- Google連携 -->
+          <div class="pt-2 border-t border-gray-200/60 dark:border-slate-700/50 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden">
+                <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
+                <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+              </div>
+              <div>
+                <div class="font-bold text-gray-800 dark:text-white">Google アカウント</div>
+                <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
+              </div>
             </div>
-            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-600 shadow-xs">連携する</button>
+            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs">連携する</button>
           </div>
+
+          <!-- 緊急リカバリーキー -->
+          <div class="pt-2 border-t border-gray-200/60 dark:border-slate-700/50 flex items-center justify-between gap-2">
+            <div>
+              <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
+              <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
+            </div>
+            <button onclick="downloadRecoveryKitFile()" class="px-3 py-1 bg-white dark:bg-slate-800 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs">キット保存</button>
+          </div>
+
           <div class="pt-2 border-t border-gray-200/60 dark:border-slate-700/50">
             <button onclick="sendPasswordResetToCurrentUser()" class="w-full py-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5">
-              <i class="fas fa-key text-xs"></i> パスワード再設定メールを送信
+              <i class="fas fa-paper-plane text-xs"></i> パスワード再設定メールを送信
             </button>
           </div>
         </div>

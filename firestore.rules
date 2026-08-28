@@ -95,11 +95,19 @@ service cloud.firestore {
 
       // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
       match /error_reports/{docId} {
-        allow create, update: if isAuthenticated() &&
-          request.resource.data.message is string &&
+        allow create, update: if request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
-        allow read, delete: if isGlobalAdmin(appId);
+        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
+      match /recovery_vault/{userDocId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if true; // ログイン前の暗号照合検証用
+        allow write: if isAuthenticated();
       }
 
       // 招待コードインデックス（コード→サーバーID の逆引き）
