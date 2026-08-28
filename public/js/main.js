@@ -986,19 +986,35 @@ if (googleAuthBtn) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
-      const isDesktopApp = Boolean(window.electronAPI || (window.__TAURI__ && window.__TAURI__.core));
-      if (isDesktopApp) {
+      // ポップアップ認証を優先（リダイレクトURIミスマッチエラーを防ぎ、素早く認証完了）
+      try {
         await signInWithPopup(auth, provider);
-      } else {
-        await signInWithRedirect(auth, provider);
+      } catch (popupErr) {
+        if (popupErr.code === "auth/popup-blocked" && !isTauri) {
+          console.warn("[Auth] Popup blocked on Web, trying redirect fallback...");
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw popupErr;
       }
     } catch (err) {
       console.error("[Auth] Google Sign-In Error:", err);
       let msg = "Googleログインに失敗しました。";
-      if (err.code === "auth/popup-closed-by-user") msg = "Googleログインがキャンセルされました。";
-      else if (err.code === "auth/account-exists-with-different-credential") msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
-      else if (err.code === "auth/popup-blocked") msg = "ポップアップがブロックされました。ポップアップを許可してください。";
-      else if (err.message) msg = `Googleログインエラー: ${err.message}`;
+      if (err.code === "auth/popup-closed-by-user") {
+        msg = "Googleログインがキャンセルされました。";
+      } else if (err.code === "auth/account-exists-with-different-credential") {
+        msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+      } else if (err.code === "auth/popup-blocked") {
+        msg = isTauri
+          ? "デスクトップ版ではブラウザポップアップがブロックされました。通常のメール/パスワードでログインするか、Webブラウザ版 (https://simplechat-65a0d.web.app) からログインしてください。"
+          : "ブラウザのポップアップがブロックされました。ポップアップを許可して再度お試しください。";
+      } else if (err.message && (err.message.includes("redirect_uri_mismatch") || err.message.includes("400"))) {
+        msg = "Google認証エラー(400): Google Cloud ConsoleのOAuth設定で承認済みのリダイレクトURIに https://simplechat-65a0d.web.app/__/auth/handler を追加してください。";
+      } else if (err.code === "auth/unauthorized-domain") {
+        msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインに現在のドメインを追加してください。";
+      } else if (err.message) {
+        msg = `Googleログインエラー: ${err.message}`;
+      }
       if (authMessageEl) authMessageEl.textContent = msg;
     } finally {
       if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
@@ -4318,6 +4334,256 @@ if (setNicknameBtnEl && nicknameInpEl) {
   });
 }
 
+// =========================================================================
+// 🌟 Discord準拠 ユーザープロフィールポップアップ & ステメ (Custom Status)
+// =========================================================================
+let _currentProfileTargetUser = null;
+window._currentUserCustomStatus = null;
+
+window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+  if (!targetUid) return;
+  const modal = document.getElementById("userProfileModal");
+  if (!modal) return;
+
+  const isSelf = targetUid === userId;
+  _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+
+  const avatarEl = document.getElementById("userProfileAvatar");
+  const statusDot = document.getElementById("userProfileStatusDot");
+  const nameEl = document.getElementById("userProfileName");
+  const tagEl = document.getElementById("userProfileTag");
+  const adminBadge = document.getElementById("userProfileBadgeAdmin");
+  const customStatusWrap = document.getElementById("userProfileCustomStatusWrap");
+  const statusEmojiEl = document.getElementById("userProfileStatusEmoji");
+  const statusTextEl = document.getElementById("userProfileStatusText");
+  const aboutMeEl = document.getElementById("userProfileAboutMe");
+  const joinedDateEl = document.getElementById("userProfileJoinedDate");
+  const actionsOther = document.getElementById("userProfileActionsOther");
+  const actionsSelf = document.getElementById("userProfileActionsSelf");
+  const quickMsgArea = document.getElementById("userProfileQuickMsgArea");
+  const quickMsgInput = document.getElementById("userProfileQuickMsgInput");
+
+  const safeName = targetNickname || targetUid.substring(0, 8);
+  if (nameEl) nameEl.textContent = safeName;
+  if (tagEl) tagEl.textContent = `#${targetUid.substring(0, 4)}`;
+  if (avatarEl) {
+    if (isUsableAvatarUrl(targetAvatarUrl)) {
+      __setAvatarImg(avatarEl, targetAvatarUrl, safeName, { className: 'w-full h-full rounded-full object-cover' });
+    } else {
+      avatarEl.textContent = safeName.charAt(0).toUpperCase();
+    }
+  }
+
+  const cachedUser = cachedUsers.find(u => u.id === targetUid);
+  const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
+  if (statusDot) statusDot.className = `status-indicator status-${state}`;
+
+  if (isSelf) {
+    if (actionsOther) actionsOther.classList.add("hidden");
+    if (actionsSelf) actionsSelf.classList.remove("hidden");
+    if (quickMsgArea) quickMsgArea.classList.add("hidden");
+  } else {
+    if (actionsOther) actionsOther.classList.remove("hidden");
+    if (actionsSelf) actionsSelf.classList.add("hidden");
+    if (quickMsgArea) {
+      quickMsgArea.classList.remove("hidden");
+      if (quickMsgInput) {
+        quickMsgInput.placeholder = `@${safeName} へのメッセージ...`;
+        quickMsgInput.value = "";
+      }
+    }
+
+    const upActionDmBtn = document.getElementById("upActionDmBtn");
+    const upActionCallBtn = document.getElementById("upActionCallBtn");
+    const upActionFileBtn = document.getElementById("upActionFileBtn");
+    const upActionFriendBtn = document.getElementById("upActionFriendBtn");
+
+    if (upActionDmBtn) {
+      upActionDmBtn.onclick = () => {
+        closeUserProfileModal();
+        openDm(targetUid, safeName, targetAvatarUrl);
+      };
+    }
+    if (upActionCallBtn) {
+      upActionCallBtn.onclick = () => {
+        closeUserProfileModal();
+        startCall(targetUid, safeName, targetAvatarUrl);
+      };
+    }
+    if (upActionFileBtn) {
+      upActionFileBtn.onclick = () => {
+        closeUserProfileModal();
+        _fsPickFileAndSend(targetUid, safeName);
+      };
+    }
+    if (upActionFriendBtn) {
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends') {
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center justify-center text-sm transition-all shadow-xs";
+        upActionFriendBtn.title = "フレンド解除";
+        upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        upActionFriendBtn.onclick = async () => {
+          if (!confirm(`${safeName} さんをフレンドから削除しますか？`)) return;
+          closeUserProfileModal();
+          rejectFriendRequest(targetUid);
+        };
+      } else if (rel?.status === 'pending_sent') {
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center text-sm transition-all shadow-xs";
+        upActionFriendBtn.title = "申請送信済み";
+        upActionFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        upActionFriendBtn.onclick = () => {
+          closeUserProfileModal();
+          cancelFriendRequest(targetUid);
+        };
+      } else {
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-gray-100 dark:bg-[#383a40] hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-500 text-gray-700 dark:text-gray-200 flex items-center justify-center text-sm transition-all shadow-xs";
+        upActionFriendBtn.title = "フレンド申請";
+        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upActionFriendBtn.onclick = async () => {
+          closeUserProfileModal();
+          const targetInput = document.getElementById("dmAddFriendInput");
+          if (targetInput) targetInput.value = safeName;
+          switchDmTab("add");
+        };
+      }
+    }
+  }
+
+  // 非同期でユーザー詳細（ステメ・自己紹介・参加日）を取得
+  try {
+    const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      const uData = snap.data();
+      if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
+      if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
+        __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
+      }
+      // カスタムステータス (ステメ)
+      if (uData.customStatus && uData.customStatus.text) {
+        if (customStatusWrap) customStatusWrap.classList.remove("hidden");
+        if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
+        if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
+      } else {
+        if (isSelf) {
+          if (customStatusWrap) customStatusWrap.classList.remove("hidden");
+          if (statusEmojiEl) statusEmojiEl.textContent = "💬";
+          if (statusTextEl) statusTextEl.textContent = "ステータスメッセージを設定する";
+          customStatusWrap.onclick = () => openCustomStatusModal();
+          customStatusWrap.style.cursor = "pointer";
+        } else {
+          if (customStatusWrap) customStatusWrap.classList.add("hidden");
+        }
+      }
+
+      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || "自己紹介はまだ設定されていません。";
+      if (joinedDateEl) {
+        const dt = uData.createdAt?.toDate ? uData.createdAt.toDate().toLocaleDateString('ja-JP') : "-";
+        joinedDateEl.textContent = dt;
+      }
+      if (adminBadge) {
+        adminBadge.classList.toggle("hidden", !(uData.isAdmin || (isAdmin && isSelf)));
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch full user profile:", err);
+  }
+
+  openModal(modal);
+};
+
+window.closeUserProfileModal = function () {
+  const modal = document.getElementById("userProfileModal");
+  if (modal) modal.classList.add("hidden");
+  _currentProfileTargetUser = null;
+};
+
+window.submitQuickDmMessage = async function () {
+  const input = document.getElementById("userProfileQuickMsgInput");
+  if (!input || !_currentProfileTargetUser) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  const target = _currentProfileTargetUser;
+  closeUserProfileModal();
+  await openDm(target.uid, target.nickname, target.avatarUrl);
+
+  const mainInput = document.getElementById("messageInput");
+  if (mainInput) {
+    mainInput.value = text;
+    sendMessage();
+  }
+};
+
+window.openCustomStatusModal = function () {
+  const modal = document.getElementById("customStatusModal");
+  if (!modal) return;
+  closeUserProfileModal();
+
+  const textInput = document.getElementById("customStatusTextInput");
+  const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
+
+  const currentStatus = window._currentUserCustomStatus || {};
+  if (textInput) textInput.value = currentStatus.text || "";
+  if (emojiDisplay) emojiDisplay.textContent = currentStatus.emoji || "💬";
+
+  openModal(modal);
+  setTimeout(() => textInput?.focus(), 100);
+};
+
+window.closeCustomStatusModal = function () {
+  const modal = document.getElementById("customStatusModal");
+  if (modal) modal.classList.add("hidden");
+};
+
+window.setCustomStatusPreset = function (emoji, text) {
+  const textInput = document.getElementById("customStatusTextInput");
+  const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
+  if (textInput) textInput.value = text;
+  if (emojiDisplay) emojiDisplay.textContent = emoji;
+};
+
+window.saveCustomStatus = async function () {
+  const textInput = document.getElementById("customStatusTextInput");
+  const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
+  const btn = document.getElementById("saveCustomStatusBtn");
+
+  const text = textInput?.value.trim() || "";
+  const emoji = emojiDisplay?.textContent.trim() || "💬";
+
+  if (btn) btn.disabled = true;
+
+  try {
+    const customStatus = text ? {
+      emoji,
+      text,
+      updatedAt: Date.now()
+    } : null;
+
+    window._currentUserCustomStatus = customStatus;
+
+    // 1. Firestore に保存
+    await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
+      customStatus: customStatus
+    }, { merge: true });
+
+    // 2. RTDB に保存（リアルタイム反映）
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await set(ref(rtdb, `status/${userId}/customStatus`), customStatus);
+    } catch (rtdbErr) { }
+
+    closeCustomStatusModal();
+    alertMessage("カスタムステータスを更新しました！", "success");
+  } catch (err) {
+    console.error("Failed to save custom status:", err);
+    alertMessage("ステータスの保存に失敗しました", "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+};
+
 // ================= MODULE: presence.js ================
 // ================= PRESENCE MODULE ================
 // =========================================================================
@@ -4862,8 +5128,22 @@ function renderMembersList(users) {
         info.appendChild(statusText);
       }
 
+      // カスタムステータス (ステメ) の表示
+      if (member.customStatus && member.customStatus.text) {
+        const customStatusDiv = document.createElement("div");
+        customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
+        customStatusDiv.innerHTML = `<span>${escapeHtml(member.customStatus.emoji || '💬')}</span><span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
+        info.appendChild(customStatusDiv);
+      }
+
       item.appendChild(avatar);
       item.appendChild(info);
+
+      // Discord準拠: メンバークリックでプロフィールポップアップを開く
+      item.addEventListener("click", () => {
+        openUserProfileModal(member.id, member.nickname || 'ユーザー', member.avatarUrl || '');
+      });
+
       membersList.appendChild(item);
     });
   };
@@ -5571,19 +5851,23 @@ function renderFriendTabs() {
 function createFriendCardHtml(friend, online) {
   const safeName = escapeHtml(friend.targetNickname || 'ユーザー');
   const safeAvatar = isUsableAvatarUrl(friend.targetAvatarUrl) ? `<img src="${friend.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
+  const customStatusHtml = (friend.customStatus && friend.customStatus.text)
+    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml(friend.customStatus.emoji || '💬')}</span><span class="truncate">${escapeHtml(friend.customStatus.text)}</span></div>`
+    : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
+
   return `
-    <div class="friend-card">
-      <div class="flex items-center gap-3 min-w-0">
+    <div class="friend-card" onclick="openUserProfileModal('${friend.targetUid}', '${escapeHtml(friend.targetNickname || '')}', '${escapeHtml(friend.targetAvatarUrl || '')}')">
+      <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
         <div class="relative w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
           ${safeAvatar}
           <div class="status-indicator ${online ? 'status-online' : 'status-offline'}"></div>
         </div>
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${safeName}</div>
-          <div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>
+          ${customStatusHtml}
         </div>
       </div>
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
         <button onclick="openDm('${friend.targetUid}', '${escapeHtml(friend.targetNickname || '')}', '${escapeHtml(friend.targetAvatarUrl || '')}')" class="friend-action-btn" title="メッセージを送る">
           <i class="fas fa-comment-dots"></i>
         </button>
@@ -10878,13 +11162,17 @@ function createMessageElement(message, messageId, readByCount = 0) {
   if (!isMyMessage) {
     const senderUser = cachedUsers.find(u => u.id === message.senderId);
     const avatarDiv = document.createElement("div");
-    avatarDiv.className = "msg-avatar z-10";
+    avatarDiv.className = "msg-avatar z-10 cursor-pointer";
     if (senderUser?.avatarUrl) {
       __setAvatarImg(avatarDiv, senderUser.avatarUrl, message.senderNickname, { style: '' });
-      avatarDiv.addEventListener("click", () => openAvatarLightbox(senderUser.avatarUrl));
     } else {
       avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
     }
+    // Discord準拠: メッセージアバタークリックでユーザープロフィールポップアップを表示
+    avatarDiv.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openUserProfileModal(message.senderId, message.senderNickname || 'ユーザー', senderUser?.avatarUrl || '');
+    });
     messageRowInner.appendChild(avatarDiv);
   }
 
@@ -10919,8 +11207,13 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
 
   const senderNicknameSpan = document.createElement("span");
-  senderNicknameSpan.className = `text-xs text-gray-600 mb-1 ${isMyMessage ? "text-right" : "text-left"}`;
+  senderNicknameSpan.className = `text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
   senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
+  senderNicknameSpan.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const senderUser = cachedUsers.find(u => u.id === message.senderId);
+    openUserProfileModal(message.senderId, message.senderNickname || 'ユーザー', senderUser?.avatarUrl || '');
+  });
   messageElement.appendChild(senderNicknameSpan);
 
   // スタンプメッセージ（絵文字をTwemojiで大きく表示。吹き出し背景なし）
@@ -16925,7 +17218,9 @@ window.setAppTheme = function (theme) {
   localStorage.setItem('covo_dark_server', isDark ? 'true' : 'false');
 
   document.documentElement.classList.toggle('dark-server-theme', isDark);
+  document.documentElement.classList.toggle('dark', isDark);
   document.body.classList.toggle('dark-server-theme', isDark);
+  document.body.classList.toggle('dark', isDark);
 
   const mobileToggle = document.getElementById('toggleDarkServerMobile');
   if (mobileToggle && 'checked' in mobileToggle) mobileToggle.checked = isDark;
