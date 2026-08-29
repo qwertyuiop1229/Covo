@@ -584,6 +584,35 @@ export async function restoreAllLocalData(bundle) {
   }
 }
 
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return false;
+
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+
 // グローバル公開 (Vanilla JSスクリプトから直接利用可能)
 if (typeof window !== 'undefined') {
   window.LocalStore = {
@@ -604,6 +633,7 @@ if (typeof window !== 'undefined') {
     putSetting,
     getSetting,
     getAllLocalData,
-    restoreAllLocalData
+    restoreAllLocalData,
+    clearAllLocalData
   };
 }

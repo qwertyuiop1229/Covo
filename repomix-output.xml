@@ -7585,95 +7585,6 @@ pub fn run() {
 }
 </file>
 
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".write": "auth != null && $dmId.contains(auth.uid)",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    }
-  }
-}
-</file>
-
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -8207,6 +8118,95 @@ if (typeof window !== 'undefined') {
   window.getEmojiHtml = getEmojiHtml;
   window._twemojiParse = _twemojiParse;
   window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
+</file>
+
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+            ".write": "auth != null",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())"
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            ".write": "auth != null && $dmId.contains(auth.uid)",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
 }
 </file>
 
@@ -17178,31 +17178,13 @@ service cloud.firestore {
 
       // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
-        allow get: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
+        allow get, list, delete: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
         allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
-        allow update, delete: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
+        allow update: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
         match /{subcollection}/{docId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) ||
-              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid) ||
-              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid)
-            );
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 
@@ -17214,106 +17196,47 @@ service cloud.firestore {
 
       // 4. P2P音声通話シグナリング
       match /calls/{callId} {
-        allow get: if isAuthenticated() &&
+        allow get, list, delete: if isAuthenticated() &&
           (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid)
-          );
-        allow delete: if isAuthenticated() &&
-          (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
         allow create: if isAuthenticated() &&
           'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
           request.resource.data.caller.uid == request.auth.uid;
 
-        match /callerCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
-            );
-        }
-        match /calleeCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
-            );
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 
       // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
       match /fileshares/{shareId} {
-        allow get: if isAuthenticated() &&
+        allow get, list, delete: if isAuthenticated() &&
           (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
-          );
-        allow delete: if isAuthenticated() &&
-          (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
         allow create: if isAuthenticated() &&
           'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
           request.resource.data.sender.uid == request.auth.uid;
 
-        match /senderCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
-            );
-        }
-        match /receiverCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
-            );
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 
@@ -19056,7 +18979,7 @@ service cloud.firestore {
       </div>
       <!-- iframe コンテンツ表示 -->
       <div class="flex-1 bg-white dark:bg-[#1e1f22] relative overflow-hidden">
-        <iframe id="inAppBrowserIframe" class="w-full h-full border-0" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen src="about:blank"></iframe>
+        <iframe id="inAppBrowserIframe" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen src="about:blank"></iframe>
       </div>
     </div>
   </div>
@@ -21104,7 +21027,8 @@ import {
   getMessaging,
   getToken,
   onMessage,
-  deleteToken
+  deleteToken,
+  isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
@@ -21161,7 +21085,25 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver
+    // ブラウザ環境非対応（FCM/WebPush）
+    if (
+      str.includes('unsupported-browser') ||
+      str.includes("this browser doesn't support the api") ||
+      str.includes('messaging/unsupported-browser')
+    ) {
+      return true;
+    }
+
+    // 正常な切断・権限移行
+    if (
+      str.includes('permission-denied') ||
+      str.includes('permission denied') ||
+      str.includes('missing or insufficient permissions')
+    ) {
+      return true;
+    }
+
+    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver・PWAバナー
     if (
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
@@ -21173,8 +21115,11 @@ function isTransientNetworkError(args) {
       str.includes('message port closed') ||
       str.includes('extension context invalidated') ||
       str.includes('beforeinstallprompt') ||
+      str.includes('beforeinstallpromptevent') ||
+      str.includes('banner not shown') ||
       str.includes('resizeobserver loop') ||
       str.includes('escape its sandboxing') ||
+      str.includes('sandboxing') ||
       str.includes('script error.')
     ) {
       return true;
@@ -21696,12 +21641,12 @@ function initializeFirebase() {
         }
       }).catch((err) => {
         console.error('[Auth] Google redirect result error:', err);
-        const authMsgEl = document.getElementById("authMessage");
-        if (authMsgEl) {
+        const authMsg = document.getElementById("authMessage");
+        if (authMsg) {
           if (err.code === "auth/account-exists-with-different-credential") {
-            authMsgEl.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+            authMsg.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
           } else if (err.message) {
-            authMsgEl.textContent = `Googleログインエラー: ${err.message}`;
+            authMsg.textContent = `Googleログインエラー: ${err.message}`;
           }
         }
       });
@@ -34695,6 +34640,7 @@ function subscribeToPinnedMessages(serverId, roomId) {
     currentPinnedMessages = pinned;
     renderPinnedMessages();
   }, (err) => {
+    if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
     console.warn("[PinnedMessages onSnapshot] error:", err);
   });
 }
@@ -34810,7 +34756,12 @@ let isPinnedMessagesExpanded = false;
 let isPinnedMessagesMinimized = false;
 
 function renderPinnedMessages() {
-  const pinnedMessages = currentPinnedMessages || [];
+  const loadedPinned = (allLoadedMessages || []).filter(m => m.isPinned);
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  loadedPinned.forEach(m => combinedMap.set(m.id, m));
+  const pinnedMessages = Array.from(combinedMap.values());
+  pinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
   pinnedMessagesArea.innerHTML = "";
 
   // 既存のフローティングアイコンを一旦取得
@@ -35692,6 +35643,7 @@ function initP2PLogSyncListener() {
         }
       });
     }, (err) => {
+      if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
       console.warn('[P2P LogSync] Listener warning:', err);
     });
   } catch (e) { }
@@ -38178,6 +38130,20 @@ async function initializeFCM() {
     console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
     return;
   }
+
+  // ブラウザの Web Push / FCM サポート確認 (iOS Safari等の非同期例外を完全回避)
+  try {
+    if (typeof isSupported === 'function') {
+      const supported = await isSupported().catch(() => false);
+      if (!supported) {
+        console.log('📱 [通知] このブラウザ環境は Web Push (FCM) に対応していません');
+        return;
+      }
+    }
+  } catch (_) {
+    return;
+  }
+
   fcmInitialized = true;
   try {
     // Service Worker を明示的に登録
@@ -38333,6 +38299,13 @@ async function initializeFCM() {
 // サーバーが push を送らなくする（SW がそもそも呼ばれない = 確実にオフになる）
 async function setBrowserPushEnabled(enabled) {
   if (isTauri) return;
+  try {
+    if (typeof isSupported === 'function') {
+      const supported = await isSupported().catch(() => false);
+      if (!supported) return;
+    }
+  } catch (_) { return; }
+
   if (enabled) {
     if ('Notification' in window && Notification.permission === 'default') {
       await Notification.requestPermission();
@@ -38876,6 +38849,11 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'feedbackModal') { window.closeFeedbackModal(); return; }
       if (topModal.id === 'pastVersionsModal') { window.closePastVersionsModal(); return; }
       if (topModal.id === 'inAppBrowserModal') { window.closeInAppBrowser(); return; }
+      if (topModal.id === 'userProfileModal') { window.closeUserProfileModal(); return; }
+      if (topModal.id === 'customStatusModal') { window.closeCustomStatusModal(); return; }
+      if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
+      if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
+      if (topModal.id === 'recoveryKeyManagerModal') { window.closeRecoveryKeyManagerModal(); return; }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
     }
@@ -38941,7 +38919,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.97",
+  "version": "1.1.98",
   "force": false
 }
 </file>
@@ -38950,7 +38928,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.97",
+  "version": "1.1.98",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

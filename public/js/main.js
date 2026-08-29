@@ -1545,8 +1545,8 @@ async function _loadOrCreateUserRecoveryKey(user) {
   const storageKey = `covo_rec_key_${user.uid}`;
   let key = localStorage.getItem(storageKey);
 
-  const statusBadge = document.getElementById('settingsRecoveryStatusBadge');
-  const keyDisplay = document.getElementById('settingsRecoveryKeyText');
+  const modalBadge = document.getElementById('modalRecoveryStatusBadge');
+  const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
 
   try {
     if (!key) {
@@ -1579,54 +1579,24 @@ async function _loadOrCreateUserRecoveryKey(user) {
 
     _currentUserRecoveryKey = key;
 
-    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
-    const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
-    if (statusBadge) {
-      statusBadge.textContent = '有効 (保護中)';
-      statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
-    }
     if (modalBadge) {
       modalBadge.textContent = '有効 (保護中)';
-      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+      modalBadge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20';
     }
-    if (keyDisplay) {
-      keyDisplay.textContent = key;
-    }
-    if (modalKeyDisplay && !_isModalRecoveryKeyVisible) {
-      modalKeyDisplay.textContent = 'COVO-••••-••••-••••-••••';
-    } else if (modalKeyDisplay && _isModalRecoveryKeyVisible) {
-      modalKeyDisplay.textContent = key;
+    if (modalKeyDisplay) {
+      modalKeyDisplay.textContent = _isModalRecoveryKeyVisible ? key : 'COVO-••••-••••-••••-••••';
     }
   } catch (err) {
     console.error('[Recovery] Load/Create key error:', err);
-    const modalBadge = document.getElementById('modalRecoveryStatusBadge');
-    if (statusBadge) {
-      statusBadge.textContent = 'ローカル保護中';
-      statusBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
-    }
     if (modalBadge) {
       modalBadge.textContent = 'ローカル保護中';
-      modalBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+      modalBadge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20';
     }
   }
 }
 
-window.toggleViewRecoveryKey = function () {
-  const displayArea = document.getElementById('settingsRecoveryKeyDisplayArea');
-  const btnText = document.getElementById('viewRecoveryKeyBtnText');
-  if (!displayArea) return;
-  const isHidden = displayArea.classList.contains('hidden');
-  if (isHidden) {
-    displayArea.classList.remove('hidden');
-    if (btnText) btnText.textContent = 'キーを隠す';
-  } else {
-    displayArea.classList.add('hidden');
-    if (btnText) btnText.textContent = 'キーを表示';
-  }
-};
-
 window.copyCurrentRecoveryKey = function () {
-  const key = _currentUserRecoveryKey || document.getElementById('settingsRecoveryKeyText')?.textContent?.trim();
+  const key = _currentUserRecoveryKey || (document.getElementById('modalRecoveryKeyDisplay')?.textContent !== 'COVO-••••-••••-••••-••••' ? document.getElementById('modalRecoveryKeyDisplay')?.textContent?.trim() : null);
   if (!key) {
     alertMessage('リカバリーキーが見つかりません。', 'warning');
     return;
@@ -1641,7 +1611,7 @@ window.copyCurrentRecoveryKey = function () {
 window.downloadRecoveryKitFile = function () {
   const user = auth.currentUser;
   const email = user?.email || 'unknown';
-  const key = _currentUserRecoveryKey || document.getElementById('settingsRecoveryKeyText')?.textContent?.trim() || 'COVO-XXXX-XXXX-XXXX-XXXX';
+  const key = _currentUserRecoveryKey || (document.getElementById('modalRecoveryKeyDisplay')?.textContent !== 'COVO-••••-••••-••••-••••' ? document.getElementById('modalRecoveryKeyDisplay')?.textContent?.trim() : null) || 'COVO-XXXX-XXXX-XXXX-XXXX';
   const dateStr = new Date().toLocaleString('ja-JP');
 
   const content = `================================================================
@@ -4525,10 +4495,62 @@ if (logoutBtnInModalEl) {
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
     try {
       if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
+      if (typeof endCall === 'function') endCall(false);
+      if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
+      if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
       await updateUserStatus('offline');
+      if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
+
+      // Service Worker にユーザー消去とバッジクリアを通知
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(reg => {
+          if (reg.active) {
+            reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+            reg.active.postMessage({ type: 'CLEAR_BADGE' });
+          }
+        }).catch(() => {});
+      }
+
+      // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+      if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
+        await LocalStore.clearAllLocalData().catch(() => {});
+      }
+
+      // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
+      const preserveKeys = new Set([
+        'covo_app_theme',
+        'covo_dark_server',
+        'covo_dark_server_theme',
+        'covo_discord_ui_mode',
+        'covo_server_view',
+        'covo_close_behavior',
+        'simplechat_sound',
+        'simplechat_browser_notif',
+        'simplechat_desktop_notif',
+        'simplechat_shortcut_key',
+        'covo_ignore_force_update',
+        'covo_modern_ui_migrated_v2'
+      ]);
+
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && !preserveKeys.has(k)) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+
+      // セッションストレージを全クリア
+      try { sessionStorage.clear(); } catch (_) {}
+
       await signOut(auth);
+
+      // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
+      window.location.reload();
     } catch (error) {
       console.error("Logout Error:", error);
+      window.location.reload();
     } finally {
       if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
     }
@@ -10897,6 +10919,7 @@ async function sendMessage() {
   if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
 
   // Optimistic input clearing (LINE style)
+  const previousInputText = text;
   messageInput.value = "";
   messageInput.style.height = "auto";
   if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
@@ -10931,6 +10954,7 @@ async function sendMessage() {
       if (!_subtleOK) {
         console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
         if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+          messageInput.value = previousInputText;
           return;
         }
       } else {
@@ -10938,6 +10962,7 @@ async function sendMessage() {
           if (currentDmId) {
             const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
             if (!dmKey) {
+              messageInput.value = previousInputText;
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
               return;
             }
@@ -10954,6 +10979,7 @@ async function sendMessage() {
             }
             const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
             if (!roomKey) {
+              messageInput.value = previousInputText;
               console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
               loadingOverlay.classList.add("hidden");
               alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
@@ -10965,6 +10991,7 @@ async function sendMessage() {
                 textToStore = enc;
                 wasEncrypted = true;
               } else {
+                messageInput.value = previousInputText;
                 alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗しました", "error");
                 await requestEscrowRescue(currentServerId, currentRoomId);
                 return;
@@ -10972,6 +10999,7 @@ async function sendMessage() {
             }
           }
         } catch (e) {
+          messageInput.value = previousInputText;
           console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
           loadingOverlay.classList.add("hidden");
           alertMessage("🔒 暗号化保護エラー: 例外が発生したため送信を遮断しました", "error");

@@ -309,11 +309,14 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           return null;
         }
 
-        // 4) 完全新規ルームの場合、新しいルーム鍵を生成
+        // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
         const b64 = _abToB64(raw);
         await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 }).catch(() => {});
+
+        // 参加メンバーおよびエスクローへ鍵バージョン1を即時配布
+        await __distributeRoomKeyVersion(serverId, roomId, raw, memberIds || [], 1).catch(() => {});
 
         keysObj["1"] = key;
         keysObj.latest = key;
@@ -499,10 +502,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch(e) {}
         }
 
-        // それでも復号できない場合は、鍵が根本から違っているか欠落しているため自動救済トリガーを発行
+        // それでも復号できない場合は、古い鍵キャッシュを破棄して自動救済トリガーを発行
+        delete _e2ee.roomKeyCache[roomId];
         await _requestEscrowRescue(serverId, roomId);
         return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
       } catch (e) {
+        delete _e2ee.roomKeyCache[roomId];
         return "（復号化エラー：メッセージを解読できません）";
       }
     }

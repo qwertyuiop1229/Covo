@@ -90,18 +90,19 @@ export default {
 
     return new Response(JSON.stringify({ error: "Not Found" }), {
       status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   },
 };
 
 // サインアップ処理（許可リストの検証を含む）
 async function handleSignup(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const { email, password } = await request.json();
 
     if (!email || !password) {
-      return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     
     const cleanEmail = email.trim().toLowerCase();
@@ -109,19 +110,19 @@ async function handleSignup(request, env) {
     // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得
     const workerToken = await getWorkerAuthToken(env);
     if (!workerToken) {
-      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // 2. Firestoreから許可リストを取得
     const result = await getAllowedEmails(workerToken, env);
     if (result.error) {
-       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 500, headers: corsHeaders });
+       return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
     
     if (result.isRestricted) {
       const allowedEmails = result.emails.map(e => e.trim().toLowerCase());
       if (!allowedEmails.includes(cleanEmail)) {
-        return new Response(JSON.stringify({ error: "招待されたメールアドレスではありません。管理者にお問い合わせください。" }), { status: 403, headers: corsHeaders });
+        return new Response(JSON.stringify({ error: "招待されたメールアドレスではありません。管理者にお問い合わせください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
       }
     }
 
@@ -129,17 +130,17 @@ async function handleSignup(request, env) {
     const signUpResult = await signUpWithFirebase(cleanEmail, password, env);
 
     if (signUpResult.error) {
-      return new Response(JSON.stringify({ error: signUpResult.error.message }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: signUpResult.error.message }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     return new Response(JSON.stringify({ success: true, message: "Account created successfully" }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
 
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 }
 
@@ -1080,26 +1081,31 @@ async function handleDownloadProxy(request, env, url) {
 }
 
 async function handleDeleteFile(request, env, url) {
+  const cors = getCorsHeaders(request);
   try {
-    const key = url.pathname.replace('/api/file/', '');
-    if (!key || !env.FILES) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    let key = url.pathname.replace('/api/file/', '');
+    try { key = decodeURIComponent(key).trim(); } catch (_) {}
+    if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key)) {
+      return new Response(JSON.stringify({ error: '無効なファイル識別子です' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    if (!env.FILES) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     const requesterId = url.searchParams.get('userId') || '';
     const idToken = url.searchParams.get('idToken') || '';
 
     if (!requesterId || !idToken) {
-      return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== requesterId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     // メタデータで所有者確認
     const { value, metadata: meta } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
     if (!value && !meta) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
-      status: 404, headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' }
+      status: 404, headers: { ...cors, 'Content-Type': 'application/json' }
     });
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';
@@ -1121,21 +1127,21 @@ async function handleDeleteFile(request, env, url) {
 
     if (forceDelete) {
       if (!isPrivilegedAdmin) {
-        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
       }
     } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: '削除権限がありません' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
 
     await env.FILES.delete(key);
     return new Response(JSON.stringify({ success: true }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -1143,8 +1149,9 @@ async function handleDeleteFile(request, env, url) {
 async function handleServeFile(request, env, url) {
   const cors = getCorsHeaders(request);
   try {
-    const key = url.pathname.replace('/api/file/', '');
-    if (!key || !env.FILES) {
+    let key = url.pathname.replace('/api/file/', '');
+    try { key = decodeURIComponent(key).trim(); } catch (_) {}
+    if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
       return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
@@ -1155,7 +1162,7 @@ async function handleServeFile(request, env, url) {
     const isPreview = url.searchParams.get('preview') === '1';
 
     const headers = {
-      ...corsHeaders,
+      ...cors,
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'public, max-age=31536000',
@@ -1178,7 +1185,7 @@ async function handleServeFile(request, env, url) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }
