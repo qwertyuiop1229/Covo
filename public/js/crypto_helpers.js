@@ -578,9 +578,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         ciphertext = data.subarray(13);
       } else {
         if (data.length < 37) throw new Error("Invalid payload length for extended version");
-        const headerBuf = data.subarray(1, 9);
-        const dv = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
-        version = dv.getFloat64(0, false).toString();
+        const dv = new DataView(data.buffer, data.byteOffset + 1, 8);
+        const rawVerNum = dv.getFloat64(0, false);
+        version = Number.isFinite(rawVerNum) ? Math.round(rawVerNum).toString() : String(rawVerNum);
         iv = data.subarray(9, 21);
         ciphertext = data.subarray(21);
       }

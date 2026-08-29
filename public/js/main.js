@@ -606,9 +606,18 @@ function initializeFirebase() {
       }
     });
 
+    function cleanupGlobalNotificationListeners() {
+      if (typeof globalNotifListeners === 'object' && globalNotifListeners) {
+        Object.values(globalNotifListeners).forEach(unsub => {
+          try { unsub(); } catch (_) { }
+        });
+        globalNotifListeners = {};
+      }
+    }
+
     function cleanupAllActiveFirestoreListeners() {
       try {
-        if (typeof cleanupGlobalNotificationListeners === 'function') cleanupGlobalNotificationListeners();
+        cleanupGlobalNotificationListeners();
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
         if (typeof loadServerRooms === 'function' && loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
@@ -619,6 +628,7 @@ function initializeFirebase() {
         if (typeof _callIncomingUnsub === 'function') { _callIncomingUnsub(); _callIncomingUnsub = null; }
         if (typeof _fsIncomingUnsub === 'function') { _fsIncomingUnsub(); _fsIncomingUnsub = null; }
         if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); _telemetryErrorsUnsub = null; }
+        if (typeof window.rtdbMessagesUnsub === 'function') { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
       } catch (_) { }
     }
 
@@ -4546,6 +4556,54 @@ window.setCustomStatusPreset = function (emoji, text) {
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
   if (textInput) textInput.value = text;
   if (emojiDisplay) emojiDisplay.textContent = emoji;
+};
+
+window.toggleStatusEmojiPicker = function (e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const presets = ['💬', '🎮', '💻', '🎧', '☕', '😴', '✨', '🔥', '📚', '🏃', '🍔', '🎉', '🌟', '👀', '💖', '🚀'];
+  
+  let popover = document.getElementById('statusEmojiPopover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'statusEmojiPopover';
+    popover.className = 'fixed z-[120] bg-white dark:bg-[#2b2d31] p-3 rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 grid grid-cols-4 gap-2 animate-pop-in select-none';
+    popover.style.width = '180px';
+    document.body.appendChild(popover);
+
+    document.addEventListener('click', (ev) => {
+      if (popover && popover.style.display !== 'none' && !popover.contains(ev.target) && ev.target.id !== 'customStatusEmojiBtn' && !ev.target.closest('#customStatusEmojiBtn')) {
+        popover.style.display = 'none';
+      }
+    });
+  }
+  
+  if (popover.style.display === 'grid') {
+    popover.style.display = 'none';
+    return;
+  }
+  
+  popover.innerHTML = '';
+  presets.forEach(em => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w-9 h-9 rounded-xl hover:bg-gray-100 dark:hover:bg-[#383a40] text-xl flex items-center justify-center transition active:scale-90';
+    btn.textContent = em;
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const target = document.getElementById('customStatusSelectedEmoji');
+      if (target) target.textContent = em;
+      popover.style.display = 'none';
+    };
+    popover.appendChild(btn);
+  });
+  
+  const triggerBtn = document.getElementById('customStatusEmojiBtn');
+  if (triggerBtn) {
+    const rect = triggerBtn.getBoundingClientRect();
+    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 190, rect.left))}px`;
+    popover.style.top = `${rect.bottom + 6}px`;
+  }
+  popover.style.display = 'grid';
 };
 
 window.saveCustomStatus = async function () {
@@ -10032,7 +10090,7 @@ window.toggleStickerPicker = function () {
 };
 
 async function sendSticker(emoji) {
-  if (!currentRoomId) return;
+  if (!currentRoomId && !currentDmId) return;
   _skPushRecent(emoji);
   document.getElementById('stickerPicker').classList.remove('show');
   if (window._reactionTargetMessageId) {
@@ -10052,33 +10110,80 @@ async function sendSticker(emoji) {
     if (replyingToMessage) {
       data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
     }
-    const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
-    try {
+
+    if (currentDmId) {
+      const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
       const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${replyMsgRef.id}`);
-      const rtdbData = { ...data, id: replyMsgRef.id, timestamp: Date.now() };
+      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${newMessageId}`);
+      const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
       await set(rtdbMsgRef, rtdbData);
-    } catch (e) { console.error("RTDB Dual Write Failed in Reply", e); }
-    await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
-      lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
-    });
+
+      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
+        participants: currentDmParticipants,
+        lastMessageAt: data.timestamp,
+        lastMessageSender: userId,
+        lastMessageText: 'スタンプ ' + emoji
+      }, { merge: true });
+
+      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
+      pruneExcessMessages(null, null, currentDmId);
+
+      const otherUid = currentDmParticipants.find(id => id !== userId);
+      if (otherUid) {
+        try {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+          const notifPayload = JSON.stringify({
+            receiverIds: [otherUid],
+            title: `ダイレクトメッセージ › @${userNickname}`,
+            body: `${userNickname}: スタンプ ${emoji}`,
+            roomId: currentDmId,
+            messageId: newMessageId,
+            appId: appId,
+            senderId: userId,
+            idToken
+          });
+          const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
+          } else {
+            fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
+          }
+        } catch (e) { }
+      }
+    } else {
+      const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+      try {
+        const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${replyMsgRef.id}`);
+        const rtdbData = { ...data, id: replyMsgRef.id, timestamp: Date.now() };
+        await set(rtdbMsgRef, rtdbData);
+        LocalStore.putMessage({ ...rtdbData, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
+      } catch (e) { console.error("RTDB Dual Write Failed in Reply", e); }
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+        lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
+      });
+      pruneExcessMessages(currentServerId, currentRoomId, null);
+
+      // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
+      try {
+        const sd = currentServerData;
+        if (sd) {
+          const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
+          if (receiverIds.length > 0) {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
+            }).catch(() => { });
+          }
+        }
+      } catch (e) { }
+    }
+
     cancelReply();
     resetAwayTimer();
-    // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
-    try {
-      const sd = currentServerData;
-      if (sd) {
-        const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
-        if (receiverIds.length > 0) {
-          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-          fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
-          }).catch(() => { });
-        }
-      }
-    } catch (e) { }
   } catch (e) {
     console.error('[Sticker] 送信失敗:', e);
     alertMessage('スタンプの送信に失敗しました', 'error');
@@ -10089,7 +10194,7 @@ async function sendSticker(emoji) {
 document.addEventListener('DOMContentLoaded', () => { });
 {
   const sbtn = document.getElementById('stickerButton');
-  if (sbtn) sbtn.addEventListener('click', (e) => { e.stopPropagation(); if (!currentRoomId) return; toggleStickerPicker(); });
+  if (sbtn) sbtn.addEventListener('click', (e) => { e.stopPropagation(); if (!currentRoomId && !currentDmId) return; toggleStickerPicker(); });
   document.addEventListener('click', (e) => {
     const p = document.getElementById('stickerPicker');
     if (p && p.classList.contains('show') && !p.contains(e.target) && e.target.id !== 'stickerButton' && !e.target.closest('#stickerButton')) {
@@ -10738,7 +10843,7 @@ const fileAttachInp = document.getElementById("fileAttachInput");
 if (fileAttachBtn && fileAttachInp) {
   fileAttachBtn.disabled = true;
   fileAttachBtn.addEventListener("click", () => {
-    if (!currentRoomId) return;
+    if (!currentRoomId && !currentDmId) return;
     fileAttachInp.click();
   });
 }
@@ -10768,7 +10873,7 @@ const dropOverlay = document.getElementById("dropOverlay");
 let dragCounter = 0;
 window.addEventListener("dragenter", (e) => {
   e.preventDefault(); dragCounter++;
-  if (currentRoomId) dropOverlay.classList.add("active");
+  if (currentRoomId || currentDmId) dropOverlay.classList.add("active");
 });
 window.addEventListener("dragleave", (e) => {
   e.preventDefault(); dragCounter--;
@@ -10778,7 +10883,7 @@ window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", async (e) => {
   e.preventDefault(); dragCounter = 0;
   dropOverlay.classList.remove("active");
-  if (!currentRoomId) return;
+  if (!currentRoomId && !currentDmId) return;
   let f = e.dataTransfer.files[0];
   if (!f) return;
   f = await processHeicFile(f);
@@ -10921,7 +11026,7 @@ function closeMentionPopup() {
 if (plusMenuButton) {
   plusMenuButton.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!currentRoomId) return;
+    if (!currentRoomId && !currentDmId) return;
     plusMenuPopup.classList.toggle("hidden");
   });
 }
@@ -12215,13 +12320,15 @@ if (deleteMsgBtn) {
   const forceDelete = (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
+  const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
+
   // 1a. kvFileUrl フィールド（新形式）
   if (msgToDelete.kvFileUrl) {
     const m = msgToDelete.kvFileUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
     if (m) {
       const fileKey = m[1];
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
@@ -12245,7 +12352,7 @@ if (deleteMsgBtn) {
     for (const match of kvMatches) {
       const fileKey = match[1];
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
@@ -12270,7 +12377,7 @@ if (deleteMsgBtn) {
     if (m) {
       const fileKey = m[1];
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}`;
+      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {

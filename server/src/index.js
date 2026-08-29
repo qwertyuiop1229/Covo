@@ -1093,6 +1093,12 @@ async function handleDeleteFile(request, env, url) {
     } else {
       const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
+      if (!isPrivilegedAdmin) {
+        const serverId = url.searchParams.get("serverId");
+        if (serverId) {
+          isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+        }
+      }
     }
 
     if (forceDelete) {
@@ -1486,6 +1492,42 @@ async function isD1Admin(appId, verifiedUser, env) {
   return false;
 }
 
+async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
+  if (!appId || !serverId || !verifiedUser) return false;
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+      if (row) {
+        if (row.created_by === verifiedUser.uid) return true;
+        if (row.server_data) {
+          const sData = JSON.parse(row.server_data);
+          if (sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid)) return true;
+        }
+      }
+    } catch (e) {
+      console.error("isServerAdminCheck D1 error:", e);
+    }
+  }
+  try {
+    const workerToken = await getWorkerAuthToken(env);
+    if (workerToken) {
+      const srvUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`;
+      const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+      const srvData = await srvRes.json();
+      if (!srvData.error && srvData.fields) {
+        if (srvData.fields.createdBy?.stringValue === verifiedUser.uid) return true;
+        if (srvData.fields.serverAdmins?.arrayValue?.values) {
+          const admins = srvData.fields.serverAdmins.arrayValue.values.map(v => v.stringValue);
+          if (admins.includes(verifiedUser.uid)) return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("isServerAdminCheck Firestore error:", e);
+  }
+  return false;
+}
+
 async function isAppAdmin(appId, verifiedUser, env) {
   if (!appId || !verifiedUser) return false;
   if (env.DB) {
@@ -1524,12 +1566,12 @@ async function handleSetOffline(request, env) {
     const { userId, appId, idToken } = data;
 
     if (!userId || !appId || !idToken) {
-      return new Response("Missing fields", { status: 400, headers: corsSetOffline });
+      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
-      return new Response("Unauthorized", { status: 401, headers: corsSetOffline });
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
     }
 
     const projectId = env.FIREBASE_PROJECT_ID;
