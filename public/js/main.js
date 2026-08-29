@@ -341,10 +341,10 @@ fetch('/version.json', { cache: 'default' })
   .then(d => { _appVersion = d.version || null; })
   .catch(() => { _appVersion = null; });
 
-// Firebase設定
+// Firebase設定 (authDomain を firebaseapp.com に統一して Google OAuth redirect_uri_mismatch を解消)
 const firebaseConfig = {
   apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.web.app",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
   projectId: "simplechat-65a0d",
   storageBucket: "simplechat-65a0d.firebasestorage.app",
   messagingSenderId: "611067360180",
@@ -609,13 +609,14 @@ function initializeFirebase() {
       app = initializeApp(firebaseConfig);
       if (!isTauri) {
         try {
+          // Safari / iPad のプライベートブラウズやスロットリング時にアプリ全体が停止しないよう耐障害性を確保
           initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
             isTokenAutoRefreshEnabled: true
           });
           console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
         } catch (e) {
-          console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカーの可能性)", e);
+          console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカー/プライベートリレーの可能性)。通常認証フォールバックで継続します:", e);
         }
       }
       try {
@@ -731,26 +732,49 @@ function initializeFirebase() {
             getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
           ]);
 
+          const rawEmail = user.email || "";
+          const cleanEmail = rawEmail.toLowerCase().trim();
+
           isAdmin = false;
           if (adminSnap && adminSnap.exists()) {
             const data = adminSnap.data();
-            const hasEmail = data.emails && data.emails.includes(user.email);
+            const hasEmail = data.emails && (data.emails.includes(rawEmail) || data.emails.includes(cleanEmail));
             const hasUid = data.admins && data.admins.includes(user.uid);
             isAdmin = hasEmail || hasUid;
           }
 
-          // 非管理者は allowedEmails を確認してアクセス制御
+          // 非管理者は allowedEmails を厳格に確認（小文字正規化・完全一致チェック・誤作動防止）
           isListAdmin = false;
           if (!isAdmin) {
-            if (configSnap && configSnap.exists() && configSnap.data().active) {
-              const allowedRef = doc(db, `artifacts/${appId}/allowedEmails`, user.email);
-              const allowedSnap = await getDoc(allowedRef).catch(e => null);
-              if (!allowedSnap || !allowedSnap.exists()) {
+            const isConfigActive = configSnap && configSnap.exists() && Boolean(configSnap.data().active);
+            if (isConfigActive) {
+              let isAllowed = false;
+              if (cleanEmail) {
+                try {
+                  const allowedRefClean = doc(db, `artifacts/${appId}/allowedEmails`, cleanEmail);
+                  const allowedRefRaw = (rawEmail && rawEmail !== cleanEmail) ? doc(db, `artifacts/${appId}/allowedEmails`, rawEmail) : null;
+                  const [snapClean, snapRaw] = await Promise.all([
+                    getDoc(allowedRefClean).catch(() => null),
+                    allowedRefRaw ? getDoc(allowedRefRaw).catch(() => null) : Promise.resolve(null)
+                  ]);
+                  if ((snapClean && snapClean.exists()) || (snapRaw && snapRaw.exists())) {
+                    isAllowed = true;
+                  }
+                } catch (allowedErr) {
+                  console.error("Allowed email check error:", allowedErr);
+                  isAllowed = false;
+                }
+              }
+
+              if (!isAllowed) {
+                console.warn(`[Security Guard] 未許可のアカウント(${rawEmail})を検出しました。セッションを即時破棄します。`);
                 await signOut(auth);
-                if (authMessageEl) {
-                  authMessageEl.textContent = "このメールアドレスはアクセスが許可されていません。管理者にお問い合わせください。";
+                const authMsg = document.getElementById("authMessage");
+                if (authMsg) {
+                  authMsg.textContent = `このメールアドレス（${rawEmail || '未設定'}）は利用が許可されていません。管理者にお問い合わせください。`;
                 }
                 loadingOverlay.classList.add("hidden");
+                _authHandlerBusy = false;
                 return;
               }
             }
@@ -758,7 +782,7 @@ function initializeFirebase() {
             // リスト管理者チェック
             if (listAdminSnap && listAdminSnap.exists()) {
               const data = listAdminSnap.data();
-              const hasEmail = data.emails && data.emails.includes(user.email);
+              const hasEmail = data.emails && (data.emails.includes(rawEmail) || data.emails.includes(cleanEmail));
               const hasUid = data.admins && data.admins.includes(user.uid);
               isListAdmin = hasEmail || hasUid;
             }
@@ -946,99 +970,94 @@ function updateUserPanelUI() {
   }
 }
 
-// タブ切り替え処理（安全なDOM参照とnullガード）
-const tabLoginEl = document.getElementById("tabLogin");
-const tabSignupEl = document.getElementById("tabSignup");
-const loginFormAreaEl = document.getElementById("loginFormArea");
-const signupFormAreaEl = document.getElementById("signupFormArea");
-const authMessageEl = document.getElementById("authMessage");
-const authButtonEl = document.getElementById("authButton");
-const signupButtonEl = document.getElementById("signupButton");
-const emailInputEl = document.getElementById("emailInput");
-const passwordInputEl = document.getElementById("passwordInput");
-const signupEmailInputEl = document.getElementById("signupEmailInput");
-const signupPasswordInputEl = document.getElementById("signupPasswordInput");
+// 統合スマート認証ハンドラー (自前ロック撤廃・Firebaseレート制限時のみ案内・絵文字なし)
+window.handleUnifiedAuthSubmit = async function () {
+  const emailInp = document.getElementById("emailInput");
+  const pwdInp = document.getElementById("passwordInput");
+  const authMsg = document.getElementById("authMessage");
+  const btn = document.getElementById("authButton");
+  const loading = document.getElementById("loadingOverlay");
 
-if (tabLoginEl && tabSignupEl && loginFormAreaEl && signupFormAreaEl) {
-  tabLoginEl.addEventListener("click", () => {
-    tabLoginEl.classList.replace("text-gray-400", "text-gray-800");
-    tabLoginEl.classList.replace("border-transparent", "border-gray-800");
-    tabSignupEl.classList.replace("text-gray-800", "text-gray-400");
-    tabSignupEl.classList.replace("border-gray-800", "border-transparent");
-    loginFormAreaEl.classList.remove("hidden");
-    signupFormAreaEl.classList.add("hidden");
-    if (authMessageEl) authMessageEl.textContent = "";
-  });
+  if (!emailInp || !pwdInp) return;
+  const email = (emailInp.value || "").trim();
+  const password = pwdInp.value || "";
 
-  tabSignupEl.addEventListener("click", () => {
-    tabSignupEl.classList.replace("text-gray-400", "text-gray-800");
-    tabSignupEl.classList.replace("border-transparent", "border-gray-800");
-    tabLoginEl.classList.replace("text-gray-800", "text-gray-400");
-    tabLoginEl.classList.replace("border-gray-800", "border-transparent");
-    signupFormAreaEl.classList.remove("hidden");
-    loginFormAreaEl.classList.add("hidden");
-    if (authMessageEl) authMessageEl.textContent = "";
-  });
-}
+  if (authMsg) authMsg.textContent = "";
 
-if (authButtonEl && emailInputEl && passwordInputEl) {
-  authButtonEl.addEventListener("click", async () => {
-    const email = (emailInputEl.value || "").trim();
-    const password = passwordInputEl.value;
-    if (authMessageEl) authMessageEl.textContent = "";
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+  if (!email || !password) {
+    if (authMsg) authMsg.textContent = "メールアドレスとパスワードを入力してください。";
+    return;
+  }
+  if (password.length < 6) {
+    if (authMsg) authMsg.textContent = "パスワードは6文字以上で入力してください。";
+    return;
+  }
+
+  if (loading) loading.classList.remove("hidden");
+  if (btn) btn.disabled = true;
+
+  try {
+    // 1. まず既存アカウントとしてのサインインを試みる
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      const code = error.code || "";
-      let msg = "ログインに失敗しました。";
-      if (code === "auth/user-not-found") msg = "このメールアドレスは登録されていません。";
-      else if (code === "auth/wrong-password") msg = "パスワードが正しくありません。";
-      else if (code === "auth/invalid-credential") msg = "メールアドレスまたはパスワードが正しくありません。";
-      else if (code === "auth/invalid-email") msg = "メールアドレスの形式が正しくありません。";
-      else if (code === "auth/user-disabled") msg = "このアカウントは無効になっています。管理者にお問い合わせください。";
-      else if (code === "auth/too-many-requests") msg = "ログイン試行が多すぎます。しばらく待ってからお試しください。";
-      if (authMessageEl) authMessageEl.textContent = msg;
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
-    }
-  });
-}
-
-// サインアップ処理（誰でも登録可能）
-if (signupButtonEl && signupEmailInputEl && signupPasswordInputEl) {
-  signupButtonEl.addEventListener("click", async () => {
-    const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-    const email = (signupEmailInputEl.value || "").trim();
-    const password = signupPasswordInputEl.value;
-    if (authMessageEl) authMessageEl.textContent = "";
-
-    if (!email || !password) {
-      if (authMessageEl) authMessageEl.textContent = "メールアドレスとパスワードを入力してください。";
       return;
+    } catch (signInErr) {
+      const code = signInErr.code || "";
+
+      // 既存アカウントが存在しない、または未登録の場合 → 自動で安全に新規アカウント作成を試行
+      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+        try {
+          console.log("[Auth] 既存アカウントが見つからないため、新規作成を試行します...");
+          await createUserWithEmailAndPassword(auth, email, password);
+          return;
+        } catch (signUpErr) {
+          if (signUpErr.code === "auth/email-already-in-use") {
+            // アカウントは存在するが、先ほど入力したパスワードが間違っていた
+            throw new Error("auth/wrong-password");
+          }
+          throw signUpErr;
+        }
+      }
+      throw signInErr;
     }
-    if (password.length < 6) {
-      if (authMessageEl) authMessageEl.textContent = "パスワードは6文字以上で設定してください。";
-      return;
+  } catch (err) {
+    const code = err.message === "auth/wrong-password" ? "auth/wrong-password" : (err.code || "");
+    let msgHtml = "";
+
+    if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+      msgHtml = `
+        <div class="text-rose-600 dark:text-rose-400 font-medium">
+          パスワードが正しくありません。<br>
+          <span class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 block">
+            お忘れの場合は <button type="button" onclick="openPasswordResetModal()" class="text-indigo-600 dark:text-indigo-400 font-bold underline">パスワードをお忘れですか？</button> より再設定してください。
+          </span>
+        </div>
+      `;
+    } else if (code === "auth/too-many-requests") {
+      // Firebaseサーバー側による制限検知時のみ表示
+      msgHtml = `
+        <div class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs text-left leading-relaxed">
+          <div class="font-bold mb-1">セキュリティ保護によるアクセス制限</div>
+          短時間に連続して試行されたため、アクセスが一時的に制限されています。<br>
+          パスワードの再設定を行うと、待ち時間なしで制限が解除されログインできます。
+        </div>
+      `;
+    } else if (code === "auth/invalid-email") {
+      msgHtml = "メールアドレスの形式が正しくありません。";
+    } else if (code === "auth/weak-password") {
+      msgHtml = "パスワードが弱すぎます（6文字以上）。";
+    } else if (code === "auth/user-disabled") {
+      msgHtml = "このアカウントは無効化されています。管理者にお問い合わせください。";
+    } else if (err.message) {
+      msgHtml = `認証エラー: ${escapeHtml(err.message)}`;
     }
 
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.error("Signup error:", err);
-      let msg = "アカウント作成に失敗しました。もう一度お試しください。";
-      if (err.code === "auth/email-already-in-use") msg = "このメールアドレスはすでに使われています。";
-      else if (err.code === "auth/invalid-email") msg = "メールアドレスの形式が正しくありません。";
-      else if (err.code === "auth/weak-password") msg = "パスワードが弱すぎます（6文字以上）。";
-      if (authMessageEl) authMessageEl.textContent = msg;
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
-    }
-  });
-}
+    if (authMsg) authMsg.innerHTML = msgHtml;
+  } finally {
+    if (loading) loading.classList.add("hidden");
+    if (btn) btn.disabled = false;
+  }
+};
 
 // Google ログイン & 登録処理 (Windowsデスクトップ/Web完全両対応)
 const googleAuthBtn = document.getElementById("googleAuthButton");
@@ -1123,18 +1142,24 @@ window.openPasswordResetModal = function () {
   const input = document.getElementById('resetEmailInput');
   const msg = document.getElementById('resetEmailMessage');
   const keyMsg = document.getElementById('resetKeyMessage');
-  const adminMsg = document.getElementById('resetAdminMessage');
+  const emergencyMsg = document.getElementById('resetEmergencyMessage');
   const keyEmailInput = document.getElementById('resetKeyEmailInput');
-  const adminEmailInput = document.getElementById('resetAdminEmailInput');
+  const emergencyEmailInput = document.getElementById('resetEmergencyEmailInput');
   const loginEmail = document.getElementById('emailInput')?.value?.trim();
   
   if (input && loginEmail) input.value = loginEmail;
   if (keyEmailInput && loginEmail) keyEmailInput.value = loginEmail;
-  if (adminEmailInput && loginEmail) adminEmailInput.value = loginEmail;
-  if (msg) { msg.textContent = ''; msg.className = 'text-xs min-h-[1rem]'; }
-  if (keyMsg) { keyMsg.textContent = ''; keyMsg.className = 'text-xs min-h-[1rem]'; }
-  if (adminMsg) { adminMsg.textContent = ''; adminMsg.className = 'text-xs min-h-[1rem]'; }
+  if (emergencyEmailInput && loginEmail) emergencyEmailInput.value = loginEmail;
+  if (msg) { msg.textContent = ''; msg.className = 'text-xs min-h-[1rem] leading-relaxed'; }
+  if (keyMsg) { keyMsg.textContent = ''; keyMsg.className = 'text-xs min-h-[1rem] leading-relaxed'; }
+  if (emergencyMsg) { emergencyMsg.textContent = ''; emergencyMsg.className = 'text-xs min-h-[1rem] leading-relaxed'; }
   
+  // 折りたたみは閉じた状態にリセット
+  const emergencySection = document.getElementById('resetViaEmergencySection');
+  const emergencyArrow = document.getElementById('emergencyCodeArrowIcon');
+  if (emergencySection) emergencySection.classList.add('hidden');
+  if (emergencyArrow) emergencyArrow.style.transform = 'rotate(0deg)';
+
   switchPasswordResetMethod('email');
   if (modal) modal.classList.remove('hidden');
 };
@@ -1147,31 +1172,39 @@ window.closePasswordResetModal = function () {
 window.switchPasswordResetMethod = function (method) {
   const emailTab = document.getElementById('resetTabEmailBtn');
   const keyTab = document.getElementById('resetTabKeyBtn');
-  const adminTab = document.getElementById('resetTabAdminBtn');
   const emailForm = document.getElementById('resetViaEmailForm');
   const keyForm = document.getElementById('resetViaKeyForm');
-  const adminForm = document.getElementById('resetViaAdminForm');
 
-  const inactiveClass = 'py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1 truncate';
-  const activeClass = 'py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1 truncate';
+  const inactiveClass = 'py-2 px-3 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1.5';
+  const activeClass = 'py-2 px-3 text-center font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1.5';
 
   if (emailForm) emailForm.classList.add('hidden');
   if (keyForm) keyForm.classList.add('hidden');
-  if (adminForm) adminForm.classList.add('hidden');
 
   if (emailTab) emailTab.className = inactiveClass;
   if (keyTab) keyTab.className = inactiveClass;
-  if (adminTab) adminTab.className = inactiveClass;
 
   if (method === 'key') {
     if (keyForm) keyForm.classList.remove('hidden');
     if (keyTab) keyTab.className = activeClass;
-  } else if (method === 'admin') {
-    if (adminForm) adminForm.classList.remove('hidden');
-    if (adminTab) adminTab.className = activeClass;
   } else {
     if (emailForm) emailForm.classList.remove('hidden');
     if (emailTab) emailTab.className = activeClass;
+  }
+};
+
+window.toggleEmergencyCodeSection = function () {
+  const sec = document.getElementById('resetViaEmergencySection');
+  const icon = document.getElementById('emergencyCodeArrowIcon');
+  if (!sec) return;
+  const isHidden = sec.classList.contains('hidden');
+  if (isHidden) {
+    sec.classList.remove('hidden');
+    if (icon) icon.style.transform = 'rotate(180deg)';
+    document.getElementById('resetEmergencyCodeInput')?.focus();
+  } else {
+    sec.classList.add('hidden');
+    if (icon) icon.style.transform = 'rotate(0deg)';
   }
 };
 
@@ -1218,24 +1251,24 @@ window.submitPasswordReset = async function () {
   }
 };
 
-// 3. 管理者・オーナー支援によるパスワード復旧 (10分間ワンタイムPIN)
-window.submitAdminAssistReset = async function () {
-  const emailInput = document.getElementById('resetAdminEmailInput');
-  const pinInput = document.getElementById('resetAdminPinInput');
-  const newPwdInput = document.getElementById('resetAdminNewPassword');
-  const msg = document.getElementById('resetAdminMessage');
-  const btn = document.getElementById('submitAdminResetBtn');
+// エマージェンシーコードによるパスワード再設定（絵文字なし・クリーン表示）
+window.submitEmergencyCodeReset = async function () {
+  const emailInput = document.getElementById('resetEmergencyEmailInput');
+  const codeInput = document.getElementById('resetEmergencyCodeInput');
+  const newPwdInput = document.getElementById('resetEmergencyNewPassword');
+  const msg = document.getElementById('resetEmergencyMessage');
+  const btn = document.getElementById('submitEmergencyResetBtn');
 
   const email = (emailInput?.value || '').trim().toLowerCase();
-  const pin = (pinInput?.value || '').trim().replace(/[^0-9A-Za-z]/g, '');
+  const code = (codeInput?.value || '').trim().replace(/[^0-9A-Za-z]/g, '');
   const newPwd = (newPwdInput?.value || '').trim();
 
   if (!email) {
     if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
-  if (!pin || pin.length < 6) {
-    if (msg) { msg.textContent = '管理者から発行された6桁のワンタイムPINを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+  if (!code || code.length < 6) {
+    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
   if (!newPwd || newPwd.length < 6) {
@@ -1244,7 +1277,7 @@ window.submitAdminAssistReset = async function () {
   }
 
   try {
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> 管理者承認PINを検証中...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> コードを検証中...'; }
 
     const emailHash = await _sha256Hash(email);
     const indexDocRef = doc(db, `artifacts/${appId}/admin_recovery_index`, emailHash);
@@ -1252,7 +1285,7 @@ window.submitAdminAssistReset = async function () {
 
     if (!indexSnap.exists()) {
       if (msg) {
-        msg.textContent = 'このメールアドレスに対する管理者承認が見つかりません。オーナー（管理者）にPIN発行を依頼してください。';
+        msg.textContent = 'このメールアドレスに対する有効なエマージェンシーコードが見つかりません。';
         msg.className = 'text-xs text-rose-600 dark:text-rose-400';
       }
       return;
@@ -1261,7 +1294,7 @@ window.submitAdminAssistReset = async function () {
     const data = indexSnap.data();
     if (data.used) {
       if (msg) {
-        msg.textContent = 'このPINはすでに使用されています。管理者に新しいPINを再発行してもらってください。';
+        msg.textContent = 'このコードは既に使用されています。新しいコードの発行を依頼してください。';
         msg.className = 'text-xs text-rose-600 dark:text-rose-400';
       }
       return;
@@ -1269,44 +1302,44 @@ window.submitAdminAssistReset = async function () {
 
     if (data.expiresAt && Date.now() > data.expiresAt) {
       if (msg) {
-        msg.textContent = 'PINの有効期限（10分間）が切れています。管理者に新しいPINを再発行してもらってください。';
+        msg.textContent = 'コードの有効期限（10分間）が切れています。新しいコードの再発行を依頼してください。';
         msg.className = 'text-xs text-rose-600 dark:text-rose-400';
       }
       return;
     }
 
-    const computedHash = await _sha256Hash((data.salt || '') + ':' + pin);
+    const computedHash = await _sha256Hash((data.salt || '') + ':' + code);
     if (computedHash !== data.pinHash) {
       if (msg) {
-        msg.textContent = 'PINコードが一致しません。管理者から伝えられた6桁の番号をご確認ください。';
+        msg.textContent = 'コードが一致しません。正しい6桁の番号をご確認ください。';
         msg.className = 'text-xs text-rose-600 dark:text-rose-400';
       }
       return;
     }
 
-    // PIN認証成功！使用済みマーク & 再設定メール連携
+    // コード認証成功
     await updateDoc(indexDocRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
     auth.languageCode = 'ja';
     sendPasswordResetEmail(auth, email).catch(() => {});
 
     if (msg) {
-      msg.textContent = '管理者（オーナー）による本人確認と再設定が承認されました！アカウントのセキュリティ認証を完了しました。まもなくログイン画面に戻ります。';
+      msg.textContent = '本人確認が完了しました。まもなくログイン画面に戻ります。';
       msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
     }
 
     setTimeout(() => {
       closePasswordResetModal();
-      alertMessage('管理者承認PINでパスワード復旧を完了しました。', 'success');
-    }, 2200);
+      alertMessage('パスワードの再設定処理が完了しました。', 'success');
+    }, 2000);
 
   } catch (err) {
-    console.error('[Recovery] Admin assist reset error:', err);
+    console.error('[Recovery] Emergency code reset error:', err);
     if (msg) {
-      msg.textContent = `復旧エラー: ${err.message}`;
+      msg.textContent = `再設定エラー: ${err.message}`;
       msg.className = 'text-xs text-rose-600 dark:text-rose-400';
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-shield-halved text-xs"></i> 管理者承認PINでパスワードを復旧'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>パスワードを再設定</span>'; }
   }
 };
 
@@ -1743,6 +1776,9 @@ window.openChangePasswordModal = function () {
   const currInput = document.getElementById('modalCurrentPasswordInput');
   const newInput = document.getElementById('modalNewPasswordInput');
   const confirmInput = document.getElementById('modalConfirmNewPasswordInput');
+  const modalTitle = modal.querySelector('h3');
+  const modalDesc = modal.querySelector('p');
+  const submitBtn = document.getElementById('modalChangePasswordBtn');
   if (currInput) currInput.value = '';
   if (newInput) newInput.value = '';
   if (confirmInput) confirmInput.value = '';
@@ -1753,6 +1789,18 @@ window.openChangePasswordModal = function () {
 
   const user = auth.currentUser;
   const hasPasswordProvider = user && user.providerData && user.providerData.some(p => p.providerId === 'password');
+
+  if (modalTitle && modalDesc && submitBtn) {
+    if (hasPasswordProvider) {
+      modalTitle.textContent = "パスワードの変更";
+      modalDesc.textContent = "新しいパスワードを設定します";
+      submitBtn.innerHTML = '<i class="fas fa-check text-xs"></i> パスワードを更新';
+    } else {
+      modalTitle.textContent = "パスワードの設定 (追加)";
+      modalDesc.textContent = "メール＋パスワードでもログインできるようにします";
+      submitBtn.innerHTML = '<i class="fas fa-plus text-xs"></i> パスワードを設定して連携';
+    }
+  }
 
   if (window._adminBypassActive) {
     if (banner) banner.classList.remove('hidden');
@@ -1800,13 +1848,23 @@ window.submitChangePasswordModalAction = async function () {
   }
 
   try {
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> 更新中...'; }
-    if (hasPasswordProvider && user.email && !window._adminBypassActive) {
-      const cred = EmailAuthProvider.credential(user.email, currPwd);
-      await reauthenticateWithCredential(user, cred);
-    }
-    await updatePassword(user, newPwd);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> 処理中...'; }
     
+    if (hasPasswordProvider) {
+      if (user.email && !window._adminBypassActive) {
+        const cred = EmailAuthProvider.credential(user.email, currPwd);
+        await reauthenticateWithCredential(user, cred);
+      }
+      await updatePassword(user, newPwd);
+      alertMessage('パスワードを正常に更新しました！', 'success');
+    } else {
+      // Googleログインで登録したアカウントにパスワードを新規追加して連携
+      if (!user.email) throw new Error("アカウントにメールアドレスが登録されていません");
+      const emailCred = EmailAuthProvider.credential(user.email, newPwd);
+      await linkWithCredential(user, emailCred);
+      alertMessage('パスワードを設定しました！次回からメール＋パスワードでもログインできます。', 'success');
+    }
+
     // バイパス使用済み処理
     if (window._adminBypassActive) {
       window._adminBypassActive = false;
@@ -1818,17 +1876,24 @@ window.submitChangePasswordModalAction = async function () {
       if (mobileBadge) mobileBadge.classList.add('hidden');
     }
 
-    alertMessage('パスワードを正常に更新しました！', 'success');
+    if (typeof updateAccountSecurityUI === 'function') {
+      updateAccountSecurityUI(auth.currentUser);
+    }
     closeChangePasswordModal();
   } catch (err) {
-    console.error('[Auth] Update password modal error:', err);
-    let errMsg = 'パスワードの更新に失敗しました。';
+    console.error('[Auth] Update/Link password modal error:', err);
+    let errMsg = 'パスワードの処理に失敗しました。';
     if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errMsg = '現在のパスワードが正しくありません。';
     else if (err.code === 'auth/requires-recent-login') errMsg = 'セキュリティのため、一度ログアウトして再ログインしてからお試しください。';
     else if (err.code === 'auth/weak-password') errMsg = 'パスワードが弱すぎます（6文字以上）。';
+    else if (err.code === 'auth/provider-already-linked') errMsg = 'すでにパスワードが設定されています。';
     if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check text-xs"></i> パスワードを更新'; }
+    if (btn) {
+      btn.disabled = false;
+      const hasPwd = auth.currentUser?.providerData?.some(p => p.providerId === 'password');
+      btn.innerHTML = hasPwd ? '<i class="fas fa-check text-xs"></i> パスワードを更新' : '<i class="fas fa-plus text-xs"></i> パスワードを設定して連携';
+    }
   }
 };
 
@@ -1863,10 +1928,10 @@ window.toggleModalRecoveryKeyVisibility = function () {
   }
 };
 
-// 管理者（オーナー）による緊急復旧ワンタイムPIN発行
+// 管理者専用 エマージェンシーコード発行（発行者のみに表示・絵文字なし）
 window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
   if (!isAdmin) {
-    alertMessage('復旧PINの発行権限はアプリ全体管理者（オーナー）のみに限定されています。', 'error');
+    alertMessage('コードの発行権限は全体管理者のみに限定されています。', 'error');
     return;
   }
   if (!targetEmail) {
@@ -1874,7 +1939,7 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
     return;
   }
   const cleanEmail = targetEmail.toLowerCase().trim();
-  const confirmMsg = `【全体管理者サポート】\n\n対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のパスワード復旧ワンタイムPIN」を発行しますか？\n（ユーザーはメールを確認できなくても、このPINでパスワードを再設定できます）`;
+  const confirmMsg = `対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のエマージェンシーコード」を発行しますか？`;
   if (!confirm(confirmMsg)) return;
 
   try {
@@ -1917,12 +1982,12 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
       <div id="adminPinModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] p-4" style="background:rgba(15,23,42,0.75);backdrop-filter:blur(8px);">
         <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 flex items-center justify-center text-lg flex-shrink-0">
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900 flex items-center justify-center text-lg flex-shrink-0">
               <i class="fas fa-key"></i>
             </div>
             <div>
-              <h3 class="text-base font-bold text-gray-900 dark:text-white">復旧用PINを発行しました</h3>
-              <p class="text-xs text-gray-500 dark:text-slate-400">10分間有効のPINコードです</p>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">エマージェンシーコードを発行しました</h3>
+              <p class="text-xs text-gray-500 dark:text-slate-400">10分間有効のコードです</p>
             </div>
           </div>
           <div class="p-3 bg-gray-50 dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 text-xs space-y-2">
@@ -1935,16 +2000,16 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
               <span class="font-bold text-amber-600 dark:text-amber-400">10分間（${new Date(expiresAt).toLocaleTimeString('ja-JP')} まで）</span>
             </div>
           </div>
-          <div class="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-center space-y-1">
-            <div class="text-xs text-emerald-700 dark:text-emerald-400 font-bold">復旧用PINコード</div>
-            <div class="text-3xl font-black font-mono tracking-widest text-emerald-600 dark:text-emerald-400 select-all">${pin}</div>
+          <div class="p-4 bg-gray-100 dark:bg-slate-800/80 border border-gray-200 dark:border-slate-700 rounded-xl text-center space-y-1">
+            <div class="text-xs text-gray-500 dark:text-slate-400 font-bold">エマージェンシーコード</div>
+            <div class="text-3xl font-black font-mono tracking-widest text-gray-900 dark:text-white select-all">${pin}</div>
           </div>
           <p class="text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
-            このPINをユーザーに伝えてください。ログイン画面の「パスワードをお忘れですか？ ＞ 管理者支援」にメールアドレスとこのPINを入力することで、即座にパスワードを再設定できます。
+            このコードを該当ユーザーに伝えてください。ログイン画面の「パスワードをお忘れですか？ ＞ 上記の方法に当てはまらない場合」から入力することで、パスワードを即座に再設定できます。
           </p>
           <div class="flex gap-2 pt-1">
-            <button onclick="navigator.clipboard.writeText('【Covoパスワード復旧PIN】\\n対象: ${cleanEmail}\\nPIN: ${pin}\\n有効期限: 10分間\\nログイン画面の「管理者支援」タブから入力してください。'); alertMessage('復旧案内テキストをコピーしました！', 'success');" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 shadow-sm">
-              <i class="fas fa-copy"></i> PIN案内をコピー
+            <button onclick="navigator.clipboard.writeText('【Covo エマージェンシーコード】\\n対象: ${cleanEmail}\\nコード: ${pin}\\n有効期限: 10分間\\nログイン画面の「パスワードをお忘れですか？ ＞ 上記の方法に当てはまらない場合」から入力してください。'); alertMessage('案内テキストをコピーしました', 'success');" class="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 shadow-sm">
+              <i class="fas fa-copy"></i> <span>案内テキストをコピー</span>
             </button>
             <button onclick="document.getElementById('adminPinModal')?.remove();" class="px-4 py-2.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 text-xs font-bold rounded-xl transition">
               閉じる
@@ -1958,8 +2023,8 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
   } catch (err) {
-    console.error('[Admin] Issue PIN error:', err);
-    alertMessage(`PIN発行エラー: ${err.message}`, 'error');
+    console.error('[Admin] Issue Code error:', err);
+    alertMessage(`コード発行エラー: ${err.message}`, 'error');
   }
 };
 

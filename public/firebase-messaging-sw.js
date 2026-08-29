@@ -3,7 +3,7 @@ importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-comp
 
 const firebaseConfig = {
   apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.web.app",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
   projectId: "simplechat-65a0d",
   storageBucket: "simplechat-65a0d.firebasestorage.app",
   messagingSenderId: "611067360180",

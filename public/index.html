@@ -465,12 +465,46 @@
 
     <!-- メインコンテンツエリア -->
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
-      <!-- 認証フォーム -->
+      <!-- 認証フォーム (統合スマート認証・大手サービス準拠) -->
       <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
         <div class="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100 dark:border-slate-800 text-gray-800 dark:text-gray-200">
 
-          <!-- Google ログインボタン -->
-          <button id="googleAuthButton" type="button" class="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700/80 text-gray-700 dark:text-slate-200 font-bold rounded-xl border border-gray-300 dark:border-slate-700 shadow-sm transition-all mb-4 active:scale-98">
+          <div class="text-center mb-6">
+            <h2 class="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Covo にログイン / 新規登録</h2>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">メールアドレスとパスワードを入力して続行します</p>
+          </div>
+
+          <!-- 統合認証フォーム -->
+          <form id="unifiedAuthForm" onsubmit="event.preventDefault(); window.handleUnifiedAuthSubmit();">
+            <div class="mb-3">
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1" for="emailInput">メールアドレス</label>
+              <input type="email" id="emailInput" placeholder="example@mail.com" autocomplete="username"
+                class="w-full p-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition shadow-xs" required />
+            </div>
+            <div class="mb-2">
+              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1" for="passwordInput">パスワード</label>
+              <input type="password" id="passwordInput" placeholder="パスワード（6文字以上）" autocomplete="current-password"
+                class="w-full p-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition shadow-xs" required />
+            </div>
+            <div class="flex justify-end mb-4">
+              <button type="button" id="forgotPasswordBtn" onclick="openPasswordResetModal()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline transition">パスワードをお忘れですか？</button>
+            </div>
+            <button id="authButton" type="submit"
+              class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm flex items-center justify-center gap-2">
+              <span>続ける（ログイン / 新規登録）</span>
+            </button>
+          </form>
+
+          <div id="authMessage" class="text-rose-600 dark:text-rose-400 text-center text-xs mt-2 min-h-[1.2rem] font-medium leading-relaxed"></div>
+
+          <div class="flex items-center my-5">
+            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
+            <span class="px-3 text-xs text-gray-400 dark:text-slate-500 font-medium">または</span>
+            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
+          </div>
+
+          <!-- Google ログインボタン (メール認証の下部に配置) -->
+          <button id="googleAuthButton" type="button" class="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700/80 text-gray-700 dark:text-slate-200 font-bold rounded-xl border border-gray-300 dark:border-slate-700 shadow-sm transition-all active:scale-98">
             <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -479,50 +513,10 @@
             </svg>
             <span class="text-sm font-semibold">Google でログイン / 登録</span>
           </button>
-
-          <div class="flex items-center my-4">
-            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
-            <span class="px-3 text-xs text-gray-400 dark:text-slate-500 font-medium">またはメールアドレスで</span>
-            <div class="flex-1 border-t border-gray-200 dark:border-slate-800"></div>
-          </div>
-
-          <!-- タブ -->
-          <div class="flex mb-6 border-b border-gray-200 dark:border-slate-800">
-            <button id="tabLogin"
-              class="flex-1 pb-2 font-bold text-gray-800 dark:text-white border-b-2 border-gray-800 dark:border-indigo-500 transition-colors">ログイン</button>
-            <button id="tabSignup"
-              class="flex-1 pb-2 font-bold text-gray-400 dark:text-slate-500 border-b-2 border-transparent transition-colors">新規登録</button>
-          </div>
-
-          <!-- ログインフォーム -->
-          <form id="loginFormArea" onsubmit="event.preventDefault();">
-            <input type="email" id="emailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
-            <input type="password" id="passwordInput" placeholder="パスワード" autocomplete="current-password"
-              class="w-full p-3 mb-2 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
-            <div class="flex justify-end mb-4">
-              <button type="button" id="forgotPasswordBtn" onclick="openPasswordResetModal()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline transition">パスワードをお忘れですか？</button>
-            </div>
-            <button id="authButton"
-              class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">ログイン</button>
-          </form>
-
-          <!-- 新規登録フォーム -->
-          <form id="signupFormArea" class="hidden" onsubmit="event.preventDefault();">
-            <p class="text-xs text-gray-500 dark:text-slate-400 mb-4 text-center">メールアドレスとパスワードで新しいアカウントを作成します。</p>
-            <input type="email" id="signupEmailInput" placeholder="メールアドレス" autocomplete="username"
-              class="w-full p-3 mb-3 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
-            <input type="password" id="signupPasswordInput" placeholder="新規パスワード（6文字以上）" autocomplete="new-password"
-              class="w-full p-3 mb-4 bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 transition" />
-            <button id="signupButton"
-              class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all duration-200 mb-2 active:scale-98 shadow-sm">アカウント作成</button>
-          </form>
-
-          <div id="authMessage" class="text-rose-600 dark:text-rose-400 text-center text-xs mt-2 min-h-[1.2rem]"></div>
         </div>
       </div>
 
-      <!-- パスワード再設定 & 緊急リカバリーモーダル -->
+      <!-- パスワード再設定モーダル -->
       <div id="passwordResetModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[100] hidden p-3 sm:p-4">
         <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200 max-h-[92vh] overflow-y-auto">
           <button onclick="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
@@ -533,21 +527,18 @@
               <i class="fas fa-key"></i>
             </div>
             <div>
-              <h3 class="text-base font-bold text-gray-900 dark:text-white">アカウント復旧・再設定</h3>
-              <p class="text-xs text-gray-500 dark:text-slate-400">メール・リカバリーキー・管理者支援から選択できます</p>
+              <h3 class="text-base font-bold text-gray-900 dark:text-white">パスワードの再設定</h3>
+              <p class="text-xs text-gray-500 dark:text-slate-400">登録メールアドレスまたはリカバリーキーで再設定します</p>
             </div>
           </div>
 
-          <!-- 再設定方法タブ (3タブ対応) -->
-          <div class="grid grid-cols-3 gap-1 p-1 bg-gray-100 dark:bg-slate-950 rounded-xl mb-4 border border-gray-200/60 dark:border-slate-800 text-[11px]">
-            <button id="resetTabEmailBtn" type="button" onclick="switchPasswordResetMethod('email')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1 truncate">
-              <i class="fas fa-envelope text-[10px]"></i> メール
+          <!-- 再設定方法タブ (2タブに集約) -->
+          <div class="grid grid-cols-2 gap-1 p-1 bg-gray-100 dark:bg-slate-950 rounded-xl mb-4 border border-gray-200/60 dark:border-slate-800 text-xs">
+            <button id="resetTabEmailBtn" type="button" onclick="switchPasswordResetMethod('email')" class="py-2 px-3 text-center font-bold rounded-lg transition-all text-gray-900 dark:text-white bg-white dark:bg-slate-800 shadow-xs flex items-center justify-center gap-1.5">
+              <i class="fas fa-envelope text-xs"></i> メールで再設定
             </button>
-            <button id="resetTabKeyBtn" type="button" onclick="switchPasswordResetMethod('key')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1 truncate">
-              <i class="fas fa-shield-halved text-[10px]"></i> キー復旧
-            </button>
-            <button id="resetTabAdminBtn" type="button" onclick="switchPasswordResetMethod('admin')" class="py-1.5 px-2 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1 truncate">
-              <i class="fas fa-user-shield text-[10px]"></i> 管理者支援
+            <button id="resetTabKeyBtn" type="button" onclick="switchPasswordResetMethod('key')" class="py-2 px-3 text-center font-bold rounded-lg transition-all text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 flex items-center justify-center gap-1.5">
+              <i class="fas fa-shield-halved text-xs"></i> リカバリーキー
             </button>
           </div>
 
@@ -557,16 +548,16 @@
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1.5">登録メールアドレス</label>
               <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-sm text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs" required />
             </div>
-            <div id="resetEmailMessage" class="text-xs min-h-[1rem]"></div>
+            <div id="resetEmailMessage" class="text-xs min-h-[1rem] leading-relaxed"></div>
             <button id="sendResetEmailBtn" type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-paper-plane text-xs"></i> 日本語再設定メールを送信
+              <span>再設定メールを送信</span>
             </button>
           </form>
 
           <!-- ② リカバリーキーで復旧 (メール不要) -->
           <form id="resetViaKeyForm" onsubmit="event.preventDefault(); submitEmergencyKeyReset();" class="space-y-3.5 hidden">
-            <div class="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-900 dark:text-amber-300 leading-relaxed">
-              <i class="fas fa-info-circle mr-1"></i>設定で発行した<strong>リカバリーキー</strong>を入力することで安全にパスワードを再設定できます。
+            <div class="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-900 dark:text-amber-300 leading-relaxed font-medium">
+              設定で保存したリカバリーキーを入力してパスワードを再設定します。
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
@@ -585,39 +576,45 @@
                 </button>
               </div>
             </div>
-            <div id="resetKeyMessage" class="text-xs min-h-[1rem]"></div>
+            <div id="resetKeyMessage" class="text-xs min-h-[1rem] leading-relaxed"></div>
             <button id="submitKeyResetBtn" type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-unlock-keyhole text-xs"></i> リカバリーキーでパスワードを復旧
+              <span>パスワードを再設定</span>
             </button>
           </form>
 
-          <!-- ③ 管理者支援で復旧 (10分間復旧PIN) -->
-          <form id="resetViaAdminForm" onsubmit="event.preventDefault(); submitAdminAssistReset();" class="space-y-3.5 hidden">
-            <div class="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-[11px] text-emerald-900 dark:text-emerald-300 leading-relaxed">
-              <i class="fas fa-user-shield mr-1"></i>管理者から発行された<strong>10分間有効の復旧PIN（6桁）</strong>を入力して、パスワードを即時復旧・再設定できます。
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
-              <input type="email" id="resetAdminEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">復旧PIN (6桁)</label>
-              <input type="text" id="resetAdminPinInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" required />
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
-              <div class="relative">
-                <input type="password" id="resetAdminNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
-                <button type="button" onclick="toggleRecoveryPasswordVisibility('resetAdminNewPassword', 'adminPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
-                  <i id="adminPasswordEyeIcon" class="fas fa-eye"></i>
-                </button>
-              </div>
-            </div>
-            <div id="resetAdminMessage" class="text-xs min-h-[1rem]"></div>
-            <button id="submitAdminResetBtn" type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
-              <i class="fas fa-shield-halved text-xs"></i> 復旧PINでパスワードを復旧
+          <!-- ③ 控えめな折りたたみ：エマージェンシーコード（必要な人のみ展開） -->
+          <div class="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800 text-center">
+            <button type="button" id="toggleEmergencyCodeBtn" onclick="toggleEmergencyCodeSection()" class="text-[11px] font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors flex items-center justify-center gap-1 mx-auto">
+              <i class="fas fa-chevron-down text-[9px] transition-transform duration-200" id="emergencyCodeArrowIcon"></i>
+              <span>上記の方法に当てはまらない場合（エマージェンシーコード）</span>
             </button>
-          </form>
+            <div id="resetViaEmergencySection" class="hidden mt-3 text-left space-y-3 pt-1">
+              <div class="p-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-[11px] text-gray-600 dark:text-slate-300 leading-relaxed font-medium">
+                発行された6桁のエマージェンシーコードを入力してパスワードを再設定します。
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
+                <input type="email" id="resetEmergencyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">エマージェンシーコード (6桁)</label>
+                <input type="text" id="resetEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
+                <div class="relative">
+                  <input type="password" id="resetEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                  <button type="button" onclick="toggleRecoveryPasswordVisibility('resetEmergencyNewPassword', 'emergencyPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
+                    <i id="emergencyPasswordEyeIcon" class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="resetEmergencyMessage" class="text-xs min-h-[1rem] leading-relaxed"></div>
+              <button id="submitEmergencyResetBtn" type="button" onclick="submitEmergencyCodeReset()" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-98">
+                <span>パスワードを再設定</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1220,7 +1217,7 @@
       <button id="adminTabListAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
       <button id="adminTabFeaturesBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-toggle-on text-xs"></i>機能公開設定</button>
       <button id="adminTabAnnouncementsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-bullhorn text-xs"></i>お知らせ配信</button>
-      <button id="adminTabRecoveryBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-key text-xs"></i>復旧PIN支援</button>
+      <button id="adminTabRecoveryBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-key text-xs"></i>エマージェンシーコード</button>
     </div>
     
     <div class="pr-1 space-y-4">
@@ -1244,16 +1241,16 @@
           </div>
         </div>
       </div>
-      <!-- 復旧PIN支援タブ (全体管理者専用) -->
+      <!-- エマージェンシーコード発行タブ (全体管理者専用) -->
       <div id="adminTabRecoveryContent" class="space-y-4 hidden flex-1 flex flex-col min-h-0">
         <div class="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-transparent rounded-xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed flex-shrink-0">
-          <div class="font-bold mb-1 flex items-center gap-1.5"><i class="fas fa-shield-halved"></i>全体管理者専用 パスワード復旧支援</div>
-          パスワードを忘れ、登録メールも受信できないユーザーに対して、10分間有効の「復旧用PIN」を発行できます。
+          <div class="font-bold mb-1 flex items-center gap-1.5"><i class="fas fa-shield-halved"></i>管理者専用 エマージェンシーコード発行</div>
+          メールを受信できないユーザーに対し、10分間有効の復旧用エマージェンシーコード（6桁）を発行できます。
         </div>
 
         <div class="space-y-2 flex-1 flex flex-col min-h-0">
           <div class="flex items-center justify-between flex-shrink-0">
-            <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300">ユーザー一覧からPINを発行</h4>
+            <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300">ユーザー一覧からコードを発行</h4>
             <span class="text-[11px] text-gray-400 dark:text-slate-400 font-mono font-semibold" id="adminRecoveryUserCount">0名</span>
           </div>
           <div class="relative flex-shrink-0">
