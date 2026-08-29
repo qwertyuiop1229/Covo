@@ -5501,76 +5501,6 @@ self.addEventListener('notificationclick', (event) => {
     }
 </file>
 
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-
-/**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
-    return false;
-  }
-  return true;
-}
-
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
 <file path="public/js/ui_helpers.js">
 /**
  * UI補助機能 (ui_helpers.js)
@@ -5661,6 +5591,79 @@ if (typeof window !== 'undefined') {
   window.alertMessage = alertMessage;
   window.openAvatarLightbox = openAvatarLightbox;
   window.playNotificationSound = playNotificationSound;
+}
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+/**
+ * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
 }
 </file>
 
@@ -6907,6 +6910,94 @@ pub fn run() {
 }
 </file>
 
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            ".write": "auth != null && $dmId.contains(auth.uid)",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
+}
+</file>
+
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -7503,94 +7594,6 @@ if (typeof window !== 'undefined') {
   window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
   window.copySystemDiagnosticReport = copySystemDiagnosticReport;
   window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
-}
-</file>
-
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".write": "auth != null && $dmId.contains(auth.uid)",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    }
-  }
 }
 </file>
 
@@ -12398,12 +12401,13 @@ async function handleUploadFile(request, env) {
     const arrayBuffer = await file.arrayBuffer();
     const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const folder = formData.get('folder') || '';
+    const serverId = formData.get('serverId') || '';
     if (folder && folder.includes('..')) {
       return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder };
+    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId };
 
     await env.FILES.put(key, arrayBuffer, {
       metadata: meta,
@@ -12544,7 +12548,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        if (serverId) {
+        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認
+        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
@@ -20878,8 +20883,8 @@ window.copyDebugText = copyDebugText;
 
 // ファイルアップローダー
 function checkFileAllowed(file) { return _checkFileAllowed(file); }
-function uploadToExternalService(file, onProgress, _folder) {
-  return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder);
+function uploadToExternalService(file, onProgress, _folder, _serverId = currentServerId) {
+  return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder, _serverId);
 }
 
 // === グローバル状態変数 ===
@@ -31429,22 +31434,33 @@ function renderMentionPopup() {
   mentionPopup.innerHTML = "";
   mentionPopup.classList.remove("hidden");
 
-  const serverMemberIds = currentServerData?.joinedUsers || [];
-  let users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
+  let users = [];
+  if (currentDmId && currentDmParticipant) {
+    // DM環境では通話/会話相手を直接候補に設定
+    users = [{
+      id: currentDmParticipant.uid,
+      nickname: currentDmParticipant.nickname || 'ユーザー',
+      avatarUrl: currentDmParticipant.avatarUrl || ''
+    }];
+    mentionUsers = users;
+  } else {
+    const serverMemberIds = currentServerData?.joinedUsers || [];
+    users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
 
-  // 最近メンションした順に並び替え
-  const recent = getRecentlyMentioned();
-  users.sort((a, b) => {
-    const idxA = recent.indexOf(a.nickname);
-    const idxB = recent.indexOf(b.nickname);
-    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-    if (idxA !== -1) return -1;
-    if (idxB !== -1) return 1;
-    return a.nickname.localeCompare(b.nickname);
-  });
+    // 最近メンションした順に並び替え
+    const recent = getRecentlyMentioned();
+    users.sort((a, b) => {
+      const idxA = recent.indexOf(a.nickname);
+      const idxB = recent.indexOf(b.nickname);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.nickname.localeCompare(b.nickname);
+    });
 
-  // 先頭に @all を追加
-  mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+    // 先頭に @all を追加
+    mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+  }
 
   // 絞り込み
   if (mentionSearchString) {
@@ -31514,7 +31530,7 @@ function selectMention(nickname) {
 }
 
 function openMentionPopup(searchStr = "") {
-  if (!currentRoomId) return;
+  if (!currentRoomId && !currentDmId) return; // DM時もポップアップを開く
   isMentionPopupOpen = true;
   mentionSearchString = searchStr;
   renderMentionPopup();
@@ -37929,6 +37945,12 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    // -1. ステメ絵文字ピッカー
+    const statusEmojiPopover = document.getElementById('statusEmojiPopover');
+    if (statusEmojiPopover && statusEmojiPopover.style.display !== 'none') {
+      statusEmojiPopover.style.display = 'none';
+      return;
+    }
     // 0. 受信ボックスポップオーバー
     const pcNotif = document.getElementById('pcNotifModal');
     if (pcNotif && !pcNotif.classList.contains('hidden') && pcNotif.style.display !== 'none') {
@@ -38051,7 +38073,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.86",
+  "version": "1.1.87",
   "force": false
 }
 </file>
@@ -38060,7 +38082,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.86",
+  "version": "1.1.87",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

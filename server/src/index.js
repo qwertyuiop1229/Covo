@@ -720,6 +720,22 @@ async function handleSendNotification(request, env) {
                 const tokens = userData.fields.fcmTokens.arrayValue?.values || [];
                 const invalidTokens = [];
 
+                // E2EE暗号化テキストが渡された場合のサニタイズ（OS通知バーでの暗号文露出防止）
+                let safeTitle = String(title || 'Covo');
+                let safeBody = String(body || '新しいメッセージがあります');
+
+                if (safeBody.includes('enc::v') || safeBody.startsWith('enc::')) {
+                  if (safeBody.includes(': enc::')) {
+                    const senderPrefix = safeBody.split(': enc::')[0];
+                    safeBody = `${senderPrefix}: 新しいメッセージがあります`;
+                  } else {
+                    safeBody = '新しいメッセージがあります';
+                  }
+                }
+                if (safeTitle.includes('enc::v') || safeTitle.startsWith('enc::')) {
+                  safeTitle = 'Covo';
+                }
+
                 for (const t of tokens) {
                     const tokenStr = t.stringValue;
                     
@@ -737,8 +753,8 @@ async function handleSendNotification(request, env) {
                                 token: tokenStr,
                                 // data フィールド: SW が受信して処理する
                                 data: {
-                                    title: title,
-                                    body: body,
+                                    title: safeTitle,
+                                    body: safeBody,
                                     roomId: roomId || "",
                                     senderId: senderId || "",
                                     messageId: messageId || "",
@@ -748,8 +764,8 @@ async function handleSendNotification(request, env) {
                                 android: {
                                     priority: "high",
                                     notification: {
-                                        title: title,
-                                        body: body,
+                                        title: safeTitle,
+                                        body: safeBody,
                                         channel_id: "covo_messages",
                                         notification_priority: "PRIORITY_HIGH",
                                         default_sound: true,
@@ -767,15 +783,15 @@ async function handleSendNotification(request, env) {
                                         aps: {
                                             "content-available": 1,
                                             alert: {
-                                                title: title,
-                                                body: body
+                                                title: safeTitle,
+                                                body: safeBody
                                             },
                                             sound: "default",
                                             badge: 1
                                         }
                                     }
                                 },
-                                    // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起動（二重表示を防ぐため data 駆動）
+                                // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起動（二重表示を防ぐため data 駆動）
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"

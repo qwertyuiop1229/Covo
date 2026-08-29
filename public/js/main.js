@@ -708,8 +708,6 @@ function initializeFirebase() {
           // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
           if (isAdmin || isListAdmin) {
             if (adminPanelContainer) adminPanelContainer.classList.remove("hidden");
-            const snavAdmin = document.getElementById("snav-admin-container");
-            if (snavAdmin) snavAdmin.classList.remove("hidden");
             const mobileAdminSec = document.getElementById("mobileAdminRowSection");
             if (mobileAdminSec) {
               mobileAdminSec.style.display = "";
@@ -717,8 +715,6 @@ function initializeFirebase() {
             }
           } else {
             if (adminPanelContainer) adminPanelContainer.classList.add("hidden");
-            const snavAdmin = document.getElementById("snav-admin-container");
-            if (snavAdmin) snavAdmin.classList.add("hidden");
             const mobileAdminSec = document.getElementById("mobileAdminRowSection");
             if (mobileAdminSec) {
               mobileAdminSec.style.display = "none";
@@ -1644,10 +1640,8 @@ window.updateAccountSecurityUI = function (user) {
   // 管理者による10分間パスワード変更バイパスの確認
   window._adminBypassActive = false;
   window._adminBypassMinsLeft = 0;
-  const adminBypassBanner = document.getElementById('adminBypassNoticeBanner');
-  const mobileAdminBypassBanner = document.getElementById('mobileAdminBypassNoticeBanner');
-  const adminBypassTimer = document.getElementById('adminBypassTimerText');
-  const mobileAdminBypassTimer = document.getElementById('mobileAdminBypassTimerText');
+  const adminBypassBannerModal = document.getElementById('adminBypassNoticeBannerModal');
+  const adminBypassTimerModal = document.getElementById('adminBypassTimerTextModal');
   const adminBypassBadge = document.getElementById('adminBypassBadge');
   const mobileAdminBypassBadge = document.getElementById('mobileAdminBypassBadge');
   
@@ -1660,16 +1654,13 @@ window.updateAccountSecurityUI = function (user) {
           window._adminBypassActive = true;
           const minsLeft = Math.ceil((d.expiresAt - Date.now()) / 60000);
           window._adminBypassMinsLeft = minsLeft;
-          if (adminBypassBanner) adminBypassBanner.classList.remove('hidden');
-          if (mobileAdminBypassBanner) mobileAdminBypassBanner.classList.remove('hidden');
+          if (adminBypassBannerModal) adminBypassBannerModal.classList.remove('hidden');
           if (adminBypassBadge) adminBypassBadge.classList.remove('hidden');
           if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.remove('hidden');
-          if (adminBypassTimer) adminBypassTimer.textContent = `残り ${minsLeft}分`;
-          if (mobileAdminBypassTimer) mobileAdminBypassTimer.textContent = `残り ${minsLeft}分`;
-          if (currPwdRow) currPwdRow.style.display = 'none'; // 現在のパスワード不要！
+          if (adminBypassTimerModal) adminBypassTimerModal.textContent = `残り ${minsLeft}分`;
+          if (currPwdRow) currPwdRow.style.display = 'none';
         } else {
-          if (adminBypassBanner) adminBypassBanner.classList.add('hidden');
-          if (mobileAdminBypassBanner) mobileAdminBypassBanner.classList.add('hidden');
+          if (adminBypassBannerModal) adminBypassBannerModal.classList.add('hidden');
           if (adminBypassBadge) adminBypassBadge.classList.add('hidden');
           if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.add('hidden');
         }

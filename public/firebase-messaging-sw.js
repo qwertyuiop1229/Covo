@@ -126,9 +126,20 @@ messaging.onBackgroundMessage((payload) => {
     body  = payload.notification.body  || body;
   }
 
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない）
-  if (typeof body  === 'string' && body.indexOf('enc::v')  === 0) body  = '新しいメッセージがあります';
-  if (typeof title === 'string' && title.indexOf('enc::v') === 0) title = 'Covo';
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::')) {
+        const senderPart = body.split(': enc::')[0];
+        body = `${senderPart}: 新しいメッセージがあります`;
+      } else {
+        body = '新しいメッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
+    title = 'Covo';
+  }
 
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
