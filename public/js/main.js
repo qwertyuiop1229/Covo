@@ -825,11 +825,30 @@ function initializeFirebase() {
 
 
 
-          if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
-            userNickname = userProfileSnap.data().nickname;
-            userAvatarUrl = userProfileSnap.data().avatarUrl || null;
+          let initialNickname = null;
+          let initialAvatarUrl = null;
 
-            // ★ 既存ユーザーのマイグレーション：ログイン時に必ずemailをルートに保存
+          if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
+            initialNickname = userProfileSnap.data().nickname;
+            initialAvatarUrl = userProfileSnap.data().avatarUrl || null;
+          } else if (user.displayName) {
+            // Googleログイン等の場合、Googleの名前・アイコンを自動取得して初期プロファイルを自動生成
+            initialNickname = user.displayName.slice(0, 20);
+            initialAvatarUrl = user.photoURL || null;
+
+            const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+            await setDoc(profileDocRef, {
+              nickname: initialNickname,
+              avatarUrl: initialAvatarUrl,
+              createdAt: serverTimestamp()
+            }, { merge: true }).catch(() => {});
+          }
+
+          if (initialNickname) {
+            userNickname = initialNickname;
+            userAvatarUrl = initialAvatarUrl;
+
+            // ルートの users/{uid} にも確実に保存
             const userRef = doc(db, `artifacts/${appId}/users`, userId);
             setDoc(userRef, {
               email: user.email,
@@ -1095,17 +1114,27 @@ if (googleAuthBtn) {
           throw new Error("デスクトップ認証情報の取得に失敗しました。");
         }
 
-        // 取得したクレデンシャルで Firebase Auth にサインイン
         const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
         await signInWithCredential(auth, credential);
         console.log("[Auth] Windows版 Googleログインに成功しました！");
       } else {
-        // Web版 (ブラウザ / PWA): ポップアップを開かず、現在のタブ内で直接リダイレクトしてログイン
-        console.log("[Auth] Web版: 同一画面でのGoogleリダイレクトログインを開始します...");
+        // Web版: signInWithPopup を使用 (authDomain: firebaseapp.com により400エラーとセッション消失を完全防止)
+        console.log("[Auth] Web版: Googleログインを開始します...");
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: 'select_account' });
-        await signInWithRedirect(auth, provider);
-        return;
+        
+        try {
+          const result = await signInWithPopup(auth, provider);
+          console.log("[Auth] Google popup ログイン成功:", result.user.email);
+        } catch (popupErr) {
+          // ブラウザでポップアップがブロックされた場合のみリダイレクトにフォールバック
+          if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
+            console.log("[Auth] ポップアップ制限を検知。リダイレクト方式で再試行します...");
+            await signInWithRedirect(auth, provider);
+            return;
+          }
+          throw popupErr;
+        }
       }
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
