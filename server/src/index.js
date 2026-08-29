@@ -949,12 +949,13 @@ async function handleUploadFile(request, env) {
     const arrayBuffer = await file.arrayBuffer();
     const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const folder = formData.get('folder') || '';
+    const serverId = formData.get('serverId') || '';
     if (folder && folder.includes('..')) {
       return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder };
+    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId };
 
     await env.FILES.put(key, arrayBuffer, {
       metadata: meta,
@@ -1095,7 +1096,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        if (serverId) {
+        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認
+        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }

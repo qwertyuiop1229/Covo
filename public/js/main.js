@@ -376,8 +376,8 @@ window.copyDebugText = copyDebugText;
 
 // ファイルアップローダー
 function checkFileAllowed(file) { return _checkFileAllowed(file); }
-function uploadToExternalService(file, onProgress, _folder) {
-  return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder);
+function uploadToExternalService(file, onProgress, _folder, _serverId = currentServerId) {
+  return _uploadToExternalService(file, auth, userId, WORKER_BASE_URL, onProgress, _folder, _serverId);
 }
 
 // === グローバル状態変数 ===
@@ -10927,22 +10927,33 @@ function renderMentionPopup() {
   mentionPopup.innerHTML = "";
   mentionPopup.classList.remove("hidden");
 
-  const serverMemberIds = currentServerData?.joinedUsers || [];
-  let users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
+  let users = [];
+  if (currentDmId && currentDmParticipant) {
+    // DM環境では通話/会話相手を直接候補に設定
+    users = [{
+      id: currentDmParticipant.uid,
+      nickname: currentDmParticipant.nickname || 'ユーザー',
+      avatarUrl: currentDmParticipant.avatarUrl || ''
+    }];
+    mentionUsers = users;
+  } else {
+    const serverMemberIds = currentServerData?.joinedUsers || [];
+    users = cachedUsers.filter(u => u.id !== userId && serverMemberIds.includes(u.id));
 
-  // 最近メンションした順に並び替え
-  const recent = getRecentlyMentioned();
-  users.sort((a, b) => {
-    const idxA = recent.indexOf(a.nickname);
-    const idxB = recent.indexOf(b.nickname);
-    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-    if (idxA !== -1) return -1;
-    if (idxB !== -1) return 1;
-    return a.nickname.localeCompare(b.nickname);
-  });
+    // 最近メンションした順に並び替え
+    const recent = getRecentlyMentioned();
+    users.sort((a, b) => {
+      const idxA = recent.indexOf(a.nickname);
+      const idxB = recent.indexOf(b.nickname);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.nickname.localeCompare(b.nickname);
+    });
 
-  // 先頭に @all を追加
-  mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+    // 先頭に @all を追加
+    mentionUsers = [{ id: 'all', nickname: 'all', desc: '全員に通知' }, ...users];
+  }
 
   // 絞り込み
   if (mentionSearchString) {
@@ -11012,7 +11023,7 @@ function selectMention(nickname) {
 }
 
 function openMentionPopup(searchStr = "") {
-  if (!currentRoomId) return;
+  if (!currentRoomId && !currentDmId) return; // DM時もポップアップを開く
   isMentionPopupOpen = true;
   mentionSearchString = searchStr;
   renderMentionPopup();
@@ -17427,6 +17438,12 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    // -1. ステメ絵文字ピッカー
+    const statusEmojiPopover = document.getElementById('statusEmojiPopover');
+    if (statusEmojiPopover && statusEmojiPopover.style.display !== 'none') {
+      statusEmojiPopover.style.display = 'none';
+      return;
+    }
     // 0. 受信ボックスポップオーバー
     const pcNotif = document.getElementById('pcNotifModal');
     if (pcNotif && !pcNotif.classList.contains('hidden') && pcNotif.style.display !== 'none') {

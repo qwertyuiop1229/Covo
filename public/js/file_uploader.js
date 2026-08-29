@@ -26,7 +26,7 @@ export function checkFileAllowed(file) {
  * Cloudflare Worker (KV) へファイルをアップロードします。
  * (main.jsのグローバル変数を引数として受け取る内部用関数)
  */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder) {
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
   return new Promise(async (resolve, reject) => {
     let idToken = "";
     try {
@@ -42,6 +42,9 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     fd.append('idToken', idToken);
     if (_folder) {
       fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
     }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
