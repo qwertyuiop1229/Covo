@@ -6612,6 +6612,10 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     console.warn('[E2EE] DM key init error:', e);
   }
 
+if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
+
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
 
@@ -6884,6 +6888,8 @@ window.openDiscoverView = function () {
 
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
   if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
@@ -9382,73 +9388,106 @@ async function loadOlderMessages() {
     }
   };
 
+  const mergeAndRender = async (docs) => {
+    if (!docs || docs.length === 0) return false;
+    await LocalStore.upsertMessagesBatch(docs);
+    await decryptInPlace(docs);
+
+    allLoadedMessages = [...docs, ...allLoadedMessages];
+    const seen = new Set();
+    allLoadedMessages = allLoadedMessages.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+
+    renderMessagesWithReadReceipts();
+    return true;
+  };
+
   try {
     const oldestMessage = allLoadedMessages[0];
-    const rtdbTime = getMsgTimestamp(oldestMessage);
+    const oldestTime = getMsgTimestamp(oldestMessage);
 
     // 1. まず IndexedDB (ローカルDB) から過去ログを探索
-    const localOlder = await LocalStore.getMessages(chId, rtdbTime, 20);
+    const localOlder = await LocalStore.getMessages(chId, oldestTime, 20);
     if (localOlder && localOlder.length > 0) {
-      await decryptInPlace(localOlder);
-      allLoadedMessages = [...localOlder, ...allLoadedMessages];
-      const seen = new Set();
-      allLoadedMessages = allLoadedMessages.filter(m => {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-      });
-      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      lastMessagesData = [...allLoadedMessages];
-      messagesIndexMap = {};
-      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-      renderMessagesWithReadReceipts();
+      await mergeAndRender(localOlder);
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
       return;
     }
 
-    // 2. ローカルに無い場合のみ RTDB から過去ログを取得
-    const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
-    const messagesRef = ref(rtdb, basePath);
-    const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(rtdbTime, oldestMessage.id), limitToLast(21));
-    const snapshot = await get(q);
+    // 2. ローカルに無い場合、RTDB から過去ログを取得
+    let fetchedFromRtdb = false;
+    try {
+      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+      const messagesRef = ref(rtdb, basePath);
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(21));
+      const snapshot = await get(q);
 
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
-      docs = docs.filter(d => d.id !== oldestMessage.id);
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
+        docs = docs.filter(d => d.id !== oldestMessage.id);
 
-      if (docs.length > 0) {
-        await LocalStore.upsertMessagesBatch(docs);
-        await decryptInPlace(docs);
-
-        allLoadedMessages = [...docs, ...allLoadedMessages];
-        const seen = new Set();
-        allLoadedMessages = allLoadedMessages.filter(m => {
-          if (seen.has(m.id)) return false;
-          seen.add(m.id);
-          return true;
-        });
-        allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-        lastMessagesData = [...allLoadedMessages];
-        messagesIndexMap = {};
-        lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
-        renderMessagesWithReadReceipts();
-        rtdbMessagesLimit += docs.length;
+        if (docs.length > 0) {
+          await mergeAndRender(docs);
+          rtdbMessagesLimit += docs.length;
+          fetchedFromRtdb = true;
+        }
       }
-      if (docs.length < 20) {
-        hasMoreOlderMessages = false;
-        showTerminalBanner();
-      }
-    } else {
-      hasMoreOlderMessages = false;
-      showTerminalBanner();
+    } catch (rtdbErr) {
+      console.warn('[loadOlderMessages] RTDB fetch warning:', rtdbErr);
     }
+
+    if (fetchedFromRtdb) {
+      isLoadingOlderMessages = false;
+      if (spinner) spinner.style.display = 'none';
+      allowPagination = true;
+      return;
+    }
+
+    // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から取得
+    let fetchedFromFirestore = false;
+    if (currentServerId && currentRoomId) {
+      try {
+        const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+        const qFs = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestMessage.timestamp || oldestTime), fsLimit(20));
+        const fsSnap = await getDocs(qFs);
+        if (!fsSnap.empty) {
+          const fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
+          fsDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+          await mergeAndRender(fsDocs);
+          fetchedFromFirestore = true;
+        }
+      } catch (fsErr) {
+        console.warn('[loadOlderMessages] Firestore fetch warning:', fsErr);
+      }
+    }
+
+    if (fetchedFromFirestore) {
+      isLoadingOlderMessages = false;
+      if (spinner) spinner.style.display = 'none';
+      allowPagination = true;
+      return;
+    }
+
+    // 4. サーバー上にもない場合、オンラインの同室メンバーへ P2P 過去ログ補完を要求
+    requestP2PLogBackfill(currentServerId ? 'server' : 'dm', currentServerId ? currentRoomId : currentDmId, oldestTime);
+
+    // すべてのソースに過去ログがない場合のみ終端バナーを表示
+    hasMoreOlderMessages = false;
+    showTerminalBanner();
+
   } catch (e) {
     console.error("Older messages load error", e);
   }
