@@ -1949,6 +1949,45 @@ tokio = { version = "1", features = ["time"] }
 }
 </file>
 
+<file path="package.json">
+{
+  "name": "simplechat",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tauri": "tauri",
+    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
+    "test:web": "firebase serve --only hosting",
+    "test:win": "tauri dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qwertyuiop1229/simplechat.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/qwertyuiop1229/simplechat/issues"
+  },
+  "homepage": "https://github.com/qwertyuiop1229/simplechat#readme",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@tauri-apps/cli": "^2.10.1",
+    "firebase": "^12.14.0",
+    "jest": "^30.4.2",
+    "tailwindcss": "^3.4.19"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.1.0",
+    "jimp": "^1.6.1"
+  }
+}
+</file>
+
 <file path="README.md">
 # Covo プロジェクト構成メモ
 
@@ -3051,45 +3090,6 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
 }
 </file>
 
-<file path="package.json">
-{
-  "name": "simplechat",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "tauri": "tauri",
-    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
-    "test:web": "firebase serve --only hosting",
-    "test:win": "tauri dev"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/qwertyuiop1229/simplechat.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/qwertyuiop1229/simplechat/issues"
-  },
-  "homepage": "https://github.com/qwertyuiop1229/simplechat#readme",
-  "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.1",
-    "@tauri-apps/cli": "^2.10.1",
-    "firebase": "^12.14.0",
-    "jest": "^30.4.2",
-    "tailwindcss": "^3.4.19"
-  },
-  "dependencies": {
-    "firebase-admin": "^14.1.0",
-    "jimp": "^1.6.1"
-  }
-}
-</file>
-
 <file path="tailwind.config.js">
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -4153,6 +4153,99 @@ if (typeof window !== 'undefined') {
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
+</file>
+
+<file path="public/js/ui_helpers.js">
+/**
+ * UI補助機能 (ui_helpers.js)
+ * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
+ */
+
+/**
+ * 画面上にトースト（通知ポップアップ）を表示
+ * @param {string} msg - 表示するメッセージ
+ * @param {string} type - "info", "success", "error"
+ */
+export function alertMessage(msg, type = "info") {
+  const stack = document.getElementById("notifStack");
+  if (!stack) return;
+  const box = document.createElement("div");
+  let colorClass = "bg-gray-800 text-white";
+  if (type === "error") colorClass = "bg-red-600 text-white";
+  else if (type === "success") colorClass = "bg-emerald-600 text-white";
+  
+  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
+  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+  
+  let icon = '<i class="fas fa-info-circle"></i>';
+  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
+  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
+  
+  box.innerHTML = `${icon}<span>${msg}</span>`;
+  stack.appendChild(box);
+  setTimeout(() => {
+    box.style.animation = "fadeIn 0.2s ease reverse forwards";
+    setTimeout(() => box.remove(), 200);
+  }, 2800);
+}
+
+/**
+ * アバターや画像を拡大表示（ライトボックス）
+ * @param {string} url - 拡大表示する画像のURL
+ */
+export function openAvatarLightbox(url) {
+  const lb = document.getElementById("avatarLightbox");
+  const img = document.getElementById("avatarLightboxImg");
+  if (lb && img) {
+    img.src = url;
+    lb.style.display = "flex";
+  }
+}
+
+/**
+ * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
+ */
+let audioCtx = null;
+export function playNotificationSound() {
+  try {
+    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    if (!soundEnabled || !notifEnabled) return;
+
+    if (!audioCtx || audioCtx.state === 'closed') {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const play = () => {
+      const now = audioCtx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.5);
+      });
+    };
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
+  } catch (e) { }
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.alertMessage = alertMessage;
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.playNotificationSound = playNotificationSound;
+}
 </file>
 
 <file path="public/firebase-messaging-sw.js">
@@ -5512,172 +5605,6 @@ self.addEventListener('notificationclick', (event) => {
     }
 </file>
 
-<file path="public/js/ui_helpers.js">
-/**
- * UI補助機能 (ui_helpers.js)
- * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
- */
-
-/**
- * 画面上にトースト（通知ポップアップ）を表示
- * @param {string} msg - 表示するメッセージ
- * @param {string} type - "info", "success", "error"
- */
-export function alertMessage(msg, type = "info") {
-  const stack = document.getElementById("notifStack");
-  if (!stack) return;
-  const box = document.createElement("div");
-  let colorClass = "bg-gray-800 text-white";
-  if (type === "error") colorClass = "bg-red-600 text-white";
-  else if (type === "success") colorClass = "bg-emerald-600 text-white";
-  
-  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
-  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  
-  let icon = '<i class="fas fa-info-circle"></i>';
-  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
-  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
-  
-  box.innerHTML = `${icon}<span>${msg}</span>`;
-  stack.appendChild(box);
-  setTimeout(() => {
-    box.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => box.remove(), 200);
-  }, 2800);
-}
-
-/**
- * アバターや画像を拡大表示（ライトボックス）
- * @param {string} url - 拡大表示する画像のURL
- */
-export function openAvatarLightbox(url) {
-  const lb = document.getElementById("avatarLightbox");
-  const img = document.getElementById("avatarLightboxImg");
-  if (lb && img) {
-    img.src = url;
-    lb.style.display = "flex";
-  }
-}
-
-/**
- * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
- */
-let audioCtx = null;
-export function playNotificationSound() {
-  try {
-    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (!soundEnabled || !notifEnabled) return;
-
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const play = () => {
-      const now = audioCtx.currentTime;
-      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
-      notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + i * 0.09);
-        gain.gain.setValueAtTime(0, now + i * 0.09);
-        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(now + i * 0.09);
-        osc.stop(now + i * 0.09 + 0.5);
-      });
-    };
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(play).catch(() => {});
-    } else {
-      play();
-    }
-  } catch (e) { }
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.alertMessage = alertMessage;
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.playNotificationSound = playNotificationSound;
-}
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-
-/**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
-    return false;
-  }
-  return true;
-}
-
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
 <file path="public/js/utils.js">
 /**
  * ユーティリティ関数群 (utils.js)
@@ -5860,6 +5787,79 @@ if (typeof window !== 'undefined') {
   window._execCopyFallback = _execCopyFallback;
   window.emailInitial = emailInitial;
   window.processHeicFile = processHeicFile;
+}
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+/**
+ * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
 }
 </file>
 
@@ -6921,6 +6921,95 @@ pub fn run() {
 }
 </file>
 
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "false"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            ".write": "auth != null && $dmId.contains(auth.uid)",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
+}
+</file>
+
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -7520,92 +7609,222 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "false"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".write": "auth != null && $dmId.contains(auth.uid)",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafe = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    if (!isSafe) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  
+  // 1. コードブロック退避
+  const codeBlocks = [];
+  let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
+    return id;
+  });
+
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+
+    let cleanUrl = rawUrl;
+    let trailing = "";
+
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
       }
     }
-  }
+
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    if (!cleanUrl) return rawUrl;
+
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  
+  // 5. 書式装飾
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+
+  // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+
+  return escapedText;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
 }
 </file>
 
@@ -8147,225 +8366,6 @@ if (typeof window !== 'undefined') {
   window.startNewLocation = startNewLocation;
   window.submitGuess = submitGuess;
   window.closeResultOverlay = closeResultOverlay;
-}
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafe = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    if (!isSafe) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  
-  // 1. コードブロック退避
-  const codeBlocks = [];
-  let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
-    return id;
-  });
-
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
-    }
-
-    let cleanUrl = rawUrl;
-    let trailing = "";
-
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
-      }
-    }
-
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (!cleanUrl) return rawUrl;
-
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
-    }
-
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  
-  // 5. 書式装飾
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-
-  // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-
-  return escapedText;
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
 }
 </file>
 
@@ -11686,49 +11686,106 @@ service cloud.firestore {
 
       // 4. P2P音声通話シグナリング
       match /calls/{callId} {
-        allow read, delete: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid);
+        allow get: if isAuthenticated() &&
+          (
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+          );
+        allow list: if isAuthenticated() &&
+          (
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid)
+          );
+        allow delete: if isAuthenticated() &&
+          (
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+          );
         allow update: if isAuthenticated() &&
-          (resource.data.caller.uid == request.auth.uid ||
-           resource.data.callee.uid == request.auth.uid ||
-           resource.data.calleeUid == request.auth.uid) &&
+          (
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+          ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
         allow create: if isAuthenticated() &&
+          'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
           request.resource.data.caller.uid == request.auth.uid;
+
         match /callerCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
+            );
         }
         match /calleeCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid);
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
+            );
         }
       }
 
       // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
       match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid);
+        allow get: if isAuthenticated() &&
+          (
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+          );
+        allow list: if isAuthenticated() &&
+          (
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
+          );
+        allow delete: if isAuthenticated() &&
+          (
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+          );
         allow update: if isAuthenticated() &&
-          (resource.data.sender.uid == request.auth.uid ||
-           resource.data.receiverUid == request.auth.uid) &&
+          (
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+          ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
         allow create: if isAuthenticated() &&
+          'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
           request.resource.data.sender.uid == request.auth.uid;
+
         match /senderCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
+              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
+            );
         }
         match /receiverCandidates/{candId} {
-          allow read, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid);
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
+              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
+            );
         }
       }
 
@@ -13474,6 +13531,10 @@ async function handleSetOffline(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
     }
 
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
+    }
+
     const projectId = env.FIREBASE_PROJECT_ID;
     const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
     const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
@@ -13761,7 +13822,8 @@ async function handleD1Api(request, env, url) {
         }
 
         if (type === "leave") {
-          await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, userId, appId).run();
+          const targetUserId = verifiedUser.uid; // 本人のみ退出可能（IDOR防止）
+          await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, targetUserId, appId).run();
           await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
@@ -13775,22 +13837,37 @@ async function handleD1Api(request, env, url) {
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
 
-        if (type === "stamp") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(stampId, serverId || "general", appId, stampName || "", stampUrl || "", verifiedUser.uid, Date.now()).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
-        }
+        if (type === "stamp" || type === "stampGroup" || type === "inviteCode") {
+          if (serverId) {
+            const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+            if (curServer) {
+              let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+              const isOwner = curServer.created_by === verifiedUser.uid;
+              const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+              const isGlobal = await isD1Admin(appId, verifiedUser, env);
+              if (!isOwner && !isSvAdmin && !isGlobal) {
+                return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+              }
+            }
+          }
 
-        if (type === "stampGroup") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_stamp_groups (group_id, server_id, app_id, group_data, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(groupId, serverId, appId, JSON.stringify(groupData), Date.now()).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
-        }
+          if (type === "stamp") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .bind(stampId, serverId || "general", appId, stampName || "", stampUrl || "", verifiedUser.uid, Date.now()).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
 
-        if (type === "inviteCode") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_invite_codes (code, server_id, app_id, created_by, created_at, expires_at, uses, max_uses, disabled, invite_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(code, serverId, appId, verifiedUser.uid, Date.now(), inviteData.expiresAt || null, inviteData.uses || 0, inviteData.maxUses || 0, inviteData.disabled ? 1 : 0, JSON.stringify(inviteData)).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          if (type === "stampGroup") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_stamp_groups (group_id, server_id, app_id, group_data, created_at) VALUES (?, ?, ?, ?, ?)")
+              .bind(groupId, serverId, appId, JSON.stringify(groupData), Date.now()).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
+
+          if (type === "inviteCode") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_invite_codes (code, server_id, app_id, created_by, created_at, expires_at, uses, max_uses, disabled, invite_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+              .bind(code, serverId, appId, verifiedUser.uid, Date.now(), inviteData?.expiresAt || null, inviteData?.uses || 0, inviteData?.maxUses || 0, inviteData?.disabled ? 1 : 0, JSON.stringify(inviteData || {})).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
         }
 
         return new Response(JSON.stringify({ error: "Unknown action type" }), { status: 400, headers: d1Cors });
@@ -14012,7 +14089,7 @@ async function handleD1Api(request, env, url) {
         if (type === "add") {
           const text = data.text || "";
           const created_at = data.createdAt || Date.now();
-          const senderId = data.senderId || verifiedUser.uid;
+          const senderId = verifiedUser.uid; // 強制的に認証済みUIDに設定（なりすまし防止）
           const additionalData = { ...data };
           delete additionalData.text; delete additionalData.createdAt; delete additionalData.senderId;
           
@@ -20642,8 +20719,17 @@ function isTransientNetworkError(args) {
            str.includes('QUIC_PUBLIC_RESET') ||
            str.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
            str.includes('beforeinstallpromptevent.preventDefault') ||
+           str.includes('beforeinstallprompt') ||
            str.includes('WebChannel') ||
-           str.includes('FetchStream');
+           str.includes('FetchStream') ||
+           str.includes('disconnected port object') ||
+           str.includes('Extension context invalidated') ||
+           str.includes('appCheck/throttled') ||
+           str.includes('appCheck/initial-throttle') ||
+           str.includes('auth/popup-blocked') ||
+           str.includes('auth/popup-closed-by-user') ||
+           str.includes('auth/cancelled-popup-request') ||
+           str.includes('ResizeObserver loop');
   } catch (_) {
     return false;
   }
@@ -21111,9 +21197,9 @@ function initializeFirebase() {
         try {
           initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-            isTokenAutoRefreshEnabled: true
+            isTokenAutoRefreshEnabled: false
           });
-          console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+          console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
         } catch (e) {
           console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカーの可能性)", e);
         }
@@ -21551,23 +21637,26 @@ if (googleAuthBtn) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
-      // ポップアップ認証を優先（リダイレクトURIミスマッチエラーを防ぎ、素早く認証完了）
       try {
         await signInWithPopup(auth, provider);
       } catch (popupErr) {
-        if (popupErr.code === "auth/popup-blocked" && !isTauri) {
-          console.warn("[Auth] Popup blocked on Web, trying redirect fallback...");
-          await signInWithRedirect(auth, provider);
-          return;
+        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
+          if (!isTauri) {
+            console.log("[Auth] Popup blocked/cancelled on Web, falling back to redirect...");
+            await signInWithRedirect(auth, provider);
+            return;
+          }
         }
         throw popupErr;
       }
     } catch (err) {
-      console.error("[Auth] Google Sign-In Error:", err);
+      if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+        console.log("[Auth] Popup sign-in closed by user");
+        return;
+      }
+      console.warn("[Auth] Google Sign-In notice:", err.message || err);
       let msg = "Googleログインに失敗しました。";
-      if (err.code === "auth/popup-closed-by-user") {
-        msg = "Googleログインがキャンセルされました。";
-      } else if (err.code === "auth/account-exists-with-different-credential") {
+      if (err.code === "auth/account-exists-with-different-credential") {
         msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
       } else if (err.code === "auth/popup-blocked") {
         msg = isTauri
@@ -34307,19 +34396,21 @@ async function cleanupWebRtcDoc(colName, docId) {
     const { doc, deleteDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
     const docRef = doc(db, 'artifacts', appId, colName, docId);
 
-    // TuRNV候補（ICE Candidates）を削除
+    // 候補（ICE Candidates）を削除
     const subCols = colName === 'calls' ? ['callerCandidates', 'calleeCandidates'] : ['senderCandidates', 'receiverCandidates'];
     for (const sub of subCols) {
-      const candsSnap = await getDocs(collection(docRef, sub));
-      const deletePromises = [];
-      candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
-      await Promise.all(deletePromises);
+      try {
+        const candsSnap = await getDocs(collection(docRef, sub));
+        const deletePromises = [];
+        candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        await Promise.all(deletePromises);
+      } catch (_) {}
     }
 
     // 親ドキュメント自体を削除
-    await deleteDoc(docRef);
+    await deleteDoc(docRef).catch(() => {});
   } catch (e) {
-    console.warn(`[WebRTC Cleanup] Failed to cleanup ${colName}/${docId}:`, e);
+    // 相手側によって既に削除されている場合は正常フローとして扱う
   }
 }
 
@@ -34773,9 +34864,9 @@ function closeCallPicker() {
    - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
    - 通話用の peerConnection とは完全に別系統（衝突しない）
    ===================================================================== */
-const FS_CHUNK = 256 * 1024;          // 256KB チャンク（大きいほど少ない回数で速く送れる）
-const FS_BUFFER_HIGH = 16 * 1024 * 1024; // 送信バッファ上限 16MB（多く積めるほど速い）
-const FS_BUFFER_LOW = 4 * 1024 * 1024;   // ここまで減ったら再開（bufferedamountlow用）
+const FS_CHUNK = 64 * 1024;          // 64KB チャンク（WebRTC仕様・MTUに最適化）
+const FS_BUFFER_HIGH = 1024 * 1024;  // 送信バッファ上限 1MB（SCTPキュー溢れを防止）
+const FS_BUFFER_LOW = 256 * 1024;    // 256KBまで減ったら再開
 let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
 let _fsUnsub = null, _fsCandUnsub = null;
 let _fsRecv = null; // { name, type, size, received, chunks[] }
@@ -35225,32 +35316,48 @@ async function _fsSendFileData(file) {
         try { const m = JSON.parse(ev.data); if (m && m.__ack && _fsAckResolve) { const r = _fsAckResolve; _fsAckResolve = null; r(true); } } catch (e) { }
       }
     };
-    // 送信バッファが減ったら通知してもらう（setTimeoutポーリングより高速・低負荷）
+    // 送信バッファが減ったら通知してもらう（タイムアウト付きレースでデッドロック防止）
     _fsChannel.bufferedAmountLowThreshold = FS_BUFFER_LOW;
     const waitBufferLow = () => new Promise(resolve => {
-      if (_fsChannel.bufferedAmount <= FS_BUFFER_HIGH) return resolve();
-      const onLow = () => { _fsChannel.removeEventListener('bufferedamountlow', onLow); resolve(); };
+      if (!_fsChannel || _fsChannel.bufferedAmount <= FS_BUFFER_LOW) return resolve();
+      let timer = null;
+      const onLow = () => {
+        if (timer) clearTimeout(timer);
+        _fsChannel?.removeEventListener('bufferedamountlow', onLow);
+        resolve();
+      };
       _fsChannel.addEventListener('bufferedamountlow', onLow);
+      timer = setTimeout(onLow, 120); // 120msフォールバックタイムアウト
     });
 
     _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
     let offset = 0;
     if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
     const reader = file.stream().getReader();
-    let pending = null; // 前チャンクの端数を保持
     const sendSlice = async (buf) => {
+      if (!_fsChannel || _fsChannel.readyState !== 'open') throw new Error('DataChannel closed');
       if (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) await waitBufferLow();
-      _fsChannel.send(buf);
+      let retries = 0;
+      while (true) {
+        try {
+          _fsChannel.send(buf);
+          break;
+        } catch (sendErr) {
+          if (retries++ < 5) {
+            await new Promise(r => setTimeout(r, 60));
+          } else {
+            throw sendErr;
+          }
+        }
+      }
       offset += buf.byteLength;
       _fsUpdateProgress(Math.round(offset / file.size * 100));
     };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      // streamのチャンクをそのまま（または256KB単位で）送る
       let chunk = value; // Uint8Array
       for (let i = 0; i < chunk.length; i += FS_CHUNK) {
-        // subarrayはコピーを作らない（高速・省メモリ）。境界はsliceでバッファ確定
         const end = Math.min(i + FS_CHUNK, chunk.length);
         await sendSlice(chunk.subarray(i, end));
       }
@@ -38116,7 +38223,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.88",
+  "version": "1.1.89",
   "force": false
 }
 </file>
@@ -38125,7 +38232,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.88",
+  "version": "1.1.89",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

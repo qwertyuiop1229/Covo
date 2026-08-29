@@ -78,22 +78,68 @@ const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 
 function isTransientNetworkError(args) {
   try {
-    const str = Array.from(args).map(a => (a instanceof Error ? (a.message + ' ' + (a.stack || '')) : String(a))).join(' ');
-    return str.includes('QUIC_PROTOCOL_ERROR') ||
-           str.includes('QUIC_PUBLIC_RESET') ||
-           str.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
-           str.includes('beforeinstallpromptevent.preventDefault') ||
-           str.includes('beforeinstallprompt') ||
-           str.includes('WebChannel') ||
-           str.includes('FetchStream') ||
-           str.includes('disconnected port object') ||
-           str.includes('Extension context invalidated') ||
-           str.includes('appCheck/throttled') ||
-           str.includes('appCheck/initial-throttle') ||
-           str.includes('auth/popup-blocked') ||
-           str.includes('auth/popup-closed-by-user') ||
-           str.includes('auth/cancelled-popup-request') ||
-           str.includes('ResizeObserver loop');
+    const str = Array.from(args || []).map(a => {
+      if (!a) return '';
+      if (a instanceof Error) return `${a.message || ''} ${a.stack || ''}`;
+      if (typeof a === 'object') {
+        try { return JSON.stringify(a); } catch (_) { return String(a); }
+      }
+      return String(a);
+    }).join(' ').toLowerCase();
+
+    // Firebase App Check / reCAPTCHA の一時的スロットリング・503 エラー
+    if (
+      str.includes('appcheck') ||
+      str.includes('app-check') ||
+      str.includes('initial-throttle') ||
+      str.includes('throttled') ||
+      str.includes('fetch-throttle') ||
+      str.includes('fetch-status-error') ||
+      str.includes('recaptcha') ||
+      str.includes('503 error')
+    ) {
+      return true;
+    }
+
+    // ネットワーク瞬断・QUIC・HTTP2・FetchStream・接続一時エラー
+    if (
+      str.includes('quic_protocol_error') ||
+      str.includes('quic_public_reset') ||
+      str.includes('err_http2_protocol_error') ||
+      str.includes('webchannel') ||
+      str.includes('fetchstream') ||
+      str.includes('failed to fetch') ||
+      str.includes('networkerror') ||
+      str.includes('err_connection_refused') ||
+      str.includes('err_connection_reset') ||
+      str.includes('err_internet_disconnected')
+    ) {
+      return true;
+    }
+
+    // ブラウザ拡張機能・PWA インストール・ResizeObserver
+    if (
+      str.includes('chrome-extension://') ||
+      str.includes('moz-extension://') ||
+      str.includes('disconnected port') ||
+      str.includes('extension context invalidated') ||
+      str.includes('beforeinstallprompt') ||
+      str.includes('resizeobserver loop') ||
+      str.includes('script error.')
+    ) {
+      return true;
+    }
+
+    // Auth ポップアップの正常なユーザーキャンセル動作
+    if (
+      str.includes('auth/popup-blocked') ||
+      str.includes('auth/popup-closed-by-user') ||
+      str.includes('auth/cancelled-popup-request')
+    ) {
+      return true;
+    }
+
+    return false;
   } catch (_) {
     return false;
   }
@@ -120,12 +166,12 @@ function _createErrorSignature(type, message, stack) {
 
 function _reportTelemetryError(type, message, stack) {
   if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
+  if (isTransientNetworkError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
+
   _isReportingTelemetry = true;
   try {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
-    if (!msgStr || msgStr === '[object Object]' || msgStr.includes('ResizeObserver loop') || msgStr.includes('Script error.')) return;
-    // 外部拡張機能の無関係なエラーは除外
-    if (msgStr.includes('chrome-extension://') || msgStr.includes('Disconnected port') || msgStr.includes('beforeinstallprompt')) return;
+    if (!msgStr || msgStr === '[object Object]') return;
 
     const signature = _createErrorSignature(type, msgStr, stack);
     const now = Date.now();
@@ -220,6 +266,7 @@ window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
 window.addEventListener('error', (event) => {
+  if (isTransientNetworkError([event.error, event.message])) return;
   if (event.error) {
     _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
   } else if (event.message) {
@@ -229,6 +276,7 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
+  if (isTransientNetworkError([reason])) return;
   if (reason instanceof Error) {
     _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
   } else {
@@ -561,7 +609,7 @@ function initializeFirebase() {
         try {
           initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-            isTokenAutoRefreshEnabled: false
+            isTokenAutoRefreshEnabled: true
           });
           console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
         } catch (e) {
@@ -2008,10 +2056,12 @@ window.submitChangePassword = async function () {
       window._adminBypassActive = false;
       const reqRef = doc(db, `artifacts/${appId}/admin_recovery_requests`, user.uid);
       updateDoc(reqRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
-      const adminBypassBanner = document.getElementById('adminBypassNoticeBanner');
-      const mobileAdminBypassBanner = document.getElementById('mobileAdminBypassNoticeBanner');
-      if (adminBypassBanner) adminBypassBanner.classList.add('hidden');
-      if (mobileAdminBypassBanner) mobileAdminBypassBanner.classList.add('hidden');
+      const adminBypassBannerModal = document.getElementById('adminBypassNoticeBannerModal');
+      const adminBypassBadge = document.getElementById('adminBypassBadge');
+      const mobileAdminBypassBadge = document.getElementById('mobileAdminBypassBadge');
+      if (adminBypassBannerModal) adminBypassBannerModal.classList.add('hidden');
+      if (adminBypassBadge) adminBypassBadge.classList.add('hidden');
+      if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.add('hidden');
     }
 
     if (msg) {
@@ -7677,7 +7727,7 @@ window.saDeleteIndividualStamp = async function (targetServerId, groupId, isLega
       if (m) {
         const fileKey = m[1];
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1`;
+        const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
         fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
       }
     }
@@ -7713,10 +7763,38 @@ window.saDeleteGroup = async function (targetServerId, groupId, isLegacy) {
   if (!await showCustomConfirm("このスタンプを削除しますか？", "削除確認")) return;
   try {
     const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
-    await deleteDoc(doc(db, path));
+    const docRef = doc(db, path);
+    const snap = await getDoc(docRef);
+
+    // グループ配下の実体ファイル（KV）を抽出して完全削除
+    if (snap.exists()) {
+      const data = snap.data();
+      const urlsToDelete = [];
+      if (data.thumbnailUrl) urlsToDelete.push(data.thumbnailUrl);
+      if (data.url) urlsToDelete.push(data.url);
+      if (Array.isArray(data.stamps)) {
+        data.stamps.forEach(s => { if (s && s.url) urlsToDelete.push(s.url); });
+      }
+
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      for (const u of urlsToDelete) {
+        const m = u.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        if (m) {
+          const fileKey = m[1];
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
+          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+        }
+      }
+    }
+
+    await deleteDoc(docRef);
     alertMessage("削除しました", "success");
     await saLoadStamps(targetServerId);
-  } catch (e) { alertMessage("削除に失敗しました", "error"); }
+    if (typeof loadCurrentServerStamps === 'function' && targetServerId === currentServerId) loadCurrentServerStamps();
+  } catch (e) {
+    console.error(e);
+    alertMessage("削除に失敗しました", "error");
+  }
 };
 
 setTimeout(() => {

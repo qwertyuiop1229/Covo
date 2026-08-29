@@ -1829,6 +1829,9 @@ async function handleD1Api(request, env, url) {
 
           let mergedData = cur && cur.server_data ? JSON.parse(cur.server_data) : {};
           if (type === "create") {
+            if (cur) {
+              return new Response(JSON.stringify({ error: "Server ID already exists" }), { status: 409, headers: d1Cors });
+            }
             mergedData.serverAdmins = [verifiedUser.uid];
             mergedData.joinedUsers = [verifiedUser.uid];
           }
@@ -1877,7 +1880,7 @@ async function handleD1Api(request, env, url) {
             return new Response(JSON.stringify({ success: false, error: "Auth required" }), { status: 400, headers: d1Cors });
           }
           
-          await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, userId, appId, Date.now()).run();
+          await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, verifiedUser.uid, appId, Date.now()).run();
           await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
