@@ -199,31 +199,13 @@ service cloud.firestore {
 
       // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
-        allow get: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
+        allow get, list, delete: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
         allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
-        allow update, delete: if isAuthenticated() &&
-          (
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
+        allow update: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
         match /{subcollection}/{docId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) ||
-              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid) ||
-              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid)
-            );
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 
@@ -235,106 +217,47 @@ service cloud.firestore {
 
       // 4. P2P音声通話シグナリング
       match /calls/{callId} {
-        allow get: if isAuthenticated() &&
+        allow get, list, delete: if isAuthenticated() &&
           (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid)
-          );
-        allow delete: if isAuthenticated() &&
-          (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
         allow create: if isAuthenticated() &&
           'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
           request.resource.data.caller.uid == request.auth.uid;
 
-        match /callerCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
-            );
-        }
-        match /calleeCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid)
-            );
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 
       // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
       match /fileshares/{shareId} {
-        allow get: if isAuthenticated() &&
+        allow get, list, delete: if isAuthenticated() &&
           (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
-          );
-        allow list: if isAuthenticated() &&
-          (
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
-          );
-        allow delete: if isAuthenticated() &&
-          (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid)
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
         allow create: if isAuthenticated() &&
           'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
           request.resource.data.sender.uid == request.auth.uid;
 
-        match /senderCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
-            );
-        }
-        match /receiverCandidates/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (
-              !exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid)
-            );
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated();
         }
       }
 

@@ -14,34 +14,34 @@
         },
         "latestAnnouncement": {
           ".read": "auth != null",
-          ".write": "false"
+          ".write": "auth != null"
         },
         "servers": {
           "$serverId": {
-            ".read": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-            ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+            ".write": "auth != null",
             "members": {
               "$uid": {
-                ".write": "auth != null && auth.uid === $uid && !newData.exists()"
+                ".write": "auth != null && auth.uid === $uid"
               }
             },
             "rooms": {
               "$roomId": {
-                ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
                 "messages": {
                   ".indexOn": ["timestamp"],
                   "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())"
                   }
                 },
                 "typing": {
                   "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                    ".write": "auth != null && auth.uid === $uid"
                   }
                 },
                 "readReceipts": {
                   "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                    ".write": "auth != null && auth.uid === $uid"
                   }
                 }
               }

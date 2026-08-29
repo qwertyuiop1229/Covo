@@ -62,7 +62,8 @@ import {
   getMessaging,
   getToken,
   onMessage,
-  deleteToken
+  deleteToken,
+  isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
@@ -119,7 +120,25 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver
+    // ブラウザ環境非対応（FCM/WebPush）
+    if (
+      str.includes('unsupported-browser') ||
+      str.includes("this browser doesn't support the api") ||
+      str.includes('messaging/unsupported-browser')
+    ) {
+      return true;
+    }
+
+    // 正常な切断・権限移行
+    if (
+      str.includes('permission-denied') ||
+      str.includes('permission denied') ||
+      str.includes('missing or insufficient permissions')
+    ) {
+      return true;
+    }
+
+    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver・PWAバナー
     if (
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
@@ -131,8 +150,11 @@ function isTransientNetworkError(args) {
       str.includes('message port closed') ||
       str.includes('extension context invalidated') ||
       str.includes('beforeinstallprompt') ||
+      str.includes('beforeinstallpromptevent') ||
+      str.includes('banner not shown') ||
       str.includes('resizeobserver loop') ||
       str.includes('escape its sandboxing') ||
+      str.includes('sandboxing') ||
       str.includes('script error.')
     ) {
       return true;
@@ -654,12 +676,12 @@ function initializeFirebase() {
         }
       }).catch((err) => {
         console.error('[Auth] Google redirect result error:', err);
-        const authMsgEl = document.getElementById("authMessage");
-        if (authMsgEl) {
+        const authMsg = document.getElementById("authMessage");
+        if (authMsg) {
           if (err.code === "auth/account-exists-with-different-credential") {
-            authMsgEl.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+            authMsg.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
           } else if (err.message) {
-            authMsgEl.textContent = `Googleログインエラー: ${err.message}`;
+            authMsg.textContent = `Googleログインエラー: ${err.message}`;
           }
         }
       });
@@ -13653,6 +13675,7 @@ function subscribeToPinnedMessages(serverId, roomId) {
     currentPinnedMessages = pinned;
     renderPinnedMessages();
   }, (err) => {
+    if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
     console.warn("[PinnedMessages onSnapshot] error:", err);
   });
 }
@@ -13768,7 +13791,12 @@ let isPinnedMessagesExpanded = false;
 let isPinnedMessagesMinimized = false;
 
 function renderPinnedMessages() {
-  const pinnedMessages = currentPinnedMessages || [];
+  const loadedPinned = (allLoadedMessages || []).filter(m => m.isPinned);
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  loadedPinned.forEach(m => combinedMap.set(m.id, m));
+  const pinnedMessages = Array.from(combinedMap.values());
+  pinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
   pinnedMessagesArea.innerHTML = "";
 
   // 既存のフローティングアイコンを一旦取得
@@ -14650,6 +14678,7 @@ function initP2PLogSyncListener() {
         }
       });
     }, (err) => {
+      if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
       console.warn('[P2P LogSync] Listener warning:', err);
     });
   } catch (e) { }
@@ -17136,6 +17165,20 @@ async function initializeFCM() {
     console.log('🔔 [通知] デスクトップ版: ネイティブ通知システムを使用します');
     return;
   }
+
+  // ブラウザの Web Push / FCM サポート確認 (iOS Safari等の非同期例外を完全回避)
+  try {
+    if (typeof isSupported === 'function') {
+      const supported = await isSupported().catch(() => false);
+      if (!supported) {
+        console.log('📱 [通知] このブラウザ環境は Web Push (FCM) に対応していません');
+        return;
+      }
+    }
+  } catch (_) {
+    return;
+  }
+
   fcmInitialized = true;
   try {
     // Service Worker を明示的に登録
@@ -17291,6 +17334,13 @@ async function initializeFCM() {
 // サーバーが push を送らなくする（SW がそもそも呼ばれない = 確実にオフになる）
 async function setBrowserPushEnabled(enabled) {
   if (isTauri) return;
+  try {
+    if (typeof isSupported === 'function') {
+      const supported = await isSupported().catch(() => false);
+      if (!supported) return;
+    }
+  } catch (_) { return; }
+
   if (enabled) {
     if ('Notification' in window && Notification.permission === 'default') {
       await Notification.requestPermission();
@@ -17834,6 +17884,11 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'feedbackModal') { window.closeFeedbackModal(); return; }
       if (topModal.id === 'pastVersionsModal') { window.closePastVersionsModal(); return; }
       if (topModal.id === 'inAppBrowserModal') { window.closeInAppBrowser(); return; }
+      if (topModal.id === 'userProfileModal') { window.closeUserProfileModal(); return; }
+      if (topModal.id === 'customStatusModal') { window.closeCustomStatusModal(); return; }
+      if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
+      if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
+      if (topModal.id === 'recoveryKeyManagerModal') { window.closeRecoveryKeyManagerModal(); return; }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
     }
