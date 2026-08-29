@@ -83,8 +83,17 @@ function isTransientNetworkError(args) {
            str.includes('QUIC_PUBLIC_RESET') ||
            str.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
            str.includes('beforeinstallpromptevent.preventDefault') ||
+           str.includes('beforeinstallprompt') ||
            str.includes('WebChannel') ||
-           str.includes('FetchStream');
+           str.includes('FetchStream') ||
+           str.includes('disconnected port object') ||
+           str.includes('Extension context invalidated') ||
+           str.includes('appCheck/throttled') ||
+           str.includes('appCheck/initial-throttle') ||
+           str.includes('auth/popup-blocked') ||
+           str.includes('auth/popup-closed-by-user') ||
+           str.includes('auth/cancelled-popup-request') ||
+           str.includes('ResizeObserver loop');
   } catch (_) {
     return false;
   }
@@ -552,9 +561,9 @@ function initializeFirebase() {
         try {
           initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-            isTokenAutoRefreshEnabled: true
+            isTokenAutoRefreshEnabled: false
           });
-          console.log("🤖 [セキュリティ] ボット対策 (App Check) が正常に起動しました");
+          console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
         } catch (e) {
           console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカーの可能性)", e);
         }
@@ -992,23 +1001,26 @@ if (googleAuthBtn) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
-      // ポップアップ認証を優先（リダイレクトURIミスマッチエラーを防ぎ、素早く認証完了）
       try {
         await signInWithPopup(auth, provider);
       } catch (popupErr) {
-        if (popupErr.code === "auth/popup-blocked" && !isTauri) {
-          console.warn("[Auth] Popup blocked on Web, trying redirect fallback...");
-          await signInWithRedirect(auth, provider);
-          return;
+        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
+          if (!isTauri) {
+            console.log("[Auth] Popup blocked/cancelled on Web, falling back to redirect...");
+            await signInWithRedirect(auth, provider);
+            return;
+          }
         }
         throw popupErr;
       }
     } catch (err) {
-      console.error("[Auth] Google Sign-In Error:", err);
+      if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+        console.log("[Auth] Popup sign-in closed by user");
+        return;
+      }
+      console.warn("[Auth] Google Sign-In notice:", err.message || err);
       let msg = "Googleログインに失敗しました。";
-      if (err.code === "auth/popup-closed-by-user") {
-        msg = "Googleログインがキャンセルされました。";
-      } else if (err.code === "auth/account-exists-with-different-credential") {
+      if (err.code === "auth/account-exists-with-different-credential") {
         msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
       } else if (err.code === "auth/popup-blocked") {
         msg = isTauri
@@ -13748,19 +13760,21 @@ async function cleanupWebRtcDoc(colName, docId) {
     const { doc, deleteDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
     const docRef = doc(db, 'artifacts', appId, colName, docId);
 
-    // TuRNV候補（ICE Candidates）を削除
+    // 候補（ICE Candidates）を削除
     const subCols = colName === 'calls' ? ['callerCandidates', 'calleeCandidates'] : ['senderCandidates', 'receiverCandidates'];
     for (const sub of subCols) {
-      const candsSnap = await getDocs(collection(docRef, sub));
-      const deletePromises = [];
-      candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
-      await Promise.all(deletePromises);
+      try {
+        const candsSnap = await getDocs(collection(docRef, sub));
+        const deletePromises = [];
+        candsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        await Promise.all(deletePromises);
+      } catch (_) {}
     }
 
     // 親ドキュメント自体を削除
-    await deleteDoc(docRef);
+    await deleteDoc(docRef).catch(() => {});
   } catch (e) {
-    console.warn(`[WebRTC Cleanup] Failed to cleanup ${colName}/${docId}:`, e);
+    // 相手側によって既に削除されている場合は正常フローとして扱う
   }
 }
 
@@ -14214,9 +14228,9 @@ function closeCallPicker() {
    - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
    - 通話用の peerConnection とは完全に別系統（衝突しない）
    ===================================================================== */
-const FS_CHUNK = 256 * 1024;          // 256KB チャンク（大きいほど少ない回数で速く送れる）
-const FS_BUFFER_HIGH = 16 * 1024 * 1024; // 送信バッファ上限 16MB（多く積めるほど速い）
-const FS_BUFFER_LOW = 4 * 1024 * 1024;   // ここまで減ったら再開（bufferedamountlow用）
+const FS_CHUNK = 64 * 1024;          // 64KB チャンク（WebRTC仕様・MTUに最適化）
+const FS_BUFFER_HIGH = 1024 * 1024;  // 送信バッファ上限 1MB（SCTPキュー溢れを防止）
+const FS_BUFFER_LOW = 256 * 1024;    // 256KBまで減ったら再開
 let _fsPC = null, _fsChannel = null, _fsId = null, _fsRole = null;
 let _fsUnsub = null, _fsCandUnsub = null;
 let _fsRecv = null; // { name, type, size, received, chunks[] }
@@ -14666,32 +14680,48 @@ async function _fsSendFileData(file) {
         try { const m = JSON.parse(ev.data); if (m && m.__ack && _fsAckResolve) { const r = _fsAckResolve; _fsAckResolve = null; r(true); } } catch (e) { }
       }
     };
-    // 送信バッファが減ったら通知してもらう（setTimeoutポーリングより高速・低負荷）
+    // 送信バッファが減ったら通知してもらう（タイムアウト付きレースでデッドロック防止）
     _fsChannel.bufferedAmountLowThreshold = FS_BUFFER_LOW;
     const waitBufferLow = () => new Promise(resolve => {
-      if (_fsChannel.bufferedAmount <= FS_BUFFER_HIGH) return resolve();
-      const onLow = () => { _fsChannel.removeEventListener('bufferedamountlow', onLow); resolve(); };
+      if (!_fsChannel || _fsChannel.bufferedAmount <= FS_BUFFER_LOW) return resolve();
+      let timer = null;
+      const onLow = () => {
+        if (timer) clearTimeout(timer);
+        _fsChannel?.removeEventListener('bufferedamountlow', onLow);
+        resolve();
+      };
       _fsChannel.addEventListener('bufferedamountlow', onLow);
+      timer = setTimeout(onLow, 120); // 120msフォールバックタイムアウト
     });
 
     _fsChannel.send(JSON.stringify({ __meta: true, name: file.name, type: file.type, size: file.size }));
     let offset = 0;
     if (!file.stream) { await _fsSendFileDataLegacy(file); return; }
     const reader = file.stream().getReader();
-    let pending = null; // 前チャンクの端数を保持
     const sendSlice = async (buf) => {
+      if (!_fsChannel || _fsChannel.readyState !== 'open') throw new Error('DataChannel closed');
       if (_fsChannel.bufferedAmount > FS_BUFFER_HIGH) await waitBufferLow();
-      _fsChannel.send(buf);
+      let retries = 0;
+      while (true) {
+        try {
+          _fsChannel.send(buf);
+          break;
+        } catch (sendErr) {
+          if (retries++ < 5) {
+            await new Promise(r => setTimeout(r, 60));
+          } else {
+            throw sendErr;
+          }
+        }
+      }
       offset += buf.byteLength;
       _fsUpdateProgress(Math.round(offset / file.size * 100));
     };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      // streamのチャンクをそのまま（または256KB単位で）送る
       let chunk = value; // Uint8Array
       for (let i = 0; i < chunk.length; i += FS_CHUNK) {
-        // subarrayはコピーを作らない（高速・省メモリ）。境界はsliceでバッファ確定
         const end = Math.min(i + FS_CHUNK, chunk.length);
         await sendSlice(chunk.subarray(i, end));
       }

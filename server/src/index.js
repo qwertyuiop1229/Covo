@@ -1592,6 +1592,10 @@ async function handleSetOffline(request, env) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
     }
 
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
+    }
+
     const projectId = env.FIREBASE_PROJECT_ID;
     const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
     const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
@@ -1879,7 +1883,8 @@ async function handleD1Api(request, env, url) {
         }
 
         if (type === "leave") {
-          await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, userId, appId).run();
+          const targetUserId = verifiedUser.uid; // 本人のみ退出可能（IDOR防止）
+          await env.DB.prepare("DELETE FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, targetUserId, appId).run();
           await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
@@ -1893,22 +1898,37 @@ async function handleD1Api(request, env, url) {
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
 
-        if (type === "stamp") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(stampId, serverId || "general", appId, stampName || "", stampUrl || "", verifiedUser.uid, Date.now()).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
-        }
+        if (type === "stamp" || type === "stampGroup" || type === "inviteCode") {
+          if (serverId) {
+            const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+            if (curServer) {
+              let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+              const isOwner = curServer.created_by === verifiedUser.uid;
+              const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+              const isGlobal = await isD1Admin(appId, verifiedUser, env);
+              if (!isOwner && !isSvAdmin && !isGlobal) {
+                return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required" }), { status: 403, headers: d1Cors });
+              }
+            }
+          }
 
-        if (type === "stampGroup") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_stamp_groups (group_id, server_id, app_id, group_data, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(groupId, serverId, appId, JSON.stringify(groupData), Date.now()).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
-        }
+          if (type === "stamp") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_stamps (stamp_id, server_id, app_id, name, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .bind(stampId, serverId || "general", appId, stampName || "", stampUrl || "", verifiedUser.uid, Date.now()).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
 
-        if (type === "inviteCode") {
-          await env.DB.prepare("INSERT OR REPLACE INTO server_invite_codes (code, server_id, app_id, created_by, created_at, expires_at, uses, max_uses, disabled, invite_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(code, serverId, appId, verifiedUser.uid, Date.now(), inviteData.expiresAt || null, inviteData.uses || 0, inviteData.maxUses || 0, inviteData.disabled ? 1 : 0, JSON.stringify(inviteData)).run();
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          if (type === "stampGroup") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_stamp_groups (group_id, server_id, app_id, group_data, created_at) VALUES (?, ?, ?, ?, ?)")
+              .bind(groupId, serverId, appId, JSON.stringify(groupData), Date.now()).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
+
+          if (type === "inviteCode") {
+            await env.DB.prepare("INSERT OR REPLACE INTO server_invite_codes (code, server_id, app_id, created_by, created_at, expires_at, uses, max_uses, disabled, invite_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+              .bind(code, serverId, appId, verifiedUser.uid, Date.now(), inviteData?.expiresAt || null, inviteData?.uses || 0, inviteData?.maxUses || 0, inviteData?.disabled ? 1 : 0, JSON.stringify(inviteData || {})).run();
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
+          }
         }
 
         return new Response(JSON.stringify({ error: "Unknown action type" }), { status: 400, headers: d1Cors });
@@ -2130,7 +2150,7 @@ async function handleD1Api(request, env, url) {
         if (type === "add") {
           const text = data.text || "";
           const created_at = data.createdAt || Date.now();
-          const senderId = data.senderId || verifiedUser.uid;
+          const senderId = verifiedUser.uid; // 強制的に認証済みUIDに設定（なりすまし防止）
           const additionalData = { ...data };
           delete additionalData.text; delete additionalData.createdAt; delete additionalData.senderId;
           
