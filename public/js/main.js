@@ -725,6 +725,42 @@ function initializeFirebase() {
           // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
           await user.getIdToken();
 
+          const rawEmail = user.email || "";
+          const cleanEmail = rawEmail.toLowerCase().trim();
+
+          // プロバイダ情報の検証（Googleログイン vs パスワード登録）
+          const providerIds = (user.providerData || []).map(p => p.providerId);
+          const isGoogleUser = providerIds.includes('google.com');
+          const hasPasswordProvider = providerIds.includes('password');
+
+          // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
+          if (isGoogleUser && !hasPasswordProvider && cleanEmail) {
+            try {
+              const existingUsersSnap = await getDocs(query(
+                collection(db, `artifacts/${appId}/users`),
+                where('email', '==', cleanEmail),
+                limit(5)
+              )).catch(() => null);
+
+              if (existingUsersSnap && !existingUsersSnap.empty) {
+                const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
+                if (otherAccount) {
+                  console.warn(`[Security Guard] メールアドレス(${cleanEmail})は既に別のアカウント(UID: ${otherAccount.id})でパスワード登録されています。未連携のためアクセスを遮断します。`);
+                  await signOut(auth);
+                  const authMsg = document.getElementById("authMessage");
+                  if (authMsg) {
+                    authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
+                  }
+                  loadingOverlay.classList.add("hidden");
+                  _authHandlerBusy = false;
+                  return;
+                }
+              }
+            } catch (checkErr) {
+              console.warn("Account link integrity check warning:", checkErr);
+            }
+          }
+
           // 直列処理による遅延を防ぐため、初期化に必要なデータを一斉取得
           const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
           const configRef = doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig");
@@ -1144,7 +1180,7 @@ if (googleAuthBtn) {
       console.warn("[Auth] Google Sign-In notice:", err.message || err);
       let msg = "Googleログインに失敗しました。";
       if (err.code === "auth/account-exists-with-different-credential") {
-        msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+        msg = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
       } else if (err.code === "auth/unauthorized-domain") {
         msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインをご確認ください。";
       } else if (err.message) {
