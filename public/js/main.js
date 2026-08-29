@@ -5821,8 +5821,12 @@ async function enterServer(serverId, serverData) {
   appContainer.classList.remove("hidden");
   appContainer.style.animation = "fadeIn 0.2s ease both";
   
+  // スマホでは、サーバー選択時はまずチャンネル一覧（サイドバー）を表示する
+  const sb = document.getElementById("sidebar");
+  if (sb) sb.classList.remove("mobile-hidden");
+
   // DiscordUIクラスの更新 (DM/探索ビューからサーバービューへ完全遷移)
-  document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-dm-chat", "discord-discover-view");
+  document.body.classList.remove("in-chat-view", "discord-home-view", "discord-dm-view", "discord-dm-chat", "discord-discover-view");
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 
   // ニックネームヘッダーを表示
@@ -5889,6 +5893,8 @@ window.openDmHomeView = function () {
 
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
   if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
@@ -6594,6 +6600,10 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   cancelReply();
   clearAttachedFile();
 
+  if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
+
   renderDmConversationsList();
 
   try {
@@ -6603,7 +6613,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   }
 
   subscribeToMessages();
-  renderPinnedMessages();
+  subscribeToPinnedMessages(null, null, dmId);
 
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
   try {
@@ -6884,6 +6894,9 @@ window.openDiscoverView = function () {
   const roomList = document.getElementById("roomList");
   if (roomList) roomList.innerHTML = "";
   clearMessagesDOM();
+  if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
   const currentRoomHeader = document.getElementById("currentRoomHeader");
   if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
   const messageInput = document.getElementById("messageInput");
@@ -9199,15 +9212,17 @@ function loadServerRooms(serverId, _retry = 0) {
       roomList.appendChild(roomContainer);
     }
 
-    // サーバー入室時・切り替え時のルーム自動オープン（前回開いていたルーム、または一番上のルーム）
+    // サーバー入室時・切り替え時のルーム自動オープン（PCのみ自動選択、スマホはチャンネル一覧を表示）
     if (currentServerId === serverId && roomDocs.length > 0) {
-      const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
-      let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
-      if (!targetDoc) {
-        targetDoc = roomDocs[0];
-      }
-      if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
-        selectRoom(targetDoc.id, targetDoc.data().name);
+      if (window.innerWidth >= 768) {
+        const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
+        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
+        if (!targetDoc) {
+          targetDoc = roomDocs[0];
+        }
+        if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
+          selectRoom(targetDoc.id, targetDoc.data().name);
+        }
       }
     }
   }
@@ -9534,6 +9549,8 @@ async function subscribeToMessagesRTDB() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
+      // ローカル保存完了後、サーバー上の100件超過メッセージを自動クリーンアップ
+      pruneExcessMessages(currentServerId, currentRoomId, currentDmId);
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
     }
@@ -9808,6 +9825,10 @@ function selectRoom(roomId, roomName) {
   allLoadedMessages = [];
   hasMoreOlderMessages = true;
   isLoadingOlderMessages = false;
+
+  if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+  currentPinnedMessages = [];
+  renderPinnedMessages();
 
   subscribeToMessages();
   subscribeToPinnedMessages(currentServerId, roomId);
@@ -10278,6 +10299,8 @@ if (mobileBackButton) {
 
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+    currentPinnedMessages = [];
+    renderPinnedMessages();
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
     if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
     if (typeof clearMessagesDOM === 'function') clearMessagesDOM();
@@ -10973,7 +10996,8 @@ document.addEventListener('click', (e) => {
 // ================= MESSAGES MODULE ================
 
 // RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除
-async function pruneExcessMessages(serverId, roomId, dmId) {
+async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
+  if ((!serverId || !roomId) && !dmId) return;
   try {
     const { ref, get, remove, query: rtdbQuery, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -11831,6 +11855,21 @@ function createMessageElement(message, messageId, readByCount = 0) {
     messageElement.appendChild(messageTextSpan);
   }
   if (message.fileData && message.fileName) {
+    const createExpiredFileCard = (name, customMsg) => {
+      const card = document.createElement("div");
+      card.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
+      card.innerHTML = `
+        <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
+          <i class="fas fa-clock-rotate-left"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(name || 'ファイル')}</div>
+          <div class="text-[10px] text-gray-400">${customMsg || '保存期間（100件制限）が終了したため削除されました'}</div>
+        </div>
+      `;
+      return card;
+    };
+
     const setMediaSrc = (element, propName, url) => {
       if (message.isFileEncrypted) {
         if (message._decryptedFileUrl) {
@@ -11850,6 +11889,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
               }
               if (!key) throw new Error("No key");
               const res = await fetch(message.fileData);
+              if (res.status === 404 || !res.ok) {
+                const expiredCard = createExpiredFileCard(message.fileName);
+                element.replaceWith(expiredCard);
+                return;
+              }
               const buf = await res.arrayBuffer();
               const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
               const blob = new Blob([dec], { type: message.fileType });
@@ -11858,13 +11902,26 @@ function createMessageElement(message, messageId, readByCount = 0) {
               if (element.tagName === 'IMG') element.style.opacity = '1';
               if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
             } catch (e) {
-              if (element.tagName === 'IMG') element.alt = "復号化エラー";
+              const expiredCard = createExpiredFileCard(message.fileName);
+              element.replaceWith(expiredCard);
             }
           })();
         }
       } else {
-        if (propName) element[propName] = url || message.fileData;
-        if (element.tagName === 'CANVAS') window.renderPdfCanvas(url || message.fileData, element);
+        const targetUrl = url || message.fileData;
+        if (propName) element[propName] = targetUrl;
+        if (element.tagName === 'IMG') {
+          element.onerror = () => {
+            const expiredCard = createExpiredFileCard(message.fileName);
+            element.replaceWith(expiredCard);
+          };
+        } else if (element.tagName === 'VIDEO') {
+          element.onerror = () => {
+            const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
+            element.replaceWith(expiredCard);
+          };
+        }
+        if (element.tagName === 'CANVAS') window.renderPdfCanvas(targetUrl, element);
       }
     };
 
@@ -12000,12 +12057,16 @@ function createMessageElement(message, messageId, readByCount = 0) {
             }
             if (!key) throw new Error("鍵が見つかりません");
             const res = await fetch(message.fileData);
+            if (res.status === 404 || !res.ok) {
+              alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+              return;
+            }
             const buf = await res.arrayBuffer();
             const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
             const blob = new Blob([dec], { type: message.fileType });
             message._decryptedFileUrl = URL.createObjectURL(blob);
           } catch (e) {
-            alertMessage("ファイルの復号に失敗しました", "error");
+            alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
             return;
           }
         }
@@ -12042,7 +12103,14 @@ function createMessageElement(message, messageId, readByCount = 0) {
     kvDiv.appendChild(iconWrap);
     kvDiv.appendChild(infoDiv);
     kvDiv.appendChild(dlIcon);
-    kvDiv.addEventListener("click", () => {
+    kvDiv.addEventListener("click", async () => {
+      try {
+        const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
+        if (res && res.status === 404) {
+          alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+          return;
+        }
+      } catch (_) {}
       downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
     });
     messageElement.appendChild(kvDiv);
@@ -13915,36 +13983,60 @@ if (callPickerBoxEl) {
 }
 
 // --- LINE完全準拠 ピン留め（アナウンス）機能 ---
-function subscribeToPinnedMessages(serverId, roomId) {
+function subscribeToPinnedMessages(serverId, roomId, dmId) {
   if (unsubscribePinnedMessages) {
     unsubscribePinnedMessages();
     unsubscribePinnedMessages = null;
   }
-  if (!serverId || !roomId) {
+  currentPinnedMessages = [];
+
+  if (serverId && roomId) {
+    const q = query(
+      collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
+      where("isPinned", "==", true)
+    );
+
+    unsubscribePinnedMessages = onSnapshot(q, async (snap) => {
+      const pinned = [];
+      snap.forEach(d => {
+        pinned.push({ id: d.id, ...d.data() });
+      });
+      pinned.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+      const members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(pinned, serverId, roomId, members).catch(() => {});
+      currentPinnedMessages = pinned;
+      renderPinnedMessages();
+    }, (err) => {
+      if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
+      console.warn("[PinnedMessages onSnapshot] error:", err);
+    });
+  } else if (dmId) {
+    // DM環境: RTDBのピン留めメッセージを監視
+    import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, onValue, off }) => {
+      const rtdb = await _getOrInitRTDB();
+      const dmMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${dmId}`);
+      const onDmVal = onValue(dmMsgRef, async (snap) => {
+        if (!snap.exists()) {
+          currentPinnedMessages = [];
+          renderPinnedMessages();
+          return;
+        }
+        const data = snap.val();
+        let pinned = Object.keys(data).map(k => ({ ...data[k], id: k })).filter(m => m.isPinned);
+        pinned.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+        await _decryptDmMessagesInPlace(pinned, dmId, currentDmParticipants).catch(() => {});
+        currentPinnedMessages = pinned;
+        renderPinnedMessages();
+      });
+      unsubscribePinnedMessages = () => off(dmMsgRef, 'value', onDmVal);
+    }).catch(() => {
+      currentPinnedMessages = [];
+      renderPinnedMessages();
+    });
+  } else {
     currentPinnedMessages = [];
     renderPinnedMessages();
-    return;
   }
-
-  const q = query(
-    collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`),
-    where("isPinned", "==", true)
-  );
-
-  unsubscribePinnedMessages = onSnapshot(q, async (snap) => {
-    const pinned = [];
-    snap.forEach(d => {
-      pinned.push({ id: d.id, ...d.data() });
-    });
-    pinned.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-    const members = (currentServerData && currentServerData.joinedUsers) || [];
-    await decryptMessagesInPlace(pinned, serverId, roomId, members).catch(() => {});
-    currentPinnedMessages = pinned;
-    renderPinnedMessages();
-  }, (err) => {
-    if (err?.code === 'permission-denied' || !auth.currentUser || !userId) return;
-    console.warn("[PinnedMessages onSnapshot] error:", err);
-  });
 }
 
 window.unpinMessage = async function(msgId) {
@@ -14058,6 +14150,14 @@ let isPinnedMessagesExpanded = false;
 let isPinnedMessagesMinimized = false;
 
 function renderPinnedMessages() {
+  if (!currentRoomId && !currentDmId) {
+    currentPinnedMessages = [];
+    pinnedMessagesArea.classList.add("hidden");
+    pinnedMessagesArea.innerHTML = "";
+    document.getElementById("minimizedPinIcon")?.remove();
+    return;
+  }
+
   const loadedPinned = (allLoadedMessages || []).filter(m => m.isPinned);
   const combinedMap = new Map();
   (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
@@ -14986,9 +15086,11 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
   }
 
   // 3. WebRTC DataChannel 経由で暗号化メッセージを送信
+  let unsubRequesterCands = null;
   try {
     const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
     let dc = null;
+    const pendingCandidates = [];
 
     pc.ondatachannel = (ev) => {
       dc = ev.channel;
@@ -14997,6 +15099,7 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
         const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: localMsgs });
         dc.send(payload);
         setTimeout(() => {
+          if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
           try { pc.close(); } catch (e) {}
           deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
         }, 1000);
@@ -15009,7 +15112,25 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
       }
     };
 
+    unsubRequesterCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/requesterCandidates`), (snap) => {
+      snap.docChanges().forEach(async (ch) => {
+        if (ch.type === 'added') {
+          const cand = new RTCIceCandidate(ch.doc.data());
+          if (pc.currentRemoteDescription) {
+            try { await pc.addIceCandidate(cand); } catch (e) {}
+          } else {
+            pendingCandidates.push(cand);
+          }
+        }
+      });
+    });
+
     await pc.setRemoteDescription(new RTCSessionDescription(reqData.offer));
+    while (pendingCandidates.length > 0) {
+      const cand = pendingCandidates.shift();
+      try { await pc.addIceCandidate(cand); } catch (e) {}
+    }
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -15018,21 +15139,15 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
       status: 'answered'
     });
 
-    onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/requesterCandidates`), (snap) => {
-      snap.docChanges().forEach(async (ch) => {
-        if (ch.type === 'added') {
-          try { await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {}
-        }
-      });
-    });
-
     setTimeout(() => {
+      if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
       try { pc.close(); } catch (e) {}
       deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }, 6000);
 
   } catch (err) {
     console.warn('[P2P LogSync] Responder error:', err);
+    if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
     deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
   }
 }
@@ -15070,8 +15185,20 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
   const syncDocRef = doc(collection(db, `artifacts/${appId}/p2p_log_sync`));
   const syncId = syncDocRef.id;
 
+  let unsubDoc = null;
+  let unsubCands = null;
+  let pc = null;
+  const pendingCandidates = [];
+
+  const cleanupP2P = () => {
+    if (unsubDoc) { unsubDoc(); unsubDoc = null; }
+    if (unsubCands) { unsubCands(); unsubCands = null; }
+    if (pc) { try { pc.close(); } catch (_) {} pc = null; }
+    deleteDoc(syncDocRef).catch(() => {});
+  };
+
   try {
-    const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
     const dc = pc.createDataChannel('logSync', { ordered: true });
 
     dc.onmessage = async (ev) => {
@@ -15108,8 +15235,7 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
       } catch (e) {
         console.warn('[P2P LogSync] Parse error:', e);
       } finally {
-        try { pc.close(); } catch (_) {}
-        deleteDoc(syncDocRef).catch(() => {});
+        cleanupP2P();
       }
     };
 
@@ -15135,33 +15261,39 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
       createdAt: serverTimestamp()
     });
 
-    const unsubDoc = onSnapshot(syncDocRef, async (snap) => {
-      if (!snap.exists()) return;
-      const d = snap.data();
-      if (d.answer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
-      }
-    });
-
-    const unsubCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), (snap) => {
+    unsubCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), (snap) => {
       snap.docChanges().forEach(async (ch) => {
         if (ch.type === 'added') {
-          try { await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); } catch (e) {}
+          const cand = new RTCIceCandidate(ch.doc.data());
+          if (pc && pc.currentRemoteDescription) {
+            try { await pc.addIceCandidate(cand); } catch (e) {}
+          } else {
+            pendingCandidates.push(cand);
+          }
         }
       });
     });
 
-    // 5秒タイムアウト（ベストエフォート）
+    unsubDoc = onSnapshot(syncDocRef, async (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (d.answer && pc && !pc.currentRemoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+        while (pendingCandidates.length > 0) {
+          const cand = pendingCandidates.shift();
+          try { await pc.addIceCandidate(cand); } catch (e) {}
+        }
+      }
+    });
+
+    // 5秒タイムアウト（ベストエフォートで終了）
     setTimeout(() => {
-      try { unsubDoc(); } catch (_) {}
-      try { unsubCands(); } catch (_) {}
-      try { pc.close(); } catch (_) {}
-      deleteDoc(syncDocRef).catch(() => {});
+      cleanupP2P();
     }, 5000);
 
   } catch (err) {
     console.warn('[P2P LogSync] Request failed (continuing normal operation):', err);
-    deleteDoc(syncDocRef).catch(() => {});
+    cleanupP2P();
   }
 }
 

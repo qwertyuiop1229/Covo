@@ -606,9 +606,11 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #discordHomeMembers {
       display: none !important;
     }
-    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #sidebar,
-    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #chatArea {
-      display: flex !important;
+    @media (min-width: 769px) {
+      body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #sidebar,
+      body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #chatArea {
+        display: flex !important;
+      }
     }
     body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #roomList {
       display: block !important;
@@ -1600,9 +1602,15 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         flex: 1 1 0% !important;
         min-height: 0 !important;
       }
-      /* チャット画面非表示時(ルーム一覧等)：チャットエリアを完全非表示 */
+      /* チャット画面非表示時(サーバーのチャンネル一覧・ホーム画面)：チャットエリアを完全非表示 */
       body.discord-ui-mode:not(.in-chat-view) #chatArea {
         display: none !important;
+      }
+      body.discord-ui-mode:not(.in-chat-view):not(.discord-discover-view) #sidebar {
+        display: flex !important;
+      }
+      body.discord-ui-mode:not(.in-chat-view) #discordServerNav {
+        display: flex !important;
       }
     }
 
