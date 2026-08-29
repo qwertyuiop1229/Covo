@@ -55,14 +55,9 @@ service cloud.firestore {
         allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
       }
       
-      // ログイン許可リストの新しいコレクション（サブコレクションとして管理）
+      // ログイン許可リスト（単一取得は認証済みユーザー全員に許可し、連携アカウントの照合を保証）
       match /allowedEmails/{emailId} {
-        // 全体管理者はフルアクセス。
-        // 一般ユーザーはログイン時に「自分のメアド」のドキュメントだけ取得可能。
-        // リスト管理者は「自分が追加したドキュメント」のみ読み書き可能。
-        allow get: if isGlobalAdmin(appId) ||
-                   (isAuthenticated() && request.auth.token.email == emailId) ||
-                   (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId) ||
                     (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
         allow create: if isGlobalAdmin(appId) ||

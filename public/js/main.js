@@ -738,46 +738,56 @@ function initializeFirebase() {
             getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
           ]);
 
-          const rawEmail = user.email || "";
-          const cleanEmail = rawEmail.toLowerCase().trim();
+          // アカウントに紐づくすべてのメールアドレス（Google連携メール・元の登録メール両方）を網羅的に収集
+          const candidateEmails = new Set();
+          if (user.email) candidateEmails.add(user.email.toLowerCase().trim());
+          if (Array.isArray(user.providerData)) {
+            user.providerData.forEach(p => {
+              if (p && p.email) candidateEmails.add(p.email.toLowerCase().trim());
+            });
+          }
+          const allUserEmails = Array.from(candidateEmails);
 
           isAdmin = false;
           if (adminSnap && adminSnap.exists()) {
             const data = adminSnap.data();
-            const hasEmail = data.emails && (data.emails.includes(rawEmail) || data.emails.includes(cleanEmail));
-            const hasUid = data.admins && data.admins.includes(user.uid);
+            const adminEmails = (data.emails || []).map(e => String(e).toLowerCase().trim());
+            const adminUids = data.admins || [];
+            const hasEmail = allUserEmails.some(em => adminEmails.includes(em));
+            const hasUid = adminUids.includes(user.uid);
             isAdmin = hasEmail || hasUid;
+
+            // 管理者と判定された場合、UIDを自動同期して今後の判定漏れを恒久防止
+            if (isAdmin && !hasUid) {
+              updateDoc(adminDocRef, { admins: arrayUnion(user.uid) }).catch(() => {});
+            }
           }
 
-          // 非管理者は allowedEmails を厳格に確認（小文字正規化・完全一致チェック・誤作動防止）
+          // 非管理者は allowedEmails を確認（連携メールのいずれか1つでも許可されていればOK）
           isListAdmin = false;
           if (!isAdmin) {
             const isConfigActive = configSnap && configSnap.exists() && Boolean(configSnap.data().active);
             if (isConfigActive) {
               let isAllowed = false;
-              if (cleanEmail) {
+              for (const em of allUserEmails) {
                 try {
-                  const allowedRefClean = doc(db, `artifacts/${appId}/allowedEmails`, cleanEmail);
-                  const allowedRefRaw = (rawEmail && rawEmail !== cleanEmail) ? doc(db, `artifacts/${appId}/allowedEmails`, rawEmail) : null;
-                  const [snapClean, snapRaw] = await Promise.all([
-                    getDoc(allowedRefClean).catch(() => null),
-                    allowedRefRaw ? getDoc(allowedRefRaw).catch(() => null) : Promise.resolve(null)
-                  ]);
-                  if ((snapClean && snapClean.exists()) || (snapRaw && snapRaw.exists())) {
+                  const allowedRef = doc(db, `artifacts/${appId}/allowedEmails`, em);
+                  const allowedSnap = await getDoc(allowedRef).catch(() => null);
+                  if (allowedSnap && allowedSnap.exists()) {
                     isAllowed = true;
+                    break;
                   }
                 } catch (allowedErr) {
-                  console.error("Allowed email check error:", allowedErr);
-                  isAllowed = false;
+                  console.warn("Allowed email check error for", em, allowedErr);
                 }
               }
 
               if (!isAllowed) {
-                console.warn(`[Security Guard] 未許可のアカウント(${rawEmail})を検出しました。セッションを即時破棄します。`);
+                console.warn(`[Security Guard] 未許可のアカウント(${allUserEmails.join(', ')})を検出しました。セッションを即時破棄します。`);
                 await signOut(auth);
                 const authMsg = document.getElementById("authMessage");
                 if (authMsg) {
-                  authMsg.textContent = `このメールアドレス（${rawEmail || '未設定'}）は利用が許可されていません。管理者にお問い合わせください。`;
+                  authMsg.textContent = `このメールアドレス（${allUserEmails[0] || '未設定'}）は利用が許可されていません。管理者にお問い合わせください。`;
                 }
                 loadingOverlay.classList.add("hidden");
                 _authHandlerBusy = false;
@@ -788,8 +798,10 @@ function initializeFirebase() {
             // リスト管理者チェック
             if (listAdminSnap && listAdminSnap.exists()) {
               const data = listAdminSnap.data();
-              const hasEmail = data.emails && (data.emails.includes(rawEmail) || data.emails.includes(cleanEmail));
-              const hasUid = data.admins && data.admins.includes(user.uid);
+              const listAdminEmails = (data.emails || []).map(e => String(e).toLowerCase().trim());
+              const listAdminUids = data.admins || [];
+              const hasEmail = allUserEmails.some(em => listAdminEmails.includes(em));
+              const hasUid = listAdminUids.includes(user.uid);
               isListAdmin = hasEmail || hasUid;
             }
           }
