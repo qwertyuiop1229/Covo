@@ -8,6 +8,7 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gst
 import {
   getAuth,
   signInWithEmailAndPassword,
+  signInWithCredential,
   signOut,
   onAuthStateChanged,
   onIdTokenChanged,
@@ -18,6 +19,7 @@ import {
   getRedirectResult,
   linkWithPopup,
   linkWithRedirect,
+  linkWithCredential,
   unlink,
   sendPasswordResetEmail,
   updatePassword,
@@ -1038,46 +1040,46 @@ if (signupButtonEl && signupEmailInputEl && signupPasswordInputEl) {
   });
 }
 
-// Google ログイン & 登録処理 (Safari & モバイル完全対応リダイレクト方式)
+// Google ログイン & 登録処理 (Windowsデスクトップ/Web完全両対応)
 const googleAuthBtn = document.getElementById("googleAuthButton");
 if (googleAuthBtn) {
   googleAuthBtn.addEventListener("click", async () => {
     if (authMessageEl) authMessageEl.textContent = "";
     const loadingOverlayEl = document.getElementById("loadingOverlay");
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      
-      try {
-        await signInWithPopup(auth, provider);
-      } catch (popupErr) {
-        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
-          if (!isTauri) {
-            console.log("[Auth] Popup blocked/cancelled on Web, falling back to redirect...");
-            await signInWithRedirect(auth, provider);
-            return;
-          }
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        // Windows (Tauri): 既定のブラウザでOAuthを実行し、ローカルコールバックで認証情報を受信
+        console.log("[Auth] Windows版: 外部ブラウザによるGoogleログインを開始します...");
+        const authResult = await window.__TAURI__.core.invoke('start_desktop_google_auth');
+        if (!authResult || !authResult.id_token) {
+          throw new Error("デスクトップ認証情報の取得に失敗しました。");
         }
-        throw popupErr;
+
+        // 取得したクレデンシャルで Firebase Auth にサインイン
+        const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
+        await signInWithCredential(auth, credential);
+        console.log("[Auth] Windows版 Googleログインに成功しました！");
+      } else {
+        // Web版 (ブラウザ / PWA): ポップアップを開かず、現在のタブ内で直接リダイレクトしてログイン
+        console.log("[Auth] Web版: 同一画面でのGoogleリダイレクトログインを開始します...");
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await signInWithRedirect(auth, provider);
+        return;
       }
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
-        console.log("[Auth] Popup sign-in closed by user");
+        console.log("[Auth] Googleログインがキャンセルされました");
         return;
       }
       console.warn("[Auth] Google Sign-In notice:", err.message || err);
       let msg = "Googleログインに失敗しました。";
       if (err.code === "auth/account-exists-with-different-credential") {
         msg = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
-      } else if (err.code === "auth/popup-blocked") {
-        msg = isTauri
-          ? "デスクトップ版ではブラウザポップアップがブロックされました。通常のメール/パスワードでログインするか、Webブラウザ版 (https://simplechat-65a0d.web.app) からログインしてください。"
-          : "ブラウザのポップアップがブロックされました。ポップアップを許可して再度お試しください。";
-      } else if (err.message && (err.message.includes("redirect_uri_mismatch") || err.message.includes("400"))) {
-        msg = "Google認証エラー(400): Google Cloud ConsoleのOAuth設定で承認済みのリダイレクトURIに https://simplechat-65a0d.web.app/__/auth/handler を追加してください。";
       } else if (err.code === "auth/unauthorized-domain") {
-        msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインに現在のドメインを追加してください。";
+        msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインをご確認ください。";
       } else if (err.message) {
         msg = `Googleログインエラー: ${err.message}`;
       }
@@ -1983,15 +1985,23 @@ window.toggleGoogleLinkAction = async function () {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await linkWithPopup(user, provider);
-      alertMessage('Googleアカウントと正常に連携しました！', 'success');
-      updateAccountSecurityUI(auth.currentUser);
+      if (isTauri && window.__TAURI__?.core?.invoke) {
+        const authResult = await window.__TAURI__.core.invoke('start_desktop_google_auth');
+        if (authResult?.id_token) {
+          const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
+          await linkWithCredential(user, credential);
+          alertMessage('Googleアカウントと正常に連携しました！', 'success');
+          updateAccountSecurityUI(auth.currentUser);
+        }
+      } else {
+        await linkWithRedirect(user, provider);
+      }
     } catch (err) {
       console.error('[Auth] Link Google error:', err);
       if (err.code === 'auth/credential-already-in-use') {
         alertMessage('このGoogleアカウントは既に別のアカウントで使用されています。', 'error');
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        // user closed popup
+      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        // キャンセル
       } else {
         alertMessage(`連携エラー: ${err.message}`, 'error');
       }
@@ -10516,28 +10526,62 @@ function updateFilePreview() {
 // ===== インアプリブラウザ (In-App Browser) 制御 =====
 let currentInAppBrowserUrl = '';
 
+// YouTube 等の埋め込み可能 URL への正規化
+function _normalizeInAppBrowserUrl(rawUrl) {
+  if (!rawUrl) return '';
+  try {
+    const parsed = new URL(rawUrl);
+    // YouTube (watch -> embed)
+    if (parsed.hostname.includes('youtube.com') && parsed.pathname === '/watch') {
+      const videoId = parsed.searchParams.get('v');
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+      }
+    } else if (parsed.hostname === 'youtu.be') {
+      const videoId = parsed.pathname.replace(/^\//, '');
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+      }
+    }
+  } catch (_) { }
+  return rawUrl;
+}
+
 window.openInAppBrowser = function (url) {
   if (!url) return;
   currentInAppBrowserUrl = url;
 
-  // 判定: Windows版 (Tauri) または iOS PWA / スタンドアロン表示時
-  const isTauri = !!window.__TAURI__;
-  const isPwa = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-
-  if (isTauri || isPwa) {
-    const modal = document.getElementById('inAppBrowserModal');
-    const iframe = document.getElementById('inAppBrowserIframe');
-    const urlDisplay = document.getElementById('inAppBrowserUrlDisplay');
-
-    if (modal && iframe && urlDisplay) {
-      urlDisplay.textContent = url;
-      iframe.src = url;
-      modal.classList.remove('hidden');
-      return;
-    }
+  // 1. Windows版 (Tauri): 独立したネイティブ内蔵ブラウザウィンドウ（WebView2）で開く
+  // これにより X-Frame-Options や CSP による iframe ブロックを完全回避し、Google/X/GitHub等の外部サイトも100%確実に動作する
+  if (isTauri && window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('open_in_app_browser_window', {
+      url: url,
+      title: url
+    }).catch(err => {
+      console.warn('[openInAppBrowser] Native window open failed, fallback to shell open:', err);
+      if (window.__TAURI__?.plugin?.shell) {
+        window.__TAURI__.plugin.shell.open(url).catch(() => window.open(url, '_blank'));
+      } else {
+        window.open(url, '_blank');
+      }
+    });
+    return;
   }
 
-  // 通常のWebブラウザでタブとして開いている場合は新しいタブで開く
+  // 2. Web版 / PWA / モバイル: モーダル内蔵ブラウザを表示
+  const modal = document.getElementById('inAppBrowserModal');
+  const iframe = document.getElementById('inAppBrowserIframe');
+  const urlDisplay = document.getElementById('inAppBrowserUrlDisplay');
+
+  if (modal && iframe && urlDisplay) {
+    urlDisplay.textContent = url;
+    const targetUrl = _normalizeInAppBrowserUrl(url);
+    iframe.src = targetUrl;
+    modal.classList.remove('hidden');
+    return;
+  }
+
+  // フォールバック: 通常タブで開く
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
@@ -10552,7 +10596,7 @@ window.closeInAppBrowser = function () {
 window.reloadInAppBrowser = function () {
   const iframe = document.getElementById('inAppBrowserIframe');
   if (iframe && currentInAppBrowserUrl) {
-    iframe.src = currentInAppBrowserUrl;
+    iframe.src = _normalizeInAppBrowserUrl(currentInAppBrowserUrl);
   }
 };
 

@@ -204,13 +204,31 @@ service cloud.firestore {
 
       // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.requesterUid == request.auth.uid || resource.data.targetUid == request.auth.uid);
+        allow get: if isAuthenticated() &&
+          (
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
+        allow list: if isAuthenticated() &&
+          (
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
         allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
-        allow update, delete: if isAuthenticated() && (resource.data.requesterUid == request.auth.uid || resource.data.targetUid == request.auth.uid);
+        allow update, delete: if isAuthenticated() &&
+          (
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
         match /{subcollection}/{docId} {
-          allow get, list, write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid);
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              !exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) ||
+              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid) ||
+              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid)
+            );
         }
       }
 

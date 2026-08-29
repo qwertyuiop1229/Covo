@@ -847,6 +847,172 @@ fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DesktopAuthResult {
+    id_token: String,
+    access_token: Option<String>,
+}
+
+#[tauri::command]
+async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<DesktopAuthResult, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("ローカルポートのバインドに失敗しました: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("ローカルアドレスの取得に失敗しました: {}", e))?
+        .port();
+
+    let state_nonce = uuid::Uuid::new_v4().to_string();
+    let auth_url = format!(
+        "https://simplechat-65a0d.web.app/auth-desktop.html?callback=http%3A%2F%2F127.0.0.1%3A{}%2Fcallback&state={}",
+        port, state_nonce
+    );
+
+    log::info!("Starting desktop Google auth: port={}, url={}", port, auth_url);
+
+    // システム既定の外部ブラウザで安全なWeb認証ページを開く
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", "", &auth_url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("open").arg(&auth_url).spawn();
+    }
+
+    let expected_state = state_nonce.clone();
+
+    // spawn_blocking で非同期にタイムアウト付きでコールバックを受け取る
+    let auth_res = tauri::async_runtime::spawn_blocking(move || -> Result<DesktopAuthResult, String> {
+        let start = std::time::Instant::now();
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+
+        while start.elapsed() < Duration::from_secs(180) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut buffer = [0u8; 16384];
+                    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+                    let n = match stream.read(&mut buffer) {
+                        Ok(n) => n,
+                        Err(_) => continue,
+                    };
+                    let req_str = String::from_utf8_lossy(&buffer[..n]);
+
+                    let first_line = req_str.lines().next().unwrap_or("");
+                    if first_line.starts_with("GET ") {
+                        let path_query = first_line.split_whitespace().nth(1).unwrap_or("");
+                        if let Some(pos) = path_query.find('?') {
+                            let query = &path_query[pos + 1..];
+                            let mut id_token = String::new();
+                            let mut access_token = None;
+                            let mut state = String::new();
+
+                            for pair in query.split('&') {
+                                let mut kv = pair.splitn(2, '=');
+                                let k = kv.next().unwrap_or("");
+                                let v = kv.next().unwrap_or("");
+                                let decoded_v = urlencoding::decode(v).unwrap_or_default().to_string();
+                                if k == "idToken" {
+                                    id_token = decoded_v;
+                                } else if k == "accessToken" {
+                                    access_token = Some(decoded_v);
+                                } else if k == "state" {
+                                    state = decoded_v;
+                                }
+                            }
+
+                            if state == expected_state && !id_token.is_empty() {
+                                let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
+                                let response = format!(
+                                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                    html_body.len(),
+                                    html_body
+                                );
+                                let _ = stream.write_all(response.as_bytes());
+                                let _ = stream.flush();
+
+                                return Ok(DesktopAuthResult {
+                                    id_token,
+                                    access_token,
+                                });
+                            }
+                        }
+                    }
+
+                    let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nInvalid authentication request";
+                    let _ = stream.write_all(err_body.as_bytes());
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    log::warn!("Listener error: {}", e);
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+        Err("Google 認証の待機がタイムアウトしました。もう一度お試しください。".to_string())
+    }).await.map_err(|e| format!("タスク実行エラー: {}", e))??;
+
+    // メインウィンドウを前面に復帰
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+
+    Ok(auth_res)
+}
+
+#[tauri::command]
+fn open_in_app_browser_window(
+    app_handle: tauri::AppHandle,
+    url: String,
+    title: Option<String>,
+) -> Result<(), String> {
+    let parsed_url: url::Url = url.parse().map_err(|e| format!("無効なURLです: {}", e))?;
+    
+    // 既存のブラウザウィンドウがあれば URL を更新して前面化
+    if let Some(existing) = app_handle.get_webview_window("covo_in_app_browser") {
+        let _ = existing.navigate(parsed_url);
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        if let Some(t) = title {
+            let _ = existing.set_title(&format!("Covo Browser - {}", t));
+        }
+        return Ok(());
+    }
+
+    let win_title = title.map(|t| format!("Covo Browser - {}", t)).unwrap_or_else(|| "Covo Browser".to_string());
+
+    let win = WebviewWindowBuilder::new(
+        &app_handle,
+        "covo_in_app_browser",
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .title(&win_title)
+    .inner_size(1060.0, 740.0)
+    .center()
+    .resizable(true)
+    .decorations(true)
+    .build()
+    .map_err(|e| format!("ブラウザウィンドウの作成に失敗しました: {}", e))?;
+
+    let _ = win.show();
+    let _ = win.set_focus();
+    Ok(())
+}
+
 
 // ===========================================================================
 // run()
@@ -883,6 +1049,8 @@ pub fn run() {
             send_desktop_notification,
             silent_install_past_version,
             notify_app_loaded,
+            start_desktop_google_auth,
+            open_in_app_browser_window,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
