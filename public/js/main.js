@@ -119,14 +119,20 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // ブラウザ拡張機能・PWA インストール・ResizeObserver
+    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver
     if (
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
       str.includes('disconnected port') ||
+      str.includes('secretsession') ||
+      str.includes('getloginnames4url') ||
+      str.includes('called encrypt()') ||
+      str.includes('receiving end does not exist') ||
+      str.includes('message port closed') ||
       str.includes('extension context invalidated') ||
       str.includes('beforeinstallprompt') ||
       str.includes('resizeobserver loop') ||
+      str.includes('escape its sandboxing') ||
       str.includes('script error.')
     ) {
       return true;
@@ -1063,9 +1069,10 @@ window.handleUnifiedAuthSubmit = async function () {
 const googleAuthBtn = document.getElementById("googleAuthButton");
 if (googleAuthBtn) {
   googleAuthBtn.addEventListener("click", async () => {
-    if (authMessageEl) authMessageEl.textContent = "";
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    const authMsg = document.getElementById("authMessage");
+    const loading = document.getElementById("loadingOverlay");
+    if (authMsg) authMsg.textContent = "";
+    if (loading) loading.classList.remove("hidden");
 
     try {
       if (isTauri && window.__TAURI__?.core?.invoke) {
@@ -1102,9 +1109,9 @@ if (googleAuthBtn) {
       } else if (err.message) {
         msg = `Googleログインエラー: ${err.message}`;
       }
-      if (authMessageEl) authMessageEl.textContent = msg;
+      if (authMsg) authMsg.textContent = msg;
     } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+      if (loading) loading.classList.add("hidden");
     }
   });
 }
