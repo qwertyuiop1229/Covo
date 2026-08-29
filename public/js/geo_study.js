@@ -364,7 +364,7 @@ async function loadNewPhoto(roundId) {
     
     document.getElementById('gs-result-answer').textContent = `正解: ${loc.name}`;
     
-    if (imgUrl) {
+    if (imgUrl && typeof imgUrl === 'string') {
       const photoEl = document.getElementById('gs-photo-container');
       const panzoomEl = document.getElementById('gs-photo-panzoom');
       photoEl.style.opacity = 0;

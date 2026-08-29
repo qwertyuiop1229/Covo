@@ -543,7 +543,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       const buffer = await file.arrayBuffer();
       const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, roomKeyObj.latest, buffer);
       
-      const verNum = parseInt(roomKeyObj.latestVersion);
+      const verNum = parseInt(roomKeyObj.latestVersion, 10) || 1;
       let header;
       if (verNum < 255) {
         header = new Uint8Array([verNum]);

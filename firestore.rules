@@ -107,7 +107,7 @@ service cloud.firestore {
       }
       match /recovery_index/{emailHash} {
         allow read: if true; // ログイン前の暗号照合検証用
-        allow write: if isAuthenticated();
+        allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       }
 
       // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）

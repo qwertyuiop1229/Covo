@@ -1385,6 +1385,11 @@ async function _loadOrCreateUserRecoveryKey(user) {
     if (keyDisplay) {
       keyDisplay.textContent = key;
     }
+    if (modalKeyDisplay && !_isModalRecoveryKeyVisible) {
+      modalKeyDisplay.textContent = 'COVO-••••-••••-••••-••••';
+    } else if (modalKeyDisplay && _isModalRecoveryKeyVisible) {
+      modalKeyDisplay.textContent = key;
+    }
   } catch (err) {
     console.error('[Recovery] Load/Create key error:', err);
     const modalBadge = document.getElementById('modalRecoveryStatusBadge');
@@ -12458,14 +12463,6 @@ const _isIOSSafari = (() => {
 })();
 
 function downloadFile(fileData, fileName, mimeType) {
-  if (isTauri && window.__TAURI__?.plugin?.shell) {
-    window.__TAURI__.plugin.shell.open(fileData).catch(e => {
-      console.warn('Tauri open failed', e);
-      window.open(fileData, '_blank');
-    });
-    return;
-  }
-
   const tryShareOrDownloadBlob = async (blob) => {
     if (navigator.canShare && navigator.share) {
       try {
@@ -12497,6 +12494,14 @@ function downloadFile(fileData, fileName, mimeType) {
       .then(res => res.blob())
       .then(blob => tryShareOrDownloadBlob(blob))
       .catch(() => window.open(fileData, '_blank'));
+    return;
+  }
+
+  if (isTauri && window.__TAURI__?.plugin?.shell) {
+    window.__TAURI__.plugin.shell.open(fileData).catch(e => {
+      console.warn('Tauri open failed', e);
+      window.open(fileData, '_blank');
+    });
     return;
   }
 

@@ -14,7 +14,7 @@
         },
         "latestAnnouncement": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          ".write": "false"
         },
         "servers": {
           "$serverId": {

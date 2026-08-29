@@ -980,7 +980,7 @@ const ALLOWED_PROXY_DOMAINS = [
   "firebasestorage.googleapis.com",
   "files.catbox.moe",
   "0x0.st",
-  "workers.dev"
+  "simplechat-api.astro-fray-server.workers.dev"
 ];
 
 async function handleDownloadProxy(request, env, url) {
@@ -1373,6 +1373,13 @@ async function handleShareFile(request, env) {
       return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const fileName = file.name || 'file';
+    if (isFileExtensionBlocked(fileName)) {
+      return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== uploaderId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
@@ -1381,7 +1388,6 @@ async function handleShareFile(request, env) {
     // ArrayBufferとして読み込んでBlobを再構築（Worker間の転送を安定させる）
     const arrayBuffer = await file.arrayBuffer();
     const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
-    const fileName = file.name || 'file';
 
     // 1. catbox.moe を試す
     try {
@@ -1930,6 +1936,19 @@ async function handleD1Api(request, env, url) {
         const body = await request.json();
         const { appId, serverId, roomId, type, name, roomType, data, keys, currentKeyVersion } = body;
         
+        if (serverId) {
+          const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          if (curServer) {
+            let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+            const isOwner = curServer.created_by === verifiedUser.uid;
+            const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (type !== "keys" && !isOwner && !isSvAdmin && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Server admin privileges required to manage rooms" }), { status: 403, headers: d1Cors });
+            }
+          }
+        }
+
         if (type === "create" || type === "update") {
           const cur = await env.DB.prepare("SELECT room_data, current_key_version FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).first();
           let mergedData = cur && cur.room_data ? JSON.parse(cur.room_data) : {};
@@ -1945,9 +1964,11 @@ async function handleD1Api(request, env, url) {
 
         if (type === "keys") {
           // roomKeys 一括更新 (writeBatchの代わり)
-          for (const kObj of keys) {
-            await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
-              .bind(roomId, kObj.userId, serverId, appId, JSON.stringify(kObj.keyData), Date.now()).run();
+          if (Array.isArray(keys)) {
+            for (const kObj of keys) {
+              await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
+                .bind(roomId, kObj.userId, serverId, appId, JSON.stringify(kObj.keyData), Date.now()).run();
+            }
           }
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
@@ -1957,6 +1978,19 @@ async function handleD1Api(request, env, url) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const appId = url.searchParams.get("appId");
         const roomId = url.searchParams.get("roomId");
+        const serverId = url.searchParams.get("serverId");
+        if (serverId) {
+          const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
+          if (curServer) {
+            let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
+            const isOwner = curServer.created_by === verifiedUser.uid;
+            const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (!isOwner && !isSvAdmin && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Only server admin can delete rooms" }), { status: 403, headers: d1Cors });
+            }
+          }
+        }
         await env.DB.prepare("DELETE FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
         await env.DB.prepare("DELETE FROM messages WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
         await env.DB.prepare("DELETE FROM room_keys WHERE room_id = ? AND app_id = ?").bind(roomId, appId).run();
@@ -2152,6 +2186,10 @@ async function handleD1Api(request, env, url) {
         const body = await request.json();
         const { appId, serverId, roomId, userId, nickname, type, lastReadMessageId } = body;
         
+        if (verifiedUser.uid !== userId) {
+          return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user activity" }), { status: 403, headers: d1Cors });
+        }
+
         if (type === "read") {
           await env.DB.prepare("INSERT INTO read_receipts (room_id, user_id, server_id, app_id, last_read_at, last_read_message_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at, last_read_message_id = excluded.last_read_message_id")
             .bind(roomId, userId, serverId, appId, Date.now(), lastReadMessageId || "").run();
