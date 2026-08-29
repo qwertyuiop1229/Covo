@@ -711,6 +711,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
         // 2) 新規DM鍵を生成して参加者全員（2名）に配布
         const memberUids = Array.from(new Set(participants && participants.length ? participants : dmId.split('_'))).filter(Boolean);
+        
+        // 親ドキュメント dm_channels/{dmId} を確実に存在させてから keys サブコレクションへ書き込む (Firestore Rules 認可エラー防止)
+        try {
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`), {
+            participants: memberUids,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (dmDocErr) {
+          console.warn("[E2EE] DM親ドキュメント作成注意:", dmDocErr);
+        }
+
         const newKey = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const rawKey = await window.crypto.subtle.exportKey("raw", newKey);
 

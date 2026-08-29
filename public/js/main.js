@@ -5152,8 +5152,10 @@ document.addEventListener("DOMContentLoaded", () => {
 async function updateUserStatus(state) {
   if (!userId || !userNickname) return;
 
+  const activeChannelId = currentRoomId || currentDmId || null;
+
   // 差分チェック（同じ状態ならスキップ）
-  const currentStatusStr = JSON.stringify({ state, roomId: currentRoomId, nickname: userNickname, avatarUrl: userAvatarUrl });
+  const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl });
   if (_lastReportedStatusStr === currentStatusStr) return;
   _lastReportedStatusStr = currentStatusStr;
 
@@ -5170,7 +5172,7 @@ async function updateUserStatus(state) {
       avatarUrl: userAvatarUrl || null
     };
     if (state === 'online') {
-      payload.currentRoomId = currentRoomId || null;
+      payload.currentRoomId = activeChannelId;
     }
     await set(statusRef, payload);
   } catch (error) {
@@ -6407,6 +6409,25 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   currentRoomId = null;
   currentServerData = null;
   currentServerNickname = null;
+
+  // 未読境界をリセットし、前回までの最終既読時刻を確定
+  unreadBoundaryAt = 0;
+  unreadBoundaryMessageId = null;
+  try {
+    const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+    const prevRead = rm[`dm_${dmId}`];
+    if (typeof prevRead === 'number' && prevRead > 0) {
+      unreadBoundaryAt = prevRead;
+    }
+    const newReadTime = Date.now();
+    rm[`dm_${dmId}`] = newReadTime;
+    localStorage.setItem('covo_last_read', JSON.stringify(rm));
+    if (typeof updateLocalAndRemoteReadState === 'function') {
+      updateLocalAndRemoteReadState(`dm_${dmId}`, newReadTime);
+    }
+  } catch (e) { }
+
+  updateUserStatus('online');
 
   document.body.classList.add('in-chat-view');
   const sb = document.getElementById("sidebar");
@@ -10348,7 +10369,11 @@ async function sendSticker(emoji) {
   try {
     const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
     if (replyingToMessage) {
-      data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+      data.replyTo = {
+        messageId: replyingToMessage.id,
+        senderNickname: replyingToMessage.senderNickname,
+        text: replyingToMessage._originalText || replyingToMessage.text || "（ファイル）"
+      };
     }
 
     if (currentDmId) {
@@ -10675,25 +10700,36 @@ function updateFilePreview() {
 // ===== インアプリブラウザ (In-App Browser) 制御 =====
 let currentInAppBrowserUrl = '';
 
-// YouTube 等の埋め込み可能 URL への正規化
-function _normalizeInAppBrowserUrl(rawUrl) {
-  if (!rawUrl) return '';
+// YouTube / ニコニコ動画等の埋め込み専用プレイヤーURLを判定・正規化
+function _getEmbedMediaUrl(rawUrl) {
+  if (!rawUrl) return null;
   try {
     const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
     // YouTube (watch -> embed)
-    if (parsed.hostname.includes('youtube.com') && parsed.pathname === '/watch') {
+    if (host.includes('youtube.com') && parsed.pathname === '/watch') {
       const videoId = parsed.searchParams.get('v');
       if (videoId) {
         return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
       }
-    } else if (parsed.hostname === 'youtu.be') {
+    } else if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
       const videoId = parsed.pathname.replace(/^\//, '');
       if (videoId) {
         return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
       }
+    } else if (host.includes('youtube.com') && parsed.pathname.startsWith('/embed/')) {
+      return rawUrl;
+    }
+    // ニコニコ動画
+    else if (host.includes('nicovideo.jp') && parsed.pathname.includes('/watch/')) {
+      const parts = parsed.pathname.split('/watch/');
+      const videoId = parts[1] ? parts[1].split('?')[0] : '';
+      if (videoId) {
+        return `https://embed.nicovideo.jp/watch/${videoId}`;
+      }
     }
   } catch (_) { }
-  return rawUrl;
+  return null;
 }
 
 window.openInAppBrowser = function (url) {
@@ -10701,7 +10737,7 @@ window.openInAppBrowser = function (url) {
   currentInAppBrowserUrl = url;
 
   // 1. Windows版 (Tauri): 独立したネイティブ内蔵ブラウザウィンドウ（WebView2）で開く
-  // これにより X-Frame-Options や CSP による iframe ブロックを完全回避し、Google/X/GitHub等の外部サイトも100%確実に動作する
+  // これにより X-Frame-Options や CSP による iframe ブロックを完全回避し、あらゆる外部サイトも100%確実に動作する
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('open_in_app_browser_window', {
       url: url,
@@ -10717,20 +10753,21 @@ window.openInAppBrowser = function (url) {
     return;
   }
 
-  // 2. Web版 / PWA / モバイル: モーダル内蔵ブラウザを表示
+  // 2. Web版 / PWA / モバイル:
+  // YouTube などの埋め込み可能動画URLのみモーダル内蔵プレイヤーで表示
+  const embedUrl = _getEmbedMediaUrl(url);
   const modal = document.getElementById('inAppBrowserModal');
   const iframe = document.getElementById('inAppBrowserIframe');
   const urlDisplay = document.getElementById('inAppBrowserUrlDisplay');
 
-  if (modal && iframe && urlDisplay) {
+  if (embedUrl && modal && iframe && urlDisplay) {
     urlDisplay.textContent = url;
-    const targetUrl = _normalizeInAppBrowserUrl(url);
-    iframe.src = targetUrl;
+    iframe.src = embedUrl;
     modal.classList.remove('hidden');
     return;
   }
 
-  // フォールバック: 通常タブで開く
+  // 3. 一般Webサイト（ニュース・GitHub・外部サイトなど）は、CORS/X-Frame-Optionsブロックを避けるため安全に新規タブで開く
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
@@ -13080,17 +13117,21 @@ async function deleteRoomCascade(serverId, roomId) {
 // サーバーと配下の全データ（rooms, messages, readReceipts, profiles, inviteCodes, secrets）を削除
 async function deleteServerCascade(serverId) {
   const base = `artifacts/${appId}/servers/${serverId}`;
-  // 全ルームを取得して配下も削除
+  // 全ルームを取得して配下も削除 (messages, readReceipts, roomKeys, rescueRequests)
   const roomsSnap = await getDocs(collection(db, `${base}/rooms`));
   for (const roomDoc of roomsSnap.docs) {
     const rb = `${base}/rooms/${roomDoc.id}`;
     await batchDeleteCollection(collection(db, `${rb}/messages`));
     await batchDeleteCollection(collection(db, `${rb}/readReceipts`));
+    await batchDeleteCollection(collection(db, `${rb}/roomKeys`));
+    await batchDeleteCollection(collection(db, `${rb}/rescueRequests`));
     await deleteDoc(roomDoc.ref);
   }
   await batchDeleteCollection(collection(db, `${base}/profiles`));
   await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
   await batchDeleteCollection(collection(db, `${base}/secrets`));
+  await batchDeleteCollection(collection(db, `${base}/stamps`));
+  await batchDeleteCollection(collection(db, `${base}/stampGroups`));
   await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
