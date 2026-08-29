@@ -127,7 +127,7 @@
         const callbackUrl = params.get('callback');
         const state = params.get('state');
 
-        window.doGoogleLogin = async function () {
+        window.doGoogleLogin = async function (isAuto = false) {
             const status = document.getElementById('status');
             const btn = document.getElementById('googleBtn');
             btn.disabled = true;
@@ -154,24 +154,34 @@
                     // ローカルループバックサーバーへリダイレクト
                     window.location.href = target.toString();
                 } else {
+                    btn.disabled = false;
                     status.className = 'status-box error';
                     status.textContent = 'コールバックURLが指定されていません。';
                 }
             } catch (err) {
-                console.error('Desktop Auth Error:', err);
                 btn.disabled = false;
-                status.className = 'status-box error';
-                status.textContent = '認証に失敗しました: ' + (err.message || err);
+                if (err.code === 'auth/popup-blocked' || isAuto) {
+                    status.className = 'status-box';
+                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
+                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                    status.className = 'status-box';
+                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
+                } else {
+                    console.error('Desktop Auth Error:', err);
+                    status.className = 'status-box error';
+                    status.textContent = '認証エラー: ' + (err.message || err);
+                }
             }
         };
 
         window.addEventListener('load', () => {
-            // ユーザーの手間を省くため、ロード時に自動起動
+            const status = document.getElementById('status');
+            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
             setTimeout(() => {
                 if (typeof window.doGoogleLogin === 'function') {
-                    window.doGoogleLogin();
+                    window.doGoogleLogin(true);
                 }
-            }, 350);
+            }, 300);
         });
     </script>
 </head>

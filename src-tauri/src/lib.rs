@@ -910,46 +910,66 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
                     let first_line = req_str.lines().next().unwrap_or("");
                     if first_line.starts_with("GET ") {
                         let path_query = first_line.split_whitespace().nth(1).unwrap_or("");
-                        if let Some(pos) = path_query.find('?') {
-                            let query = &path_query[pos + 1..];
-                            let mut id_token = String::new();
-                            let mut access_token = None;
-                            let mut state = String::new();
 
-                            for pair in query.split('&') {
-                                let mut kv = pair.splitn(2, '=');
-                                let k = kv.next().unwrap_or("");
-                                let v = kv.next().unwrap_or("");
-                                let decoded_v = urlencoding::decode(v).unwrap_or_default().to_string();
-                                if k == "idToken" {
-                                    id_token = decoded_v;
-                                } else if k == "accessToken" {
-                                    access_token = Some(decoded_v);
-                                } else if k == "state" {
-                                    state = decoded_v;
+                        // favicon.ico などのブラウザ副次リクエストは 204 で即応答してコールバック待機を継続
+                        if path_query.starts_with("/favicon.ico") {
+                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+                            let _ = stream.write_all(resp.as_bytes());
+                            let _ = stream.flush();
+                            continue;
+                        }
+
+                        // /callback 宛てのリクエストを正しく解析
+                        if path_query.starts_with("/callback") {
+                            if let Some(pos) = path_query.find('?') {
+                                let query = &path_query[pos + 1..];
+                                let mut id_token = String::new();
+                                let mut access_token = None;
+                                let mut state = String::new();
+
+                                for pair in query.split('&') {
+                                    let mut kv = pair.splitn(2, '=');
+                                    let k = kv.next().unwrap_or("");
+                                    let v = kv.next().unwrap_or("");
+                                    let decoded_v = urlencoding::decode(v).unwrap_or_default().to_string();
+                                    if k == "idToken" {
+                                        id_token = decoded_v;
+                                    } else if k == "accessToken" {
+                                        access_token = Some(decoded_v);
+                                    } else if k == "state" {
+                                        state = decoded_v;
+                                    }
+                                }
+
+                                if state == expected_state && !id_token.is_empty() {
+                                    let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
+                                    let response = format!(
+                                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                        html_body.len(),
+                                        html_body
+                                    );
+                                    let _ = stream.write_all(response.as_bytes());
+                                    let _ = stream.flush();
+
+                                    return Ok(DesktopAuthResult {
+                                        id_token,
+                                        access_token,
+                                    });
                                 }
                             }
 
-                            if state == expected_state && !id_token.is_empty() {
-                                let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
-                                let response = format!(
-                                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                                    html_body.len(),
-                                    html_body
-                                );
-                                let _ = stream.write_all(response.as_bytes());
-                                let _ = stream.flush();
-
-                                return Ok(DesktopAuthResult {
-                                    id_token,
-                                    access_token,
-                                });
-                            }
+                            let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nInvalid authentication request";
+                            let _ = stream.write_all(err_body.as_bytes());
+                            let _ = stream.flush();
+                            continue;
                         }
-                    }
 
-                    let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nInvalid authentication request";
-                    let _ = stream.write_all(err_body.as_bytes());
+                        // /callback 以外の通常リクエストは 404 を返してループを継続
+                        let not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+                        let _ = stream.write_all(not_found.as_bytes());
+                        let _ = stream.flush();
+                        continue;
+                    }
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(100));

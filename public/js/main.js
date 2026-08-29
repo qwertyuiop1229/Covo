@@ -3687,6 +3687,7 @@ async function scanAllUnreadAndRender() {
     }
     const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]').filter(it => it.serverId === currentServerId);
 
+    // 1. サーバーのルーム未読スキャン
     for (const sv of servers) {
       if (sv.id === currentServerId) continue;
 
@@ -3723,6 +3724,7 @@ async function scanAllUnreadAndRender() {
           }
 
           items.push({
+            isDm: false,
             serverId: sv.id,
             serverName: sv.name || sv.id,
             serverIconUrl: sv.iconUrl || null,
@@ -3736,6 +3738,49 @@ async function scanAllUnreadAndRender() {
         }
       }
     }
+
+    // 2. 個チャ (DM) の未読スキャン
+    if (typeof dmConversations === 'object' && dmConversations) {
+      for (const dm of Object.values(dmConversations)) {
+        const otherUid = (dm.participants || []).find(id => id !== userId);
+        if (!otherUid) continue;
+        const lastAt = typeof dm.lastMessageAt === 'number' ? dm.lastMessageAt : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
+        if (!lastAt) continue;
+        const lastRead = rm[`dm_${dm.id}`] || 0;
+        const bySelf = dm.lastMessageSender && dm.lastMessageSender === userId;
+        const isOpen = (currentDmId === dm.id && document.hasFocus());
+        if (lastAt > lastRead && !bySelf && !isOpen) {
+          let textBody = dm.lastMessageText || '新着メッセージ';
+          if (typeof isEncrypted === 'function' && isEncrypted(textBody)) {
+            try {
+              const dmKey = await _getDmKeyWithWait(dm.id, dm.participants || [userId, otherUid], 1000);
+              textBody = await _decryptDmText(textBody, dmKey);
+            } catch (e) { textBody = '（暗号化されたメッセージ）'; }
+          }
+          if (typeof isEncrypted === 'function' && isEncrypted(textBody)) textBody = '（暗号化されたメッセージ）';
+
+          const targetRel = friendRelationships[otherUid];
+          const targetUser = cachedUsers.find(u => u.id === otherUid) || {};
+          const targetNick = targetRel?.targetNickname || targetUser.nickname || 'ユーザー';
+          const targetAv = targetRel?.targetAvatarUrl || targetUser.avatarUrl || '';
+
+          items.push({
+            isDm: true,
+            dmId: dm.id,
+            targetUid: otherUid,
+            targetNickname: targetNick,
+            targetAvatarUrl: targetAv,
+            serverName: 'ダイレクトメッセージ',
+            roomName: `@${targetNick}`,
+            senderName: targetNick,
+            lastText: textBody,
+            isMention: false,
+            lastAt
+          });
+        }
+      }
+    }
+
     items.sort((a, b) => b.lastAt - a.lastAt);
     localStorage.setItem('covo_global_items', JSON.stringify(items));
     renderNotifList(items);
@@ -3774,18 +3819,31 @@ function renderNotifList(items) {
     const maxItems = items.slice(0, 50);
     let html = '';
     maxItems.forEach(it => {
-      const sName = escapeHtml(it.serverName || 'サーバー');
+      const isDm = Boolean(it.isDm);
+      const sName = escapeHtml(it.serverName || (isDm ? 'ダイレクトメッセージ' : 'サーバー'));
       const rName = escapeHtml(it.roomName || 'ルーム');
       const timeStr = formatTimeAgo(it.lastAt);
-      const initial = sName.charAt(0).toUpperCase();
+      const initial = isDm ? (it.targetNickname || '?').charAt(0).toUpperCase() : sName.charAt(0).toUpperCase();
       const bodyText = escapeHtml(it.lastText || '新着メッセージ');
       const sender = escapeHtml(it.senderName || 'メンバー');
-      const iconHtml = it.serverIconUrl
-        ? `<img src="${escapeHtml(it.serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
-        : `<span class="w-full h-full bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-500 dark:text-indigo-400 flex items-center justify-center font-bold text-xs rounded-xl">${initial}</span>`;
+      
+      let iconHtml = '';
+      if (isDm) {
+        iconHtml = isUsableAvatarUrl(it.targetAvatarUrl)
+          ? `<img src="${escapeHtml(it.targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" />`
+          : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-full">${initial}</span>`;
+      } else {
+        iconHtml = it.serverIconUrl
+          ? `<img src="${escapeHtml(it.serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
+          : `<span class="w-full h-full bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-500 dark:text-indigo-400 flex items-center justify-center font-bold text-xs rounded-xl">${initial}</span>`;
+      }
+
+      const clickAction = isDm
+        ? `closeNotifModal(); openDm('${escapeHtml(it.targetUid)}','${escapeHtml(it.targetNickname || '')}','${escapeHtml(it.targetAvatarUrl || '')}')`
+        : `goToServerRoom('${it.serverId}','${it.roomId}')`;
 
       html += `
-        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
+        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="${clickAction}">
           <div class="w-9 h-9 rounded-xl flex-shrink-0 overflow-hidden shadow-inner mt-0.5">
             ${iconHtml}
           </div>
@@ -3793,7 +3851,7 @@ function renderNotifList(items) {
             <div class="flex items-center gap-1.5 leading-none mb-1">
               <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[130px]">${sName}</span>
               <span class="text-gray-300 dark:text-gray-600 text-xs">•</span>
-              <span class="text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 truncate">#${rName}</span>
+              <span class="text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 truncate">${isDm ? rName : `#${rName}`}</span>
               <span class="text-[10px] text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">${timeStr}</span>
             </div>
             <div class="text-xs text-gray-800 dark:text-gray-200 font-medium truncate leading-tight">
@@ -5719,8 +5777,20 @@ async function enterServer(serverId, serverData) {
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
   if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+  
   currentServerId = serverId;
   currentServerData = serverData;
+  currentDmId = null;
+  currentDmParticipant = null;
+  currentDmParticipants = [];
+  currentRoomId = null; // ルームを一旦リセットして前サーバーのチャットを閉じる
+
+  // チャット欄とメッセージDOMをクリア
+  clearMessagesDOM();
+  const currentRoomHeader = document.getElementById("currentRoomHeader");
+  if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
+  if (messageInput) messageInput.disabled = true;
+  if (sendMessageButton) sendMessageButton.disabled = true;
 
   // Sync RTDB membership securely via Worker
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
@@ -5746,15 +5816,13 @@ async function enterServer(serverId, serverData) {
     localStorage.setItem('covo_recent_servers', JSON.stringify(rm));
     localStorage.setItem('covo_last_opened_server', serverId);
   } catch (e) { }
-  // サーバーに入ったら未読フラグをクリア
-
 
   document.getElementById("serverListScreen").classList.add("hidden");
   appContainer.classList.remove("hidden");
   appContainer.style.animation = "fadeIn 0.2s ease both";
-  if (document.body.classList.contains("discord-ui-mode")) {
-    document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-discover-view");
-  }
+  
+  // DiscordUIクラスの更新 (DM/探索ビューからサーバービューへ完全遷移)
+  document.body.classList.remove("discord-home-view", "discord-dm-view", "discord-dm-chat", "discord-discover-view");
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 
   // ニックネームヘッダーを表示
@@ -5768,7 +5836,7 @@ async function enterServer(serverId, serverData) {
   // サーバーヘッダー更新
   document.getElementById("serverNameDisplay").textContent = serverData.name || serverId;
   const settingsBtn = document.getElementById("serverSettingsBtn");
-  settingsBtn.classList.remove("hidden");
+  if (settingsBtn) settingsBtn.classList.remove("hidden");
 
   // タイトルバー中央コンテキスト更新
   if (typeof updateTitleBarContext === 'function') {
@@ -5793,7 +5861,7 @@ async function enterServer(serverId, serverData) {
     loadCurrentServerStamps();
   }
 
-  // ルームを読み込む
+  // ルームを読み込む（前回開いていたルーム、または一番上のルームを自動選択）
   loadServerRooms(serverId);
   if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
     membersSidebar.style.setProperty("display", "", "important");
@@ -5805,13 +5873,6 @@ async function enterServer(serverId, serverData) {
 
   // サーバーに入室したタイミングで、対象メンバーを絞り込んでステータス監視を再設定
   subscribeToUserStatus();
-
-  // P2P 過去ログ補完（同室メンバーがオンラインならバックグラウンド同期）
-  try {
-    LocalStore.getOldestMessageTimestamp(`${currentServerId}_${roomId}`).then(oldestTs => {
-      requestP2PLogBackfill('server', roomId, oldestTs);
-    }).catch(() => {});
-  } catch (e) { }
 }
 
 // DM / フレンド画面を開く
@@ -5819,6 +5880,9 @@ window.openDmHomeView = function () {
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
+  currentDmId = null;
+  currentDmParticipant = null;
+  currentDmParticipants = [];
   currentServerNickname = null;
   currentHomeViewMode = 'dm';
   try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
@@ -5844,8 +5908,8 @@ window.openDmHomeView = function () {
   const membersSidebar = document.getElementById("membersSidebar");
   if (membersSidebar) membersSidebar.classList.add("hidden");
 
-  // モバイルビュー・DiscordUIクラスのリセット
-  document.body.classList.remove("in-chat-view", "discord-discover-view");
+  // モバイルビュー・DiscordUIクラスのリセット（DMチャットからDMホームフレンド一覧へ切り替え）
+  document.body.classList.remove("in-chat-view", "discord-dm-chat", "discord-discover-view");
   document.body.classList.add("discord-home-view", "discord-dm-view");
 
   const sidebar = document.getElementById("sidebar");
@@ -6425,6 +6489,23 @@ function renderDmConversationsList() {
     const isActive = currentDmId === dm.id;
     const isOnline = targetUser.status === 'online' || targetUser.status === 'dnd';
 
+    // 最新メッセージプレビューの復号・サニタイズ処理
+    let previewText = dm._decryptedPreview || dm.lastMessageText || '会話を始めましょう';
+    if (dm.lastMessageText && typeof isEncrypted === 'function' && isEncrypted(dm.lastMessageText) && !dm._decryptedPreview) {
+      previewText = 'メッセージ';
+      _getDmKeyWithWait(dm.id, dm.participants || [userId, otherUid], 1000).then(dmKey => {
+        if (dmKey) {
+          _decryptDmText(dm.lastMessageText, dmKey).then(dec => {
+            if (dec && !dec.startsWith('（復号化エラー')) {
+              dm._decryptedPreview = dec;
+              const previewEl = document.getElementById(`dm-preview-${dm.id}`);
+              if (previewEl) previewEl.textContent = dec;
+            }
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     return `
       <div class="dm-sidebar-item ${isActive ? 'active' : ''}" onclick="openDm('${otherUid}', '${escapeHtml(nickname)}', '${escapeHtml(avatarUrl)}')">
         <div class="relative w-8 h-8 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs flex-shrink-0">
@@ -6433,7 +6514,7 @@ function renderDmConversationsList() {
         </div>
         <div class="flex-1 min-w-0">
           <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(nickname)}</div>
-          <div class="text-[11px] text-gray-400 truncate">${escapeHtml(dm.lastMessageText || '会話を始めましょう')}</div>
+          <div class="text-[11px] text-gray-400 truncate" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
         </div>
         <button class="dm-close-btn p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${dm.id}')">
           <i class="fas fa-times"></i>
@@ -6473,9 +6554,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   updateUserStatus('online');
 
-  document.body.classList.add('in-chat-view');
+  // クラス切り替え: discord-home-view, discord-dm-view を解除し discord-dm-chat in-chat-view を付与
+  document.body.classList.remove('discord-home-view', 'discord-dm-view', 'discord-discover-view');
+  document.body.classList.add('discord-dm-chat', 'in-chat-view');
+
   const sb = document.getElementById("sidebar");
-  if (sb) sb.classList.add("mobile-hidden");
+  if (sb && window.innerWidth < 768) sb.classList.add("mobile-hidden");
 
   const currentRoomHeader = document.getElementById("currentRoomHeader");
   if (currentRoomHeader) currentRoomHeader.classList.remove("hidden");
@@ -9115,8 +9199,17 @@ function loadServerRooms(serverId, _retry = 0) {
       roomList.appendChild(roomContainer);
     }
 
-    // covo_global_items は updateGlobalNotifUI や requestScanAllUnread で管理されるため、
-    // ここでの boolean 保存(covo_server_unread)は廃止しました。
+    // サーバー入室時・切り替え時のルーム自動オープン（前回開いていたルーム、または一番上のルーム）
+    if (currentServerId === serverId && roomDocs.length > 0) {
+      const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
+      let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
+      if (!targetDoc) {
+        targetDoc = roomDocs[0];
+      }
+      if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
+        selectRoom(targetDoc.id, targetDoc.data().name);
+      }
+    }
   }
 
   window.changeRoomOrder = async function (roomId, direction, currentOrder) {
@@ -9233,13 +9326,13 @@ function updateServerCardDots() {
   } catch (e) { }
 }
 
-// ターミナルバナー（100件終端案内）表示ヘルパー
+// ターミナルバナー（100件終端案内）表示ヘルパー (flipped適用で正立表示)
 function showTerminalBanner() {
   let banner = document.getElementById('historyTerminalBanner');
   if (!banner) {
     banner = document.createElement('div');
     banner.id = 'historyTerminalBanner';
-    banner.className = 'history-terminal-banner';
+    banner.className = 'history-terminal-banner flipped';
     banner.innerHTML = `<i class="fas fa-shield-halved text-indigo-500 mr-1.5"></i> これより前のメッセージはありません（サーバーには最大100件まで保存されます）`;
   }
   banner.style.display = 'flex';
@@ -9771,6 +9864,13 @@ function selectRoom(roomId, roomName) {
 
   // 既読とタイピングは subscribeToMessagesRTDB() 内で RTDB リスニングされるため、ここでの不要な Firestore 重複 onSnapshot を排除
   membersSidebar.classList.remove("hidden");
+
+  // P2P 過去ログ補完（同室メンバーがオンラインならバックグラウンド同期）
+  try {
+    LocalStore.getOldestMessageTimestamp(`${currentServerId}_${roomId}`).then(oldestTs => {
+      requestP2PLogBackfill('server', roomId, oldestTs);
+    }).catch(() => {});
+  } catch (e) { }
 }
 
 let floatingDateTimer = null;
@@ -9898,21 +9998,27 @@ async function loadJumpOlderMessages() {
   isLoadingJumpOlder = true;
   const spinner = document.getElementById('topLoadingSpinner');
   if (spinner) spinner.style.display = 'flex';
+  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
   try {
     const oldestMsg = jumpViewMessages[0];
     if (!oldestMsg) { hasMoreJumpOlder = false; return; }
     const oldestTime = getMsgTimestamp(oldestMsg);
     const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+    const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+    const messagesRef = ref(rtdb, basePath);
     const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMsg.id), limitToLast(21));
     const snap = await get(q);
     if (snap.exists()) {
       const data = snap.val();
-      let docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+      let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
       docs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      if (currentServerId) {
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      } else if (currentDmId) {
+        await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
+      }
       docs = docs.filter(d => d.id !== oldestMsg.id);
       if (docs.length > 0) {
         jumpViewMessages = [...docs, ...jumpViewMessages];
@@ -9939,21 +10045,27 @@ async function loadJumpOlderMessages() {
 async function loadJumpNewerMessages() {
   if (isLoadingJumpNewer || !hasMoreJumpNewer || !jumpViewMessages.length) return;
   isLoadingJumpNewer = true;
+  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
   try {
     const newestMsg = jumpViewMessages[jumpViewMessages.length - 1];
     if (!newestMsg) { hasMoreJumpNewer = false; return; }
     const newestTime = getMsgTimestamp(newestMsg);
     const { ref, get, query: rtdbQuery, limitToFirst, orderByChild, startAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+    const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+    const messagesRef = ref(rtdb, basePath);
     const q = rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(newestTime, newestMsg.id), limitToFirst(21));
     const snap = await get(q);
     if (snap.exists()) {
       const data = snap.val();
-      let docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
+      let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
       docs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      if (currentServerId) {
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      } else if (currentDmId) {
+        await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
+      }
       docs = docs.filter(d => d.id !== newestMsg.id);
       if (docs.length > 0) {
         const oldScrollHeight = messagesDisplay.scrollHeight;
@@ -11876,7 +11988,27 @@ function createMessageElement(message, messageId, readByCount = 0) {
       fileAttachmentDiv.appendChild(arrSpan);
       // ダウンロード＆復号をトリガー
       setMediaSrc(fileAttachmentDiv, null);
-      fileAttachmentDiv.addEventListener("click", () => {
+      fileAttachmentDiv.addEventListener("click", async () => {
+        if (message.isFileEncrypted && !message._decryptedFileUrl) {
+          try {
+            let key;
+            if (currentDmId) {
+              key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+            } else {
+              const members = (currentServerData && currentServerData.joinedUsers) || [];
+              key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+            }
+            if (!key) throw new Error("鍵が見つかりません");
+            const res = await fetch(message.fileData);
+            const buf = await res.arrayBuffer();
+            const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+            const blob = new Blob([dec], { type: message.fileType });
+            message._decryptedFileUrl = URL.createObjectURL(blob);
+          } catch (e) {
+            alertMessage("ファイルの復号に失敗しました", "error");
+            return;
+          }
+        }
         const url = message._decryptedFileUrl || message.fileData;
         downloadFile(url, message.fileName, message.fileType);
       });
@@ -11989,55 +12121,99 @@ async function jumpToUnloadedMessage(msgId) {
   _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
   _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
 
+  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  const decryptInPlace = async (list) => {
+    if (!list || list.length === 0) return;
+    if (currentServerId) {
+      const _members = (currentServerData && currentServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
+    } else if (currentDmId) {
+      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    }
+  };
+
   try {
-    const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
+    let targetMsg = null;
+
+    // 1. IndexedDB (LocalStore) から探索
+    const localMsgs = await LocalStore.getMessages(chId, null, 200);
+    targetMsg = localMsgs.find(m => m.id === msgId);
+
+    // 2. なければ RTDB から取得
+    if (!targetMsg) {
+      const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const basePath = currentServerId
+        ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`
+        : `artifacts/${appId}/dm_messages/${currentDmId}/${msgId}`;
+      const snap = await get(ref(rtdb, basePath));
+      if (snap.exists()) {
+        targetMsg = { id: snap.key, channelId: chId, ...snap.val() };
+      }
+    }
+
+    // 3. なければ Firestore (サーバーメッセージの場合のみ)
+    if (!targetMsg && currentServerId && currentRoomId) {
+      const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        targetMsg = { id: docSnap.id, channelId: chId, ...docSnap.data() };
+      }
+    }
+
+    if (!targetMsg) {
       alertMessage("メッセージが見つかりません。", "error");
       if (spinner) spinner.style.display = 'none';
       return;
     }
-    const targetMsg = { id: docSnap.id, ...docSnap.data() };
 
-    // ターゲットメッセージの周辺（過去15件・未来15件）のみを最小限フェッチ（極小リード数）
+    const targetTime = getMsgTimestamp(targetMsg);
     const fetchLimit = 15;
-    const qPast = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "desc"),
-      startAt(targetMsg.timestamp),
-      limit(fetchLimit)
-    );
-    const qFuture = query(
-      collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`),
-      orderBy("timestamp", "asc"),
-      startAfter(targetMsg.timestamp),
-      limit(fetchLimit)
-    );
 
-    const [snapPast, snapFuture] = await Promise.all([getDocs(qPast), getDocs(qFuture)]);
+    // RTDB からターゲット周辺のメッセージを取得
+    const { ref, get, query: rtdbQuery, orderByChild, startAt, endAt, limitToLast, limitToFirst } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const basePath = currentServerId
+      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
+      : `artifacts/${appId}/dm_messages/${currentDmId}`;
+    const messagesRef = ref(rtdb, basePath);
 
-    const pastMsgs = [];
-    snapPast.forEach(doc => pastMsgs.push({ id: doc.id, ...doc.data() }));
-    pastMsgs.reverse(); // descをascに戻す
+    const qPast = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(targetTime, msgId), limitToLast(fetchLimit + 1));
+    const qFuture = rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(targetTime, msgId), limitToFirst(fetchLimit + 1));
 
-    const futureMsgs = [];
-    snapFuture.forEach(doc => futureMsgs.push({ id: doc.id, ...doc.data() }));
+    const [snapPast, snapFuture] = await Promise.all([get(qPast), get(qFuture)]);
 
-    hasMoreJumpOlder = snapPast.docs.length === fetchLimit;
-    hasMoreJumpNewer = snapFuture.docs.length === fetchLimit;
-
-    const combinedMsgs = [...pastMsgs, ...futureMsgs];
-
-    const _members = (currentServerData && currentServerData.joinedUsers) || [];
-    for (let i = 0; i < combinedMsgs.length; i++) {
-      if (combinedMsgs[i].text && isEncrypted(combinedMsgs[i].text)) {
-        combinedMsgs[i].text = await decryptText(combinedMsgs[i].text, currentServerId, currentRoomId, _members).catch(() => combinedMsgs[i].text);
-      }
+    let pastMsgs = [];
+    if (snapPast.exists()) {
+      const d = snapPast.val();
+      pastMsgs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
+      pastMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
     }
 
-    // 常時リアルタイムリスナーは稼働させたまま、画面用配列をジャンプ先ログへスッ切り替え
+    let futureMsgs = [];
+    if (snapFuture.exists()) {
+      const d = snapFuture.val();
+      futureMsgs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
+      futureMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+      futureMsgs = futureMsgs.filter(d => d.id !== msgId);
+    }
+
+    hasMoreJumpOlder = pastMsgs.length >= fetchLimit;
+    hasMoreJumpNewer = futureMsgs.length >= fetchLimit;
+
+    const combinedMsgs = [...pastMsgs, ...futureMsgs];
+    const seen = new Set();
+    const uniqueMsgs = combinedMsgs.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+    uniqueMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+
+    await decryptInPlace(uniqueMsgs);
+
     isJumpView = true;
-    jumpViewMessages = combinedMsgs;
+    jumpViewMessages = uniqueMsgs;
     allLoadedMessages = [...jumpViewMessages];
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
@@ -12048,7 +12224,6 @@ async function jumpToUnloadedMessage(msgId) {
     if (spinner) spinner.style.display = 'none';
 
     renderMessagesWithReadReceipts();
-
   } catch (e) {
     console.error("Jump fetch error:", e);
   }
@@ -12056,14 +12231,12 @@ async function jumpToUnloadedMessage(msgId) {
   setTimeout(() => {
     let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
     if (el2) {
-      // 画面非表示の間に一瞬で位置を確定させ、カクつきを完全になくす
       el2.scrollIntoView({ behavior: 'auto', block: 'center' });
       setTimeout(() => {
         messagesDisplay.style.transition = 'opacity 0.3s ease';
         messagesDisplay.style.opacity = '1';
         allowPagination = true;
-        // 美しいハイライトアニメーションのみを発火
-        const isStamp = el2.querySelector('img[alt^="stamp_"]');
+        const isStamp = el2.querySelector('img[alt^="stamp_"]') || el2.querySelector('.sticker-content');
         if (isStamp) {
           isStamp.classList.add('stamp-jump-anim');
           setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
@@ -12774,6 +12947,30 @@ if (deleteMsgBtn) {
       const rtdb = await _getOrInitRTDB();
       await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
       LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
+
+      // DMチャンネルの最新メッセージサマリーを更新
+      allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+      const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
+      
+      const newLastText = remainingLatest
+        ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+        : null;
+      const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
+      const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
+
+      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
+        lastMessageText: newLastText,
+        lastMessageAt: newLastAt,
+        lastMessageSender: newLastSender
+      }, { merge: true }).catch(() => {});
+
+      if (dmConversations[currentDmId]) {
+        dmConversations[currentDmId].lastMessageText = newLastText;
+        dmConversations[currentDmId].lastMessageAt = newLastAt;
+        dmConversations[currentDmId].lastMessageSender = newLastSender;
+        dmConversations[currentDmId]._decryptedPreview = null;
+        renderDmConversationsList();
+      }
     } else {
       await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
       try {
@@ -12782,9 +12979,23 @@ if (deleteMsgBtn) {
         await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
       } catch (err) { console.error("RTDB Delete Failed", err); }
       LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
+
+      // ルームの最新メッセージサマリーを更新
+      allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+      const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
+      const newLastText = remainingLatest
+        ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+        : null;
+      const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
+      const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
+
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+        lastMessageText: newLastText,
+        lastMessageAt: newLastAt,
+        lastMessageSender: newLastSender
+      }).catch(() => {});
     }
 
-    allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
     currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
@@ -12839,12 +13050,35 @@ messagesDisplay.addEventListener("click", (e) => {
 async function showUnloadedMessagePreview(msgId) {
   let msgData = lastMessagesData.find(m => m.id === msgId);
   if (!msgData) {
+    const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
     try {
-      const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        msgData = { id: docSnap.id, ...docSnap.data() };
-      } else {
+      // 1. LocalStore から探索
+      const localMsgs = await LocalStore.getMessages(chId, null, 200);
+      msgData = localMsgs.find(m => m.id === msgId);
+
+      // 2. RTDB から取得
+      if (!msgData) {
+        const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const basePath = currentServerId
+          ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`
+          : `artifacts/${appId}/dm_messages/${currentDmId}/${msgId}`;
+        const snap = await get(ref(rtdb, basePath));
+        if (snap.exists()) {
+          msgData = { id: snap.key, ...snap.val() };
+        }
+      }
+
+      // 3. Firestore (サーバーメッセージの場合のみ)
+      if (!msgData && currentServerId && currentRoomId) {
+        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          msgData = { id: docSnap.id, ...docSnap.data() };
+        }
+      }
+
+      if (!msgData) {
         alertMessage("メッセージが見つかりません。", "error");
         return;
       }
@@ -12857,16 +13091,21 @@ async function showUnloadedMessagePreview(msgId) {
 
   if (msgData.text && isEncrypted(msgData.text)) {
     try {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      msgData.text = await decryptText(msgData.text, currentServerId, currentRoomId, _members);
+      if (currentServerId) {
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        msgData.text = await decryptText(msgData.text, currentServerId, currentRoomId, _members);
+      } else if (currentDmId) {
+        const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 1500);
+        msgData.text = await _decryptDmText(msgData.text, dmKey);
+      }
     } catch (e) {
       console.error("Preview decryption error:", e);
     }
   }
 
   let pTextHtml = "";
-  if (msgData.customEmojiUrl) {
-    pTextHtml = `<img src="${escapeHtml(msgData.customEmojiUrl)}" class="h-16 w-16 object-contain mt-1" />`;
+  if (msgData.sticker) {
+    pTextHtml = `<div class="sticker-content">${getEmojiHtml(msgData.sticker, 'sk-em')}</div>`;
   } else if (msgData.fileName) {
     pTextHtml = `<div class="flex items-center gap-2 mt-1"><i class="fas fa-file text-gray-400 text-lg"></i><span class="text-xs text-gray-500">${escapeHtml(msgData.fileName)}</span></div>`;
   } else {
@@ -13840,10 +14079,11 @@ function renderPinnedMessages() {
   // 最新（直近）のピン留めメッセージ
   const latestMsg = pinnedMessages[pinnedMessages.length - 1];
   const count = pinnedMessages.length;
-  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${currentRoomId}`);
+  const pinKey = currentRoomId || currentDmId;
+  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`);
 
   // セッションから最小化状態を復元
-  const isMinimized = sessionStorage.getItem(`minimized_pins_${currentRoomId}`) === "true";
+  const isMinimized = sessionStorage.getItem(`minimized_pins_${pinKey}`) === "true";
 
   if (isMinimized) {
     pinnedMessagesArea.classList.add("hidden");
@@ -13885,7 +14125,7 @@ function renderPinnedMessages() {
   } else {
     // 最小化されていない（バーが表示されている）状態 = ユーザーが確認したとみなし、lastSeenPinId を更新
     if (latestMsg) {
-      localStorage.setItem(`covo_last_seen_pin_${currentRoomId}`, latestMsg.id);
+      localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
     }
     // 最小化されていない場合はフローティングアイコンを消去
     if (floatIcon) floatIcon.remove();
@@ -15844,7 +16084,7 @@ async function showNotification(title, body, roomId) {
     // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
     if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
       try {
-        const n = new Notification(title, { body, icon: '/icon-192x192.png?v=6' });
+        const n = new Notification(title, { body, icon: '/img/icon-192x192.png?v=6' });
         n.onclick = () => {
           window.focus();
           n.close();
@@ -16995,7 +17235,20 @@ window.updateTitleBarContext = function (type, data) {
       const initial = sName.charAt(0).toUpperCase();
       iconEl.innerHTML = `<span class="w-full h-full bg-slate-600 dark:bg-slate-700 text-white flex items-center justify-center font-bold text-[9px] rounded">${escapeHtml(initial)}</span>`;
     }
-  } else if (type === 'dm' || type === 'home') {
+  } else if (type === 'dm') {
+    if (data && data.nickname) {
+      textEl.textContent = `@${data.nickname}`;
+      if (isUsableAvatarUrl(data.avatarUrl)) {
+        iconEl.innerHTML = `<img src="${escapeHtml(data.avatarUrl)}" class="w-full h-full object-cover rounded-full" />`;
+      } else {
+        const initial = data.nickname.charAt(0).toUpperCase();
+        iconEl.innerHTML = `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[9px] rounded-full">${escapeHtml(initial)}</span>`;
+      }
+    } else {
+      textEl.textContent = 'フレンド';
+      iconEl.innerHTML = '<i class="fas fa-user-friends text-xs"></i>';
+    }
+  } else if (type === 'home') {
     textEl.textContent = 'フレンド';
     iconEl.innerHTML = '<i class="fas fa-user-friends text-xs"></i>';
   } else if (type === 'discover') {

@@ -1125,12 +1125,9 @@ async function handleDeleteFile(request, env, url) {
       }
     }
 
-    if (forceDelete) {
-      if (!isPrivilegedAdmin) {
-        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required for force delete" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
-      }
-    } else if (meta && meta.uploaderId && meta.uploaderId !== requesterId && !isPrivilegedAdmin) {
-      return new Response(JSON.stringify({ error: '削除権限がありません' }), {
+    const isOwner = meta && meta.uploaderId === requesterId;
+    if (!isOwner && !isPrivilegedAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden: Not authorized to delete this file" }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }

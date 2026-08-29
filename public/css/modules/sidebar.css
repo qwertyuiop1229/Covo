@@ -544,33 +544,48 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       }
     }
 
-    /* ホーム画面・DM・探索ビュー切替ロジック (DiscordUIモード時) */
-    body.discord-ui-mode.discord-home-view #chatArea,
-    body.discord-ui-mode.discord-home-view #membersSidebar,
-    body.discord-ui-mode.discord-home-view #roomList,
-    body.discord-ui-mode.discord-home-view #serverHeader {
-      display: none !important;
-    }
-    @media (min-width: 1024px) {
-      body.discord-ui-mode.discord-home-view #discordHomeMembers {
-        display: flex !important;
-      }
-    }
-
-    /* 1. DM/フレンドビュー (吹き出しマーク) */
-    body.discord-ui-mode.discord-dm-view #discordDmHomeView {
+    /* 1. DM/フレンドホームビュー (吹き出しマークでフレンド一覧表示時) */
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDmHomeView {
       display: flex !important;
       flex: 1 1 0% !important;
       min-width: 0 !important;
     }
-    body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
+    body.discord-ui-mode.discord-home-view.discord-dm-view #sidebar {
       display: flex !important;
     }
-    body.discord-ui-mode.discord-dm-view #discordDiscoverView {
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordHomeSidebar {
+      display: flex !important;
+    }
+    body.discord-ui-mode.discord-home-view.discord-dm-view #chatArea,
+    body.discord-ui-mode.discord-home-view.discord-dm-view #serverHeader,
+    body.discord-ui-mode.discord-home-view.discord-dm-view #roomList,
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView,
+    body.discord-ui-mode.discord-home-view.discord-dm-view #membersSidebar {
       display: none !important;
     }
 
-    /* 2. 探索/サーバービュー (コンパスマーク) */
+    /* 2. 個別チャット (DM) 表示時 (openDm 実行時) */
+    body.discord-ui-mode.discord-dm-chat #chatArea {
+      display: flex !important;
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+    }
+    body.discord-ui-mode.discord-dm-chat #sidebar {
+      display: flex !important;
+    }
+    body.discord-ui-mode.discord-dm-chat #discordHomeSidebar {
+      display: flex !important;
+    }
+    body.discord-ui-mode.discord-dm-chat #serverHeader,
+    body.discord-ui-mode.discord-dm-chat #roomList,
+    body.discord-ui-mode.discord-dm-chat #discordDmHomeView,
+    body.discord-ui-mode.discord-dm-chat #discordDiscoverView,
+    body.discord-ui-mode.discord-dm-chat #discordHomeMembers,
+    body.discord-ui-mode.discord-dm-chat #membersSidebar {
+      display: none !important;
+    }
+
+    /* 3. 探索/サーバービュー (コンパスマーク) */
     body.discord-ui-mode.discord-discover-view #discordDiscoverView {
       display: flex !important;
       flex: 1 1 0% !important;
@@ -578,25 +593,27 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     }
     body.discord-ui-mode.discord-discover-view #discordDmHomeView,
     body.discord-ui-mode.discord-discover-view #discordHomeSidebar,
-    body.discord-ui-mode.discord-discover-view #sidebar {
+    body.discord-ui-mode.discord-discover-view #sidebar,
+    body.discord-ui-mode.discord-discover-view #chatArea,
+    body.discord-ui-mode.discord-discover-view #membersSidebar {
       display: none !important;
     }
 
-    /* サーバー内（チャット表示時）の非表示制御 */
-    body.discord-ui-mode:not(.discord-home-view) #discordDmHomeView,
-    body.discord-ui-mode:not(.discord-home-view) #discordDiscoverView,
-    body.discord-ui-mode:not(.discord-home-view) #discordHomeSidebar,
-    body.discord-ui-mode:not(.discord-home-view) #discordHomeMembers {
+    /* 4. サーバー内（チャット表示時）の表示制御 */
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #discordDmHomeView,
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #discordDiscoverView,
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #discordHomeSidebar,
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #discordHomeMembers {
       display: none !important;
     }
-    body.discord-ui-mode:not(.discord-home-view) #sidebar,
-    body.discord-ui-mode:not(.discord-home-view) #chatArea {
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #sidebar,
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #chatArea {
       display: flex !important;
     }
-    body.discord-ui-mode:not(.discord-home-view) #roomList {
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #roomList {
       display: block !important;
     }
-    body.discord-ui-mode:not(.discord-home-view) #serverHeader {
+    body.discord-ui-mode:not(.discord-home-view):not(.discord-dm-chat) #serverHeader {
       display: flex !important;
     }
 
