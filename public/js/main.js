@@ -706,6 +706,7 @@ function initializeFirebase() {
     function cleanupAllActiveFirestoreListeners() {
       try {
         cleanupGlobalNotificationListeners();
+        if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
         if (typeof loadServerRooms === 'function' && loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
@@ -960,6 +961,8 @@ function initializeFirebase() {
             initFileShareListener();
             initReadStatesSync();
             setupGlobalRtdbListener();
+            setupGlobalAnnouncementListener();
+            checkLatestAnnouncement();
 
             if (window.__pendingNotifJump) {
               const jumpFn = window.__pendingNotifJump;
@@ -976,6 +979,7 @@ function initializeFirebase() {
         } else {
           // Cleanup on logout
           cleanupAllActiveFirestoreListeners();
+          if (_announcementListenerUnsub) { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
           if (unsubscribeRelationships) { unsubscribeRelationships(); unsubscribeRelationships = null; }
           if (unsubscribeDmChannels) { unsubscribeDmChannels(); unsubscribeDmChannels = null; }
           if (unsubscribeFeatureFlags) { unsubscribeFeatureFlags(); unsubscribeFeatureFlags = null; }
@@ -16887,8 +16891,32 @@ window.publishAdminAnnouncement = async function () {
 window.deleteAdminAnnouncement = async function (id) {
   if (!await showCustomConfirm("このお知らせを削除しますか？", "削除")) return;
   try {
-    const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const { doc, deleteDoc, collection, query, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
     await deleteDoc(doc(db, `artifacts/${appId}/announcements`, id));
+
+    // RTDB上の latestAnnouncement を次の最新お知らせ（または空）に同期更新
+    try {
+      const { ref, set, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const nextSnap = await getDocs(query(collection(db, `artifacts/${appId}/announcements`), orderBy('publishedAt', 'desc'), limit(1)));
+      if (!nextSnap.empty) {
+        const nextDoc = nextSnap.docs[0];
+        const nextData = nextDoc.data();
+        await set(ref(rtdb, `artifacts/${appId}/latestAnnouncement`), {
+          id: nextDoc.id,
+          version: nextData.version || "",
+          title: nextData.title || "",
+          category: nextData.category || "update",
+          content: nextData.content || "",
+          publishedAt: nextData.publishedAt?.toDate ? nextData.publishedAt.toDate().getTime() : Date.now()
+        });
+      } else {
+        await remove(ref(rtdb, `artifacts/${appId}/latestAnnouncement`));
+      }
+    } catch (rtdbErr) {
+      console.warn("RTDB sync on announcement delete error:", rtdbErr);
+    }
+
     alertMessage("削除しました", "success");
     loadAdminAnnouncements();
   } catch (e) {
@@ -16899,6 +16927,7 @@ window.deleteAdminAnnouncement = async function (id) {
 
 let _announcementListenerUnsub = null;
 async function setupGlobalAnnouncementListener() {
+  if (!userId) return; // 認証完了前はスキップ（onAuthStateChanged で確実に起動）
   if (_announcementListenerUnsub) return;
   try {
     const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -16922,6 +16951,7 @@ async function setupGlobalAnnouncementListener() {
 }
 
 window.checkLatestAnnouncement = async function () {
+  if (!userId) return;
   try {
     const { collection, query, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
     const q = query(collection(db, `artifacts/${appId}/announcements`), orderBy('publishedAt', 'desc'), limit(1));
@@ -16977,6 +17007,8 @@ window.showAnnouncementModal = function (data, id, allList = null, currentIndex 
     let dt = '';
     if (current.publishedAt?.toDate) dt = current.publishedAt.toDate().toLocaleDateString('ja-JP');
     else if (typeof current.publishedAt === 'number') dt = new Date(current.publishedAt).toLocaleDateString('ja-JP');
+    else if (current.publishedAt?.seconds != null) dt = new Date(current.publishedAt.seconds * 1000).toLocaleDateString('ja-JP');
+    else if (typeof current.publishedAt === 'string') dt = new Date(current.publishedAt).toLocaleDateString('ja-JP');
     dateEl.textContent = dt;
   }
 
@@ -17035,6 +17067,11 @@ window.showAnnouncementModal = function (data, id, allList = null, currentIndex 
     }
   }
 
+  // 最新のお知らせIDを記録（過去ログ閲覧時でも最新IDが既読として保存されるように保護）
+  const newestId = (_announcementsListCache.length > 0 && _announcementsListCache[0]?.id)
+    ? _announcementsListCache[0].id
+    : (id || current.id || "");
+  modal.dataset.latestSeenId = newestId;
   modal.dataset.currentId = current.id || id || "";
   modal.classList.remove("hidden");
   modal.style.display = "flex";
@@ -17053,9 +17090,9 @@ window.navigateAnnouncement = function (delta) {
 window.closeWhatsNewModal = function () {
   const modal = document.getElementById("whatsNewModal");
   if (!modal) return;
-  const id = modal.dataset.currentId;
-  if (id) {
-    localStorage.setItem('covo_last_seen_announcement_id', id);
+  const latestId = modal.dataset.latestSeenId || modal.dataset.currentId;
+  if (latestId) {
+    localStorage.setItem('covo_last_seen_announcement_id', latestId);
   }
   modal.classList.add("hidden");
   modal.style.display = "none";
