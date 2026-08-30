@@ -4706,6 +4706,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const customStatusWrap = document.getElementById("userProfileCustomStatusWrap");
   const statusEmojiEl = document.getElementById("userProfileStatusEmoji");
   const statusTextEl = document.getElementById("userProfileStatusText");
+  const statusEditIcon = document.getElementById("userProfileStatusEditIcon");
   const aboutMeEl = document.getElementById("userProfileAboutMe");
   const joinedDateEl = document.getElementById("userProfileJoinedDate");
   const actionsOther = document.getElementById("userProfileActionsOther");
@@ -4732,9 +4733,22 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     if (actionsOther) actionsOther.classList.add("hidden");
     if (actionsSelf) actionsSelf.classList.remove("hidden");
     if (quickMsgArea) quickMsgArea.classList.add("hidden");
+    if (customStatusWrap) {
+      customStatusWrap.classList.remove("hidden");
+      customStatusWrap.onclick = () => openCustomStatusModal();
+      customStatusWrap.style.cursor = "pointer";
+      customStatusWrap.title = "タップしてステータスメッセージを設定";
+      if (statusEditIcon) statusEditIcon.classList.remove("hidden");
+    }
   } else {
     if (actionsOther) actionsOther.classList.remove("hidden");
     if (actionsSelf) actionsSelf.classList.add("hidden");
+    if (customStatusWrap) {
+      customStatusWrap.onclick = null;
+      customStatusWrap.style.cursor = "default";
+      customStatusWrap.removeAttribute("title");
+      if (statusEditIcon) statusEditIcon.classList.add("hidden");
+    }
     if (quickMsgArea) {
       quickMsgArea.classList.remove("hidden");
       if (quickMsgInput) {
@@ -4769,7 +4783,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     if (upActionFriendBtn) {
       const rel = friendRelationships[targetUid];
       if (rel?.status === 'friends') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center justify-center text-sm transition-all shadow-xs";
+        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-950/50 dark:hover:bg-emerald-600 dark:text-emerald-400 dark:hover:text-white border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
         upActionFriendBtn.title = "フレンド解除";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
         upActionFriendBtn.onclick = async () => {
@@ -4778,16 +4792,24 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           rejectFriendRequest(targetUid);
         };
       } else if (rel?.status === 'pending_sent') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center text-sm transition-all shadow-xs";
-        upActionFriendBtn.title = "申請送信済み";
+        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white dark:bg-amber-950/50 dark:hover:bg-amber-600 dark:text-amber-400 dark:hover:text-white border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.title = "申請送信済み (タップで取消)";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
         upActionFriendBtn.onclick = () => {
           closeUserProfileModal();
           cancelFriendRequest(targetUid);
         };
+      } else if (rel?.status === 'pending_received') {
+        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white dark:bg-blue-950/50 dark:hover:bg-blue-600 dark:text-blue-400 dark:hover:text-white border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.title = "フレンド申請が届いています (タップで承認)";
+        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upActionFriendBtn.onclick = () => {
+          closeUserProfileModal();
+          acceptFriendRequest(targetUid);
+        };
       } else {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-gray-100 dark:bg-[#383a40] hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-500 text-gray-700 dark:text-gray-200 flex items-center justify-center text-sm transition-all shadow-xs";
-        upActionFriendBtn.title = "フレンド申請";
+        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-900 text-slate-700 hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:hover:text-white border border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.title = "フレンド申請を送信";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         upActionFriendBtn.onclick = async () => {
           closeUserProfileModal();
@@ -4819,8 +4841,6 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           if (customStatusWrap) customStatusWrap.classList.remove("hidden");
           if (statusEmojiEl) statusEmojiEl.textContent = "💬";
           if (statusTextEl) statusTextEl.textContent = "ステータスメッセージを設定する";
-          customStatusWrap.onclick = () => openCustomStatusModal();
-          customStatusWrap.style.cursor = "pointer";
         } else {
           if (customStatusWrap) customStatusWrap.classList.add("hidden");
         }
@@ -4858,11 +4878,13 @@ window.submitQuickDmMessage = async function () {
   closeUserProfileModal();
   await openDm(target.uid, target.nickname, target.avatarUrl);
 
-  const mainInput = document.getElementById("messageInput");
-  if (mainInput) {
-    mainInput.value = text;
-    sendMessage();
-  }
+  setTimeout(() => {
+    const mainInput = document.getElementById("messageInput");
+    if (mainInput) {
+      mainInput.value = text;
+      sendMessage();
+    }
+  }, 200);
 };
 
 window.openCustomStatusModal = function () {
@@ -5901,7 +5923,7 @@ async function enterServer(serverId, serverData) {
 }
 
 // DM / フレンド画面を開く
-window.openDmHomeView = function () {
+window.openDmHomeView = function (showFriendsOnMobile = false) {
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -5939,8 +5961,16 @@ window.openDmHomeView = function () {
   document.body.classList.remove("in-chat-view", "discord-dm-chat", "discord-discover-view");
   document.body.classList.add("discord-home-view", "discord-dm-view");
 
-  const sidebar = document.getElementById("sidebar");
-  if (sidebar) sidebar.classList.remove("mobile-hidden");
+  if (showFriendsOnMobile) {
+    document.body.classList.add("discord-friends-view");
+    const sb = document.getElementById("sidebar");
+    if (sb && window.innerWidth < 768) sb.classList.add("mobile-hidden");
+  } else {
+    document.body.classList.remove("discord-friends-view");
+    const sb = document.getElementById("sidebar");
+    if (sb) sb.classList.remove("mobile-hidden");
+  }
+
   const mobileBottomNav = document.getElementById("mobileBottomNav");
   if (mobileBottomNav) mobileBottomNav.style.display = "flex";
 
@@ -5962,6 +5992,14 @@ window.openDmHomeView = function () {
   // DM / フレンド画面の公開状態に応じた表示更新
   updateDmViewVisibility();
   renderDmConversationsList();
+};
+
+window.openFriendsView = function () {
+  window.openDmHomeView(true);
+};
+
+window.closeFriendsViewOnMobile = function () {
+  window.openDmHomeView(false);
 };
 
 // ============ 個チャ (DM) & フレンド機能 コントローラー ============
@@ -6638,8 +6676,8 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   updateUserStatus('online');
 
-  // クラス切り替え: discord-home-view, discord-dm-view を解除し discord-dm-chat in-chat-view を付与
-  document.body.classList.remove('discord-home-view', 'discord-dm-view', 'discord-discover-view');
+  // クラス切り替え: discord-home-view, discord-dm-view, discord-friends-view を解除し discord-dm-chat in-chat-view を付与
+  document.body.classList.remove('discord-home-view', 'discord-dm-view', 'discord-friends-view', 'discord-discover-view');
   document.body.classList.add('discord-dm-chat', 'in-chat-view');
 
   const sb = document.getElementById("sidebar");

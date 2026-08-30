@@ -1559,7 +1559,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         height: 32px !important;
       }
 
-      /* スマホ表示のホーム状態：ディスカバリーとDMの切り替え適応（全幅に最適化） */
+      /* スマホ表示のホーム状態：ディスカバリー、DM会話一覧、フレンド画面の切り替え適応（全幅に最適化） */
       body.discord-ui-mode.discord-discover-view #sidebar {
         display: none !important;
       }
@@ -1572,19 +1572,34 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         min-width: 0 !important;
         overflow-x: hidden !important;
       }
-      body.discord-ui-mode.discord-dm-view #discordDmHomeView {
+      /* スマホ: 通常のDM会話一覧モード (sidebar表示、フレンド画面非表示) */
+      body.discord-ui-mode.discord-dm-view:not(.discord-friends-view) #discordDmHomeView {
         display: none !important;
       }
-      body.discord-ui-mode.discord-dm-view #sidebar {
+      body.discord-ui-mode.discord-dm-view:not(.discord-friends-view) #sidebar {
         display: flex !important;
         flex: 1 1 0% !important;
         width: auto !important;
         max-width: none !important;
         min-width: 0 !important;
       }
-      body.discord-ui-mode.discord-dm-view #discordHomeSidebar {
+      body.discord-ui-mode.discord-dm-view:not(.discord-friends-view) #discordHomeSidebar {
         display: flex !important;
         width: 100% !important;
+      }
+
+      /* スマホ: フレンド画面オープン時 (sidebar非表示、フレンド画面全幅表示) */
+      body.discord-ui-mode.discord-dm-view.discord-friends-view #sidebar {
+        display: none !important;
+      }
+      body.discord-ui-mode.discord-dm-view.discord-friends-view #discordDmHomeView {
+        display: flex !important;
+        flex: 1 1 0% !important;
+        width: auto !important;
+        max-width: none !important;
+        display: flex !important;
+        min-width: 0 !important;
+        overflow-x: hidden !important;
       }
 
       /* チャット画面表示中：親Flexコンテナ内で自然に全画面展開（fixed inset 0 の破壊的レイアウトを廃止） */

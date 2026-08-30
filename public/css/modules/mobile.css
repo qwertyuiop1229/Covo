@@ -687,31 +687,47 @@
         justify-content: center !important;
       }
 
-      /* 確認・アラートダイアログ・サーバー追加選択: スマホUIでの変形・右伸びバグを完全解消 */
+      /* 確認・アラートダイアログ・ユーザープロフィール・ステメ・パスワード等: スマホUIでの全画面化・変形バグを完全解消 */
       #customConfirmModal:not(.hidden),
       #customAlertModal:not(.hidden),
       #messagePreviewModal:not(.hidden),
-      #addServerSelectModal:not(.hidden) {
+      #addServerSelectModal:not(.hidden),
+      #userProfileModal:not(.hidden),
+      #customStatusModal:not(.hidden),
+      #passwordResetModal:not(.hidden),
+      #changePasswordModal:not(.hidden),
+      #recoveryKeyManagerModal:not(.hidden),
+      #feedbackModal:not(.hidden),
+      #windowsDownloadModal:not(.hidden),
+      #whatsNewModal:not(.hidden) {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         padding: 16px !important;
+        position: fixed !important;
+        inset: 0 !important;
       }
 
       #customConfirmModal:not(.hidden) .modal-box,
       #customAlertModal:not(.hidden) .modal-box,
       #messagePreviewModal:not(.hidden) .modal-box,
-      #addServerSelectModal:not(.hidden) .modal-box {
-        max-width: 340px !important;
-        width: min(90vw, 340px) !important;
-        padding: 24px !important;
+      #addServerSelectModal:not(.hidden) .modal-box,
+      #passwordResetModal:not(.hidden) .modal-box,
+      #changePasswordModal:not(.hidden) .modal-box,
+      #recoveryKeyManagerModal:not(.hidden) .modal-box,
+      #feedbackModal:not(.hidden) .modal-box,
+      #windowsDownloadModal:not(.hidden) .modal-box,
+      #whatsNewModal:not(.hidden) .modal-box {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 20px !important;
         overflow-y: auto !important;
         justify-content: flex-start !important;
         animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 1.75rem !important;
+        border-radius: 1.5rem !important;
         min-height: unset !important;
         height: auto !important;
-        max-height: 85vh !important;
+        max-height: min(88vh, calc(100dvh - 32px)) !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;
@@ -720,6 +736,62 @@
         transform: none !important;
         margin: 0 auto !important;
         box-sizing: border-box !important;
+      }
+
+      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御) */
+      #userProfileModal:not(.hidden) .modal-box {
+        max-width: 360px !important;
+        width: min(92vw, 360px) !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(90dvh, 620px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #2b2d31 !important;
+      }
+
+      /* カスタムステータス設定モーダル専用スマホスタイル */
+      #customStatusModal:not(.hidden) .modal-box {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 1.25rem !important;
+        overflow-y: auto !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(85dvh, 520px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #2b2d31 !important;
       }
 
       /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
