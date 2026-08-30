@@ -740,16 +740,16 @@
 
       /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御) */
       #userProfileModal:not(.hidden) .modal-box {
-        max-width: 360px !important;
-        width: min(92vw, 360px) !important;
+        max-width: 340px !important;
+        width: min(92vw, 340px) !important;
         padding: 0 !important;
         overflow: hidden !important;
         justify-content: flex-start !important;
         animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 1.5rem !important;
+        border-radius: 16px !important;
         min-height: unset !important;
         height: auto !important;
-        max-height: min(90dvh, 620px) !important;
+        max-height: min(90dvh, 600px) !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;
@@ -764,7 +764,7 @@
         background: #1e293b !important;
       }
       body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
-        background: #2b2d31 !important;
+        background: #232428 !important;
       }
 
       /* カスタムステータス設定モーダル専用スマホスタイル */

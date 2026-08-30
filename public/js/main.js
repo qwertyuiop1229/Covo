@@ -476,6 +476,7 @@ let currentFcmToken = null;
 const roomNames = {};
 let userId = null;
 let userNickname = null;
+let userAboutMe = "";
 let isAdmin = false;
 let isListAdmin = false;
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI__);
@@ -886,10 +887,12 @@ function initializeFirebase() {
 
           let initialNickname = null;
           let initialAvatarUrl = null;
+          let initialAboutMe = "";
 
           if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
             initialNickname = userProfileSnap.data().nickname;
             initialAvatarUrl = userProfileSnap.data().avatarUrl || null;
+            initialAboutMe = userProfileSnap.data().aboutMe || "";
           } else if (user.displayName) {
             // Googleログイン等の場合、Googleの名前・アイコンを自動取得して初期プロファイルを自動生成
             initialNickname = user.displayName.slice(0, 20);
@@ -899,20 +902,33 @@ function initializeFirebase() {
             await setDoc(profileDocRef, {
               nickname: initialNickname,
               avatarUrl: initialAvatarUrl,
+              aboutMe: initialAboutMe,
               createdAt: serverTimestamp()
             }, { merge: true }).catch(() => {});
           }
 
+          // ルートの users/{uid} からも aboutMe と customStatus を確実に取得
+          try {
+            const rootUserSnap = await getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null);
+            if (rootUserSnap && rootUserSnap.exists()) {
+              const rootData = rootUserSnap.data();
+              if (rootData.aboutMe && !initialAboutMe) initialAboutMe = rootData.aboutMe;
+              if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
+            }
+          } catch (_) {}
+
           if (initialNickname) {
             userNickname = initialNickname;
             userAvatarUrl = initialAvatarUrl;
+            userAboutMe = initialAboutMe;
 
             // ルートの users/{uid} にも確実に保存
             const userRef = doc(db, `artifacts/${appId}/users`, userId);
             setDoc(userRef, {
               email: user.email,
               nickname: userNickname,
-              avatarUrl: userAvatarUrl
+              avatarUrl: userAvatarUrl,
+              aboutMe: userAboutMe
             }, { merge: true }).catch(console.error);
 
             headerTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
@@ -4047,6 +4063,8 @@ function updateMobileProfileScreen() {
   const at = document.getElementById('mobileAvatarText');
   const ap = document.getElementById('mobileAvatarPreview');
   const ni = document.getElementById('mobileNicknameInput');
+  const mai = document.getElementById('mobileAboutMeInput');
+  const mac = document.getElementById('mobileAboutMeCounter');
   if (ne) ne.textContent = userNickname || 'ユーザー';
   if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname, { style: 'width:100%;height:100%;object-fit:cover;' });
   if (at) at.textContent = (userNickname || '?').charAt(0).toUpperCase();
@@ -4064,6 +4082,11 @@ function updateMobileProfileScreen() {
     }
   }
   if (ni) ni.value = userNickname || '';
+  if (mai) {
+    mai.value = userAboutMe || '';
+    if (mac) mac.textContent = `${mai.value.length} / 300`;
+  }
+  updateSettingsCustomStatusUI();
   if (auth.currentUser && typeof updateAccountSecurityUI === 'function') {
     updateAccountSecurityUI(auth.currentUser);
   }
@@ -4078,10 +4101,13 @@ function updateMobileProfileScreen() {
 
 window.mobileProfileSave = async function () {
   const inp = document.getElementById('mobileNicknameInput');
+  const aboutMeInp = document.getElementById('mobileAboutMeInput');
   const msg = document.getElementById('mobileSettingsMessage');
   if (!inp || !inp.value.trim()) return;
   const pcIn = document.getElementById('settingsNicknameInput');
   if (pcIn) pcIn.value = inp.value.trim();
+  const pcAboutMe = document.getElementById('settingsAboutMeInput');
+  if (pcAboutMe && aboutMeInp) pcAboutMe.value = aboutMeInp.value.trim();
   document.getElementById('saveSettingsButton').click();
   if (msg) { msg.textContent = '保存しました'; msg.style.color = '#059669'; setTimeout(() => { msg.textContent = ''; }, 2000); }
 };
@@ -4381,6 +4407,13 @@ function openSettingsModal(tab) {
   switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
   settingsNicknameInput.value = userNickname;
   settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
+  const aboutMeInput = document.getElementById("settingsAboutMeInput");
+  const aboutMeCounter = document.getElementById("settingsAboutMeCounter");
+  if (aboutMeInput) {
+    aboutMeInput.value = userAboutMe || "";
+    if (aboutMeCounter) aboutMeCounter.textContent = `${aboutMeInput.value.length} / 300`;
+  }
+  updateSettingsCustomStatusUI();
   pendingAvatarUrl = null;
   if (isUsableAvatarUrl(userAvatarUrl)) {
     const _u = userAvatarUrl;
@@ -4517,6 +4550,8 @@ if (settingsModalEl) {
 if (saveSettingsBtnEl && settingsNicknameInpEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
     const newName = settingsNicknameInpEl.value.trim();
+    const newAboutMe = (document.getElementById("settingsAboutMeInput")?.value || "").trim();
+
     if (newName.length < 1 || newName.length > 20) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "1〜20文字で入力してください。";
@@ -4528,7 +4563,7 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
     try {
       const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-      const updateData = { nickname: newName, createdAt: serverTimestamp() };
+      const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
       await setDoc(userProfileRef, updateData, { merge: true });
 
@@ -4536,10 +4571,12 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       await setDoc(userRef, {
         email: userAuthEmail,
         nickname: newName,
-        avatarUrl: pendingAvatarUrl || userAvatarUrl || null
+        avatarUrl: pendingAvatarUrl || userAvatarUrl || null,
+        aboutMe: newAboutMe
       }, { merge: true }).catch(console.error);
 
       userNickname = newName;
+      userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
 
       const hdrTitle = document.getElementById("headerTitle");
@@ -4550,10 +4587,11 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
 
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "保存しました";
-        settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
+        settingsMsgEl.className = "text-center mt-2 text-sm text-emerald-600 font-bold";
       }
       closeCropModal();
-      setTimeout(() => { if (settingsModalEl) settingsModalEl.classList.add("hidden"); }, 1000);
+      alertMessage("プロフィールを保存しました", "success");
+      setTimeout(() => { if (settingsModalEl) settingsModalEl.classList.add("hidden"); }, 800);
     } catch (e) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "エラーが発生しました";
@@ -4690,6 +4728,16 @@ if (setNicknameBtnEl && nicknameInpEl) {
 let _currentProfileTargetUser = null;
 window._currentUserCustomStatus = null;
 
+window.openProfileEditFromModal = function () {
+  closeUserProfileModal();
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    openMobileProfileScreen();
+    setTimeout(() => openMobileDetail('profile'), 150);
+  } else {
+    openSettingsModal('profile');
+  }
+};
+
 window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
@@ -4740,6 +4788,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       customStatusWrap.title = "タップしてステータスメッセージを設定";
       if (statusEditIcon) statusEditIcon.classList.remove("hidden");
     }
+    if (aboutMeEl) aboutMeEl.textContent = userAboutMe || "自己紹介はまだ設定されていません。";
   } else {
     if (actionsOther) actionsOther.classList.remove("hidden");
     if (actionsSelf) actionsSelf.classList.add("hidden");
@@ -4783,7 +4832,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     if (upActionFriendBtn) {
       const rel = friendRelationships[targetUid];
       if (rel?.status === 'friends') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-950/50 dark:hover:bg-emerald-600 dark:text-emerald-400 dark:hover:text-white border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-emerald-500/10 hover:bg-rose-500/20 text-emerald-600 hover:text-rose-600 dark:text-emerald-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
         upActionFriendBtn.title = "フレンド解除";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
         upActionFriendBtn.onclick = async () => {
@@ -4792,7 +4841,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           rejectFriendRequest(targetUid);
         };
       } else if (rel?.status === 'pending_sent') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white dark:bg-amber-950/50 dark:hover:bg-amber-600 dark:text-amber-400 dark:hover:text-white border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-amber-500/10 hover:bg-rose-500/20 text-amber-600 hover:text-rose-600 dark:text-amber-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
         upActionFriendBtn.title = "申請送信済み (タップで取消)";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
         upActionFriendBtn.onclick = () => {
@@ -4800,7 +4849,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           cancelFriendRequest(targetUid);
         };
       } else if (rel?.status === 'pending_received') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white dark:bg-blue-950/50 dark:hover:bg-blue-600 dark:text-blue-400 dark:hover:text-white border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#5865f2]/15 hover:bg-[#5865f2] text-[#5865f2] hover:text-white flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
         upActionFriendBtn.title = "フレンド申請が届いています (タップで承認)";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         upActionFriendBtn.onclick = () => {
@@ -4808,7 +4857,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           acceptFriendRequest(targetUid);
         };
       } else {
-        upActionFriendBtn.className = "w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-900 text-slate-700 hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:hover:text-white border border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95";
+        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
         upActionFriendBtn.title = "フレンド申請を送信";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         upActionFriendBtn.onclick = async () => {
@@ -4846,9 +4895,12 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         }
       }
 
-      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || "自己紹介はまだ設定されていません。";
+      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (isSelf ? (userAboutMe || "自己紹介はまだ設定されていません。") : "自己紹介はまだ設定されていません。");
       if (joinedDateEl) {
-        const dt = uData.createdAt?.toDate ? uData.createdAt.toDate().toLocaleDateString('ja-JP') : "-";
+        let dt = "-";
+        if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
+        else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
+        else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
         joinedDateEl.textContent = dt;
       }
       if (adminBadge) {
@@ -4963,6 +5015,48 @@ window.toggleStatusEmojiPicker = function (e) {
   popover.style.display = 'grid';
 };
 
+function updateSettingsCustomStatusUI() {
+  const emojiDisplay = document.getElementById('settingsCustomStatusEmojiDisplay');
+  const textDisplay = document.getElementById('settingsCustomStatusTextDisplay');
+  const clearBtn = document.getElementById('clearCustomStatusBtn');
+  const mobileTextDisplay = document.getElementById('mobileCustomStatusTextDisplay');
+
+  const cur = window._currentUserCustomStatus;
+  if (cur && cur.text) {
+    if (emojiDisplay) emojiDisplay.textContent = cur.emoji || '💬';
+    if (textDisplay) textDisplay.textContent = cur.text;
+    if (clearBtn) clearBtn.classList.remove('hidden');
+    if (mobileTextDisplay) mobileTextDisplay.textContent = `${cur.emoji || '💬'} ${cur.text}`;
+  } else {
+    if (emojiDisplay) emojiDisplay.textContent = '💬';
+    if (textDisplay) textDisplay.textContent = '未設定';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    if (mobileTextDisplay) mobileTextDisplay.textContent = '未設定';
+  }
+}
+
+window.clearCustomStatusAction = async function () {
+  if (!confirm("カスタムステータスをクリアしますか？")) return;
+  try {
+    window._currentUserCustomStatus = null;
+    await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
+      customStatus: deleteField()
+    }, { merge: true });
+
+    try {
+      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `status/${userId}/customStatus`));
+    } catch (e) {}
+
+    updateSettingsCustomStatusUI();
+    alertMessage("カスタムステータスをクリアしました", "info");
+  } catch (err) {
+    console.error("Failed to clear custom status:", err);
+    alertMessage("クリアに失敗しました", "error");
+  }
+};
+
 window.saveCustomStatus = async function () {
   const textInput = document.getElementById("customStatusTextInput");
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
@@ -4984,16 +5078,21 @@ window.saveCustomStatus = async function () {
 
     // 1. Firestore に保存
     await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
-      customStatus: customStatus
+      customStatus: customStatus || deleteField()
     }, { merge: true });
 
     // 2. RTDB に保存（リアルタイム反映）
     try {
-      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const { ref, set, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      await set(ref(rtdb, `status/${userId}/customStatus`), customStatus);
+      if (customStatus) {
+        await set(ref(rtdb, `status/${userId}/customStatus`), customStatus);
+      } else {
+        await remove(ref(rtdb, `status/${userId}/customStatus`));
+      }
     } catch (rtdbErr) { }
 
+    updateSettingsCustomStatusUI();
     closeCustomStatusModal();
     alertMessage("カスタムステータスを更新しました！", "success");
   } catch (err) {
@@ -5003,6 +5102,24 @@ window.saveCustomStatus = async function () {
     if (btn) btn.disabled = false;
   }
 };
+
+// 自己紹介 (About Me) 文字数カウンターの同期
+setTimeout(() => {
+  const saInp = document.getElementById('settingsAboutMeInput');
+  const saCnt = document.getElementById('settingsAboutMeCounter');
+  if (saInp && saCnt) {
+    saInp.addEventListener('input', () => {
+      saCnt.textContent = `${saInp.value.length} / 300`;
+    });
+  }
+  const maInp = document.getElementById('mobileAboutMeInput');
+  const maCnt = document.getElementById('mobileAboutMeCounter');
+  if (maInp && maCnt) {
+    maInp.addEventListener('input', () => {
+      maCnt.textContent = `${maInp.value.length} / 300`;
+    });
+  }
+}, 1000);
 
 // ================= MODULE: presence.js ================
 // ================= PRESENCE MODULE ================
