@@ -3674,6 +3674,19 @@ window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
   switchMobileTab('home');
+  if (typeof rid === 'string' && (rid.startsWith('dm_') || rid.includes('_'))) {
+    const cleanDmId = rid.startsWith('dm_') ? rid.substring(3) : rid;
+    const parts = cleanDmId.split('_');
+    const otherUid = parts.find(id => id !== userId);
+    if (otherUid) {
+      const rel = friendRelationships[otherUid];
+      const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
+      const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
+      const targetAv = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
+      openDm(otherUid, targetNick, targetAv);
+      return;
+    }
+  }
   const rItem = document.getElementById('room-item-' + rid);
   if (rItem) rItem.click();
 };
@@ -6460,9 +6473,11 @@ window.unblockUser = async function(targetUid) {
   }
 };
 
+let _isDmChannelsFirst = true;
 function subscribeToDmChannels() {
   if (unsubscribeDmChannels) { unsubscribeDmChannels(); unsubscribeDmChannels = null; }
   if (!userId) return;
+  _isDmChannelsFirst = true;
   try {
     const dmQuery = query(collection(db, `artifacts/${appId}/dm_channels`), where('participants', 'array-contains', userId));
     unsubscribeDmChannels = onSnapshot(dmQuery, (snap) => {
@@ -6471,6 +6486,61 @@ function subscribeToDmChannels() {
         dmConversations[d.id] = { id: d.id, ...d.data() };
       });
       renderDmConversationsList();
+
+      if (!_isDmChannelsFirst) {
+        snap.docChanges().forEach(change => {
+          if (change.type === "modified" || change.type === "added") {
+            const dmData = change.doc.data();
+            const dmId = change.doc.id;
+            const otherUid = (dmData.participants || []).find(id => id !== userId);
+            if (!otherUid) return;
+
+            const lastAt = typeof dmData.lastMessageAt === 'number' ? dmData.lastMessageAt : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
+            const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+            const lastRead = rm[`dm_${dmId}`] || 0;
+            const isCurrentDmAndFocused = (currentDmId === dmId && document.hasFocus());
+
+            if (lastAt > lastRead && !isCurrentDmAndFocused && dmData.lastMessageSender && dmData.lastMessageSender !== userId) {
+              const rel = friendRelationships[otherUid];
+              const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
+              const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
+              const targetAv = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
+              let textBody = dmData.lastMessageText || '新着メッセージ';
+
+              (async () => {
+                if (typeof isEncrypted === 'function' && isEncrypted(textBody)) {
+                  try {
+                    const dmKey = await _getDmKeyWithWait(dmId, dmData.participants || [userId, otherUid], 1000);
+                    textBody = await _decryptDmText(textBody, dmKey);
+                  } catch (e) { textBody = '（暗号化されたメッセージ）'; }
+                }
+                if (typeof isEncrypted === 'function' && isEncrypted(textBody)) textBody = '（暗号化されたメッセージ）';
+
+                const notifTitle = `ダイレクトメッセージ › @${targetNick}`;
+                showInAppNotification(
+                  'ダイレクトメッセージ',
+                  `@${targetNick}`,
+                  targetNick,
+                  textBody,
+                  null,
+                  null,
+                  dmId,
+                  true,
+                  otherUid,
+                  targetAv
+                );
+
+                if (!document.hasFocus() || document.visibilityState === 'hidden') {
+                  showNotification(notifTitle, `${targetNick}: ${textBody}`, `dm_${dmId}`);
+                }
+                updateGlobalNotifUI();
+                if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
+              })();
+            }
+          }
+        });
+      }
+      _isDmChannelsFirst = false;
     }, (err) => {
       console.warn('[DmChannels] Listen error:', err);
     });
@@ -6619,10 +6689,6 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   } catch (e) {
     console.warn('[E2EE] DM key init error:', e);
   }
-
-if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
-  currentPinnedMessages = [];
-  renderPinnedMessages();
 
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -9773,7 +9839,13 @@ async function subscribeToMessagesRTDB() {
     if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
   };
 
-  membersSidebar.classList.remove("hidden");
+  if (currentServerId && membersSidebar) {
+    if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
+      membersSidebar.classList.remove("hidden");
+    }
+  } else if (membersSidebar) {
+    membersSidebar.classList.add("hidden");
+  }
 }
 
 // subscribeToMessagesFirestore removed (permanently using RTDB)
@@ -13091,6 +13163,7 @@ if (deleteMsgBtn) {
       const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
 
       await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
+        participants: currentDmParticipants || currentDmId.split('_'),
         lastMessageText: newLastText,
         lastMessageAt: newLastAt,
         lastMessageSender: newLastSender
@@ -13567,8 +13640,8 @@ async function deleteServerCascade(serverId) {
 window._mobileNotifQueue = window._mobileNotifQueue || [];
 window._mobileNotifActive = window._mobileNotifActive || false;
 
-async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId) {
-  if (document.hasFocus() && roomId === currentRoomId) return;
+async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId, isDm = false, targetUid = null, targetAvatarUrl = null) {
+  if (document.hasFocus() && ((roomId && roomId === currentRoomId) || (isDm && roomId === currentDmId))) return;
 
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
@@ -13576,8 +13649,13 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
   // 1. 本文が暗号化されている場合は、非同期で確実に復号を実行
   if (typeof isEncrypted === 'function' && isEncrypted(text)) {
     try {
-      const memberIds = serverData?.joinedUsers || [];
-      text = await decryptText(text, serverId, roomId, memberIds);
+      if (isDm && targetUid) {
+        const dmKey = await _getDmKeyWithWait(roomId, [userId, targetUid], 1000);
+        text = await _decryptDmText(text, dmKey);
+      } else if (serverId && roomId) {
+        const memberIds = serverData?.joinedUsers || [];
+        text = await decryptText(text, serverId, roomId, memberIds);
+      }
     } catch (e) { text = '（暗号化されたメッセージ）'; }
   }
   if (typeof isEncrypted === 'function' && isEncrypted(text)) {
@@ -13606,32 +13684,33 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
 
   if (isMobile) {
     // === スマホ版 (Discord Mobile風 バナー通知) ===
-    const notifItem = { serverName, roomName, senderName, text: displayBody, serverId, serverData, roomId, isMention };
+    const notifItem = { serverName, roomName, senderName, text: displayBody, serverId, serverData, roomId, isMention, isDm, targetUid, targetAvatarUrl };
     window._mobileNotifQueue.push(notifItem);
     if (!window._mobileNotifActive) {
       _processNextMobileNotification();
     }
   } else {
     // === PC版 (Discord Desktop風 右下スタックトースト) ===
-    _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention);
+    _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention, isDm, targetUid, targetAvatarUrl);
   }
 }
 
 // PC版 Discord風スタック通知
-function _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention) {
+function _showPcStackNotification(serverName, roomName, senderName, displayBody, serverId, serverData, roomId, isMention, isDm = false, targetUid = null, targetAvatarUrl = null) {
   const stack = document.getElementById("notifStack");
   if (!stack) return;
 
-  const serverIconUrl = serverData?.iconUrl || null;
-  const initial = (serverName || '?').charAt(0).toUpperCase();
+  const serverIconUrl = isDm ? targetAvatarUrl : (serverData?.iconUrl || null);
+  const initial = isDm ? (senderName || '?').charAt(0).toUpperCase() : (serverName || '?').charAt(0).toUpperCase();
 
-  // 同一サーバーの既存通知を探す（グループ化・スタック集約）
-  const existingCard = stack.querySelector(`.discord-notif-pc[data-server-id="${serverId}"]`);
+  // 同一サーバー / DM の既存通知を探す（グループ化・スタック集約）
+  const groupKey = isDm ? `dm_${targetUid || roomId}` : (serverId || 'general');
+  const existingCard = stack.querySelector(`.discord-notif-pc[data-group-key="${groupKey}"]`);
 
   if (existingCard) {
     let count = parseInt(existingCard.dataset.msgCount || '1', 10) + 1;
     existingCard.dataset.msgCount = count;
-    existingCard.dataset.roomId = roomId;
+    existingCard.dataset.roomId = roomId || '';
 
     const countBadge = existingCard.querySelector('.notif-count-badge');
     if (countBadge) {
@@ -13640,7 +13719,7 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
     }
 
     const roomText = existingCard.querySelector('.notif-room-text');
-    if (roomText) roomText.textContent = `#${roomName}`;
+    if (roomText) roomText.textContent = isDm ? `@${senderName}` : `#${roomName}`;
 
     const bodyText = existingCard.querySelector('.notif-body-text');
     if (bodyText) bodyText.textContent = `${senderName}: ${displayBody}`;
@@ -13672,13 +13751,25 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
 
   const card = document.createElement("div");
   card.className = "discord-notif-pc";
-  card.dataset.serverId = serverId;
-  card.dataset.roomId = roomId;
+  card.dataset.groupKey = groupKey;
+  card.dataset.serverId = serverId || '';
+  card.dataset.roomId = roomId || '';
+  card.dataset.isDm = isDm ? 'true' : 'false';
+  card.dataset.targetUid = targetUid || '';
+  card.dataset.targetAvatarUrl = targetAvatarUrl || '';
+  card.dataset.senderName = senderName || '';
   card.dataset.msgCount = '1';
 
-  const iconHtml = serverIconUrl
-    ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-lg" />`
-    : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-lg">${escapeHtml(initial)}</span>`;
+  let iconHtml = '';
+  if (isDm) {
+    iconHtml = isUsableAvatarUrl(targetAvatarUrl)
+      ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" />`
+      : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-full">${escapeHtml(initial)}</span>`;
+  } else {
+    iconHtml = serverIconUrl
+      ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-lg" />`
+      : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-lg">${escapeHtml(initial)}</span>`;
+  }
 
   card.innerHTML = `
     <div class="discord-notif-progress" style="animation-duration: 5s;"></div>
@@ -13689,7 +13780,7 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
       <div class="flex-1 min-w-0 pr-4">
         <div class="flex items-center gap-1.5 leading-none mb-1">
           <span class="text-[11px] font-bold opacity-75 truncate max-w-[130px]">${escapeHtml(serverName)}</span>
-          <span class="text-[11px] font-semibold text-indigo-400 notif-room-text truncate">#${escapeHtml(roomName)}</span>
+          <span class="text-[11px] font-semibold text-indigo-400 notif-room-text truncate">${isDm ? `@${escapeHtml(senderName)}` : `#${escapeHtml(roomName)}`}</span>
           <span class="notif-count-badge px-1.5 py-0.2 text-[9px] font-extrabold bg-indigo-500 text-white rounded-full hidden"></span>
         </div>
         <div class="text-xs font-bold truncate leading-snug notif-body-text">${escapeHtml(senderName)}: ${escapeHtml(displayBody)}</div>
@@ -13733,7 +13824,15 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
 
   card.addEventListener('click', () => {
     _dismissPcNotif(card);
-    goToServerRoom(serverId, roomId);
+    if (isDm || !serverId) {
+      if (targetUid) {
+        openDm(targetUid, senderName, targetAvatarUrl);
+      } else {
+        openDmHomeView();
+      }
+    } else {
+      goToServerRoom(serverId, roomId);
+    }
   });
 
   stack.appendChild(card);
@@ -13764,15 +13863,23 @@ function _processNextMobileNotification() {
     return;
   }
 
-  const serverIconUrl = item.serverData?.iconUrl || null;
-  const initial = (item.serverName || '?').charAt(0).toUpperCase();
+  const isDm = Boolean(item.isDm);
+  const serverIconUrl = isDm ? item.targetAvatarUrl : (item.serverData?.iconUrl || null);
+  const initial = isDm ? (item.senderName || '?').charAt(0).toUpperCase() : (item.serverName || '?').charAt(0).toUpperCase();
 
   const banner = document.createElement("div");
   banner.className = "discord-notif-mobile w-full";
 
-  const iconHtml = serverIconUrl
-    ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
-    : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-xl">${escapeHtml(initial)}</span>`;
+  let iconHtml = '';
+  if (isDm) {
+    iconHtml = isUsableAvatarUrl(item.targetAvatarUrl)
+      ? `<img src="${escapeHtml(item.targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" />`
+      : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-full">${escapeHtml(initial)}</span>`;
+  } else {
+    iconHtml = serverIconUrl
+      ? `<img src="${escapeHtml(serverIconUrl)}" class="w-full h-full object-cover rounded-xl" />`
+      : `<span class="w-full h-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs rounded-xl">${escapeHtml(initial)}</span>`;
+  }
 
   banner.innerHTML = `
     <div class="discord-notif-progress" style="animation-duration: 4.5s;"></div>
@@ -13783,7 +13890,7 @@ function _processNextMobileNotification() {
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-1.5 leading-tight mb-0.5">
           <span class="text-xs font-bold truncate">${escapeHtml(item.serverName)}</span>
-          <span class="text-xs font-semibold text-indigo-400 truncate">#${escapeHtml(item.roomName)}</span>
+          <span class="text-xs font-semibold text-indigo-400 truncate">${isDm ? `@${escapeHtml(item.senderName)}` : `#${escapeHtml(item.roomName)}`}</span>
         </div>
         <div class="text-xs font-medium truncate leading-tight opacity-90">${escapeHtml(item.senderName)}: ${escapeHtml(item.text)}</div>
       </div>
@@ -13845,7 +13952,15 @@ function _processNextMobileNotification() {
 
   banner.addEventListener('click', () => {
     dismissBanner();
-    goToServerRoom(item.serverId, item.roomId);
+    if (isDm || !item.serverId) {
+      if (item.targetUid) {
+        openDm(item.targetUid, item.senderName, item.targetAvatarUrl);
+      } else {
+        openDmHomeView();
+      }
+    } else {
+      goToServerRoom(item.serverId, item.roomId);
+    }
   });
 
   container.appendChild(banner);
@@ -14028,10 +14143,20 @@ const pinMessageBtn = document.getElementById("pinMessageButton");
 if (currentRoomTitleAreaEl) {
   currentRoomTitleAreaEl.addEventListener("click", (e) => {
     if (e.target.closest('#mobileBackButton') || e.target.closest('#toggleLeftSidebarBtn')) return;
+    if (currentDmId && currentDmParticipant) {
+      openUserProfileModal(currentDmParticipant.uid, currentDmParticipant.nickname, currentDmParticipant.avatarUrl);
+      return;
+    }
     openBottomSheet('membersSidebar');
   });
 } else if (currentRoomTitleTextEl) {
-  currentRoomTitleTextEl.addEventListener("click", () => openBottomSheet('membersSidebar'));
+  currentRoomTitleTextEl.addEventListener("click", () => {
+    if (currentDmId && currentDmParticipant) {
+      openUserProfileModal(currentDmParticipant.uid, currentDmParticipant.nickname, currentDmParticipant.avatarUrl);
+      return;
+    }
+    openBottomSheet('membersSidebar');
+  });
 }
 if (bottomSheetOverlayEl) bottomSheetOverlayEl.addEventListener("click", () => closeBottomSheet());
 
