@@ -874,13 +874,13 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
 
     log::info!("Starting desktop Google auth: port={}, url={}", port, auth_url);
 
-    // システム既定の外部ブラウザで安全なWeb認証ページを開く
+    // システム既定の外部ブラウザで安全なWeb認証ページを開く（cmd.exe の & 分割バグを回避するため rundll32 を使用）
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", "", &auth_url])
+        let _ = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &auth_url])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
@@ -941,7 +941,7 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
                                     }
                                 }
 
-                                if state == expected_state && !id_token.is_empty() {
+                                if state.trim() == expected_state.trim() && !id_token.is_empty() {
                                     let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
                                     let response = format!(
                                         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

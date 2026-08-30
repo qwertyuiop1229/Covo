@@ -1692,6 +1692,9 @@ window.generateNewRecoveryKey = async function (showPrompt = false) {
     const displayArea = document.getElementById('settingsRecoveryKeyDisplayArea');
     if (displayArea) displayArea.classList.remove('hidden');
 
+    const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
+    if (modalKeyDisplay) modalKeyDisplay.textContent = newKey;
+
     alertMessage('新しい緊急リカバリーキーを発行しました！キットを保存してください。', 'success');
   } catch (err) {
     console.error('[Recovery] Reissue key error:', err);
@@ -3944,6 +3947,7 @@ window.goToServerRoom = async function (serverId, roomId) {
         if (sd.exists()) sv = { id: serverId, ...sd.data() };
       }
       if (sv) {
+        try { localStorage.setItem('covo_last_room_' + serverId, roomId); } catch (e) { }
         await enterServer(serverId, sv);
         switchMobileTab('home');
         setTimeout(() => { const ri = document.getElementById('room-item-' + roomId); if (ri) ri.click(); }, 700);
@@ -9770,6 +9774,12 @@ async function subscribeToMessagesRTDB() {
 
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
+  if (currentServerId && roomId) {
+    try {
+      localStorage.setItem('covo_last_room_' + currentServerId, roomId);
+    } catch (e) { }
+  }
+
   // スマホの場合、同じルームをタップしてもチャット画面に遷移（サイドバーを隠す）させる
   if (currentRoomId === roomId) {
     document.body.classList.add('in-chat-view');
@@ -10989,6 +10999,13 @@ window.openInAppBrowser = function (url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
+function _normalizeInAppBrowserUrl(rawUrl) {
+  if (!rawUrl) return '';
+  return _getEmbedMediaUrl(rawUrl) || rawUrl;
+}
+
+window._normalizeInAppBrowserUrl = _normalizeInAppBrowserUrl;
+
 window.closeInAppBrowser = function () {
   const modal = document.getElementById('inAppBrowserModal');
   const iframe = document.getElementById('inAppBrowserIframe');
@@ -11000,7 +11017,11 @@ window.closeInAppBrowser = function () {
 window.reloadInAppBrowser = function () {
   const iframe = document.getElementById('inAppBrowserIframe');
   if (iframe && currentInAppBrowserUrl) {
-    iframe.src = _normalizeInAppBrowserUrl(currentInAppBrowserUrl);
+    const targetUrl = _normalizeInAppBrowserUrl(currentInAppBrowserUrl);
+    iframe.src = 'about:blank';
+    setTimeout(() => {
+      iframe.src = targetUrl;
+    }, 50);
   }
 };
 

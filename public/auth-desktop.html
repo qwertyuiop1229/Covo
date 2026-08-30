@@ -125,7 +125,7 @@
 
         const params = new URLSearchParams(window.location.search);
         const callbackUrl = params.get('callback');
-        const state = params.get('state');
+        const state = params.get('state') || '';
 
         window.doGoogleLogin = async function (isAuto = false) {
             const status = document.getElementById('status');
