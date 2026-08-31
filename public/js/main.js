@@ -176,6 +176,7 @@ function isTransientNetworkError(args) {
 }
 
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
+window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
@@ -212,13 +213,13 @@ function _reportTelemetryError(type, message, stack) {
     const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (auth?.currentUser?.uid ? `uid:${auth.currentUser.uid}` : '未ログイン');
 
     // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
-    if (typeof _cachedTelemetryErrors !== 'undefined') {
-      const existingIdx = _cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
+    if (window._cachedTelemetryErrors) {
+      const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
-        _cachedTelemetryErrors[existingIdx].count = (_cachedTelemetryErrors[existingIdx].count || 1) + 1;
-        _cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
+        window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
       } else {
-        _cachedTelemetryErrors.unshift({
+        window._cachedTelemetryErrors.unshift({
           id: signature,
           signature: signature,
           type: type || 'error',
@@ -237,7 +238,7 @@ function _reportTelemetryError(type, message, stack) {
       }
       const badgeEl = document.getElementById("telemetryCountBadge");
       if (badgeEl) {
-        badgeEl.textContent = _cachedTelemetryErrors.length;
+        badgeEl.textContent = window._cachedTelemetryErrors.length;
         badgeEl.classList.remove('hidden');
       }
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
@@ -2549,7 +2550,6 @@ function renderAdminRecoveryUsersList() {
 
 // === システムレポート & 自動エラー集約テレメトリ コントローラー ===
 let _currentReportSubTab = 'errors';
-let _cachedTelemetryErrors = [];
 let _telemetryFilter = 'all';
 
 window.switchReportSubTab = function (tab) {
@@ -2595,55 +2595,97 @@ window.filterErrorTelemetry = function (filter) {
 
 let _telemetryErrorsUnsub = null;
 
-window.loadErrorTelemetry = function () {
+// コンソールログからエラー・警告を収集してローカル配列にマージするヘルパー
+function _syncLogsToTelemetryErrors() {
+  const logs = window._covoLogs || [];
+  const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
+  logs.forEach(line => {
+    if (line.startsWith('[ERR]') || line.startsWith('[WARN]')) {
+      const isWarn = line.startsWith('[WARN]');
+      const cleanMsg = line.replace(/^\[(ERR|WARN)\]\s*/, '').trim();
+      if (!cleanMsg) return;
+      const sig = _createErrorSignature(isWarn ? 'warn' : 'error', cleanMsg, '');
+      const existing = (window._cachedTelemetryErrors || []).find(e => e.id === sig || e.signature === sig);
+      if (!existing) {
+        window._cachedTelemetryErrors.unshift({
+          id: sig,
+          signature: sig,
+          type: isWarn ? 'warn' : 'error',
+          message: cleanMsg,
+          stack: '',
+          firstOccurredAt: new Date(),
+          lastOccurredAt: new Date(),
+          count: 1,
+          affectedEmails: [email],
+          environment: {
+            userAgent: navigator.userAgent || 'unknown',
+            appVersion: _appVersion || 'web',
+            screenSize: `${window.innerWidth}x${window.innerHeight}`
+          }
+        });
+      }
+    }
+  });
+}
+
+window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  listEl.innerHTML = "<p class='text-xs text-gray-400 text-center py-4'>読み込み中...</p>";
+
+  // 1. 直前のコンソールログから直ちに未記録エラーをマージして即時描画
+  _syncLogsToTelemetryErrors();
+  renderTelemetryErrorsList();
+
+  // 2. リモートFirestoreからエラーコレクションを取得
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
     const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
-    _telemetryErrorsUnsub = onSnapshot(q, (snap) => {
+
+    // getDocs で即時同期
+    const snap = await getDocs(q).catch(() => null);
+    if (snap && !snap.empty) {
       const remoteMap = new Map();
-      snap.forEach(d => {
-        remoteMap.set(d.id, { id: d.id, ...d.data() });
+      snap.forEach(d => remoteMap.set(d.id, { id: d.id, ...d.data() }));
+      (window._cachedTelemetryErrors || []).forEach(loc => {
+        if (!remoteMap.has(loc.id)) remoteMap.set(loc.id, loc);
       });
-
-      // ローカルで発生したエラーも保持して結合
-      if (Array.isArray(_cachedTelemetryErrors)) {
-        _cachedTelemetryErrors.forEach(loc => {
-          if (!remoteMap.has(loc.id)) {
-            remoteMap.set(loc.id, loc);
-          }
-        });
-      }
-
-      _cachedTelemetryErrors = Array.from(remoteMap.values());
-      _cachedTelemetryErrors.sort((a, b) => {
+      window._cachedTelemetryErrors = Array.from(remoteMap.values());
+      window._cachedTelemetryErrors.sort((a, b) => {
         const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
         const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
         return timeB - timeA;
       });
+      renderTelemetryErrorsList();
+    }
 
+    // リアルタイムリスナーを継続
+    _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
+      const remoteMap = new Map();
+      liveSnap.forEach(d => remoteMap.set(d.id, { id: d.id, ...d.data() }));
+      (window._cachedTelemetryErrors || []).forEach(loc => {
+        if (!remoteMap.has(loc.id)) remoteMap.set(loc.id, loc);
+      });
+      window._cachedTelemetryErrors = Array.from(remoteMap.values());
+      window._cachedTelemetryErrors.sort((a, b) => {
+        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+        return timeB - timeA;
+      });
       if (badgeEl) {
-        if (_cachedTelemetryErrors.length > 0) {
-          badgeEl.textContent = _cachedTelemetryErrors.length;
-          badgeEl.classList.remove('hidden');
-        } else {
-          badgeEl.classList.add('hidden');
-        }
+        badgeEl.textContent = window._cachedTelemetryErrors.length;
+        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
       renderTelemetryErrorsList();
     }, (err) => {
-      console.warn("[Telemetry] loadErrorTelemetry snapshot warning:", err);
-      // リモート取得制限時でもローカルエラーは必ず表示
+      console.warn("[Telemetry] snapshot connection state notice:", err?.message || err);
       renderTelemetryErrorsList();
     });
   } catch (err) {
-    console.error("[Telemetry] loadErrorTelemetry error:", err);
+    console.warn("[Telemetry] loadErrorTelemetry fetch error:", err);
     renderTelemetryErrorsList();
   }
 };
@@ -4831,6 +4873,12 @@ window.openProfileEditFromModal = function () {
   }
 };
 
+window.openUserProfileAvatarLightbox = function () {
+  if (!_currentProfileTargetUser) return;
+  const user = _currentProfileTargetUser;
+  openAvatarLightbox(user.avatarUrl, user.nickname, user.uid?.substring(0, 4));
+};
+
 window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
@@ -5765,7 +5813,10 @@ function renderMembersList(users) {
         avatarImg.src = member.avatarUrl;
         avatar.appendChild(avatarImg);
         avatar.style.cursor = "pointer";
-        avatar.addEventListener("click", () => openAvatarLightbox(member.avatarUrl));
+        avatar.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openUserProfileModal(member.id, member.nickname || 'ユーザー', member.avatarUrl || '');
+        });
       } else {
         avatar.textContent = (member.nickname || " ").charAt(0).toUpperCase();
       }
@@ -6900,6 +6951,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   currentRoomId = null;
   currentServerData = null;
   currentServerNickname = null;
+  currentHomeViewMode = 'dm';
+
+  try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
+
+  // サーバーのルーム監視リスナーを停止
+  if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
 
   // 相手のプロファイルを非同期解決して最新のニックネーム・アイコンを即時反映
   window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl }).then(p => {
@@ -6946,6 +7003,11 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (icon) icon.className = "fas fa-at text-indigo-500 text-sm";
   const title = document.getElementById("currentRoomTitleText");
   if (title) title.textContent = targetNickname || 'ユーザー';
+
+  // 左側サーバーナビゲーションを即時再描画（ホームの吹き出しアイコンをアクティブ化しサーバーピルを同期）
+  if (typeof renderDiscordServerNav === 'function') {
+    renderDiscordServerNav();
+  }
 
   if (typeof updateTitleBarContext === 'function') {
     updateTitleBarContext('dm', currentDmParticipant);
@@ -10046,7 +10108,18 @@ async function subscribeToMessagesRTDB() {
         const rName = currentServerId ? (roomNames[currentRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
         const notifTitle = isMentioned ? `[@メンション] ${sName} › #${rName}` : `${sName} › #${rName}`;
         showNotification(notifTitle, `${data.senderNickname || 'ユーザー'}: ${bodyText || '新着メッセージ'}`, currentRoomId || currentDmId);
-        showInAppNotification(sName, rName, data.senderNickname || 'ユーザー', bodyText || '新着メッセージ', currentServerId, currentServerData, currentRoomId);
+        showInAppNotification(
+          sName,
+          rName,
+          data.senderNickname || 'ユーザー',
+          bodyText || '新着メッセージ',
+          currentServerId,
+          currentServerData,
+          currentRoomId,
+          Boolean(currentDmId),
+          currentDmParticipant?.uid || null,
+          currentDmParticipant?.avatarUrl || null
+        );
         updateGlobalNotifUI();
         if (isTauri && window.__TAURI__?.core?.invoke) {
           window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
@@ -10536,8 +10609,10 @@ async function loadJumpNewerMessages() {
 
 window.exitJumpMode = function () {
   const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
-  jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
-  jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+  if (jumpModeExitBtn) {
+    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
+    jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+  }
 
   if (isJumpView) {
     isJumpView = false;
@@ -11410,9 +11485,9 @@ window.copyInAppBrowserUrl = function () {
 
 window.openInAppBrowserInExternal = function () {
   if (!currentInAppBrowserUrl) return;
-  if (window.__TAURI__?.core) {
+  if (window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('plugin:shell|open', { path: currentInAppBrowserUrl }).catch(() => {
-      window.open(currentInAppBrowserUrl, '_blank');
+      window.open(currentInAppBrowserUrl, '_blank', 'noopener,noreferrer');
     });
   } else {
     window.open(currentInAppBrowserUrl, '_blank', 'noopener,noreferrer');
@@ -11919,7 +11994,7 @@ function renderMentionPopup() {
         : `<div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 text-xs flex-shrink-0"><i class="fas fa-user"></i></div>`);
 
     const nameHTML = `<span class="font-medium">${escapeHtml(u.nickname)}</span>` +
-      (u.desc ? `<span class="mention-option-sub ml-2">${u.desc}</span>` : ``);
+      (u.desc ? `<span class="mention-option-sub ml-2">${escapeHtml(u.desc)}</span>` : ``);
 
     opt.innerHTML = `${iconHTML} <div class="flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">${nameHTML}</div>`;
 
@@ -12642,8 +12717,10 @@ async function jumpToUnloadedMessage(msgId) {
   if (spinner) spinner.style.display = 'flex';
 
   const _exitBtn = document.getElementById('jumpModeExitBtn');
-  _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
-  _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
+  if (_exitBtn) {
+    _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+    _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
+  }
 
   const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
   const decryptInPlace = async (list) => {
@@ -18776,6 +18853,12 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    // -2. アバター高解像度拡大モーダル
+    const avatarLightboxEl = document.getElementById('avatarLightbox');
+    if (avatarLightboxEl && avatarLightboxEl.style.display !== 'none' && !avatarLightboxEl.classList.contains('hidden')) {
+      window.closeAvatarLightbox();
+      return;
+    }
     // -1. ステメ絵文字ピッカー
     const statusEmojiPopover = document.getElementById('statusEmojiPopover');
     if (statusEmojiPopover && statusEmojiPopover.style.display !== 'none') {
@@ -18802,7 +18885,7 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     // 3. コンテキストメニュー
-    const msgCtx = document.getElementById('messageContextMenu');
+    const msgCtx逗 = document.getElementById('messageContextMenu');
     const svCtx = document.getElementById('serverContextMenu');
     if (msgCtx && !msgCtx.classList.contains('hidden')) { msgCtx.classList.add('hidden'); return; }
     if (svCtx && !svCtx.classList.contains('hidden')) { svCtx.classList.add('hidden'); return; }
@@ -18818,11 +18901,9 @@ document.addEventListener("keydown", (e) => {
       callPicker.classList.remove('show');
       return;
     }
-    // 6. 各種ライトボックス
-    const avatarLb = document.getElementById('avatarLightbox');
+    // 6. 各種ライトボックス (画像・PDF)
     const imageLb = document.getElementById('imageLightbox');
-    const pdfLb = document.getElementById('pdfLightbox');
-    if (avatarLb && avatarLb.style.display !== 'none') { avatarLb.style.display = 'none'; return; }
+    const pdfLb依然 = document.getElementById('pdfLightbox');
     if (imageLb && imageLb.style.display !== 'none') { imageLb.style.display = 'none'; return; }
     if (pdfLb && pdfLb.style.display !== 'none') { pdfLb.style.display = 'none'; return; }
     // 7. モバイル設定詳細・ボトムシート

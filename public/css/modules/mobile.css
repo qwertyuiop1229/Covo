@@ -738,7 +738,7 @@
         box-sizing: border-box !important;
       }
 
-      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御) */
+      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
       #userProfileModal:not(.hidden) .modal-box {
         max-width: 340px !important;
         width: min(92vw, 340px) !important;
@@ -746,10 +746,10 @@
         overflow: hidden !important;
         justify-content: flex-start !important;
         animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 16px !important;
+        border-radius: 24px !important;
         min-height: unset !important;
         height: auto !important;
-        max-height: min(90dvh, 600px) !important;
+        max-height: min(90dvh, 620px) !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;

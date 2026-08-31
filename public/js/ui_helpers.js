@@ -32,16 +32,70 @@ export function alertMessage(msg, type = "info") {
 }
 
 /**
- * アバターや画像を拡大表示（ライトボックス）
- * @param {string} url - 拡大表示する画像のURL
+ * アバター高解像度拡大表示（Discord風ライトボックス）
+ * @param {string} url - アバター画像のURL
+ * @param {string} nickname - ユーザーニックネーム
+ * @param {string} tag - ユーザータグ (#1234)
  */
-export function openAvatarLightbox(url) {
+export function openAvatarLightbox(url, nickname = '', tag = '') {
   const lb = document.getElementById("avatarLightbox");
   const img = document.getElementById("avatarLightboxImg");
-  if (lb && img) {
-    img.src = url;
-    lb.style.display = "flex";
+  const initialEl = document.getElementById("avatarLightboxInitial");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const tagEl = document.getElementById("avatarLightboxUserTag");
+  
+  if (!lb) return;
+
+  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
+  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
+
+  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
+
+  if (isUsable) {
+    if (img) {
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (initialEl) initialEl.style.display = 'none';
+  } else {
+    if (img) img.style.display = 'none';
+    if (initialEl) {
+      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
+      initialEl.style.display = 'block';
+    }
   }
+
+  lb.style.display = "flex";
+  lb.classList.remove("hidden");
+}
+
+export function closeAvatarLightbox() {
+  const lb = document.getElementById("avatarLightbox");
+  if (lb) {
+    lb.style.display = "none";
+    lb.classList.add("hidden");
+  }
+}
+
+export function downloadAvatarLightboxImage() {
+  const img = document.getElementById("avatarLightboxImg");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const url = img?.src;
+  if (url && url.startsWith('http')) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.closeAvatarLightbox = closeAvatarLightbox;
+  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
 }
 
 /**

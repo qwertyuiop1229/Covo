@@ -2814,11 +2814,33 @@
     </div>
   </div>
 
-  <!-- アバターライトボックス -->
-  <div id="avatarLightbox" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70"
-    style="display:none" onclick="document.getElementById('avatarLightbox').style.display='none'">
-    <img id="avatarLightboxImg" src="" alt=""
-      style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:3px solid white;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+  <!-- Discord風 アバター高解像度拡大モーダル (User Avatar Lightbox) -->
+  <div id="avatarLightbox" class="fixed inset-0 z-[99999] modal-overlay flex items-center justify-center p-4 select-none" style="display:none; background:rgba(0,0,0,0.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);" onclick="if(event.target===this) closeAvatarLightbox()">
+    <div class="bg-[#1e1f22] dark:bg-[#1e1f22] rounded-3xl shadow-2xl overflow-hidden modal-box animate-pop-in border border-white/10 relative flex flex-col max-w-[360px] w-full" onclick="event.stopPropagation()">
+      <!-- 上部ツールバー -->
+      <div class="px-5 py-3.5 bg-[#2b2d31] border-b border-white/5 flex items-center justify-between">
+        <div class="flex items-center gap-2 min-w-0">
+          <i class="fas fa-user-circle text-indigo-400 text-sm"></i>
+          <span class="text-xs font-bold text-gray-200 truncate" id="avatarLightboxTitle">アバター</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="avatarLightboxDownloadBtn" onclick="downloadAvatarLightboxImage()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs transition" title="画像を保存">
+            <i class="fas fa-download"></i>
+          </button>
+          <button onclick="closeAvatarLightbox()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs transition" title="閉じる (ESC)">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <!-- メイン画像表示エリア -->
+      <div class="p-6 flex flex-col items-center justify-center bg-[#111214] relative min-h-[300px]">
+        <div id="avatarLightboxImgWrapper" class="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full overflow-hidden shadow-2xl border-4 border-white/15 flex items-center justify-center bg-gray-800">
+          <img id="avatarLightboxImg" src="" alt="Avatar" class="w-full h-full object-cover" />
+          <div id="avatarLightboxInitial" class="text-white text-6xl font-black hidden select-none">U</div>
+        </div>
+        <div id="avatarLightboxUserTag" class="text-xs text-gray-400 font-mono mt-4">#0000</div>
+      </div>
+    </div>
   </div>
 
   <!-- PDFライトボックス -->
@@ -3473,71 +3495,75 @@
       </div>
     </div>
   </div>
-  <!-- Covoモダンデザイン ユーザープロフィール詳細ポップアップモーダル (Discord完全準拠) -->
+  <!-- Covoモダンデザイン ユーザープロフィール詳細ポップアップモーダル (Discord完全準拠・アバター見切れ完全解消版) -->
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
-    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-2xl shadow-2xl w-full max-w-[340px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1f2023] relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
-      <!-- バナーヘッダー (Discord本家カラー #5865f2) -->
-      <div id="userProfileBanner" class="h-20 bg-[#5865f2] relative flex items-start justify-end p-2.5 flex-shrink-0">
-        <button onclick="closeUserProfileModal()" class="w-7 h-7 rounded-full bg-black/20 hover:bg-black/40 text-white/90 hover:text-white flex items-center justify-center transition-all shadow-xs" title="閉じる (ESC)">
+    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[340px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1f2023] relative text-gray-800 dark:text-gray-100 flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+      <!-- 1. バナーヘッダー (Discord本家カラー #5865f2) -->
+      <div id="userProfileBanner" class="h-24 bg-[#5865f2] relative flex items-start justify-end p-3 flex-shrink-0">
+        <button onclick="closeUserProfileModal()" class="w-7 h-7 rounded-full bg-black/25 hover:bg-black/40 text-white/90 hover:text-white flex items-center justify-center transition-all shadow-xs" title="閉じる (ESC)">
           <i class="fas fa-times text-xs"></i>
         </button>
       </div>
 
-      <!-- アバター & バッジ & アクションエリア -->
-      <div class="px-4 pb-4 relative flex-1 overflow-y-auto custom-scrollbar">
-        <!-- アバターとアクションボタン（左右並び） -->
-        <div class="flex items-end justify-between -mt-10 mb-3">
-          <div class="relative flex-shrink-0">
-            <div id="userProfileAvatar" class="w-20 h-20 rounded-full border-[5px] border-white dark:border-[#232428] shadow-md bg-gray-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden">
-              U
-            </div>
-            <div id="userProfileStatusDot" class="status-indicator status-online" style="bottom: 1px; right: 1px; width: 18px; height: 18px; border: 3px solid white;"></div>
+      <!-- 2. アバター & アクションバー (スクロールコンテナ外に固定配置して見切れを根絶) -->
+      <div class="px-4 relative flex items-end justify-between -mt-12 mb-2.5 flex-shrink-0">
+        <div class="relative flex-shrink-0 group cursor-pointer" onclick="openUserProfileAvatarLightbox()" title="アイコンをクリックして拡大">
+          <div id="userProfileAvatar" class="w-20 h-20 rounded-full border-[5px] border-white dark:border-[#232428] shadow-lg bg-gray-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105">
+            U
           </div>
-
-          <!-- アクションボタン群 (他人の場合: Discord本家準拠のニュートラルカラー) -->
-          <div id="userProfileActionsOther" class="flex items-center gap-1.5 pb-0.5">
-            <button id="upActionDmBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="ダイレクトメッセージ">
-              <i class="fas fa-comment-dots"></i>
-            </button>
-            <button id="upActionCallBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="音声通話">
-              <i class="fas fa-phone"></i>
-            </button>
-            <button id="upActionFileBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="P2Pファイル送信">
-              <i class="fas fa-share-from-square"></i>
-            </button>
-            <button id="upActionFriendBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="フレンド申請">
-              <i class="fas fa-user-plus"></i>
-            </button>
-          </div>
-
-          <!-- アクションボタン (自分の場合) -->
-          <div id="userProfileActionsSelf" class="hidden flex items-center gap-1.5 pb-0.5">
-            <button onclick="openProfileEditFromModal()" class="px-3.5 py-1.5 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs border border-gray-200/60 dark:border-white/5 active:scale-95" title="プロフィールを編集">
-              <i class="fas fa-pencil text-[10px] text-[#5865f2]"></i> プロフィール編集
-            </button>
+          <div id="userProfileStatusDot" class="status-indicator status-online" style="bottom: 1px; right: 1px; width: 18px; height: 18px; border: 3px solid white;"></div>
+          <!-- ホバー時のズームインジケーター -->
+          <div class="absolute inset-0 rounded-full bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none text-white text-xs">
+            <i class="fas fa-search-plus"></i>
           </div>
         </div>
 
-        <!-- ユーザーネーム & タグ -->
-        <div class="mb-3 px-1">
-          <div class="flex items-center gap-2 flex-wrap">
-            <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h3>
-            <span id="userProfileBadgeAdmin" class="hidden px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#5865f2]/10 text-[#5865f2] border border-[#5865f2]/20">管理者</span>
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 font-mono font-medium mt-0.5" id="userProfileTag">#0000</div>
+        <!-- アクションボタン群 (他人の場合: Discord本家準拠のニュートラルカラー) -->
+        <div id="userProfileActionsOther" class="flex items-center gap-1.5 pb-0.5">
+          <button id="upActionDmBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="ダイレクトメッセージ">
+            <i class="fas fa-comment-dots"></i>
+          </button>
+          <button id="upActionCallBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="音声通話">
+            <i class="fas fa-phone"></i>
+          </button>
+          <button id="upActionFileBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="P2Pファイル送信">
+            <i class="fas fa-share-from-square"></i>
+          </button>
+          <button id="upActionFriendBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="フレンド申請">
+            <i class="fas fa-user-plus"></i>
+          </button>
         </div>
 
-        <!-- カスタムステータス (ステメ) エリア -->
-        <div id="userProfileCustomStatusWrap" class="mb-3 p-2.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] flex items-center justify-between gap-2 shadow-inner transition-colors">
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
-            <span id="userProfileStatusText" class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate select-text">ステータスメッセージ未設定</span>
-          </div>
-          <i id="userProfileStatusEditIcon" class="fas fa-pencil text-[10px] text-gray-400 dark:text-gray-500 hidden flex-shrink-0"></i>
+        <!-- アクションボタン (自分の場合) -->
+        <div id="userProfileActionsSelf" class="hidden flex items-center gap-1.5 pb-0.5">
+          <button onclick="openProfileEditFromModal()" class="px-3.5 py-1.5 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs border border-gray-200/60 dark:border-white/5 active:scale-95" title="プロフィールを編集">
+            <i class="fas fa-pencil text-[10px] text-[#5865f2]"></i> プロフィール編集
+          </button>
         </div>
+      </div>
 
-        <!-- プロフィール詳細カード (About Me & 参加日: Discordインナーコンテナスタイル) -->
-        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] space-y-3 mb-3 text-xs">
+      <!-- 3. ユーザーネーム & タグ (固定表示) -->
+      <div class="px-4 mb-2 flex-shrink-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h3>
+          <span id="userProfileBadgeAdmin" class="hidden px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#5865f2]/10 text-[#5865f2] border border-[#5865f2]/20">管理者</span>
+        </div>
+        <div class="text-xs text-gray-500 dark:text-gray-400 font-mono font-medium mt-0.5" id="userProfileTag">#0000</div>
+      </div>
+
+      <!-- 4. カスタムステータス (ステメ) エリア (固定表示) -->
+      <div id="userProfileCustomStatusWrap" class="mx-4 mb-3 p-2.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] flex items-center justify-between gap-2 shadow-inner transition-colors flex-shrink-0">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+          <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
+          <span id="userProfileStatusText" class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate select-text">ステータスメッセージ未設定</span>
+        </div>
+        <i id="userProfileStatusEditIcon" class="fas fa-pencil text-[10px] text-gray-400 dark:text-gray-500 hidden flex-shrink-0"></i>
+      </div>
+
+      <!-- 5. 詳細スクロールエリア (About Me、参加日、クイックDM) -->
+      <div class="px-4 pb-4 flex-1 overflow-y-auto custom-scrollbar space-y-3">
+        <!-- プロフィール詳細カード (About Me & 参加日) -->
+        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] space-y-3 text-xs shadow-xs">
           <div>
             <div class="text-[10px] font-extrabold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
             <div id="userProfileAboutMe" class="text-xs text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
@@ -3549,7 +3575,7 @@
         </div>
 
         <!-- メッセージ送信クイック入力 (他人の場合のみ) -->
-        <div id="userProfileQuickMsgArea" class="mb-1">
+        <div id="userProfileQuickMsgArea" class="pt-0.5">
           <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
             <div class="p-1.5 pl-3 bg-gray-100 dark:bg-[#1e1f22] rounded-xl border border-gray-200 dark:border-[#1f2023] flex items-center gap-2 focus-within:ring-2 focus-within:ring-indigo-500/30 transition shadow-inner">
               <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none font-medium" />
