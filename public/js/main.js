@@ -1481,7 +1481,7 @@ window.submitPasswordReset = async function () {
   }
 };
 
-// エマージェンシーコードによるパスワード再設定（絵文字なし・クリーン表示）
+// エマージェンシーコードによるパスワード再設定（Worker API経由で直接更新）
 window.submitEmergencyCodeReset = async function () {
   const emailInput = document.getElementById('resetEmergencyEmailInput');
   const codeInput = document.getElementById('resetEmergencyCodeInput');
@@ -1494,82 +1494,147 @@ window.submitEmergencyCodeReset = async function () {
   const newPwd = (newPwdInput?.value || '').trim();
 
   if (!email) {
-    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   if (!code || code.length < 6) {
-    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   if (!newPwd || newPwd.length < 6) {
-    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
 
   try {
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> コードを検証中...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> パスワードを更新中...'; }
 
-    const emailHash = await _sha256Hash(email);
-    const indexDocRef = doc(db, `artifacts/${appId}/admin_recovery_index`, emailHash);
-    const indexSnap = await getDoc(indexDocRef);
+    const res = await fetch(`${WORKER_BASE_URL}/api/emergencyPasswordReset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code, newPassword: newPwd, appId })
+    });
+    const result = await res.json();
 
-    if (!indexSnap.exists()) {
+    if (!res.ok || !result.success) {
       if (msg) {
-        msg.textContent = 'このメールアドレスに対する有効なエマージェンシーコードが見つかりません。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+        msg.textContent = result.error || 'パスワードの変更に失敗しました。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
       }
       return;
     }
-
-    const data = indexSnap.data();
-    if (data.used) {
-      if (msg) {
-        msg.textContent = 'このコードは既に使用されています。新しいコードの発行を依頼してください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    if (data.expiresAt && Date.now() > data.expiresAt) {
-      if (msg) {
-        msg.textContent = 'コードの有効期限（10分間）が切れています。新しいコードの再発行を依頼してください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    const computedHash = await _sha256Hash((data.salt || '') + ':' + code);
-    if (computedHash !== data.pinHash) {
-      if (msg) {
-        msg.textContent = 'コードが一致しません。正しい6桁の番号をご確認ください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    // コード認証成功
-    await updateDoc(indexDocRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
-    auth.languageCode = 'ja';
-    sendPasswordResetEmail(auth, email).catch(() => {});
 
     if (msg) {
-      msg.textContent = '本人確認が完了しました。まもなくログイン画面に戻ります。';
+      msg.textContent = 'パスワードを正常に変更しました！新しいパスワードでログインできます。';
       msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
     }
 
+    // ログインフォームにメアドと新パスワードを自動セット
+    const loginEmailInp = document.getElementById('emailInput');
+    const loginPwdInp = document.getElementById('passwordInput');
+    if (loginEmailInp) loginEmailInp.value = email;
+    if (loginPwdInp) loginPwdInp.value = newPwd;
+
     setTimeout(() => {
       closePasswordResetModal();
-      alertMessage('パスワードの再設定処理が完了しました。', 'success');
-    }, 2000);
+      alertMessage('パスワードを変更しました！そのままログインできます。', 'success');
+    }, 1500);
 
   } catch (err) {
     console.error('[Recovery] Emergency code reset error:', err);
     if (msg) {
-      msg.textContent = `再設定エラー: ${err.message}`;
-      msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+      msg.textContent = `通信エラー: ${err.message || err}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
     }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span>パスワードを再設定</span>'; }
+  }
+};
+
+// ログイン中モーダル用: エマージェンシーコード折りたたみトグル
+window.toggleModalEmergencyCodeSection = function () {
+  const sec = document.getElementById('modalEmergencyCodeSection');
+  const icon = document.getElementById('modalEmergencyCodeArrowIcon');
+  if (!sec) return;
+  const isHidden = sec.classList.contains('hidden');
+  if (isHidden) {
+    sec.classList.remove('hidden');
+    if (icon) icon.style.transform = 'rotate(180deg)';
+    document.getElementById('modalEmergencyCodeInput')?.focus();
+  } else {
+    sec.classList.add('hidden');
+    if (icon) icon.style.transform = 'rotate(0deg)';
+  }
+};
+
+// ログイン中モーダル用: エマージェンシーコードによる直接パスワード変更
+window.submitModalEmergencyCodeReset = async function () {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    alertMessage('ユーザーのメールアドレスが取得できませんでした', 'error');
+    return;
+  }
+
+  const codeInput = document.getElementById('modalEmergencyCodeInput');
+  const newPwdInput = document.getElementById('modalEmergencyNewPassword');
+  const msg = document.getElementById('modalEmergencyCodeMessage');
+  const btn = document.getElementById('submitModalEmergencyResetBtn');
+
+  const email = user.email.toLowerCase().trim();
+  const code = (codeInput?.value || '').trim().replace(/[^0-9A-Za-z]/g, '');
+  const newPwd = (newPwdInput?.value || '').trim();
+
+  if (!code || code.length < 6) {
+    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> パスワードを更新中...'; }
+
+    const res = await fetch(`${WORKER_BASE_URL}/api/emergencyPasswordReset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code, newPassword: newPwd, appId })
+    });
+    const result = await res.json();
+
+    if (!res.ok || !result.success) {
+      if (msg) {
+        msg.textContent = result.error || 'パスワードの変更に失敗しました。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
+      }
+      return;
+    }
+
+    if (msg) {
+      msg.textContent = 'パスワードを正常に変更しました！';
+      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
+    }
+
+    if (codeInput) codeInput.value = '';
+    if (newPwdInput) newPwdInput.value = '';
+
+    setTimeout(() => {
+      closeChangePasswordModal();
+      alertMessage('エマージェンシーコードでパスワードを変更しました！', 'success');
+      if (typeof updateAccountSecurityUI === 'function') {
+        updateAccountSecurityUI(auth.currentUser);
+      }
+    }, 1200);
+
+  } catch (err) {
+    console.error('[Recovery] Modal emergency code reset error:', err);
+    if (msg) {
+      msg.textContent = `通信エラー: ${err.message || err}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>コードでパスワードを変更</span>'; }
   }
 };
 

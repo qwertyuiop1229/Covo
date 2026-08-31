@@ -61,6 +61,9 @@ export default {
     if (url.pathname === "/api/setOffline" && request.method === "POST") {
       return await handleSetOffline(request, env);
     }
+    if (url.pathname === "/api/emergencyPasswordReset" && request.method === "POST") {
+      return await handleEmergencyPasswordReset(request, env);
+    }
 
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
@@ -95,7 +98,158 @@ export default {
   },
 };
 
+// -------------------------------------------------------------
+// エマージェンシーコードによるパスワード強制更新処理 (Firebase Identity Toolkit連携)
+// -------------------------------------------------------------
+async function handleEmergencyPasswordReset(request, env) {
+  const cors = getCorsHeaders(request);
+  try {
+    const { email, code, newPassword, appId } = await request.json();
+    if (!email || !code || !newPassword || !appId) {
+      return new Response(JSON.stringify({ success: false, error: "必須項目が不足しています" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (newPassword.length < 6) {
+      return new Response(JSON.stringify({ success: false, error: "新しいパスワードは6文字以上で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = code.trim().replace(/[^0-9A-Za-z]/g, '');
+
+    // 1. メールアドレスのSHA-256ハッシュを計算
+    const enc = new TextEncoder();
+    const emailBuf = await crypto.subtle.digest('SHA-256', enc.encode(cleanEmail));
+    const emailHash = Array.from(new Uint8Array(emailBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    // 2. Firestore から admin_recovery_index ドキュメントを取得
+    const indexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_index/${emailHash}`;
+    const indexRes = await fetch(indexUrl, {
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+    const indexData = await indexRes.json();
+
+    if (indexData.error || !indexData.fields) {
+      return new Response(JSON.stringify({ success: false, error: "このメールアドレスに対する有効なエマージェンシーコードが見つかりません" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    const fields = indexData.fields;
+    const isUsed = fields.used?.booleanValue || false;
+    const expiresAt = fields.expiresAt?.integerValue ? parseInt(fields.expiresAt.integerValue, 10) : (fields.expiresAt?.timestampValue ? new Date(fields.expiresAt.timestampValue).getTime() : 0);
+    const salt = fields.salt?.stringValue || '';
+    const storedPinHash = fields.pinHash?.stringValue || '';
+    const storedUserId = fields.userId?.stringValue || '';
+
+    if (isUsed) {
+      return new Response(JSON.stringify({ success: false, error: "このエマージェンシーコードは既に使用済みです。新しいコードの発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードの有効期限（10分間）が切れています。再発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 3. コードのハッシュを照合
+    const codeBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanCode));
+    const computedHash = Array.from(new Uint8Array(codeBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (computedHash !== storedPinHash) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードが一致しません。正しい6桁の番号をご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 4. Firebase Identity Toolkit API でユーザーのUIDを特定
+    let targetUid = storedUserId;
+    if (!targetUid) {
+      const lookupUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:lookup`;
+      const lookupRes = await fetch(lookupUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${adminToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: [cleanEmail] })
+      });
+      const lookupData = await lookupRes.json();
+      if (lookupData.users && lookupData.users.length > 0) {
+        targetUid = lookupData.users[0].localId;
+      }
+    }
+
+    if (!targetUid) {
+      return new Response(JSON.stringify({ success: false, error: "対象のアカウントが見つかりませんでした" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 5. Firebase Identity Toolkit API でパスワードを直接更新！
+    const updateUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`;
+    const updateRes = await fetch(updateUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${adminToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        localId: targetUid,
+        password: newPassword
+      })
+    });
+    const updateResult = await updateRes.json();
+
+    if (updateResult.error) {
+      console.error("Identity Toolkit update password error:", updateResult.error);
+      return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 6. コードを使用済みに更新 (admin_recovery_index & admin_recovery_requests)
+    const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+    const writes = [
+      {
+        update: {
+          name: indexData.name,
+          fields: {
+            ...fields,
+            used: { booleanValue: true },
+            usedAt: { timestampValue: new Date().toISOString() }
+          }
+        }
+      }
+    ];
+
+    if (targetUid) {
+      writes.push({
+        transform: {
+          document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
+          fieldTransforms: [
+            { fieldPath: "used", setToServerValue: "REQUEST_TIME" }
+          ]
+        }
+      });
+    }
+
+    await fetch(commitUrl, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ writes })
+    });
+
+    return new Response(JSON.stringify({ success: true, message: "パスワードを正常に変更しました" }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+
+  } catch (err) {
+    console.error("handleEmergencyPasswordReset error:", err);
+    return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+}
+
+// -------------------------------------------------------------
 // サインアップ処理（許可リストの検証を含む）
+// -------------------------------------------------------------
 async function handleSignup(request, env) {
   const cors = getCorsHeaders(request);
   try {
