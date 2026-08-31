@@ -2635,14 +2635,26 @@
 
   <!-- カスタム確認ダイアログ -->
   <div id="customConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in">
-      <p id="customConfirmMessage" class="text-gray-800 font-medium mb-1 text-base leading-snug"></p>
-      <p id="customConfirmSub" class="text-gray-500 text-sm mb-6 hidden"></p>
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
+      <p id="customConfirmMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-1 text-base leading-snug"></p>
+      <p id="customConfirmSub" class="text-gray-500 dark:text-gray-400 text-xs mb-6 hidden leading-relaxed"></p>
       <div class="flex gap-3 mt-4">
         <button id="customConfirmCancel"
-          class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
+          class="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
         <button id="customConfirmOk"
-          class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">確認</button>
+          class="flex-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-sm shadow-xs">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- カスタム入力プロンプトダイアログ -->
+  <div id="customPromptModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
+      <p id="customPromptMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-3 text-base leading-snug"></p>
+      <input type="text" id="customPromptInput" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all mb-4" />
+      <div class="flex gap-3">
+        <button id="customPromptCancel" class="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
+        <button id="customPromptOk" class="flex-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-sm shadow-xs">決定</button>
       </div>
     </div>
   </div>

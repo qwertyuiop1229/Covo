@@ -418,16 +418,17 @@
       align-items: center;
       gap: 4px;
       background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 0 0 0 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0 0 0 12px;
+      min-height: 44px;
       transition: border-color 0.2s, box-shadow 0.2s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     #messageInputInner:focus-within {
-      border-color: #9ca3af;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border-color: #5865f2;
+      box-shadow: 0 0 0 1px #5865f2;
     }
 
     /* ===== スタンプ ===== */
@@ -446,7 +447,7 @@
     /* スタンプピッカー */
     #stickerPicker {
       position: fixed; z-index: 99996; display: none;
-      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px;
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 16px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.18);
       width: 360px; max-width: calc(100vw - 20px);
       height: 420px; max-height: 60vh; flex-direction: column; overflow: hidden;
@@ -456,7 +457,7 @@
     body.discord-dark-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
     body.discord-dark-theme #stickerPicker { background: #2b2d31; border-color: #383a40; }
     .sticker-tabs {
-      display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid #f3f4f6;
+      display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid #f3f4f6;
       overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
     }
     .sticker-tabs::-webkit-scrollbar { display: none; }
@@ -464,9 +465,10 @@
     body.discord-dark-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
     body.discord-dark-theme .sticker-tabs { border-bottom-color: #1f2023; }
     .sticker-tab {
-      flex-shrink: 0; width: 34px; height: 34px; border: none; background: transparent;
-      border-radius: 9px; cursor: pointer; font-size: 1.1rem; display: flex;
+      flex-shrink: 0; width: 36px; height: 36px; border: none; background: transparent;
+      border-radius: 8px; cursor: pointer; font-size: 1.1rem; display: flex;
       align-items: center; justify-content: center; color: #9ca3af; transition: background 0.12s;
+      aspect-ratio: 1 / 1;
     }
     .sticker-tab.active { background: #eef2ff; }
     body.dark-server-theme .sticker-tab.active,
@@ -478,7 +480,7 @@
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-content: start;
     }
     .sticker-cell {
-      aspect-ratio: 1; border: none; background: transparent; border-radius: 14px;
+      aspect-ratio: 1 / 1; border: none; background: transparent; border-radius: 12px;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: background 0.12s, transform 0.08s; position: relative; -webkit-tap-highlight-color: transparent;
     }
@@ -502,14 +504,15 @@
     .sticker-cell.is-fav .sticker-fav-star { display: block; }
     .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
 
-    /* 独立アクションボタン（ファイル添付・メンション） */
+    /* 独立アクションボタン（正方形・Discord調和） */
     .input-side-btn {
       background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      width: 40px;
-      height: 43px;
-      color: #9ca3af;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      aspect-ratio: 1 / 1;
+      color: #64748b;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -517,20 +520,20 @@
       flex-shrink: 0;
       font-size: 1rem;
       transition: color 0.15s, background-color 0.15s, border-color 0.15s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     .input-side-btn:hover:not(:disabled) {
-      color: #374151;
-      background-color: #f3f4f6;
-      border-color: #d1d5db;
+      color: #0f172a;
+      background-color: #f1f5f9;
+      border-color: #cbd5e1;
     }
 
     .input-side-btn:disabled {
-      color: #d1d5db;
+      color: #cbd5e1;
       cursor: not-allowed;
-      background: #fafafa;
-      border-color: #f3f4f6;
+      background: #f8fafc;
+      border-color: #f1f5f9;
     }
 
     /* 設定モーダルのスクロールバーを非表示 */
@@ -1039,6 +1042,10 @@
     /* === DM & フレンド機能 UI スタイル (Discord完全準拠) === */
     .dm-tab-btn {
       color: #4e5058;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
       transition: all 0.15s ease;
     }
     .dm-tab-btn:hover:not(.active) {
@@ -1070,9 +1077,9 @@
     .dm-sidebar-item {
       display: flex;
       align-items: center;
-      gap: 0.65rem;
-      padding: 0.5rem 0.65rem;
-      border-radius: 0.5rem;
+      gap: 0.75rem;
+      padding: 8px 10px;
+      border-radius: 6px;
       cursor: pointer;
       transition: all 0.15s ease;
       position: relative;
@@ -1106,15 +1113,23 @@
       color: #ffffff !important;
     }
     .dm-sidebar-item .dm-close-btn {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
       opacity: 0;
-      transition: opacity 0.15s ease;
+      transition: opacity 0.15s ease, background-color 0.15s;
       color: #94a3b8;
+      aspect-ratio: 1 / 1;
     }
     .dm-sidebar-item:hover .dm-close-btn {
       opacity: 1;
     }
     .dm-sidebar-item .dm-close-btn:hover {
       color: #ef4444;
+      background-color: rgba(239, 68, 68, 0.1);
     }
 
     /* フレンドカード (Discord本家準拠のフラットリスト行) */
@@ -1122,8 +1137,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.65rem 0.85rem;
-      border-radius: 0.5rem;
+      padding: 10px 12px;
+      border-radius: 8px;
       border-top: 1px solid #e3e5e8;
       background: transparent;
       transition: background-color 0.15s ease;
@@ -1147,6 +1162,7 @@
     .friend-action-btn {
       width: 36px;
       height: 36px;
+      aspect-ratio: 1 / 1;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -1157,6 +1173,7 @@
       transition: all 0.15s ease;
       cursor: pointer;
       border: none;
+      flex-shrink: 0;
     }
     .friend-action-btn:hover {
       background: #d7d9dc !important;

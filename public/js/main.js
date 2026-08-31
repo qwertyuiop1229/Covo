@@ -960,6 +960,9 @@ function initializeFirebase() {
             }
           }
 
+          // リアルタイム管理者ロール同期リスナーを起動
+          setupGlobalAdminRoleListener();
+
           // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
           if (isAdmin || isListAdmin) {
             if (adminPanelContainer) adminPanelContainer.classList.remove("hidden");
@@ -1770,7 +1773,7 @@ window.downloadRecoveryKitFile = function () {
 window.generateNewRecoveryKey = async function (showPrompt = false) {
   const user = auth.currentUser;
   if (!user || !user.uid || !user.email) return;
-  if (showPrompt && !confirm('新しい緊急リカバリーキーを発行しますか？\n過去に発行した古いキーは無効化されます。')) {
+  if (showPrompt && !await showCustomConfirm('新しい緊急リカバリーキーを発行しますか？\n過去に発行した古いキーは無効化されます。', '発行する', 'キャンセル')) {
     return;
   }
 
@@ -2133,7 +2136,7 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
   }
   const cleanEmail = targetEmail.toLowerCase().trim();
   const confirmMsg = `対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のエマージェンシーコード」を発行しますか？`;
-  if (!confirm(confirmMsg)) return;
+  if (!await showCustomConfirm(confirmMsg, '発行する', 'キャンセル')) return;
 
   try {
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -2230,7 +2233,7 @@ window.toggleGoogleLinkAction = async function () {
       alertMessage('Googleアカウントのみでログインしているため、連携を解除できません。先にパスワードを設定してください。', 'warning');
       return;
     }
-    if (!confirm('Googleアカウントとの連携を解除しますか？')) return;
+    if (!await showCustomConfirm('Googleアカウントとの連携を解除しますか？', '解除する', 'キャンセル')) return;
     try {
       await unlink(user, 'google.com');
       alertMessage('Google連携を解除しました。', 'success');
@@ -2814,7 +2817,7 @@ window.copyAllTelemetryErrors = function () {
 
 window.clearAllTelemetryErrors = async function () {
   if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
-  if (!confirm("記録されているすべてのエラーログを削除（解決済み）にしますか？")) return;
+  if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
   try {
     const batch = writeBatch(db);
     _cachedTelemetryErrors.forEach(err => {
@@ -2950,7 +2953,7 @@ window.loadAdminFeedbacks = async function () {
       });
 
       item.querySelector(".fb-del-btn").addEventListener("click", async () => {
-        if (!confirm("本当に削除しますか？")) return;
+        if (!await showCustomConfirm("本当にこのフィードバックを削除しますか？", "削除する", "キャンセル")) return;
         try {
           await deleteDoc(doc(db, `artifacts/${appId}/feedbacks`, fb.id));
           loadAdminFeedbacks();
@@ -3489,19 +3492,127 @@ if (addAdminEmailBtn && newAdminEmailInp) {
   });
 }
 
+let _globalAdminListUnsub = null;
+let _globalListAdminUnsub = null;
+
+function setupGlobalAdminRoleListener() {
+  if (_globalAdminListUnsub) { _globalAdminListUnsub(); _globalAdminListUnsub = null; }
+  if (_globalListAdminUnsub) { _globalListAdminUnsub(); _globalListAdminUnsub = null; }
+  if (!userId || !auth?.currentUser) return;
+
+  const currentUid = userId;
+  const candidateEmails = new Set();
+  if (auth.currentUser.email) candidateEmails.add(auth.currentUser.email.toLowerCase().trim());
+  if (Array.isArray(auth.currentUser.providerData)) {
+    auth.currentUser.providerData.forEach(p => {
+      if (p && p.email) candidateEmails.add(p.email.toLowerCase().trim());
+    });
+  }
+  const allUserEmails = Array.from(candidateEmails);
+
+  const updateAdminRoleState = (adminData, listAdminData) => {
+    let newIsAdmin = false;
+    let newListAdmin = false;
+
+    if (adminData) {
+      const adminEmails = (adminData.emails || []).map(e => String(e).toLowerCase().trim());
+      const adminUids = adminData.admins || [];
+      const hasEmail = allUserEmails.some(em => adminEmails.includes(em));
+      const hasUid = adminUids.includes(currentUid);
+      newIsAdmin = hasEmail || hasUid;
+    }
+
+    if (!newIsAdmin && listAdminData) {
+      const listAdminEmails = (listAdminData.emails || []).map(e => String(e).toLowerCase().trim());
+      const listAdminUids = listAdminData.admins || [];
+      const hasEmail = allUserEmails.some(em => listAdminEmails.includes(em));
+      const hasUid = listAdminUids.includes(currentUid);
+      newListAdmin = hasEmail || hasUid;
+    }
+
+    const adminChanged = (isAdmin !== newIsAdmin);
+    const listAdminChanged = (isListAdmin !== newListAdmin);
+
+    isAdmin = newIsAdmin;
+    isListAdmin = newListAdmin;
+
+    if (adminPanelContainer) {
+      adminPanelContainer.classList.toggle("hidden", !(isAdmin || isListAdmin));
+    }
+    const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+    if (mobileAdminSec) {
+      mobileAdminSec.style.display = (isAdmin || isListAdmin) ? "" : "none";
+      mobileAdminSec.classList.toggle("hidden", !(isAdmin || isListAdmin));
+    }
+
+    const hdrTitle = document.getElementById("headerTitle");
+    if (hdrTitle && userNickname) {
+      hdrTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
+    }
+
+    if (adminChanged || listAdminChanged) {
+      if (typeof updateDmViewVisibility === 'function') updateDmViewVisibility();
+      if (typeof renderServerList === 'function') renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      
+      if (!isAdmin && !isListAdmin) {
+        const adminModalEl = document.getElementById("adminModal");
+        if (adminModalEl && !adminModalEl.classList.contains("hidden")) {
+          adminModalEl.classList.add("hidden");
+          alertMessage("管理者権限が解除されました", "info");
+        }
+      }
+    }
+  };
+
+  let cachedAdminData = null;
+  let cachedListAdminData = null;
+
+  try {
+    _globalAdminListUnsub = onSnapshot(doc(db, `artifacts/${appId}/settings`, "adminList"), (snap) => {
+      cachedAdminData = snap.exists() ? snap.data() : null;
+      updateAdminRoleState(cachedAdminData, cachedListAdminData);
+    }, (err) => {
+      console.warn('[GlobalAdminList onSnapshot] notice:', err?.message || err);
+    });
+
+    _globalListAdminUnsub = onSnapshot(doc(db, `artifacts/${appId}/settings`, "listAdminList"), (snap) => {
+      cachedListAdminData = snap.exists() ? snap.data() : null;
+      updateAdminRoleState(cachedAdminData, cachedListAdminData);
+    }, (err) => {
+      console.warn('[GlobalListAdmin onSnapshot] notice:', err?.message || err);
+    });
+  } catch (e) {
+    console.warn('setupGlobalAdminRoleListener error:', e);
+  }
+}
+
 async function removeAdminEmail(email) {
   if (email === userAuthEmail) { adminMessage.textContent = "自分自身は削除できません。"; return; }
   if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
   adminMessage.textContent = "削除中...";
   try {
     const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-    await updateDoc(ref, { emails: arrayRemove(email) });
+    let targetUid = window.__adminUsersByEmail && window.__adminUsersByEmail[email]?.id;
+    if (!targetUid) {
+      try {
+        const uSnap = await getDocs(query(collection(db, `artifacts/${appId}/users`), where("email", "==", email), limit(1)));
+        if (!uSnap.empty) targetUid = uSnap.docs[0].id;
+      } catch (_) {}
+    }
+    const updateData = { emails: arrayRemove(email) };
+    if (targetUid) {
+      updateData.admins = arrayRemove(targetUid);
+    }
+    await updateDoc(ref, updateData);
     const snap = await getDoc(ref);
     renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
     adminMessage.textContent = "削除しました。";
+    alertMessage(`「${email}」の管理者権限を削除しました`, "success");
   } catch (e) {
     console.error(e);
     adminMessage.textContent = "エラーが発生しました。";
+    alertMessage("削除エラー: " + e.message, "error");
   }
 }
 
@@ -3545,13 +3656,26 @@ async function removeListAdminEmail(email) {
   adminMessage.textContent = "削除中...";
   try {
     const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-    await updateDoc(ref, { emails: arrayRemove(email) });
+    let targetUid = window.__adminUsersByEmail && window.__adminUsersByEmail[email]?.id;
+    if (!targetUid) {
+      try {
+        const uSnap = await getDocs(query(collection(db, `artifacts/${appId}/users`), where("email", "==", email), limit(1)));
+        if (!uSnap.empty) targetUid = uSnap.docs[0].id;
+      } catch (_) {}
+    }
+    const updateData = { emails: arrayRemove(email) };
+    if (targetUid) {
+      updateData.admins = arrayRemove(targetUid);
+    }
+    await updateDoc(ref, updateData);
     const snap = await getDoc(ref);
     renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
     adminMessage.textContent = "削除しました。";
+    alertMessage(`「${email}」のリスト管理者権限を削除しました`, "success");
   } catch (e) {
     console.error(e);
     adminMessage.textContent = "エラーが発生しました。";
+    alertMessage("削除エラー: " + e.message, "error");
   }
 }
 
@@ -4977,7 +5101,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         upActionFriendBtn.title = "フレンド解除";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
         upActionFriendBtn.onclick = async () => {
-          if (!confirm(`${safeName} さんをフレンドから削除しますか？`)) return;
+          if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
           closeUserProfileModal();
           rejectFriendRequest(targetUid);
         };
@@ -5177,7 +5301,7 @@ function updateSettingsCustomStatusUI() {
 }
 
 window.clearCustomStatusAction = async function () {
-  if (!confirm("カスタムステータスをクリアしますか？")) return;
+  if (!await showCustomConfirm("カスタムステータスをクリアしますか？", "クリア", "キャンセル")) return;
   try {
     window._currentUserCustomStatus = null;
     await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
@@ -6779,7 +6903,7 @@ window.cancelFriendRequest = async function(targetUid) {
 };
 
 window.blockUser = async function(targetUid) {
-  if (!confirm("このユーザーをブロックしますか？")) return;
+  if (!await showCustomConfirm("このユーザーをブロックしますか？", "ブロック", "キャンセル")) return;
   try {
     await setDoc(doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUid}`), {
       targetUid,
@@ -7041,11 +7165,46 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   renderDmConversationsList();
 
+  if (window._activeDmKeyCheckTimer) {
+    clearInterval(window._activeDmKeyCheckTimer);
+    window._activeDmKeyCheckTimer = null;
+  }
+
   try {
-    await _getOrCreateDmKey(dmId, currentDmParticipants);
+    await _getDmKeyWithWait(dmId, currentDmParticipants, 2500);
   } catch (e) {
     console.warn('[E2EE] DM key init error:', e);
   }
+
+  // DM鍵がまだ到着していない場合、自動監視タイマーを起動して鍵到着時に一括復号
+  (async () => {
+    try {
+      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+      const activeDmId = dmId;
+      const activeParticipants = currentDmParticipants;
+      const key = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
+      if (!key) {
+        let retryCount = 0;
+        window._activeDmKeyCheckTimer = setInterval(async () => {
+          retryCount++;
+          if (retryCount > 15 || currentDmId !== activeDmId || _e2ee.dmKeyCache[activeDmId]) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            return;
+          }
+          const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
+          if (arrived) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            if (currentDmId === activeDmId && typeof renderMessagesWithReadReceipts === 'function') {
+              await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
+              renderMessagesWithReadReceipts();
+            }
+          }
+        }, 2000);
+      }
+    } catch (e) {}
+  })();
 
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -7902,7 +8061,7 @@ async function loadServerSettingsRooms() {
   const createCategoryBtn = document.getElementById("createCategoryBtn");
   if (createCategoryBtn) {
     createCategoryBtn.addEventListener("click", async () => {
-      const name = prompt("カテゴリー名を入力してください");
+      const name = await window.showCustomPrompt("カテゴリー名を入力してください", "", "作成", "キャンセル");
       if (!name) return;
       loadingOverlay.classList.remove("hidden");
       try {
@@ -7916,11 +8075,11 @@ async function loadServerSettingsRooms() {
           const newId = "cat_" + Date.now();
           cats.push({ id: newId, name: name, order: cats.length, isExpanded: true });
           await updateDoc(serverRef, { categories: cats });
-          alert("カテゴリーを作成しました");
+          alertMessage("カテゴリーを作成しました", "success");
         }
       } catch (e) {
         console.error("カテゴリー作成エラー", e);
-        alert("エラーが発生しました");
+        alertMessage("エラーが発生しました: " + e.message, "error");
       }
       loadingOverlay.classList.add("hidden");
     });
@@ -9074,6 +9233,60 @@ function showCustomAlert(message) {
     else resolve();
   });
 }
+
+window.showCustomPrompt = function (message, defaultValue = "", okText = "決定", cancelText = "キャンセル") {
+  return new Promise(resolve => {
+    const modal = document.getElementById("customPromptModal");
+    const msgEl = document.getElementById("customPromptMessage");
+    const inputEl = document.getElementById("customPromptInput");
+    const okBtn = document.getElementById("customPromptOk");
+    const cancelBtn = document.getElementById("customPromptCancel");
+
+    if (!modal || !msgEl || !inputEl || !okBtn || !cancelBtn) {
+      return resolve(null);
+    }
+
+    msgEl.textContent = message;
+    inputEl.value = defaultValue || "";
+    okBtn.textContent = okText;
+    cancelBtn.textContent = cancelText;
+
+    openModal(modal);
+    setTimeout(() => {
+      inputEl.focus();
+      inputEl.select();
+    }, 100);
+
+    function onOk() {
+      const val = inputEl.value.trim();
+      cleanup();
+      resolve(val);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(null);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onOk();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    function cleanup() {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      inputEl.removeEventListener("keydown", onKeyDown);
+    }
+
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    inputEl.addEventListener("keydown", onKeyDown);
+  });
+};
 
 // === 旧UI（レガシー）切り替え時の注意書きハンドラ ===
 window.handleLegacyUIToggle = async function (enableLegacy) {
@@ -11601,7 +11814,7 @@ async function sendMessage() {
     if (text) {
       if (!_subtleOK) {
         console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
-        if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+        if (!await showCustomConfirm("現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？", "平文で送信", "キャンセル", "セキュリティ警告")) {
           messageInput.value = previousInputText;
           return;
         }
@@ -16350,7 +16563,7 @@ async function startCall(uid, name, avatar) {
     _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch (e) {
     endCall(false);
-    alert('マイクへのアクセスが拒否されました。設定を確認してください。');
+    alertMessage('マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。', 'error');
     return;
   }
 
@@ -16514,7 +16727,7 @@ async function acceptCall() {
   } catch (e) {
     const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
     if (isMicError) {
-      alert('マイクへのアクセスが拒否されました。');
+      alertMessage('マイクへのアクセスが拒否されました。', 'error');
       endCall(false, 'micDenied');
     } else {
       endCall(false);
@@ -17025,7 +17238,7 @@ window.downloadLatestWindowsApp = async function (btn) {
     const url = exeAsset ? exeAsset.browser_download_url : release.html_url;
     window.open(url, '_blank');
   } catch (e) {
-    alert("最新バージョンの取得に失敗しました。GitHubページを開きます。");
+    alertMessage("最新バージョンの取得に失敗しました。ダウンロードページを開きます。", "warning");
     window.open('https://github.com/qwertyuiop1229/Covo/releases/latest', '_blank');
   } finally {
     btn.textContent = origText;
@@ -17253,16 +17466,16 @@ window.emergencyCheckUpdate = async function (btn) {
     if (!invoke) throw new Error('Tauri API unavailable');
     const metadata = await invoke('plugin:updater|check');
     if (metadata) {
-      alert(`最新バージョン v${metadata.version} が利用可能です！ただちに自動更新を開始します。`);
+      alertMessage(`最新バージョン v${metadata.version} が利用可能です！自動更新を開始します。`, 'success');
       document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');
       document.getElementById('emergencyRecoveryOverlay').style.display = 'none';
       localStorage.setItem('covo_ignore_force_update', '0');
       await blockingUpdateCheck();
     } else {
-      alert('現在提供されている最新バージョンです。更新プログラムはありません。');
+      alertMessage('現在提供されている最新バージョンです。更新プログラムはありません。', 'info');
     }
   } catch (e) {
-    alert('アップデートの確認に失敗しました: ' + e.message);
+    alertMessage('アップデートの確認に失敗しました: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
@@ -18925,6 +19138,11 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
       if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
       if (topModal.id === 'recoveryKeyManagerModal') { window.closeRecoveryKeyManagerModal(); return; }
+      if (topModal.id === 'customPromptModal') {
+        const cancelBtn = document.getElementById("customPromptCancel");
+        if (cancelBtn) cancelBtn.click();
+        return;
+      }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
     }
