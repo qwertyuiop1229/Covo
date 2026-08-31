@@ -88,9 +88,10 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
+      // システムエラー・警告テレメトリ (認証済みユーザーのみ作成・集約)
       match /error_reports/{docId} {
-        allow create, update: if request.resource.data.message is string &&
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
         allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
@@ -153,14 +154,14 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // フレンド関係性 (relationships)
+      // フレンド関係性 (relationships: 申請送信・承認フローの偽装防止)
       match /users/{userId}/relationships/{targetUserId} {
         allow read: if isAuthenticated() && request.auth.uid == userId;
         allow write: if isAuthenticated() && (
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
-            request.resource.data.status == 'pending_received' ||
-            request.resource.data.status == 'friends'
+            (request.resource.data.status == 'pending_received' && (resource == null || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && resource.data.status == 'pending_sent')
           ))
         );
         allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
@@ -320,10 +321,8 @@ service cloud.firestore {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
           allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
-              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
-            )
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
           );
           allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
 
@@ -333,9 +332,9 @@ service cloud.firestore {
             allow create: if isJoinedServer(appId, serverId) &&
               request.resource.data.senderId == request.auth.uid;
             allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
               || (isServerAdmin(appId, serverId)

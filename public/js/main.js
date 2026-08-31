@@ -13536,12 +13536,11 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
+  // （自分のメッセージは常に削除可能、他人のメッセージは「アプリ全体管理者（isAdmin）」のみ削除可能）
   const isMsgSender = msgData.senderId === userId;
-  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = currentDmId
-    ? isMsgSender // DMでは本人のみ削除可能（他者メッセージは削除不可）
-    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+    ? isMsgSender
+    : (isMsgSender || isAdmin);
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -13725,19 +13724,14 @@ if (deleteMsgBtn) {
 
   const msgToDelete = selectedMessageForContext;
   const isMsgSender = msgToDelete.senderId === userId;
-  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDelete = currentDmId
-    ? isMsgSender
-    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isAdmin);
 
   if (!canDelete) {
     alertMessage("メッセージを削除する権限がありません", "warning");
     return;
   }
 
-  const isServerAdmin = isServerAdminRole || isServerOwner;
-  const forceDelete = !currentDmId && (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
+  const forceDelete = !currentDmId && isAdmin && msgToDelete.senderId !== userId;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
@@ -13757,7 +13751,6 @@ if (deleteMsgBtn) {
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (kvFileUrl):', fileKey);
       } catch (e) {
         console.error('[deleteMessage] KV file delete error (kvFileUrl):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
@@ -13765,6 +13758,7 @@ if (deleteMsgBtn) {
       }
     }
   }
+
   // 1b. テキスト内の旧形式KV URL
   if (msgToDelete.text) {
     const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
@@ -13776,22 +13770,17 @@ if (deleteMsgBtn) {
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[deleteMessage] KV file delete failed (text URL):', fileKey, err);
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (text URL):', fileKey);
       } catch (e) {
-        console.error('[deleteMessage] KV file delete error (text URL):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
         return;
       }
     }
   }
 
-  // 1c. fileData が Cloudflare(KV) URL の場合（画像・その他ファイルの新形式）。
-  //     画像送信もKVに移行したため、ここで実ファイルを削除しないとCloudflareに残ってしまう。
+  // 1c. fileData が Cloudflare(KV) URL の場合
   if (msgToDelete.fileData && msgToDelete.fileData.indexOf('/api/file/') >= 0) {
     const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
     if (m) {
@@ -13801,23 +13790,20 @@ if (deleteMsgBtn) {
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[deleteMessage] KV file delete failed (fileData):', fileKey, err);
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (fileData):', fileKey);
       } catch (e) {
-        console.error('[deleteMessage] KV file delete error (fileData):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
         return;
       }
     }
   }
 
-  // 3. Firestore / RTDB / LocalStore メッセージ削除
+  // 2. メッセージの削除実行
   try {
     if (currentDmId) {
+      // DMメッセージ削除（本人のみ）
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
@@ -13848,12 +13834,26 @@ if (deleteMsgBtn) {
         renderDmConversationsList();
       }
     } else {
-      await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
-      try {
+      // サーバーメッセージ削除
+      if (isAdmin && !isMsgSender) {
+        // 管理者による他者メッセージの削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
+        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
+          method: 'DELETE',
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+          body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
+        });
+        if (!res.ok) {
+          throw new Error("管理者権限でのリアルタイムDB削除に失敗しました");
+        }
+      } else {
+        // 本人によるメッセージ削除: Firestore + RTDB
+        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
         await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
-      } catch (err) { console.error("RTDB Delete Failed", err); }
+      }
       LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
       // ルームの最新メッセージサマリーを更新
@@ -13872,6 +13872,7 @@ if (deleteMsgBtn) {
       }).catch(() => {});
     }
 
+    // 削除が成功した場合のみローカル状態を更新して完了トーストを表示
     currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
@@ -13881,7 +13882,7 @@ if (deleteMsgBtn) {
     alertMessage("削除しました", "success");
   } catch (e) {
     console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
-    alertMessage("削除に失敗しました", "error");
+    alertMessage("削除に失敗しました: " + (e.message || "権限がありません"), "error");
   }
 });
 }

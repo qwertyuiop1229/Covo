@@ -80,6 +80,9 @@ export default {
     if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
       return await handleBulkDeleteFiles(request, env);
     }
+    if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
+      return await handleAdminDeleteMessage(request, env);
+    }
 
     if (url.pathname.startsWith("/api/d1/")) {
       return await handleD1Api(request, env, url);
@@ -1513,6 +1516,62 @@ async function isAppAdmin(appId, verifiedUser, env) {
     console.error("isAppAdmin error:", e);
   }
   return false;
+}
+
+// -------------------------------------------------------------
+// 管理者専用: メッセージ強制削除 (Firestore & RTDB)
+// -------------------------------------------------------------
+async function handleAdminDeleteMessage(request, env) {
+  try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim();
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
+    const { appId, serverId, roomId, messageId } = await request.json();
+    if (!appId || !serverId || !roomId || !messageId) {
+      return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: corsHeaders });
+    }
+
+    const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+    const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+    if (!isGlobal && !isSvAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: corsHeaders });
+    }
+
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+    }
+
+    const [adminToken, rtdbToken] = await Promise.all([
+      getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+      getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+    ]);
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    // 1. Firestore から削除
+    const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
+    await fetch(fsUrl, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+
+    // 2. RTDB から特権削除
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+    await fetch(rtdbUrl, {
+      method: "DELETE"
+    });
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+  } catch (err) {
+    console.error("handleAdminDeleteMessage error:", err);
+    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: corsHeaders });
+  }
 }
 
 async function handleSetOffline(request, env) {
