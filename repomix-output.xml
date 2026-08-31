@@ -3172,387 +3172,6 @@ module.exports = {
 @import url('./modules/theme.css');
 </file>
 
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Covo - リカバリーパネル</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-  </style>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: { 500: '#5865F2', 600: '#4752C4' },
-            dark: { 900: '#1e1f22', 800: '#2b2d31', 700: '#313338' }
-          }
-        }
-      }
-    }
-  </script>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-
-    <!-- クイックアクションパネル -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-
-    </div>
-
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-
-  </div>
-
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-    }
-
-    async function triggerUpdateCheck() {
-      const btn = document.getElementById("btnUpdateCheck");
-      btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      logMessage("Checking for updates...");
-      try {
-        if (!invoke) throw new Error("Tauri API not found.");
-        const metadata = await invoke('plugin:updater|check');
-        if (metadata && metadata.available) {
-          logMessage(`Found v${metadata.version}. Downloading...`);
-          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
-          logMessage("Update complete. Restarting...");
-          btn.innerHTML = `完了 (再起動)`;
-          setTimeout(() => invoke('plugin:process|restart'), 1500);
-        } else {
-          logMessage("No updates available.");
-          btn.innerHTML = `更新なし`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      } catch (err) {
-        logMessage(`Error: ${err.message || err}`, true);
-        btn.disabled = false;
-        btn.innerHTML = `失敗 (再試行)`;
-      }
-    }
-
-    async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => invoke('plugin:process|restart'), 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
-    }
-
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-
-    function forceQuitApp() {
-      if (invoke) invoke('plugin:process|exit', { code: 0 });
-    }
-
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-
-        if (releases.length < 10) releasesHasMore = false;
-
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets.find(a => a.name.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = new Date(rel.published_at).toLocaleDateString("ja-JP");
-
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${rel.tag_name}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${pubDate} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button onclick="installPastVersion('${downloadUrl}', '${rel.tag_name}')" ${!downloadUrl ? 'disabled' : ''} id="btn-install-${rel.tag_name}" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `失敗`;
-        }
-      }
-    }
-
-    if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const btn = document.getElementById(`btn-install-${data.tag}`);
-          if (btn) btn.innerHTML = `${data.progress}%`;
-          logMessage(`[${data.tag}] ${data.progress}%`);
-        }
-      });
-    }
-
-    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
-  </script>
-</body>
-</html>
-</file>
-
 <file path="public/js/local_store.js">
 /**
  * Covo Local-first Storage Engine (local_store.js)
@@ -4193,6 +3812,390 @@ if (typeof window !== 'undefined') {
     clearAllLocalData
   };
 }
+</file>
+
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Covo - リカバリーパネル</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#5865F2', 600: '#4752C4' },
+            dark: { 900: '#1e1f22', 800: '#2b2d31', 700: '#313338' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+
+    <!-- クイックアクションパネル -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+
+    </div>
+
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+    }
+
+    async function triggerUpdateCheck() {
+      const btn = document.getElementById("btnUpdateCheck");
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      logMessage("Checking for updates...");
+      try {
+        if (!invoke) throw new Error("Tauri API not found.");
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata && metadata.available) {
+          logMessage(`Found v${metadata.version}. Downloading...`);
+          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
+          logMessage("Update complete. Restarting...");
+          btn.innerHTML = `完了 (再起動)`;
+          setTimeout(() => invoke('plugin:process|restart'), 1500);
+        } else {
+          logMessage("No updates available.");
+          btn.innerHTML = `更新なし`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      } catch (err) {
+        logMessage(`Error: ${err.message || err}`, true);
+        btn.disabled = false;
+        btn.innerHTML = `失敗 (再試行)`;
+      }
+    }
+
+    async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => invoke('plugin:process|restart'), 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+
+    function forceQuitApp() {
+      if (invoke) invoke('plugin:process|exit', { code: 0 });
+    }
+
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+
+        if (releases.length < 10) releasesHasMore = false;
+
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets.find(a => a.name.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = new Date(rel.published_at).toLocaleDateString("ja-JP");
+
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${rel.tag_name}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${pubDate} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button onclick="installPastVersion('${downloadUrl}', '${rel.tag_name}')" ${!downloadUrl ? 'disabled' : ''} id="btn-install-${rel.tag_name}" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `失敗`;
+        }
+      }
+    }
+
+    if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const btn = document.getElementById(`btn-install-${data.tag}`);
+          if (btn) btn.innerHTML = `${data.progress}%`;
+          logMessage(`[${data.tag}] ${data.progress}%`);
+        }
+      });
+    }
+
+    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
+  </script>
+</body>
+</html>
 </file>
 
 <file path="public/css/modules/animations.css">
@@ -5310,478 +5313,6 @@ if (typeof window !== 'undefined') {
     }
 </file>
 
-<file path="public/js/utils.js">
-/**
- * ユーティリティ関数群 (utils.js)
- * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
- */
-
-/**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
- * @param {ArrayBuffer} buf - 変換元のバイナリデータ
- * @returns {string} Base64文字列
- */
-export function _abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-  }
-  return btoa(bin);
-}
-
-/**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
- * @param {string} b64 - 変換元のBase64文字列
- * @returns {ArrayBuffer} 復元されたバイナリデータ
- */
-export function _b64ToAb(b64) {
-  try {
-    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
-    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    const pad = norm.length % 4;
-    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
-    if (pad === 2) norm += "==";
-    else if (pad === 3) norm += "=";
-    const bin = atob(norm);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  } catch (e) {
-    console.error("Base64 decode failed:", e);
-    return new ArrayBuffer(0);
-  }
-}
-
-/**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
- * @param {number} bytes - バイト数
- * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列
- */
-export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-/**
- * メッセージオブジェクトから正確なタイムスタンプを取得
- * @param {Object} msg - メッセージオブジェクト
- * @returns {number} タイムスタンプ(ミリ秒)
- */
-export function getMsgTimestamp(msg) {
-  if (!msg) return Date.now();
-  if (msg.createdAt) {
-    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
-    if (typeof msg.createdAt === 'number') return msg.createdAt;
-    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
-      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.createdAt === 'string') {
-      const parsed = new Date(msg.createdAt).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  if (msg.timestamp) {
-    if (typeof msg.timestamp === 'number') return msg.timestamp;
-    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
-    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
-      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.timestamp === 'string') {
-      const parsed = new Date(msg.timestamp).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  return Date.now();
-}
-
-/**
- * テキストをクリップボードに安全にコピー
- * @param {string} txt - コピーするテキスト
- */
-export async function safeCopy(txt) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(txt);
-      return true;
-    } else {
-      return _execCopyFallback(txt);
-    }
-  } catch (err) {
-    console.warn("Clipboard API failed, fallback to execCommand", err);
-    return _execCopyFallback(txt);
-  }
-}
-
-/**
- * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
- * @param {string} txt - コピーするテキスト
- */
-export function _execCopyFallback(txt) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = txt;
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy error', err);
-    return false;
-  }
-}
-
-/**
- * メールアドレスの最初の1文字を取得
- * @param {string} email - メールアドレス
- * @returns {string} 最初の1文字(大文字) または '?'
- */
-export function emailInitial(email) {
-  if (!email) return '?';
-  return email.charAt(0).toUpperCase();
-}
-
-/**
- * HEICファイルをJPEGに変換
- * @param {File} file - 処理対象のファイル
- * @returns {Promise<File>} 処理後のファイル
- */
-export async function processHeicFile(file) {
-  if (!file) return null;
-  const name = file.name || '';
-  const ext = name.split('.').pop().toLowerCase();
-  
-  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
-    try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
-      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
-      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
-      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
-    } catch (e) {
-      console.error("HEIC conversion failed:", e);
-      return file;
-    }
-  }
-  return file;
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window._abToB64 = _abToB64;
-  window._b64ToAb = _b64ToAb;
-  window.formatBytes = formatBytes;
-  window.getMsgTimestamp = getMsgTimestamp;
-  window.safeCopy = safeCopy;
-  window._execCopyFallback = _execCopyFallback;
-  window.emailInitial = emailInitial;
-  window.processHeicFile = processHeicFile;
-}
-</file>
-
-<file path="public/auth-desktop.html">
-<!DOCTYPE html>
-<html lang="ja">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Covo - デスクトップ認証</title>
-    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            background: #0f172a;
-            color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 1rem;
-        }
-
-        .auth-card {
-            background: #1e293b;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 1.5rem;
-            padding: 2.5rem 2rem;
-            max-width: 420px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-        }
-
-        .logo {
-            font-size: 2.5rem;
-            margin-bottom: 0.75rem;
-        }
-
-        h1 {
-            font-size: 1.35rem;
-            font-weight: 800;
-            margin-bottom: 0.5rem;
-            color: #f8fafc;
-        }
-
-        p {
-            font-size: 0.875rem;
-            color: #94a3b8;
-            line-height: 1.6;
-            margin-bottom: 1.75rem;
-        }
-
-        .btn-google {
-            width: 100%;
-            padding: 0.85rem 1rem;
-            border: none;
-            border-radius: 0.75rem;
-            font-size: 0.95rem;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            background: #ffffff;
-            color: #0f172a;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s;
-        }
-
-        .btn-google:hover:not(:disabled) {
-            background: #f1f5f9;
-            transform: translateY(-1px);
-        }
-
-        .btn-google:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .status-box {
-            margin-top: 1.25rem;
-            padding: 0.75rem;
-            border-radius: 0.75rem;
-            font-size: 0.8rem;
-            font-weight: 600;
-            min-height: 2.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(15, 23, 42, 0.5);
-            color: #cbd5e1;
-        }
-
-        .status-box.error {
-            color: #f87171;
-            background: rgba(239, 68, 68, 0.1);
-        }
-
-        .status-box.success {
-            color: #34d399;
-            background: rgba(16, 185, 129, 0.1);
-        }
-    </style>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-            authDomain: "simplechat-65a0d.firebaseapp.com",
-            projectId: "simplechat-65a0d",
-            storageBucket: "simplechat-65a0d.firebasestorage.app",
-            messagingSenderId: "611067360180",
-            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        auth.languageCode = 'ja';
-
-        const params = new URLSearchParams(window.location.search);
-        const callbackUrl = params.get('callback');
-        const state = params.get('state') || '';
-
-        window.doGoogleLogin = async function (isAuto = false) {
-            const status = document.getElementById('status');
-            const btn = document.getElementById('googleBtn');
-            btn.disabled = true;
-            status.className = 'status-box';
-            status.textContent = 'Google 認証ウィンドウを起動中...';
-
-            try {
-                const provider = new GoogleAuthProvider();
-                provider.setCustomParameters({ prompt: 'select_account' });
-                const result = await signInWithPopup(auth, provider);
-                const credential = GoogleAuthProvider.credentialFromResult(result);
-                const idToken = credential?.idToken || (await result.user.getIdToken());
-                const accessToken = credential?.accessToken || '';
-
-                status.className = 'status-box success';
-                status.textContent = '認証成功！Covo アプリへ転送しています...';
-
-                if (callbackUrl) {
-                    const target = new URL(callbackUrl);
-                    target.searchParams.set('idToken', idToken);
-                    if (accessToken) target.searchParams.set('accessToken', accessToken);
-                    if (state) target.searchParams.set('state', state);
-
-                    // ローカルループバックサーバーへリダイレクト
-                    window.location.href = target.toString();
-                } else {
-                    btn.disabled = false;
-                    status.className = 'status-box error';
-                    status.textContent = 'コールバックURLが指定されていません。';
-                }
-            } catch (err) {
-                btn.disabled = false;
-                if (err.code === 'auth/popup-blocked' || isAuto) {
-                    status.className = 'status-box';
-                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
-                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-                    status.className = 'status-box';
-                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
-                } else {
-                    console.error('Desktop Auth Error:', err);
-                    status.className = 'status-box error';
-                    status.textContent = '認証エラー: ' + (err.message || err);
-                }
-            }
-        };
-
-        window.addEventListener('load', () => {
-            const status = document.getElementById('status');
-            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
-            setTimeout(() => {
-                if (typeof window.doGoogleLogin === 'function') {
-                    window.doGoogleLogin(true);
-                }
-            }, 300);
-        });
-    </script>
-</head>
-
-<body>
-    <div class="auth-card">
-        <div class="logo">💬</div>
-        <h1>Covo デスクトップ版のログイン</h1>
-        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
-        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
-            <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Google でログイン</span>
-        </button>
-        <div id="status" class="status-box">認証の準備中...</div>
-    </div>
-</body>
-
-</html>
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-
-/**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
-    return false;
-  }
-  return true;
-}
-
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
 <file path="public/js/geo_study.js">
 // geo_study.js - 隠し機能の制御スクリプト
 
@@ -6320,6 +5851,478 @@ if (typeof window !== 'undefined') {
   window.startNewLocation = startNewLocation;
   window.submitGuess = submitGuess;
   window.closeResultOverlay = closeResultOverlay;
+}
+</file>
+
+<file path="public/js/utils.js">
+/**
+ * ユーティリティ関数群 (utils.js)
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
+ */
+
+/**
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
+ * @param {ArrayBuffer} buf - 変換元のバイナリデータ
+ * @returns {string} Base64文字列
+ */
+export function _abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
+ * @param {string} b64 - 変換元のBase64文字列
+ * @returns {ArrayBuffer} 復元されたバイナリデータ
+ */
+export function _b64ToAb(b64) {
+  try {
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
+    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
+    const bin = atob(norm);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  } catch (e) {
+    console.error("Base64 decode failed:", e);
+    return new ArrayBuffer(0);
+  }
+}
+
+/**
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
+ * @param {number} bytes - バイト数
+ * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
+ * @returns {string} フォーマットされた文字列
+ */
+export function formatBytes(bytes, decimals = 2) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * メッセージオブジェクトから正確なタイムスタンプを取得
+ * @param {Object} msg - メッセージオブジェクト
+ * @returns {number} タイムスタンプ(ミリ秒)
+ */
+export function getMsgTimestamp(msg) {
+  if (!msg) return Date.now();
+  if (msg.createdAt) {
+    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
+    if (typeof msg.createdAt === 'number') return msg.createdAt;
+    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
+      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.createdAt === 'string') {
+      const parsed = new Date(msg.createdAt).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+  if (msg.timestamp) {
+    if (typeof msg.timestamp === 'number') return msg.timestamp;
+    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
+    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
+      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.timestamp === 'string') {
+      const parsed = new Date(msg.timestamp).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+  return Date.now();
+}
+
+/**
+ * テキストをクリップボードに安全にコピー
+ * @param {string} txt - コピーするテキスト
+ */
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
+  }
+}
+
+/**
+ * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
+ * @param {string} txt - コピーするテキスト
+ */
+export function _execCopyFallback(txt) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy error', err);
+    return false;
+  }
+}
+
+/**
+ * メールアドレスの最初の1文字を取得
+ * @param {string} email - メールアドレス
+ * @returns {string} 最初の1文字(大文字) または '?'
+ */
+export function emailInitial(email) {
+  if (!email) return '?';
+  return email.charAt(0).toUpperCase();
+}
+
+/**
+ * HEICファイルをJPEGに変換
+ * @param {File} file - 処理対象のファイル
+ * @returns {Promise<File>} 処理後のファイル
+ */
+export async function processHeicFile(file) {
+  if (!file) return null;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  
+  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
+    try {
+      if (typeof heic2any === 'undefined') {
+        console.warn("heic2any is not loaded");
+        return file;
+      }
+      console.log("HEIC file detected. Converting to JPEG...");
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      console.error("HEIC conversion failed:", e);
+      return file;
+    }
+  }
+  return file;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
+}
+</file>
+
+<file path="public/auth-desktop.html">
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Covo - デスクトップ認証</title>
+    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .auth-card {
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+        }
+
+        p {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            line-height: 1.6;
+            margin-bottom: 1.75rem;
+        }
+
+        .btn-google {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s;
+        }
+
+        .btn-google:hover:not(:disabled) {
+            background: #f1f5f9;
+            transform: translateY(-1px);
+        }
+
+        .btn-google:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status-box {
+            margin-top: 1.25rem;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.5);
+            color: #cbd5e1;
+        }
+
+        .status-box.error {
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .status-box.success {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.1);
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+            authDomain: "simplechat-65a0d.firebaseapp.com",
+            projectId: "simplechat-65a0d",
+            storageBucket: "simplechat-65a0d.firebasestorage.app",
+            messagingSenderId: "611067360180",
+            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        auth.languageCode = 'ja';
+
+        const params = new URLSearchParams(window.location.search);
+        const callbackUrl = params.get('callback');
+        const state = params.get('state') || '';
+
+        window.doGoogleLogin = async function (isAuto = false) {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('googleBtn');
+            btn.disabled = true;
+            status.className = 'status-box';
+            status.textContent = 'Google 認証ウィンドウを起動中...';
+
+            try {
+                const provider = new GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+                const result = await signInWithPopup(auth, provider);
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                const idToken = credential?.idToken || (await result.user.getIdToken());
+                const accessToken = credential?.accessToken || '';
+
+                status.className = 'status-box success';
+                status.textContent = '認証成功！Covo アプリへ転送しています...';
+
+                if (callbackUrl) {
+                    const target = new URL(callbackUrl);
+                    target.searchParams.set('idToken', idToken);
+                    if (accessToken) target.searchParams.set('accessToken', accessToken);
+                    if (state) target.searchParams.set('state', state);
+
+                    // ローカルループバックサーバーへリダイレクト
+                    window.location.href = target.toString();
+                } else {
+                    btn.disabled = false;
+                    status.className = 'status-box error';
+                    status.textContent = 'コールバックURLが指定されていません。';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                if (err.code === 'auth/popup-blocked' || isAuto) {
+                    status.className = 'status-box';
+                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
+                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                    status.className = 'status-box';
+                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
+                } else {
+                    console.error('Desktop Auth Error:', err);
+                    status.className = 'status-box error';
+                    status.textContent = '認証エラー: ' + (err.message || err);
+                }
+            }
+        };
+
+        window.addEventListener('load', () => {
+            const status = document.getElementById('status');
+            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
+            setTimeout(() => {
+                if (typeof window.doGoogleLogin === 'function') {
+                    window.doGoogleLogin(true);
+                }
+            }, 300);
+        });
+    </script>
+</head>
+
+<body>
+    <div class="auth-card">
+        <div class="logo">💬</div>
+        <h1>Covo デスクトップ版のログイン</h1>
+        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
+        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
+            <svg width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            <span>Google でログイン</span>
+        </button>
+        <div id="status" class="status-box">認証の準備中...</div>
+    </div>
+</body>
+
+</html>
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+
+/**
+ * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const ext = (cleanName.split('.').pop() || '').toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
 }
 </file>
 
@@ -7527,112 +7530,6 @@ if (typeof window !== 'undefined') {
   window.getEmojiHtml = getEmojiHtml;
   window._twemojiParse = _twemojiParse;
   window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
-</file>
-
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": false
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && (auth.uid === $uid || !newData.exists())"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-                ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || !data.child('senderId').exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists())))",
-                    "reactions": {
-                      "$reactUid": {
-                        ".write": "auth != null && auth.uid === $reactUid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                      }
-                    }
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || !data.child('senderId').exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists())))",
-              "reactions": {
-                "$reactUid": {
-                  ".write": "auth != null && auth.uid === $reactUid && $dmId.contains(auth.uid)"
-                }
-              }
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid",
-            "readStates": {
-              ".read": "auth != null && auth.uid === $uid",
-              ".write": "auth != null && auth.uid === $uid",
-              "$roomId": {
-                ".read": "auth != null && auth.uid === $uid",
-                ".write": "auth != null && auth.uid === $uid"
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 }
 </file>
 
@@ -8879,6 +8776,111 @@ pub fn run() {
         ))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+</file>
+
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": false
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": false
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && auth.uid === $reactUid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                      }
+                    }
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && auth.uid === $uid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && $dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && auth.uid === $reactUid && $dmId.contains(auth.uid)"
+                }
+              }
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && $dmId.contains(auth.uid)",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid",
+            "readStates": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid",
+              "$roomId": {
+                ".read": "auth != null && auth.uid === $uid",
+                ".write": "auth != null && auth.uid === $uid"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 </file>
 
@@ -12119,422 +12121,6 @@ pub fn run() {
     }
 </file>
 
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // --- ユーティリティ関数 ---
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          || isGlobalAdmin(appId));
-    }
-
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          || isGlobalAdmin(appId));
-    }
-
-    // --- 各コレクションのルール ---
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定
-      match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リスト（単一取得は認証済みユーザー全員に許可し、連携アカウントの照合を保証）
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000;
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ (全ユーザー自動収集 & 集約)
-      match /error_reports/{docId} {
-        allow create, update: if request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
-      match /recovery_vault/{userDocId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if true; // ログイン前の暗号照合検証用
-        allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      }
-
-      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if true; // ログイン前のPIN照合検証用
-        allow write: if isGlobalAdmin(appId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']));
-      }
-
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報
-      match /users/{userId} {
-        allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // サーバー作成クォータ（本人のみ読み書き）
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // フレンド関係性 (relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == userId;
-        allow write: if isAuthenticated() && (
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            request.resource.data.status == 'pending_received' ||
-            request.resource.data.status == 'friends'
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル
-      match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
-        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
-
-        match /keys/{keyUserId} {
-          allow get, list: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
-             request.auth.uid in dmId.split('_') ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
-          allow write: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
-             (request.auth.uid in dmId.split('_') && keyUserId in dmId.split('_')) ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
-        }
-      }
-
-      // 端末間データ完全移行 (P2P Device Transfers)
-      match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-        match /{subcollection}/{docId} {
-          allow get, list: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-          allow write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-        }
-      }
-
-      // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
-      match /p2p_log_sync/{syncId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
-        allow update: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId']);
-        match /{subcollection}/{docId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid);
-        }
-      }
-
-      // 3. グローバルオンライン状態
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 4. P2P音声通話シグナリング
-      match /calls/{callId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            resource.data.calleeUid == request.auth.uid ||
-            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            resource.data.calleeUid == request.auth.uid ||
-            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
-        allow create: if isAuthenticated() &&
-          'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-          request.resource.data.caller.uid == request.auth.uid;
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated();
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
-      match /fileshares/{shareId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            resource.data.receiverUid == request.auth.uid ||
-            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            resource.data.receiverUid == request.auth.uid ||
-            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
-        allow create: if isAuthenticated() &&
-          'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-          request.resource.data.sender.uid == request.auth.uid;
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated();
-        }
-      }
-
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
-
-      match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
-        allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
-
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
-
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
-
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          request.resource.data.memberCount == resource.data.memberCount - 1;
-
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
-
-        // サーバー内の秘密情報（管理者のみ）
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText']) ||
-              (!('sharedKey' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedKey', 'currentKeyVersion']))
-            )
-          );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-
-          // ルーム内メッセージ
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
-            allow update: if isJoinedServer(appId, serverId) && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions'])
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
-            );
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
-          }
-
-          // 既読レシート
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId);
-            allow update, delete: if isServerAdmin(appId, serverId);
-          }
-
-          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
-          match /rescueRequests/{reqUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
-            allow delete: if isJoinedServer(appId, serverId);
-          }
-
-          // タイピングインジケーター（サーバー参加者のみ）
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
-          }
-        }
-
-        // サーバー別プロフィール
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string &&
-            request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ（古い形式 / 拡張形式）
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-    }
-
-  }
-}
-</file>
-
 <file path="public/css/modules/sidebar.css">
 /* --- メンバーリスト用スタイル (Discord風) --- */
     #membersSidebar {
@@ -14289,6 +13875,431 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     /* ----------------------------------- */
 </file>
 
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- ユーティリティ関数 ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isGlobalAdmin(appId));
+    }
+
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          || isGlobalAdmin(appId));
+    }
+
+    // --- 各コレクションのルール ---
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定
+      match /settings/{docId} {
+        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リスト（単一取得は認証済みユーザー全員に許可し、連携アカウントの照合を保証）
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000;
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ (認証済みユーザーのみ作成・集約)
+      match /error_reports/{docId} {
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
+      match /recovery_vault/{userDocId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if true; // ログイン前の暗号照合検証用
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      }
+
+      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if true; // ログイン前のPIN照合検証用
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // 招待コードインデックス（コード→サーバーID の逆引き）
+      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報
+      match /users/{userId} {
+        allow get, list: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // サーバー作成クォータ（本人のみ読み書き）
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == qUserId;
+        allow write: if false; // クライアントからの直接更新を禁止
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // フレンド関係性 (relationships: 申請送信・承認フローの偽装防止)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && resource.data.status == 'pending_sent')
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
+        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
+        match /keys/{keyUserId} {
+          allow get, list: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             request.auth.uid in dmId.split('_') ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+          allow write: if isAuthenticated() &&
+            (request.auth.uid == keyUserId ||
+             (request.auth.uid in dmId.split('_') && keyUserId in dmId.split('_')) ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+        }
+      }
+
+      // 端末間データ完全移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        match /{subcollection}/{docId} {
+          allow get, list: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+          allow write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+        }
+      }
+
+      // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
+      match /p2p_log_sync/{syncId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
+        allow update: if isAuthenticated() &&
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId']);
+        match /{subcollection}/{docId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid ||
+             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid);
+        }
+      }
+
+      // 3. グローバルオンライン状態
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 4. P2P音声通話シグナリング
+      match /calls/{callId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            resource.data.calleeUid == request.auth.uid ||
+            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
+          ) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+        allow create: if isAuthenticated() &&
+          'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+          request.resource.data.caller.uid == request.auth.uid;
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      match /fileshares/{shareId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            resource.data.receiverUid == request.auth.uid ||
+            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
+          ) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+        allow create: if isAuthenticated() &&
+          'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+          request.resource.data.sender.uid == request.auth.uid;
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // ============================================================
+      // サーバーベース構造
+      // ============================================================
+
+      match /servers/{serverId} {
+        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
+        allow get: if isAuthenticated();
+        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
+
+        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.serverAdmins == [request.auth.uid] &&
+          request.resource.data.joinedUsers == [request.auth.uid];
+
+        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+
+        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          request.resource.data.memberCount == resource.data.memberCount - 1;
+
+        // サーバー削除: グローバル管理者またはサーバー管理者
+        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+
+        // サーバー内の秘密情報（管理者のみ）
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId);
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
+          );
+          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+
+          // ルーム内メッセージ
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              request.resource.data.senderId == request.auth.uid;
+            allow update: if isJoinedServer(appId, serverId) && (
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
+              || (isServerAdmin(appId, serverId)
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+            );
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+          }
+
+          // 既読レシート
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              request.auth.uid == receiptUserId;
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
+          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
+          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId);
+          }
+
+          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow delete: if isJoinedServer(appId, serverId);
+          }
+
+          // タイピングインジケーター（サーバー参加者のみ）
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+          }
+        }
+
+        // サーバー別プロフィール
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            request.auth.uid == profileUserId;
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string &&
+            request.resource.data.url is string;
+          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
+          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ（古い形式 / 拡張形式）
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+    }
+
+  }
+}
+</file>
+
 <file path="public/js/crypto_helpers.js">
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
@@ -14601,13 +14612,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           return null;
         }
 
-        // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布
+        // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布（平文sharedKeyは一切保存しない）
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
-        const b64 = _abToB64(raw);
-        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 }).catch(() => {});
+        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { currentKeyVersion: 1 }).catch(() => {});
 
-        // 参加メンバーおよびエスクローへ鍵バージョン1を即時配布
+        // 参加メンバーおよびエスクローへ暗号化鍵バージョン1を即時配布
         await __distributeRoomKeyVersion(serverId, roomId, raw, memberIds || [], 1).catch(() => {});
 
         keysObj["1"] = key;
@@ -15304,9 +15314,6 @@ export default {
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
     }
-    if (url.pathname === "/api/shareFile" && request.method === "POST") {
-      return await handleShareFile(request, env);
-    }
     if (url.pathname === "/api/download" && request.method === "GET") {
       return await handleDownloadProxy(request, env, url);
     }
@@ -15321,6 +15328,9 @@ export default {
     }
     if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
       return await handleBulkDeleteFiles(request, env);
+    }
+    if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
+      return await handleAdminDeleteMessage(request, env);
     }
 
     if (url.pathname.startsWith("/api/d1/")) {
@@ -15753,10 +15763,26 @@ async function handleSendCallNotification(request, env) {
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
     }
-    const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
+    // 実際の通話ドキュメントの存在と整合性を検証（偽装着信スパムの完全遮断）
+    const callDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/calls/${callId}`;
+    const callDocRes = await fetch(callDocUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+    const callDocData = await callDocRes.json();
+    if (callDocData.error || !callDocData.fields) {
+      return new Response(JSON.stringify({ success: false, error: "Call record not found" }), { status: 404, headers: corsHeaders });
+    }
+
+    const docCallerUid = callDocData.fields.caller?.mapValue?.fields?.uid?.stringValue;
+    const docCalleeUid = callDocData.fields.calleeUid?.stringValue || callDocData.fields.callee?.mapValue?.fields?.uid?.stringValue;
+    const docStatus = callDocData.fields.status?.stringValue;
+
+    if (docCallerUid !== callerId || docCalleeUid !== calleeId || docStatus !== 'ringing') {
+      return new Response(JSON.stringify({ success: false, error: "Invalid call authorization" }), { status: 403, headers: corsHeaders });
+    }
+
+    const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
     const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${calleeId}`;
     const userRes = await fetch(userUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
     const userData = await userRes.json();
@@ -16620,84 +16646,7 @@ async function handleBulkDeleteFiles(request, env) {
 }
 
 
-// -------------------------------------------------------------
-// 外部ファイル共有プロキシ（catbox.moe → 0x0.st の順で試行）
-// -------------------------------------------------------------
-async function handleShareFile(request, env) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const idToken = formData.get('idToken') || '';
-    const uploaderId = formData.get('uploaderId') || formData.get('userId') || '';
-
-    if (!file || !idToken || !uploaderId) {
-      return new Response(JSON.stringify({ error: '必須パラメータが不足しています' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    if (file.size > 25 * 1024 * 1024) {
-      return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const fileName = file.name || 'file';
-    if (isFileExtensionBlocked(fileName)) {
-      return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUser || verifiedUser.uid !== uploaderId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
-    }
-
-    // ArrayBufferとして読み込んでBlobを再構築（Worker間の転送を安定させる）
-    const arrayBuffer = await file.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
-
-    // 1. catbox.moe を試す
-    try {
-      const f1 = new FormData();
-      f1.append('reqtype', 'fileupload');
-      f1.append('fileToUpload', blob, fileName);
-      const r1 = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: f1 });
-      const t1 = (await r1.text()).trim();
-      if (t1.startsWith('https://')) {
-        return new Response(JSON.stringify({ url: t1, service: 'catbox.moe' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      console.warn('[shareFile] catbox.moe failed:', r1.status, t1.slice(0, 100));
-    } catch (e1) {
-      console.warn('[shareFile] catbox.moe error:', e1.toString());
-    }
-
-    // 2. 0x0.st にフォールバック
-    try {
-      const f2 = new FormData();
-      f2.append('file', blob, fileName);
-      const r2 = await fetch('https://0x0.st', { method: 'POST', body: f2 });
-      const t2 = (await r2.text()).trim();
-      if (t2.startsWith('https://')) {
-        return new Response(JSON.stringify({ url: t2, service: '0x0.st' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      console.warn('[shareFile] 0x0.st failed:', r2.status, t2.slice(0, 100));
-    } catch (e2) {
-      console.warn('[shareFile] 0x0.st error:', e2.toString());
-    }
-
-    return new Response(JSON.stringify({ error: 'すべてのアップロードサービスに失敗しました' }), {
-      status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-      return new Response(JSON.stringify({ error: 'Proxy error', details: err.toString() }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-}
+// （不要な外部共有プロキシ handleShareFile はセキュリティ向上のため削除されました）
 
 
 
@@ -16816,6 +16765,62 @@ async function isAppAdmin(appId, verifiedUser, env) {
     console.error("isAppAdmin error:", e);
   }
   return false;
+}
+
+// -------------------------------------------------------------
+// 管理者専用: メッセージ強制削除 (Firestore & RTDB)
+// -------------------------------------------------------------
+async function handleAdminDeleteMessage(request, env) {
+  try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim();
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
+    const { appId, serverId, roomId, messageId } = await request.json();
+    if (!appId || !serverId || !roomId || !messageId) {
+      return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: corsHeaders });
+    }
+
+    const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+    const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+    if (!isGlobal && !isSvAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: corsHeaders });
+    }
+
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+    }
+
+    const [adminToken, rtdbToken] = await Promise.all([
+      getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+      getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+    ]);
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    // 1. Firestore から削除
+    const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
+    await fetch(fsUrl, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+
+    // 2. RTDB から特権削除
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+    await fetch(rtdbUrl, {
+      method: "DELETE"
+    });
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+  } catch (err) {
+    console.error("handleAdminDeleteMessage error:", err);
+    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: corsHeaders });
+  }
 }
 
 async function handleSetOffline(request, env) {
@@ -19013,7 +19018,7 @@ async function handleD1Api(request, env, url) {
 
                   <div class="space-y-3">
                     <div class="flex gap-2 max-w-sm">
-                      <input type="text" id="migrationSendCodeInput" placeholder="例: COVO-1234" maxlength="12" class="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-sm font-mono text-gray-800 dark:text-white uppercase placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition shadow-inner" />
+                      <input type="text" id="migrationSendCodeInput" placeholder="例: COVO-A1B2-C3D4" maxlength="16" class="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-sm font-mono text-gray-800 dark:text-white uppercase placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition shadow-inner" />
                       <button id="startSendMigrationBtn" onclick="initiateMigrationSend()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
                         <i class="fas fa-link"></i> 接続して送信
                       </button>
@@ -28721,8 +28726,12 @@ window.hideDmConversation = async function(dmId) {
 
 window.initiateMigrationReceive = async function() {
   if (!userId) return;
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
-  const sessionCode = `COVO-${randomNum}`;
+  const _codeChars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const _codeBytes = new Uint8Array(8);
+  crypto.getRandomValues(_codeBytes);
+  const part1 = Array.from(_codeBytes.slice(0, 4)).map(b => _codeChars[b % _codeChars.length]).join('');
+  const part2 = Array.from(_codeBytes.slice(4, 8)).map(b => _codeChars[b % _codeChars.length]).join('');
+  const sessionCode = `COVO-${part1}-${part2}`;
   activeMigrationSession = sessionCode;
 
   const initEl = document.getElementById('migrationReceiveInitialState');
@@ -29079,11 +29088,13 @@ async function createServer(name, customId, password) {
   const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
     name: "一般",
     createdAt: serverTimestamp(),
-    createdBy: userId
+    createdBy: userId,
+    currentKeyVersion: 1
   });
   try {
-    const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
-    await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+    const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    const rawKey = await window.crypto.subtle.exportKey("raw", key);
+    await _distributeRoomKeyVersion(customId, newRoomRef.id, rawKey, [userId], 1);
   } catch (e) { console.error("E2EE key gen failed", e); }
 
   enterServer(customId, serverData);
@@ -29863,11 +29874,13 @@ document.getElementById("createRoomInServerBtn")?.addEventListener("click", asyn
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
-      name, categoryId, createdAt: serverTimestamp(), createdBy: userId
+      name, categoryId, createdAt: serverTimestamp(), createdBy: userId, currentKeyVersion: 1
     });
     try {
-      const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
-      await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+      const members = (currentServerData && currentServerData.joinedUsers) || [userId];
+      const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+      const rawKey = await window.crypto.subtle.exportKey("raw", key);
+      await _distributeRoomKeyVersion(currentServerId, newRoomRef.id, rawKey, members, 1);
     } catch (e) { console.error("E2EE key gen failed", e); }
     const nameInp = document.getElementById("newRoomNameInput");
     if (nameInp) nameInp.value = "";
@@ -35002,12 +35015,11 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
+  // （自分のメッセージは常に削除可能、他人のメッセージは「アプリ全体管理者（isAdmin）」のみ削除可能）
   const isMsgSender = msgData.senderId === userId;
-  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = currentDmId
-    ? isMsgSender // DMでは本人のみ削除可能（他者メッセージは削除不可）
-    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+    ? isMsgSender
+    : (isMsgSender || isAdmin);
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -35191,19 +35203,14 @@ if (deleteMsgBtn) {
 
   const msgToDelete = selectedMessageForContext;
   const isMsgSender = msgToDelete.senderId === userId;
-  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDelete = currentDmId
-    ? isMsgSender
-    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isAdmin);
 
   if (!canDelete) {
     alertMessage("メッセージを削除する権限がありません", "warning");
     return;
   }
 
-  const isServerAdmin = isServerAdminRole || isServerOwner;
-  const forceDelete = !currentDmId && (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
+  const forceDelete = !currentDmId && isAdmin && msgToDelete.senderId !== userId;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
@@ -35223,7 +35230,6 @@ if (deleteMsgBtn) {
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (kvFileUrl):', fileKey);
       } catch (e) {
         console.error('[deleteMessage] KV file delete error (kvFileUrl):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
@@ -35231,6 +35237,7 @@ if (deleteMsgBtn) {
       }
     }
   }
+
   // 1b. テキスト内の旧形式KV URL
   if (msgToDelete.text) {
     const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
@@ -35242,22 +35249,17 @@ if (deleteMsgBtn) {
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[deleteMessage] KV file delete failed (text URL):', fileKey, err);
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (text URL):', fileKey);
       } catch (e) {
-        console.error('[deleteMessage] KV file delete error (text URL):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
         return;
       }
     }
   }
 
-  // 1c. fileData が Cloudflare(KV) URL の場合（画像・その他ファイルの新形式）。
-  //     画像送信もKVに移行したため、ここで実ファイルを削除しないとCloudflareに残ってしまう。
+  // 1c. fileData が Cloudflare(KV) URL の場合
   if (msgToDelete.fileData && msgToDelete.fileData.indexOf('/api/file/') >= 0) {
     const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
     if (m) {
@@ -35267,23 +35269,20 @@ if (deleteMsgBtn) {
       try {
         const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[deleteMessage] KV file delete failed (fileData):', fileKey, err);
           alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
           return;
         }
-        console.log('[deleteMessage] KV file deleted (fileData):', fileKey);
       } catch (e) {
-        console.error('[deleteMessage] KV file delete error (fileData):', fileKey, e);
         alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
         return;
       }
     }
   }
 
-  // 3. Firestore / RTDB / LocalStore メッセージ削除
+  // 2. メッセージの削除実行
   try {
     if (currentDmId) {
+      // DMメッセージ削除（本人のみ）
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
@@ -35314,12 +35313,26 @@ if (deleteMsgBtn) {
         renderDmConversationsList();
       }
     } else {
-      await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
-      try {
+      // サーバーメッセージ削除
+      if (isAdmin && !isMsgSender) {
+        // 管理者による他者メッセージの削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
+        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
+          method: 'DELETE',
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+          body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
+        });
+        if (!res.ok) {
+          throw new Error("管理者権限でのリアルタイムDB削除に失敗しました");
+        }
+      } else {
+        // 本人によるメッセージ削除: Firestore + RTDB
+        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
         await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
-      } catch (err) { console.error("RTDB Delete Failed", err); }
+      }
       LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
       // ルームの最新メッセージサマリーを更新
@@ -35338,6 +35351,7 @@ if (deleteMsgBtn) {
       }).catch(() => {});
     }
 
+    // 削除が成功した場合のみローカル状態を更新して完了トーストを表示
     currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
@@ -35347,7 +35361,7 @@ if (deleteMsgBtn) {
     alertMessage("削除しました", "success");
   } catch (e) {
     console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
-    alertMessage("削除に失敗しました", "error");
+    alertMessage("削除に失敗しました: " + (e.message || "権限がありません"), "error");
   }
 });
 }
@@ -40735,7 +40749,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.110",
+  "version": "1.1.112",
   "force": false
 }
 </file>
@@ -40744,7 +40758,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.110",
+  "version": "1.1.112",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

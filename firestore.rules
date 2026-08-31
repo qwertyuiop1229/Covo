@@ -2,12 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- ユーティリティ関数 ---
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
+    // ========================================================================
 
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    // アプリ全体管理者 (Super Admin / Global Admin)
     function isGlobalAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
@@ -17,6 +20,7 @@ service cloud.firestore {
         );
     }
 
+    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
     function isListAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
@@ -26,13 +30,24 @@ service cloud.firestore {
         );
     }
 
+    // サーバーオーナー (Server Owner: サーバー作成者)
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          || isGlobalAdmin(appId));
+    }
+
+    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
     function isServerAdmin(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
         (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isServerOwner(appId, serverId)
           || isGlobalAdmin(appId));
     }
 
+    // サーバー参加メンバー (Server Member)
     function isJoinedServer(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
@@ -40,13 +55,14 @@ service cloud.firestore {
           || isGlobalAdmin(appId));
     }
 
-    // --- 各コレクションのルール ---
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
 
     match /artifacts/{appId} {
 
-      // 1. 全体設定
+      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
       match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
         allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
         allow write: if isGlobalAdmin(appId);
       }
@@ -55,7 +71,7 @@ service cloud.firestore {
         allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
       }
       
-      // ログイン許可リスト（単一取得は認証済みユーザー全員に許可し、連携アカウントの照合を保証）
+      // ログイン許可リスト (Allowed Emails)
       match /allowedEmails/{emailId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId) ||
@@ -72,7 +88,7 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
+      // バグ報告・フィードバック
       match /feedbacks/{docId} {
         allow create: if isAuthenticated() &&
           request.resource.data.createdBy == request.auth.uid &&
@@ -88,7 +104,7 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // システムエラー・警告テレメトリ (認証済みユーザーのみ作成・集約)
+      // システムエラー・警告テレメトリ
       match /error_reports/{docId} {
         allow create, update: if isAuthenticated() &&
           request.resource.data.message is string &&
@@ -97,28 +113,27 @@ service cloud.firestore {
         allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
       }
 
-      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
+      // 緊急アカウントリカバリー保管庫
       match /recovery_vault/{userDocId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
       }
       match /recovery_index/{emailHash} {
-        allow read: if true; // ログイン前の暗号照合検証用
-        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+        allow read: if true;
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
       }
 
-      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
       match /admin_recovery_requests/{userDocId} {
         allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
         allow write: if isGlobalAdmin(appId);
       }
       match /admin_recovery_index/{emailHash} {
-        allow read: if true; // ログイン前のPIN照合検証用
+        allow read: if true;
         allow write: if isGlobalAdmin(appId);
       }
 
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      // 招待コードインデックス (逆引き)
       match /inviteIndex/{code} {
         allow get: if isAuthenticated();
         allow create: if isServerAdmin(appId, request.resource.data.serverId);
@@ -126,124 +141,130 @@ service cloud.firestore {
         allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
 
-      // 2. ユーザー情報
+      // 2. ユーザー情報 (Users & Profiles)
       match /users/{userId} {
         allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // サーバー作成クォータ（本人のみ読み書き）
       match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
       }
 
       match /users/{userId}/profile/{docId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
       match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
       // 既読状態の同期
       match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // フレンド関係性 (relationships: 申請送信・承認フローの偽装防止)
+      // フレンド関係性 (Relationships)
       match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
         allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
             (request.resource.data.status == 'pending_received' && (resource == null || resource.data.status != 'blocked')) ||
             (request.resource.data.status == 'friends' && resource != null && resource.data.status == 'pending_sent')
           ))
         );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
       }
 
       // ダイレクトメッセージ (DM) チャンネル
       match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
-        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
         match /keys/{keyUserId} {
           allow get, list: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
              request.auth.uid in dmId.split('_') ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
           allow write: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
              (request.auth.uid in dmId.split('_') && keyUserId in dmId.split('_')) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
         }
       }
 
-      // 端末間データ完全移行 (P2P Device Transfers)
+      // 端末間データ移行 (P2P Device Transfers)
       match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
         match /{subcollection}/{docId} {
-          allow get, list: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-          allow write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+          allow get, list, write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid || isGlobalAdmin(appId));
         }
       }
 
-      // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
+      // P2P 過去ログ分散補完 (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
         allow get, list, delete: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.requesterUid == request.auth.uid || isGlobalAdmin(appId));
         allow update: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId']);
+          (isGlobalAdmin(appId) ||
+           ((resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
         match /{subcollection}/{docId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid);
+             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid ||
+             isGlobalAdmin(appId));
         }
       }
 
-      // 3. グローバルオンライン状態
+      // 3. グローバルオンライン状態 (Status)
       match /status/{userId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // 4. P2P音声通話シグナリング
+      // 4. P2P音声通話シグナリング (Calls)
       match /calls/{callId} {
         allow get, list, delete: if isAuthenticated() &&
           (
+            isGlobalAdmin(appId) ||
             resource.data.calleeUid == request.auth.uid ||
             ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
             ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            resource.data.calleeUid == request.auth.uid ||
-            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+            isGlobalAdmin(appId) ||
+            ((resource.data.calleeUid == request.auth.uid ||
+              ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+              ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
+          );
         allow create: if isAuthenticated() &&
-          'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-          request.resource.data.caller.uid == request.auth.uid;
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (
+              isGlobalAdmin(appId) ||
               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid ||
               ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
               ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
@@ -251,53 +272,63 @@ service cloud.firestore {
         }
       }
 
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      // 4b. P2Pファイル共有シグナリング (File Shares)
       match /fileshares/{shareId} {
         allow get, list, delete: if isAuthenticated() &&
           (
+            isGlobalAdmin(appId) ||
             resource.data.receiverUid == request.auth.uid ||
             ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            resource.data.receiverUid == request.auth.uid ||
-            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+            isGlobalAdmin(appId) ||
+            ((resource.data.receiverUid == request.auth.uid ||
+              ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
+          );
         allow create: if isAuthenticated() &&
-          'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-          request.resource.data.sender.uid == request.auth.uid;
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (
+              isGlobalAdmin(appId) ||
               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid ||
               ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
             );
         }
       }
 
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
 
       match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
         allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
         allow list: if isGlobalAdmin(appId) ||
           (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
 
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
         allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
 
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+        // サーバー設定の更新:
+        // 1) サーバーオーナーまたは全体管理者: 自由に変更可能
+        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
+        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId));
 
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || resource.data.createdBy in request.resource.data.serverAdmins);
+
         allow update: if isAuthenticated() &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
@@ -306,110 +337,114 @@ service cloud.firestore {
           (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
           request.resource.data.memberCount == resource.data.memberCount - 1;
 
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
 
-        // サーバー内の秘密情報（管理者のみ）
+        // サーバー内の秘密情報 (パスワードハッシュ等)
         match /secrets/{docId} {
           allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
         }
 
-        // ルーム一覧
+        // ルーム一覧 (Channels / Rooms)
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
+          // ルーム更新: 管理者/モデレーターは設定変更、一般メンバーはメッセージ投稿に伴う最終メッセージ情報のみ更新可能
           allow update: if isServerAdmin(appId, serverId) || (
             isJoinedServer(appId, serverId) &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
           );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerAdmin(appId, serverId);
 
-          // ルーム内メッセージ
+          // ルーム内メッセージ (Messages)
           match /messages/{messageId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
+              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId));
+
+            // メッセージ更新:
+            // 1. リアクション追加・削除: 参加メンバー全員可能
+            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
+            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
+            // 4. 全体管理者によるモデレーション更新
             allow update: if isJoinedServer(appId, serverId) && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+              || isGlobalAdmin(appId)
             );
+
+            // メッセージ削除: 送信者本人 または サーバー管理者 (モデレーター) または 全体管理者
+            // 一般メンバーやリスト管理者が他人のメッセージを削除することは不可！
             allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
           }
 
-          // 既読レシート
+          // 既読レシート (Read Receipts)
           match /readReceipts/{receiptUserId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
             allow delete: if isJoinedServer(appId, serverId) &&
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          // E2EE ルーム暗号鍵 (Room Keys)
           match /roomKeys/{keyId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create: if isJoinedServer(appId, serverId);
             allow update, delete: if isServerAdmin(appId, serverId);
           }
 
-          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          // E2EE 救済リクエスト (Rescue Requests)
           match /rescueRequests/{reqUserId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
             allow delete: if isJoinedServer(appId, serverId);
           }
 
-          // タイピングインジケーター（サーバー参加者のみ）
+          // タイピングインジケーター (Typing)
           match /typing/{userId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
           }
         }
 
-        // サーバー別プロフィール
+        // サーバー別プロフィール (Profiles)
         match /profiles/{profileUserId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
           allow delete: if isJoinedServer(appId, serverId) &&
             (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
         }
 
-        // サーバーカスタムスタンプ
+        // サーバーカスタムスタンプ (Stamps)
         match /stamps/{stampId} {
           allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
           allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
             request.resource.data.name is string &&
             request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
             (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
         }
 
-        // スタンプグループ（古い形式 / 拡張形式）
+        // スタンプグループ (Stamp Groups)
         match /stampGroups/{groupId} {
           allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
           allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
             request.resource.data.name is string;
           allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
             (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
         }
 
-        // 招待コード
+        // 招待コード (Invite Codes)
         match /inviteCodes/{code} {
           allow get: if isAuthenticated();
           allow list: if isServerAdmin(appId, serverId);

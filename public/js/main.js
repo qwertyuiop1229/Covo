@@ -13536,11 +13536,13 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
-  // （自分のメッセージは常に削除可能、他人のメッセージは「アプリ全体管理者（isAdmin）」のみ削除可能）
+  // （自分のメッセージは常に削除可能、他人のメッセージはサーバー管理者・サーバーオーナー・全体管理者のみ削除可能）
   const isMsgSender = msgData.senderId === userId;
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = currentDmId
     ? isMsgSender
-    : (isMsgSender || isAdmin);
+    : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -13549,7 +13551,7 @@ function showContextMenu(bubble, clientX, clientY) {
 
   const canPinMsg = currentDmId
     ? true
-    : (isServerAdminRole || isServerOwner || isAdmin || isMsgSender);
+    : (isSvAdmin || isSvOwner || isAdmin || isMsgSender);
   const pinBtn = document.getElementById("pinMessageButton");
   if (pinBtn) {
     pinBtn.style.display = canPinMsg ? 'block' : 'none';
@@ -13724,14 +13726,17 @@ if (deleteMsgBtn) {
 
   const msgToDelete = selectedMessageForContext;
   const isMsgSender = msgToDelete.senderId === userId;
-  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isAdmin);
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
 
   if (!canDelete) {
     alertMessage("メッセージを削除する権限がありません", "warning");
     return;
   }
 
-  const forceDelete = !currentDmId && isAdmin && msgToDelete.senderId !== userId;
+  const isPrivilegedDelete = !currentDmId && (isAdmin || isSvAdmin || isSvOwner) && msgToDelete.senderId !== userId;
+  const forceDelete = isPrivilegedDelete;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
@@ -13835,8 +13840,8 @@ if (deleteMsgBtn) {
       }
     } else {
       // サーバーメッセージ削除
-      if (isAdmin && !isMsgSender) {
-        // 管理者による他者メッセージの削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
+      if (isPrivilegedDelete) {
+        // サーバー管理者/モデレーター/全体管理者による他者メッセージのモデレーション削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
         await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {

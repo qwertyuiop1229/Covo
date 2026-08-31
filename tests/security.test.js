@@ -184,4 +184,128 @@ describe('Firestore Security Rules Testing', () => {
     });
   });
 
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】メッセージ削除・改ざん防止と権限階層の検証 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('メッセージセキュリティ: 他人の発言削除・本文改ざん防止', () => {
+    const serverId = "server1";
+    const roomId = "room1";
+    const msgId = "msg_alice_1";
+    const msgPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/messages/${msgId}`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin'],
+          emails: ['superadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/listAdminList`), {
+          admins: ['list_admin'],
+          emails: ['listadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
+          joinedUsers: ['alice', 'bob', 'moderator', 'list_admin', 'super_admin'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user'
+        });
+        await setDoc(doc(db, msgPath), {
+          senderId: 'alice',
+          text: 'Hello from Alice',
+          createdAt: 1000,
+          timestamp: 1000,
+          isPinned: false
+        });
+      });
+    });
+
+    it('【正常系】送信者本人 (Alice) は自分のメッセージを削除できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertSucceeds(deleteDoc(doc(aliceDb, msgPath)));
+    });
+
+    it('【正常系】サーバーモデレーター (moderator) は他人の不適切メッセージを削除できること (Must Pass)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertSucceeds(deleteDoc(doc(modDb, msgPath)));
+    });
+
+    it('【正常系】全体管理者 (super_admin) は他人のメッセージを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, msgPath)));
+    });
+
+    it('【異常系】一般メンバー (Bob) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      await assertFails(deleteDoc(doc(bobDb, msgPath)));
+    });
+
+    it('【異常系】リスト管理者 (list_admin) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const listAdminDb = getDb({ uid: 'list_admin' });
+      await assertFails(deleteDoc(doc(listAdminDb, msgPath)));
+    });
+
+    it('【異常系】モデレーターや一般ユーザーが他人のメッセージ本文を改ざんしようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(updateDoc(doc(modDb, msgPath), {
+        text: 'Tampered malicious message by moderator'
+      }));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】サーバー・ルーム・管理者昇格の保護 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('サーバー・ルーム保護: オーナーシップ保護と権限昇格防止', () => {
+    const serverId = "server1";
+    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
+    const roomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/room1`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin']
+        });
+        await setDoc(doc(db, serverPath), {
+          joinedUsers: ['owner_user', 'moderator', 'regular_user'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user',
+          name: 'Original Server'
+        });
+        await setDoc(doc(db, roomPath), {
+          name: 'General',
+          createdBy: 'owner_user'
+        });
+      });
+    });
+
+    it('【正常系】サーバーオーナー (owner_user) はサーバーを削除できること (Must Pass)', async () => {
+      const ownerDb = getDb({ uid: 'owner_user' });
+      await assertSucceeds(deleteDoc(doc(ownerDb, serverPath)));
+    });
+
+    it('【正常系】全体管理者 (super_admin) はサーバーを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, serverPath)));
+    });
+
+    it('【異常系】モデレーター (moderator) や一般ユーザーがサーバー自体を削除しようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(deleteDoc(doc(modDb, serverPath)));
+    });
+
+    it('【異常系】一般ユーザー (regular_user) がルームを作成・削除しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const newRoomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/hack_room`;
+      await assertFails(setDoc(doc(userDb, newRoomPath), { name: 'Hack' }));
+      await assertFails(deleteDoc(doc(userDb, roomPath)));
+    });
+
+    it('【異常系】一般ユーザーやリスト管理者が全体管理者リスト (adminList) を書き換えて特権奪取しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const adminListPath = `artifacts/${APP_ID}/settings/adminList`;
+      await assertFails(setDoc(doc(userDb, adminListPath), { admins: ['regular_user'] }));
+    });
+  });
+
 });
