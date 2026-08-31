@@ -392,6 +392,99 @@ initCryptoContext({
   getIsAdmin: () => (typeof isAdmin !== 'undefined' ? isAdmin : false)
 });
 
+// === 統一ユーザープロファイルマネージャー & キャッシュ ===
+window._userProfileCache = window._userProfileCache || new Map();
+const _userProfilePromises = new Map();
+
+window.getUserProfile = async function (uid, fallback = {}) {
+  if (!uid) return { id: uid, uid: uid, nickname: 'ユーザー', avatarUrl: '', email: '' };
+
+  if (uid === userId) {
+    return {
+      id: userId,
+      uid: userId,
+      nickname: currentServerNickname || userNickname || 'あなた',
+      avatarUrl: userAvatarUrl || '',
+      email: userAuthEmail || auth?.currentUser?.email || '',
+      customStatus: window._currentUserCustomStatus || null
+    };
+  }
+
+  if (window._userProfileCache.has(uid)) {
+    const cached = window._userProfileCache.get(uid);
+    if (cached && (cached.nickname || cached.avatarUrl || cached.email)) {
+      return cached;
+    }
+  }
+
+  if (_userProfilePromises.has(uid)) {
+    return await _userProfilePromises.get(uid);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const cu = (cachedUsers || []).find(u => u.id === uid);
+      const uSnap = await getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null);
+      let data = uSnap && uSnap.exists() ? uSnap.data() : null;
+
+      if (!data || !data.nickname) {
+        const pSnap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null);
+        if (pSnap && pSnap.exists()) {
+          data = { ...(data || {}), ...pSnap.data() };
+        }
+      }
+
+      const rel = friendRelationships && friendRelationships[uid];
+      const nickname = data?.nickname || data?.displayName || cu?.nickname || rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`);
+      const avatarUrl = data?.avatarUrl || data?.photoURL || cu?.avatarUrl || rel?.targetAvatarUrl || fallback.avatarUrl || '';
+      const email = data?.email || cu?.email || rel?.targetEmail || fallback.email || '';
+      const customStatus = data?.customStatus || cu?.customStatus || null;
+      const aboutMe = data?.aboutMe || '';
+
+      const profile = {
+        id: uid,
+        uid: uid,
+        nickname,
+        avatarUrl,
+        email,
+        customStatus,
+        aboutMe,
+        status: cu?.computedState || cu?.state || 'offline'
+      };
+
+      window._userProfileCache.set(uid, profile);
+
+      if (Array.isArray(cachedUsers)) {
+        const existingIdx = cachedUsers.findIndex(u => u.id === uid);
+        if (existingIdx >= 0) {
+          cachedUsers[existingIdx] = { ...cachedUsers[existingIdx], ...profile };
+        } else {
+          cachedUsers.push(profile);
+        }
+      }
+
+      return profile;
+    } catch (err) {
+      console.warn('[getUserProfile] fetch error for', uid, err);
+      const fallbackProfile = {
+        id: uid,
+        uid: uid,
+        nickname: fallback.nickname || `ユーザー#${uid.substring(0, 4)}`,
+        avatarUrl: fallback.avatarUrl || '',
+        email: fallback.email || '',
+        status: 'offline'
+      };
+      window._userProfileCache.set(uid, fallbackProfile);
+      return fallbackProfile;
+    } finally {
+      _userProfilePromises.delete(uid);
+    }
+  })();
+
+  _userProfilePromises.set(uid, fetchPromise);
+  return await fetchPromise;
+};
+
 window._lsGet = function (...args) { return __lsGet(...args); };
 function _lsGet(...args) { return __lsGet(...args); }
 window._lsSet = function (...args) { return __lsSet(...args); };
@@ -1733,7 +1826,7 @@ window.updateAccountSecurityUI = function (user) {
   const googleStatus = document.getElementById('settingsGoogleStatusText');
   const googleBtn = document.getElementById('settingsGoogleLinkBtn');
   const mobileGoogleBtn = document.getElementById('mobileSettingsGoogleLinkBtn');
-  const currPwdRow = document.getElementById('changePasswordCurrentRow');
+  const currPwdRow = document.getElementById('changePasswordCurrentRowModal') || document.getElementById('changePasswordCurrentRow');
 
   // Google 表示要素
   const googleAvatar = document.getElementById('settingsGoogleAvatar');
@@ -5531,7 +5624,25 @@ function subscribeToUserStatus() {
   unsubscribeStatusArray = [];
   oldUnsubs.forEach(unsub => { try { unsub(); } catch (_) { } });
 
-  const memberIds = currentServerData?.joinedUsers || [];
+  // サーバーメンバーに加え、DM参加者、全フレンド、自分を網羅してステータスとプロファイルを同期
+  const targetUidsSet = new Set();
+  if (currentServerData?.joinedUsers) {
+    currentServerData.joinedUsers.forEach(uid => targetUidsSet.add(uid));
+  }
+  if (currentDmParticipants) {
+    currentDmParticipants.forEach(uid => targetUidsSet.add(uid));
+  }
+  if (friendRelationships) {
+    Object.keys(friendRelationships).forEach(uid => targetUidsSet.add(uid));
+  }
+  if (dmConversations) {
+    Object.values(dmConversations).forEach(dm => {
+      (dm.participants || []).forEach(uid => targetUidsSet.add(uid));
+    });
+  }
+  if (userId) targetUidsSet.add(userId);
+
+  const memberIds = Array.from(targetUidsSet).filter(Boolean);
   if (memberIds.length === 0) {
     cachedUsers = [];
     renderMembersList(cachedUsers);
@@ -5540,11 +5651,15 @@ function subscribeToUserStatus() {
 
   const usersMap = new Map();
   memberIds.forEach(uid => {
-    usersMap.set(uid, { id: uid, state: 'offline' });
+    const cachedProf = window._userProfileCache?.get(uid);
+    usersMap.set(uid, { id: uid, state: 'offline', ...(cachedProf || {}) });
+    if (!cachedProf) {
+      window.getUserProfile(uid).catch(() => {});
+    }
   });
   cachedUsers = Array.from(usersMap.values());
 
-  // RTDBでメンバーのリアルタイムステータスを一元監視（Firestore二重クエリを撤廃して通信量削減）
+  // RTDBでメンバーのリアルタイムステータスを一元監視
   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
     _getOrInitRTDB().then(rtdb => {
       memberIds.forEach(uid => {
@@ -5552,14 +5667,21 @@ function subscribeToUserStatus() {
         const callback = (snapshot) => {
           const data = snapshot.val();
           const existing = usersMap.get(uid) || { id: uid };
+          const cachedProf = window._userProfileCache?.get(uid);
 
           if (data) {
-            usersMap.set(uid, { id: uid, ...existing, ...data });
+            const merged = { id: uid, ...existing, ...(cachedProf || {}), ...data };
+            usersMap.set(uid, merged);
+            if (cachedProf) {
+              Object.assign(cachedProf, data);
+            }
           } else {
-            usersMap.set(uid, { id: uid, state: 'offline', ...existing });
+            usersMap.set(uid, { id: uid, state: 'offline', ...existing, ...(cachedProf || {}) });
           }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
+          if (typeof renderFriendTabs === 'function') renderFriendTabs();
+          if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
         };
         onValue(statusRef, callback);
         unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
@@ -6723,10 +6845,15 @@ function renderDmConversationsList() {
     const otherUid = (dm.participants || []).find(id => id !== userId) || userId;
     const rel = friendRelationships[otherUid];
     const targetUser = cachedUsers.find(u => u.id === otherUid) || {};
-    const nickname = rel?.targetNickname || targetUser.nickname || 'ユーザー';
-    const avatarUrl = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
+    const cachedProf = window._userProfileCache?.get(otherUid);
+    const nickname = rel?.targetNickname || targetUser.nickname || cachedProf?.nickname || 'ユーザー';
+    const avatarUrl = rel?.targetAvatarUrl || targetUser.avatarUrl || cachedProf?.avatarUrl || '';
     const isActive = currentDmId === dm.id;
-    const isOnline = targetUser.status === 'online' || targetUser.status === 'dnd';
+    const isOnline = targetUser.computedState === 'online' || targetUser.state === 'online' || targetUser.status === 'online';
+
+    if (!cachedProf) {
+      window.getUserProfile(otherUid).then(() => renderDmConversationsList()).catch(() => {});
+    }
 
     // 最新メッセージプレビューの復号・サニタイズ処理
     let previewText = dm._decryptedPreview || dm.lastMessageText || '会話を始めましょう';
@@ -6768,11 +6895,24 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   const dmId = [userId, targetUid].sort().join('_');
   currentDmId = dmId;
   currentDmParticipants = [userId, targetUid].sort();
-  currentDmParticipant = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  currentDmParticipant = { uid: targetUid, nickname: targetNickname || 'ユーザー', avatarUrl: targetAvatarUrl || '' };
   currentServerId = null;
   currentRoomId = null;
   currentServerData = null;
   currentServerNickname = null;
+
+  // 相手のプロファイルを非同期解決して最新のニックネーム・アイコンを即時反映
+  window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl }).then(p => {
+    if (currentDmId === dmId) {
+      currentDmParticipant = { uid: targetUid, nickname: p.nickname, avatarUrl: p.avatarUrl, email: p.email };
+      const title = document.getElementById("currentRoomTitleText");
+      if (title) title.textContent = p.nickname;
+      if (messageInput) messageInput.placeholder = `@${p.nickname} へのメッセージ`;
+      if (typeof updateTitleBarContext === 'function') {
+        updateTitleBarContext('dm', currentDmParticipant);
+      }
+    }
+  }).catch(() => {});
 
   // 未読境界をリセットし、前回までの最終既読時刻を確定
   unreadBoundaryAt = 0;
@@ -10826,7 +10966,13 @@ async function sendSticker(emoji) {
   if (existingDiv) existingDiv.remove();
 
   try {
-    const data = { sticker: emoji, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+    const data = { 
+      sticker: emoji, 
+      senderId: userId, 
+      senderNickname: currentServerNickname || userNickname || 'ユーザー', 
+      senderAvatarUrl: userAvatarUrl || null,
+      timestamp: serverTimestamp() 
+    };
     if (replyingToMessage) {
       data.replyTo = {
         messageId: replyingToMessage.id,
@@ -11435,7 +11581,13 @@ async function sendMessage() {
       }
     }
 
-    const data = { text: textToStore, senderId: userId, senderNickname: currentServerNickname || userNickname, timestamp: serverTimestamp() };
+    const data = { 
+      text: textToStore, 
+      senderId: userId, 
+      senderNickname: currentServerNickname || userNickname || 'ユーザー', 
+      senderAvatarUrl: userAvatarUrl || null,
+      timestamp: serverTimestamp() 
+    };
     if (attachedKvFile) {
       Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
     }
@@ -12070,17 +12222,30 @@ function createMessageElement(message, messageId, readByCount = 0) {
   // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
   if (!isMyMessage) {
     const senderUser = cachedUsers.find(u => u.id === message.senderId);
+    const cachedProf = window._userProfileCache?.get(message.senderId);
+    const resolvedAvatarUrl = message.senderAvatarUrl || senderUser?.avatarUrl || cachedProf?.avatarUrl || (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null);
+    const resolvedNickname = message.senderNickname || senderUser?.nickname || cachedProf?.nickname || (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.nickname : null) || "ユーザー";
+
     const avatarDiv = document.createElement("div");
     avatarDiv.className = "msg-avatar z-10 cursor-pointer";
-    if (senderUser?.avatarUrl) {
-      __setAvatarImg(avatarDiv, senderUser.avatarUrl, message.senderNickname, { style: '' });
+    avatarDiv.dataset.userId = message.senderId;
+
+    if (isUsableAvatarUrl(resolvedAvatarUrl)) {
+      __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
     } else {
-      avatarDiv.textContent = (message.senderNickname || "?").charAt(0).toUpperCase();
+      avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+      if (message.senderId) {
+        window.getUserProfile(message.senderId).then(p => {
+          if (p && isUsableAvatarUrl(p.avatarUrl) && avatarDiv.parentElement) {
+            __setAvatarImg(avatarDiv, p.avatarUrl, p.nickname || resolvedNickname, { style: '' });
+          }
+        }).catch(() => {});
+      }
     }
     // Discord準拠: メッセージアバタークリックでユーザープロフィールポップアップを表示
     avatarDiv.addEventListener("click", (e) => {
       e.stopPropagation();
-      openUserProfileModal(message.senderId, message.senderNickname || 'ユーザー', senderUser?.avatarUrl || '');
+      openUserProfileModal(message.senderId, resolvedNickname, resolvedAvatarUrl || '');
     });
     messageRowInner.appendChild(avatarDiv);
   }

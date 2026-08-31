@@ -175,10 +175,12 @@ service cloud.firestore {
         match /keys/{keyUserId} {
           allow get, list: if isAuthenticated() &&
             (request.auth.uid == keyUserId ||
+             request.auth.uid in dmId.split('_') ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
           allow write: if isAuthenticated() &&
             (request.auth.uid == keyUserId ||
+             (request.auth.uid in dmId.split('_') && keyUserId in dmId.split('_')) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
         }
