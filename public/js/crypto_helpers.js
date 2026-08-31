@@ -309,13 +309,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           return null;
         }
 
-        // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布
+        // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布（平文sharedKeyは一切保存しない）
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
-        const b64 = _abToB64(raw);
-        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { sharedKey: b64, currentKeyVersion: 1 }).catch(() => {});
+        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { currentKeyVersion: 1 }).catch(() => {});
 
-        // 参加メンバーおよびエスクローへ鍵バージョン1を即時配布
+        // 参加メンバーおよびエスクローへ暗号化鍵バージョン1を即時配布
         await __distributeRoomKeyVersion(serverId, roomId, raw, memberIds || [], 1).catch(() => {});
 
         keysObj["1"] = key;

@@ -102,7 +102,8 @@ service cloud.firestore {
       }
       match /recovery_index/{emailHash} {
         allow read: if true; // ログイン前の暗号照合検証用
-        allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
       }
 
       // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
@@ -112,7 +113,7 @@ service cloud.firestore {
       }
       match /admin_recovery_index/{emailHash} {
         allow read: if true; // ログイン前のPIN照合検証用
-        allow write: if isGlobalAdmin(appId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']));
+        allow write: if isGlobalAdmin(appId);
       }
 
       // 招待コードインデックス（コード→サーバーID の逆引き）
@@ -240,7 +241,12 @@ service cloud.firestore {
           request.resource.data.caller.uid == request.auth.uid;
 
         match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated();
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
+            );
         }
       }
 
@@ -262,7 +268,11 @@ service cloud.firestore {
           request.resource.data.sender.uid == request.auth.uid;
 
         match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated();
+          allow get, list, create, delete: if isAuthenticated() &&
+            (
+              get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
+            );
         }
       }
 

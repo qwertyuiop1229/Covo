@@ -730,6 +730,161 @@ async function runCleanup() {
 runCleanup();
 </file>
 
+<file path="scripts/generate_geoguessr_data.py">
+import urllib.request
+import urllib.parse
+import json
+import time
+import re
+import os
+
+ENDPOINT_URL = 'https://query.wikidata.org/sparql'
+
+def get_wikidata(query):
+    print("Fetching data from WikiData...")
+    url = ENDPOINT_URL + '?' + urllib.parse.urlencode({'query': query})
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'CovoApp/1.0 (https://covo.app; contact@example.com) python-urllib/3',
+        'Accept': 'application/sparql-results+json'
+    })
+    try:
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        raise Exception(f"Query failed: {e}")
+
+def process_results(results):
+    locations = []
+    for result in results['results']['bindings']:
+        label = result.get('itemLabel', {}).get('value', 'Unknown')
+        pic = result.get('pic', {}).get('value', '')
+        coords_str = result.get('coords', {}).get('value', '')
+        
+        # coords_str looks like: Point(139.691666666 35.689444444)
+        match = re.search(r'Point\(([^ ]+)\s+([^ ]+)\)', coords_str)
+        if not match:
+            continue
+        lng = float(match.group(1))
+        lat = float(match.group(2))
+        
+        # Convert full image URL to thumbnail URL
+        img_url = pic.replace('http://', 'https://')
+        if "Special:FilePath" in pic:
+            if pic.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+               img_url = img_url + "?width=1000"
+
+        # Q-ID label might be an entity ID if no label exists. skip those.
+        if label.startswith('http://www.wikidata.org/entity/'):
+             continue
+        
+        # Filter out obviously bad strings and images (maps, flags, globes, collages)
+        pic_lower = urllib.parse.unquote(pic.lower())
+        bad_keywords = ['flag', 'coat_of_arms', 'coat of arms', 'map', 'logo', 'locator', 'earth', 'globe', 'emblem', 'seal', 'symbol', 'icon', 'montage', 'collage', 'location', 'chart', 'graph']
+        if any(keyword in pic_lower for keyword in bad_keywords):
+            continue
+        
+        locations.append({
+            'name': label,
+            'lat': lat,
+            'lng': lng,
+            'q': label,
+            'imgUrl': img_url
+        })
+        
+    # Remove duplicates by name
+    seen = set()
+    unique_locations = []
+    for loc in locations:
+        if loc['name'] not in seen:
+            seen.add(loc['name'])
+            unique_locations.append(loc)
+    return unique_locations
+
+# EASY: Cities with population > 500,000 + famous tourist attractions
+EASY_QUERY = """
+SELECT ?item ?itemLabel ?pic ?coords
+WHERE {
+  {
+    ?item wdt:P31 wd:Q515 .
+    ?item wdt:P1082 ?population .
+    FILTER(?population > 100000)
+  } UNION {
+    ?item wdt:P31 wd:Q570116 .
+  }
+  ?item wdt:P18 ?pic .
+  ?item wdt:P625 ?coords .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en". }
+}
+LIMIT 2000
+"""
+
+# NORMAL: Towns, smaller cities, and regular landmarks
+NORMAL_QUERY = """
+SELECT ?item ?itemLabel ?pic ?coords
+WHERE {
+  {
+    ?item wdt:P31 wd:Q3957 .
+  } UNION {
+     ?item wdt:P31 wd:Q41176 .
+  }
+  ?item wdt:P18 ?pic .
+  ?item wdt:P625 ?coords .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en". }
+}
+LIMIT 2000
+"""
+
+# HARD: Villages, hamlets, very small remote places
+HARD_QUERY = """
+SELECT ?item ?itemLabel ?pic ?coords
+WHERE {
+  ?item wdt:P31 wd:Q532 .
+  ?item wdt:P18 ?pic .
+  ?item wdt:P625 ?coords .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en,fr,es". }
+}
+LIMIT 2000
+"""
+
+def main():
+    print("Fetching EASY locations...")
+    easy_data = get_wikidata(EASY_QUERY)
+    easy_locations = process_results(easy_data)
+    print(f"EASY locations fetched: {len(easy_locations)}")
+    time.sleep(2) # rate limit prevention
+
+    print("Fetching NORMAL locations...")
+    normal_data = get_wikidata(NORMAL_QUERY)
+    normal_locations = process_results(normal_data)
+    print(f"NORMAL locations fetched: {len(normal_locations)}")
+    time.sleep(2)
+
+    print("Fetching HARD locations...")
+    hard_data = get_wikidata(HARD_QUERY)
+    hard_locations = process_results(hard_data)
+    print(f"HARD locations fetched: {len(hard_locations)}")
+    
+    js_content = f"// Auto-generated from WikiData. Over 3000 high-quality locations.\n\n"
+    js_content += f"const EASY_LOCATIONS = {json.dumps(easy_locations, ensure_ascii=False, indent=2)};\n\n"
+    js_content += f"const NORMAL_LOCATIONS = {json.dumps(normal_locations, ensure_ascii=False, indent=2)};\n\n"
+    js_content += f"const HARD_LOCATIONS = {json.dumps(hard_locations, ensure_ascii=False, indent=2)};\n\n"
+    js_content += f"window.EASY_LOCATIONS = EASY_LOCATIONS;\n"
+    js_content += f"window.NORMAL_LOCATIONS = NORMAL_LOCATIONS;\n"
+    js_content += f"window.HARD_LOCATIONS = HARD_LOCATIONS;\n"
+
+    output_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'js', 'geoguessr_locations.js')
+    output_path = os.path.abspath(output_path)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(js_content)
+        
+    print(f"Successfully generated {output_path}")
+    print(f"Total: {len(easy_locations)} EASY, {len(normal_locations)} NORMAL, {len(hard_locations)} HARD")
+
+if __name__ == '__main__':
+    main()
+</file>
+
 <file path="scripts/generate-icons.js">
 #!/usr/bin/env node
 const { Jimp } = require('jimp');
@@ -2383,161 +2538,6 @@ src-tauri/
 dist/
 build/
 .wrangler/
-</file>
-
-<file path="scripts/generate_geoguessr_data.py">
-import urllib.request
-import urllib.parse
-import json
-import time
-import re
-import os
-
-ENDPOINT_URL = 'https://query.wikidata.org/sparql'
-
-def get_wikidata(query):
-    print("Fetching data from WikiData...")
-    url = ENDPOINT_URL + '?' + urllib.parse.urlencode({'query': query})
-    req = urllib.request.Request(url, headers={
-        'User-Agent': 'CovoApp/1.0 (https://covo.app; contact@example.com) python-urllib/3',
-        'Accept': 'application/sparql-results+json'
-    })
-    try:
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        raise Exception(f"Query failed: {e}")
-
-def process_results(results):
-    locations = []
-    for result in results['results']['bindings']:
-        label = result.get('itemLabel', {}).get('value', 'Unknown')
-        pic = result.get('pic', {}).get('value', '')
-        coords_str = result.get('coords', {}).get('value', '')
-        
-        # coords_str looks like: Point(139.691666666 35.689444444)
-        match = re.search(r'Point\(([^ ]+)\s+([^ ]+)\)', coords_str)
-        if not match:
-            continue
-        lng = float(match.group(1))
-        lat = float(match.group(2))
-        
-        # Convert full image URL to thumbnail URL
-        img_url = pic.replace('http://', 'https://')
-        if "Special:FilePath" in pic:
-            if pic.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-               img_url = img_url + "?width=1000"
-
-        # Q-ID label might be an entity ID if no label exists. skip those.
-        if label.startswith('http://www.wikidata.org/entity/'):
-             continue
-        
-        # Filter out obviously bad strings and images (maps, flags, globes, collages)
-        pic_lower = urllib.parse.unquote(pic.lower())
-        bad_keywords = ['flag', 'coat_of_arms', 'coat of arms', 'map', 'logo', 'locator', 'earth', 'globe', 'emblem', 'seal', 'symbol', 'icon', 'montage', 'collage', 'location', 'chart', 'graph']
-        if any(keyword in pic_lower for keyword in bad_keywords):
-            continue
-        
-        locations.append({
-            'name': label,
-            'lat': lat,
-            'lng': lng,
-            'q': label,
-            'imgUrl': img_url
-        })
-        
-    # Remove duplicates by name
-    seen = set()
-    unique_locations = []
-    for loc in locations:
-        if loc['name'] not in seen:
-            seen.add(loc['name'])
-            unique_locations.append(loc)
-    return unique_locations
-
-# EASY: Cities with population > 500,000 + famous tourist attractions
-EASY_QUERY = """
-SELECT ?item ?itemLabel ?pic ?coords
-WHERE {
-  {
-    ?item wdt:P31 wd:Q515 .
-    ?item wdt:P1082 ?population .
-    FILTER(?population > 100000)
-  } UNION {
-    ?item wdt:P31 wd:Q570116 .
-  }
-  ?item wdt:P18 ?pic .
-  ?item wdt:P625 ?coords .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en". }
-}
-LIMIT 2000
-"""
-
-# NORMAL: Towns, smaller cities, and regular landmarks
-NORMAL_QUERY = """
-SELECT ?item ?itemLabel ?pic ?coords
-WHERE {
-  {
-    ?item wdt:P31 wd:Q3957 .
-  } UNION {
-     ?item wdt:P31 wd:Q41176 .
-  }
-  ?item wdt:P18 ?pic .
-  ?item wdt:P625 ?coords .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en". }
-}
-LIMIT 2000
-"""
-
-# HARD: Villages, hamlets, very small remote places
-HARD_QUERY = """
-SELECT ?item ?itemLabel ?pic ?coords
-WHERE {
-  ?item wdt:P31 wd:Q532 .
-  ?item wdt:P18 ?pic .
-  ?item wdt:P625 ?coords .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "ja,en,fr,es". }
-}
-LIMIT 2000
-"""
-
-def main():
-    print("Fetching EASY locations...")
-    easy_data = get_wikidata(EASY_QUERY)
-    easy_locations = process_results(easy_data)
-    print(f"EASY locations fetched: {len(easy_locations)}")
-    time.sleep(2) # rate limit prevention
-
-    print("Fetching NORMAL locations...")
-    normal_data = get_wikidata(NORMAL_QUERY)
-    normal_locations = process_results(normal_data)
-    print(f"NORMAL locations fetched: {len(normal_locations)}")
-    time.sleep(2)
-
-    print("Fetching HARD locations...")
-    hard_data = get_wikidata(HARD_QUERY)
-    hard_locations = process_results(hard_data)
-    print(f"HARD locations fetched: {len(hard_locations)}")
-    
-    js_content = f"// Auto-generated from WikiData. Over 3000 high-quality locations.\n\n"
-    js_content += f"const EASY_LOCATIONS = {json.dumps(easy_locations, ensure_ascii=False, indent=2)};\n\n"
-    js_content += f"const NORMAL_LOCATIONS = {json.dumps(normal_locations, ensure_ascii=False, indent=2)};\n\n"
-    js_content += f"const HARD_LOCATIONS = {json.dumps(hard_locations, ensure_ascii=False, indent=2)};\n\n"
-    js_content += f"window.EASY_LOCATIONS = EASY_LOCATIONS;\n"
-    js_content += f"window.NORMAL_LOCATIONS = NORMAL_LOCATIONS;\n"
-    js_content += f"window.HARD_LOCATIONS = HARD_LOCATIONS;\n"
-
-    output_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'js', 'geoguessr_locations.js')
-    output_path = os.path.abspath(output_path)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(js_content)
-        
-    print(f"Successfully generated {output_path}")
-    print(f"Total: {len(easy_locations)} EASY, {len(normal_locations)} NORMAL, {len(hard_locations)} HARD")
-
-if __name__ == '__main__':
-    main()
 </file>
 
 <file path="src-tauri/capabilities/default.json">
@@ -5310,6 +5310,191 @@ if (typeof window !== 'undefined') {
     }
 </file>
 
+<file path="public/js/utils.js">
+/**
+ * ユーティリティ関数群 (utils.js)
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
+ */
+
+/**
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
+ * @param {ArrayBuffer} buf - 変換元のバイナリデータ
+ * @returns {string} Base64文字列
+ */
+export function _abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
+ * @param {string} b64 - 変換元のBase64文字列
+ * @returns {ArrayBuffer} 復元されたバイナリデータ
+ */
+export function _b64ToAb(b64) {
+  try {
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
+    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
+    const bin = atob(norm);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  } catch (e) {
+    console.error("Base64 decode failed:", e);
+    return new ArrayBuffer(0);
+  }
+}
+
+/**
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
+ * @param {number} bytes - バイト数
+ * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
+ * @returns {string} フォーマットされた文字列
+ */
+export function formatBytes(bytes, decimals = 2) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * メッセージオブジェクトから正確なタイムスタンプを取得
+ * @param {Object} msg - メッセージオブジェクト
+ * @returns {number} タイムスタンプ(ミリ秒)
+ */
+export function getMsgTimestamp(msg) {
+  if (!msg) return Date.now();
+  if (msg.createdAt) {
+    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
+    if (typeof msg.createdAt === 'number') return msg.createdAt;
+    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
+      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.createdAt === 'string') {
+      const parsed = new Date(msg.createdAt).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+  if (msg.timestamp) {
+    if (typeof msg.timestamp === 'number') return msg.timestamp;
+    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
+    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
+      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
+    }
+    if (typeof msg.timestamp === 'string') {
+      const parsed = new Date(msg.timestamp).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+  return Date.now();
+}
+
+/**
+ * テキストをクリップボードに安全にコピー
+ * @param {string} txt - コピーするテキスト
+ */
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
+  }
+}
+
+/**
+ * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
+ * @param {string} txt - コピーするテキスト
+ */
+export function _execCopyFallback(txt) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy error', err);
+    return false;
+  }
+}
+
+/**
+ * メールアドレスの最初の1文字を取得
+ * @param {string} email - メールアドレス
+ * @returns {string} 最初の1文字(大文字) または '?'
+ */
+export function emailInitial(email) {
+  if (!email) return '?';
+  return email.charAt(0).toUpperCase();
+}
+
+/**
+ * HEICファイルをJPEGに変換
+ * @param {File} file - 処理対象のファイル
+ * @returns {Promise<File>} 処理後のファイル
+ */
+export async function processHeicFile(file) {
+  if (!file) return null;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  
+  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
+    try {
+      if (typeof heic2any === 'undefined') {
+        console.warn("heic2any is not loaded");
+        return file;
+      }
+      console.log("HEIC file detected. Converting to JPEG...");
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      console.error("HEIC conversion failed:", e);
+      return file;
+    }
+  }
+  return file;
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
+}
+</file>
+
 <file path="public/auth-desktop.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -5594,862 +5779,6 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
     xhr.send(fd);
   });
-}
-</file>
-
-<file path="public/js/ui_helpers.js">
-/**
- * UI補助機能 (ui_helpers.js)
- * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
- */
-
-/**
- * 画面上にトースト（通知ポップアップ）を表示
- * @param {string} msg - 表示するメッセージ
- * @param {string} type - "info", "success", "error"
- */
-export function alertMessage(msg, type = "info") {
-  const stack = document.getElementById("notifStack");
-  if (!stack) return;
-  const box = document.createElement("div");
-  let colorClass = "bg-gray-800 text-white";
-  if (type === "error") colorClass = "bg-red-600 text-white";
-  else if (type === "success") colorClass = "bg-emerald-600 text-white";
-  
-  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
-  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  
-  let icon = '<i class="fas fa-info-circle"></i>';
-  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
-  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
-  
-  box.innerHTML = `${icon}<span>${msg}</span>`;
-  stack.appendChild(box);
-  setTimeout(() => {
-    box.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => box.remove(), 200);
-  }, 2800);
-}
-
-/**
- * アバター高解像度拡大表示（Discord風ライトボックス）
- * @param {string} url - アバター画像のURL
- * @param {string} nickname - ユーザーニックネーム
- * @param {string} tag - ユーザータグ (#1234)
- */
-export function openAvatarLightbox(url, nickname = '', tag = '') {
-  const lb = document.getElementById("avatarLightbox");
-  const img = document.getElementById("avatarLightboxImg");
-  const initialEl = document.getElementById("avatarLightboxInitial");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const tagEl = document.getElementById("avatarLightboxUserTag");
-  
-  if (!lb) return;
-
-  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
-  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
-
-  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
-
-  if (isUsable) {
-    if (img) {
-      img.src = url;
-      img.style.display = 'block';
-    }
-    if (initialEl) initialEl.style.display = 'none';
-  } else {
-    if (img) img.style.display = 'none';
-    if (initialEl) {
-      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
-      initialEl.style.display = 'block';
-    }
-  }
-
-  lb.style.display = "flex";
-  lb.classList.remove("hidden");
-}
-
-export function closeAvatarLightbox() {
-  const lb = document.getElementById("avatarLightbox");
-  if (lb) {
-    lb.style.display = "none";
-    lb.classList.add("hidden");
-  }
-}
-
-export function downloadAvatarLightboxImage() {
-  const img = document.getElementById("avatarLightboxImg");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const url = img?.src;
-  if (url && url.startsWith('http')) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.closeAvatarLightbox = closeAvatarLightbox;
-  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
-}
-
-/**
- * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
- */
-let audioCtx = null;
-export function playNotificationSound() {
-  try {
-    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (!soundEnabled || !notifEnabled) return;
-
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const play = () => {
-      const now = audioCtx.currentTime;
-      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
-      notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + i * 0.09);
-        gain.gain.setValueAtTime(0, now + i * 0.09);
-        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(now + i * 0.09);
-        osc.stop(now + i * 0.09 + 0.5);
-      });
-    };
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(play).catch(() => {});
-    } else {
-      play();
-    }
-  } catch (e) { }
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.alertMessage = alertMessage;
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.playNotificationSound = playNotificationSound;
-}
-</file>
-
-<file path="public/js/utils.js">
-/**
- * ユーティリティ関数群 (utils.js)
- * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
- */
-
-/**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
- * @param {ArrayBuffer} buf - 変換元のバイナリデータ
- * @returns {string} Base64文字列
- */
-export function _abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-  }
-  return btoa(bin);
-}
-
-/**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
- * @param {string} b64 - 変換元のBase64文字列
- * @returns {ArrayBuffer} 復元されたバイナリデータ
- */
-export function _b64ToAb(b64) {
-  try {
-    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
-    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    const pad = norm.length % 4;
-    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
-    if (pad === 2) norm += "==";
-    else if (pad === 3) norm += "=";
-    const bin = atob(norm);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  } catch (e) {
-    console.error("Base64 decode failed:", e);
-    return new ArrayBuffer(0);
-  }
-}
-
-/**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
- * @param {number} bytes - バイト数
- * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列
- */
-export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-/**
- * メッセージオブジェクトから正確なタイムスタンプを取得
- * @param {Object} msg - メッセージオブジェクト
- * @returns {number} タイムスタンプ(ミリ秒)
- */
-export function getMsgTimestamp(msg) {
-  if (!msg) return Date.now();
-  if (msg.createdAt) {
-    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
-    if (typeof msg.createdAt === 'number') return msg.createdAt;
-    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
-      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.createdAt === 'string') {
-      const parsed = new Date(msg.createdAt).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  if (msg.timestamp) {
-    if (typeof msg.timestamp === 'number') return msg.timestamp;
-    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
-    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
-      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.timestamp === 'string') {
-      const parsed = new Date(msg.timestamp).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  return Date.now();
-}
-
-/**
- * テキストをクリップボードに安全にコピー
- * @param {string} txt - コピーするテキスト
- */
-export async function safeCopy(txt) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(txt);
-      return true;
-    } else {
-      return _execCopyFallback(txt);
-    }
-  } catch (err) {
-    console.warn("Clipboard API failed, fallback to execCommand", err);
-    return _execCopyFallback(txt);
-  }
-}
-
-/**
- * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
- * @param {string} txt - コピーするテキスト
- */
-export function _execCopyFallback(txt) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = txt;
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy error', err);
-    return false;
-  }
-}
-
-/**
- * メールアドレスの最初の1文字を取得
- * @param {string} email - メールアドレス
- * @returns {string} 最初の1文字(大文字) または '?'
- */
-export function emailInitial(email) {
-  if (!email) return '?';
-  return email.charAt(0).toUpperCase();
-}
-
-/**
- * HEICファイルをJPEGに変換
- * @param {File} file - 処理対象のファイル
- * @returns {Promise<File>} 処理後のファイル
- */
-export async function processHeicFile(file) {
-  if (!file) return null;
-  const name = file.name || '';
-  const ext = name.split('.').pop().toLowerCase();
-  
-  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
-    try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
-      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
-      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
-      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
-    } catch (e) {
-      console.error("HEIC conversion failed:", e);
-      return file;
-    }
-  }
-  return file;
-}
-
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window._abToB64 = _abToB64;
-  window._b64ToAb = _b64ToAb;
-  window.formatBytes = formatBytes;
-  window.getMsgTimestamp = getMsgTimestamp;
-  window.safeCopy = safeCopy;
-  window._execCopyFallback = _execCopyFallback;
-  window.emailInitial = emailInitial;
-  window.processHeicFile = processHeicFile;
-}
-</file>
-
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-
-  switch (event.data.type) {
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
-}
-
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
-    if (activeClients.length === 0) {
-      // 全クライアントが非表示または存在しない → offlineビーコン
-      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
-  if (typeof body === 'string') {
-    if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::')) {
-        const senderPart = body.split(': enc::')[0];
-        body = `${senderPart}: 新しいメッセージがあります`;
-      } else {
-        body = '新しいメッセージがあります';
-      }
-    }
-  }
-  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
-    title = 'Covo';
-  }
-
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-
-  return self.registration.showNotification(title, notificationOptions);
-});
-
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
-</file>
-
-<file path="public/js/debug_ui.js">
-import { safeCopy } from './utils.js';
-import { alertMessage } from './ui_helpers.js';
-
-export function _runShadowHunter() {
-      const lines = [];
-      try {
-        const desc = (el) => {
-          if (!el || !el.tagName) return '?';
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-          return el.tagName.toLowerCase() + id + cls;
-        };
-        // 影・境界・グラデを持つか判定し、持つなら記録
-        const inspect = (el, tag) => {
-          if (!el) return;
-          const cs = getComputedStyle(el);
-          const hits = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
-          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
-          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
-          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
-          // ::after / ::before も調べる
-          for (const pseudo of ['::before', '::after']) {
-            const pcs = getComputedStyle(el, pseudo);
-            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
-              const ph = [];
-              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
-              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
-              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
-              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
-            }
-          }
-          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
-        };
-
-        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
-        const input = document.getElementById('messageInputArea');
-        const nav = document.getElementById('mobileBottomNav');
-        inspect(input, 'IN');
-        inspect(input && input.parentElement, 'IN.parent');
-        inspect(nav, 'NAV');
-        inspect(document.getElementById('chatArea'), 'chat');
-        inspect(document.getElementById('messageInputInner'), 'inner');
-
-        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
-        if (input) {
-          const ir = input.getBoundingClientRect();
-          const x = Math.round(ir.left + ir.width / 2);
-          for (const dy of [-2, 0, 2, 4, 8]) {
-            const y = Math.round(ir.bottom + dy);
-            const stack = document.elementsFromPoint(x, y) || [];
-            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
-          }
-        }
-
-        const uniq = [...new Set(lines)];
-        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-
-export function _updateLayoutDebugUI() {
-  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
-  if (!els.length) return;
-  const txt = _runShadowHunter();
-  const n = txt.split('\n').length;
-  els.forEach(el => {
-    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
-    el.style.cursor = 'pointer';
-    el.style.textDecoration = 'underline';
-    el.style.whiteSpace = 'normal';
-    el.title = 'タップでコピー';
-    el.onclick = () => copyDebugText(txt, el);
-  });
-}
-
-let _inspectHL = null;
-
-export function __clearInspectHighlight() {
-      if (_inspectHL) { _inspectHL.style.display = 'none'; }
-    }
-
-export function __showInspectHighlight(rect) {
-      if (!_inspectHL) {
-        _inspectHL = document.createElement('div');
-        _inspectHL.setAttribute('data-inspect-ignore', '1');
-        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
-        document.body.appendChild(_inspectHL);
-      }
-      _inspectHL.style.display = 'block';
-      _inspectHL.style.left = rect.left + 'px';
-      _inspectHL.style.top = rect.top + 'px';
-      _inspectHL.style.width = rect.width + 'px';
-      _inspectHL.style.height = rect.height + 'px';
-    }
-
-export function _inspectPoint(x, y) {
-      try {
-        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
-        const out = [];
-        stack.forEach((el, i) => {
-          const cs = getComputedStyle(el);
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
-          const name = el.tagName.toLowerCase() + id + cls;
-          const r = el.getBoundingClientRect();
-          const props = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
-          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
-          // 擬似要素
-          for (const ps of ['::before', '::after']) {
-            const p = getComputedStyle(el, ps);
-            if (p.content && p.content !== 'none' && p.content !== 'normal') {
-              const pp = [];
-              if (p.boxShadow !== 'none') pp.push('shadow');
-              if (p.backgroundImage !== 'none') pp.push('bg');
-              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
-              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
-            }
-          }
-          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
-        });
-        return out.join('\n');
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-
-export function _lineColor(line) {
-      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
-      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
-      if (line.includes('[E2EE]')) return '#34d399';
-      if (line.includes('[INFO]')) return '#60a5fa';
-      return '#cbd5e1';
-    }
-
-export function _appendConsoleLine(line) {
-      const body = document.getElementById('devConsoleBody');
-      if (!body) return;
-      const div = document.createElement('div');
-      div.textContent = line;
-      div.style.color = _lineColor(line);
-      div.style.padding = '2px 0';
-      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
-      body.appendChild(div);
-      body.scrollTop = body.scrollHeight;
-    }
-
-let _inspectMode = false;
-export function setInspectMode(enabled) {
-  _inspectMode = !!enabled;
-  const bar = document.getElementById('inspectModeBar');
-  const pcCb = document.getElementById('pcToggleInspectMode');
-  const mobileCb = document.getElementById('toggleInspectMode');
-  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
-  if (pcCb) pcCb.checked = _inspectMode;
-  if (mobileCb) mobileCb.checked = _inspectMode;
-  if (!_inspectMode) {
-    __clearInspectHighlight();
-  }
-}
-
-export function toggleDevConsole() {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel) return;
-  const isHidden = panel.style.display === 'none' || !panel.style.display;
-  panel.style.display = isHidden ? 'flex' : 'none';
-  if (isHidden) {
-    const body = document.getElementById('devConsoleBody');
-    if (body) {
-      body.innerHTML = '';
-      const logs = window._covoLogs || [];
-      if (logs.length === 0) {
-        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
-      } else {
-        logs.forEach(line => _appendConsoleLine(line));
-      }
-    }
-  }
-}
-
-export function clearDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  if (body) body.innerHTML = '';
-  window._covoLogs = [];
-}
-
-export function copyDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
-  if (!text || text.trim() === '') {
-    alertMessage('コピーするコンソールログがありません', 'info');
-    return;
-  }
-  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
-}
-
-export function copyDebugText(txt) {
-  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
-}
-
-export function getSystemDiagnosticInfo() {
-  const info = {
-    timestamp: new Date().toLocaleString('ja-JP'),
-    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
-    userAgent: navigator.userAgent,
-    language: navigator.language || 'ja',
-    online: navigator.onLine,
-    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
-    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
-    screenSize: `${window.innerWidth}x${window.innerHeight}`,
-    viewport: `${window.innerWidth}x${window.innerHeight}`,
-    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
-    memory: (window.performance && window.performance.memory) ? {
-      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
-      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
-      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
-    } : null,
-    network: navigator.connection ? {
-      type: navigator.connection.effectiveType || 'unknown',
-      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
-      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
-    } : null,
-    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
-    localStorageCount: (() => {
-      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
-    })()
-  };
-  return info;
-}
-
-export function formatDiagnosticMarkdown(info) {
-  let md = `### Covo システム診断レポート\n`;
-  md += `- **記録日時**: ${info.timestamp}\n`;
-  md += `- **アプリ種別**: ${info.appType}\n`;
-  md += `- **アプリバージョン**: ${info.appVersion}\n`;
-  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
-  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
-  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
-  if (info.memory) {
-    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
-  }
-  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
-  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
-  return md;
-}
-
-export function copySystemDiagnosticReport() {
-  const info = getSystemDiagnosticInfo();
-  const md = formatDiagnosticMarkdown(info);
-  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
-}
-
-export function copyFullDiagnosticAndConsoleReport() {
-  const info = getSystemDiagnosticInfo();
-  let md = formatDiagnosticMarkdown(info);
-  const logs = window._covoLogs || [];
-  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
-  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
-}
-
-if (typeof window !== 'undefined') {
-  window.setInspectMode = setInspectMode;
-  window.toggleDevConsole = toggleDevConsole;
-  window.clearDevConsole = clearDevConsole;
-  window.copyDevConsole = copyDevConsole;
-  window.copyDebugText = copyDebugText;
-  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
-  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
-  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 </file>
 
@@ -6991,6 +6320,677 @@ if (typeof window !== 'undefined') {
   window.startNewLocation = startNewLocation;
   window.submitGuess = submitGuess;
   window.closeResultOverlay = closeResultOverlay;
+}
+</file>
+
+<file path="public/js/ui_helpers.js">
+/**
+ * UI補助機能 (ui_helpers.js)
+ * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
+ */
+
+/**
+ * 画面上にトースト（通知ポップアップ）を表示
+ * @param {string} msg - 表示するメッセージ
+ * @param {string} type - "info", "success", "error"
+ */
+export function alertMessage(msg, type = "info") {
+  const stack = document.getElementById("notifStack");
+  if (!stack) return;
+  const box = document.createElement("div");
+  let colorClass = "bg-gray-800 text-white";
+  if (type === "error") colorClass = "bg-red-600 text-white";
+  else if (type === "success") colorClass = "bg-emerald-600 text-white";
+  
+  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
+  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+  
+  let icon = '<i class="fas fa-info-circle"></i>';
+  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
+  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
+  
+  box.innerHTML = `${icon}<span>${msg}</span>`;
+  stack.appendChild(box);
+  setTimeout(() => {
+    box.style.animation = "fadeIn 0.2s ease reverse forwards";
+    setTimeout(() => box.remove(), 200);
+  }, 2800);
+}
+
+/**
+ * アバター高解像度拡大表示（Discord風ライトボックス）
+ * @param {string} url - アバター画像のURL
+ * @param {string} nickname - ユーザーニックネーム
+ * @param {string} tag - ユーザータグ (#1234)
+ */
+export function openAvatarLightbox(url, nickname = '', tag = '') {
+  const lb = document.getElementById("avatarLightbox");
+  const img = document.getElementById("avatarLightboxImg");
+  const initialEl = document.getElementById("avatarLightboxInitial");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const tagEl = document.getElementById("avatarLightboxUserTag");
+  
+  if (!lb) return;
+
+  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
+  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
+
+  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
+
+  if (isUsable) {
+    if (img) {
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (initialEl) initialEl.style.display = 'none';
+  } else {
+    if (img) img.style.display = 'none';
+    if (initialEl) {
+      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
+      initialEl.style.display = 'block';
+    }
+  }
+
+  lb.style.display = "flex";
+  lb.classList.remove("hidden");
+}
+
+export function closeAvatarLightbox() {
+  const lb = document.getElementById("avatarLightbox");
+  if (lb) {
+    lb.style.display = "none";
+    lb.classList.add("hidden");
+  }
+}
+
+export function downloadAvatarLightboxImage() {
+  const img = document.getElementById("avatarLightboxImg");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const url = img?.src;
+  if (url && url.startsWith('http')) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.closeAvatarLightbox = closeAvatarLightbox;
+  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
+}
+
+/**
+ * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
+ */
+let audioCtx = null;
+export function playNotificationSound() {
+  try {
+    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    if (!soundEnabled || !notifEnabled) return;
+
+    if (!audioCtx || audioCtx.state === 'closed') {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const play = () => {
+      const now = audioCtx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.5);
+      });
+    };
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
+  } catch (e) { }
+}
+
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.alertMessage = alertMessage;
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.playNotificationSound = playNotificationSound;
+}
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+
+  switch (event.data.type) {
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
+    if (activeClients.length === 0) {
+      // 全クライアントが非表示または存在しない → offlineビーコン
+      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::')) {
+        const senderPart = body.split(': enc::')[0];
+        body = `${senderPart}: 新しいメッセージがあります`;
+      } else {
+        body = '新しいメッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
+    title = 'Covo';
+  }
+
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+
+  return self.registration.showNotification(title, notificationOptions);
+});
+
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
+</file>
+
+<file path="public/js/debug_ui.js">
+import { safeCopy } from './utils.js';
+import { alertMessage } from './ui_helpers.js';
+
+export function _runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+export function _updateLayoutDebugUI() {
+  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+  if (!els.length) return;
+  const txt = _runShadowHunter();
+  const n = txt.split('\n').length;
+  els.forEach(el => {
+    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+    el.style.cursor = 'pointer';
+    el.style.textDecoration = 'underline';
+    el.style.whiteSpace = 'normal';
+    el.title = 'タップでコピー';
+    el.onclick = () => copyDebugText(txt, el);
+  });
+}
+
+let _inspectHL = null;
+
+export function __clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+
+export function __showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+
+export function _inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+
+export function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
+      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      if (line.includes('[INFO]')) return '#60a5fa';
+      return '#cbd5e1';
+    }
+
+export function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      div.style.padding = '2px 0';
+      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+      body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
+    }
+
+let _inspectMode = false;
+export function setInspectMode(enabled) {
+  _inspectMode = !!enabled;
+  const bar = document.getElementById('inspectModeBar');
+  const pcCb = document.getElementById('pcToggleInspectMode');
+  const mobileCb = document.getElementById('toggleInspectMode');
+  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+  if (pcCb) pcCb.checked = _inspectMode;
+  if (mobileCb) mobileCb.checked = _inspectMode;
+  if (!_inspectMode) {
+    __clearInspectHighlight();
+  }
+}
+
+export function toggleDevConsole() {
+  const panel = document.getElementById('devConsolePanel');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    const body = document.getElementById('devConsoleBody');
+    if (body) {
+      body.innerHTML = '';
+      const logs = window._covoLogs || [];
+      if (logs.length === 0) {
+        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
+      } else {
+        logs.forEach(line => _appendConsoleLine(line));
+      }
+    }
+  }
+}
+
+export function clearDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  if (body) body.innerHTML = '';
+  window._covoLogs = [];
+}
+
+export function copyDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  if (!text || text.trim() === '') {
+    alertMessage('コピーするコンソールログがありません', 'info');
+    return;
+  }
+  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
+}
+
+export function copyDebugText(txt) {
+  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+
+export function getSystemDiagnosticInfo() {
+  const info = {
+    timestamp: new Date().toLocaleString('ja-JP'),
+    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    userAgent: navigator.userAgent,
+    language: navigator.language || 'ja',
+    online: navigator.onLine,
+    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    screenSize: `${window.innerWidth}x${window.innerHeight}`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
+    memory: (window.performance && window.performance.memory) ? {
+      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
+      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
+      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
+    } : null,
+    network: navigator.connection ? {
+      type: navigator.connection.effectiveType || 'unknown',
+      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
+      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
+    } : null,
+    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
+    localStorageCount: (() => {
+      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
+    })()
+  };
+  return info;
+}
+
+export function formatDiagnosticMarkdown(info) {
+  let md = `### Covo システム診断レポート\n`;
+  md += `- **記録日時**: ${info.timestamp}\n`;
+  md += `- **アプリ種別**: ${info.appType}\n`;
+  md += `- **アプリバージョン**: ${info.appVersion}\n`;
+  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
+  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
+  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
+  if (info.memory) {
+    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
+  }
+  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
+  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
+  return md;
+}
+
+export function copySystemDiagnosticReport() {
+  const info = getSystemDiagnosticInfo();
+  const md = formatDiagnosticMarkdown(info);
+  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
+}
+
+export function copyFullDiagnosticAndConsoleReport() {
+  const info = getSystemDiagnosticInfo();
+  let md = formatDiagnosticMarkdown(info);
+  const logs = window._covoLogs || [];
+  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
+  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
+}
+
+if (typeof window !== 'undefined') {
+  window.setInspectMode = setInspectMode;
+  window.toggleDevConsole = toggleDevConsole;
+  window.clearDevConsole = clearDevConsole;
+  window.copyDevConsole = copyDevConsole;
+  window.copyDebugText = copyDebugText;
+  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 </file>
 
@@ -7543,7 +7543,7 @@ if (typeof window !== 'undefined') {
       "$appId": {
         "settings": {
           ".read": "auth != null",
-          ".write": "false"
+          ".write": false
         },
         "latestAnnouncement": {
           ".read": "auth != null",
@@ -7552,19 +7552,24 @@ if (typeof window !== 'undefined') {
         "servers": {
           "$serverId": {
             ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-            ".write": "auth != null",
             "members": {
               "$uid": {
-                ".write": "auth != null && auth.uid === $uid"
+                ".write": "auth != null && (auth.uid === $uid || !newData.exists())"
               }
             },
             "rooms": {
               "$roomId": {
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+                ".write": "auth != null && !newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()",
                 "messages": {
                   ".indexOn": ["timestamp"],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())"
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || !data.child('senderId').exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists())))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && auth.uid === $reactUid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                      }
+                    }
                   }
                 },
                 "typing": {
@@ -7584,10 +7589,14 @@ if (typeof window !== 'undefined') {
         "dm_messages": {
           "$dmId": {
             ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".write": "auth != null && $dmId.contains(auth.uid)",
             ".indexOn": ["timestamp"],
             "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid)"
+              ".write": "auth != null && $dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || !data.child('senderId').exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists())))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && auth.uid === $reactUid && $dmId.contains(auth.uid)"
+                }
+              }
             }
           }
         },
@@ -7610,7 +7619,15 @@ if (typeof window !== 'undefined') {
         "users": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
+            ".write": "auth != null && auth.uid === $uid",
+            "readStates": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid",
+              "$roomId": {
+                ".read": "auth != null && auth.uid === $uid",
+                ".write": "auth != null && auth.uid === $uid"
+              }
+            }
           }
         }
       }
@@ -9286,16 +9303,17 @@ pub fn run() {
       align-items: center;
       gap: 4px;
       background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 0 0 0 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0 0 0 12px;
+      min-height: 44px;
       transition: border-color 0.2s, box-shadow 0.2s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     #messageInputInner:focus-within {
-      border-color: #9ca3af;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border-color: #5865f2;
+      box-shadow: 0 0 0 1px #5865f2;
     }
 
     /* ===== スタンプ ===== */
@@ -9314,7 +9332,7 @@ pub fn run() {
     /* スタンプピッカー */
     #stickerPicker {
       position: fixed; z-index: 99996; display: none;
-      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px;
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 16px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.18);
       width: 360px; max-width: calc(100vw - 20px);
       height: 420px; max-height: 60vh; flex-direction: column; overflow: hidden;
@@ -9324,7 +9342,7 @@ pub fn run() {
     body.discord-dark-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
     body.discord-dark-theme #stickerPicker { background: #2b2d31; border-color: #383a40; }
     .sticker-tabs {
-      display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid #f3f4f6;
+      display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid #f3f4f6;
       overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
     }
     .sticker-tabs::-webkit-scrollbar { display: none; }
@@ -9332,9 +9350,10 @@ pub fn run() {
     body.discord-dark-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
     body.discord-dark-theme .sticker-tabs { border-bottom-color: #1f2023; }
     .sticker-tab {
-      flex-shrink: 0; width: 34px; height: 34px; border: none; background: transparent;
-      border-radius: 9px; cursor: pointer; font-size: 1.1rem; display: flex;
+      flex-shrink: 0; width: 36px; height: 36px; border: none; background: transparent;
+      border-radius: 8px; cursor: pointer; font-size: 1.1rem; display: flex;
       align-items: center; justify-content: center; color: #9ca3af; transition: background 0.12s;
+      aspect-ratio: 1 / 1;
     }
     .sticker-tab.active { background: #eef2ff; }
     body.dark-server-theme .sticker-tab.active,
@@ -9346,7 +9365,7 @@ pub fn run() {
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-content: start;
     }
     .sticker-cell {
-      aspect-ratio: 1; border: none; background: transparent; border-radius: 14px;
+      aspect-ratio: 1 / 1; border: none; background: transparent; border-radius: 12px;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: background 0.12s, transform 0.08s; position: relative; -webkit-tap-highlight-color: transparent;
     }
@@ -9370,14 +9389,15 @@ pub fn run() {
     .sticker-cell.is-fav .sticker-fav-star { display: block; }
     .sticker-empty { grid-column: 1/-1; text-align: center; color: #9ca3af; font-size: 0.8rem; padding: 24px 0; }
 
-    /* 独立アクションボタン（ファイル添付・メンション） */
+    /* 独立アクションボタン（正方形・Discord調和） */
     .input-side-btn {
       background: #ffffff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 14px;
-      width: 40px;
-      height: 43px;
-      color: #9ca3af;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      aspect-ratio: 1 / 1;
+      color: #64748b;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -9385,20 +9405,20 @@ pub fn run() {
       flex-shrink: 0;
       font-size: 1rem;
       transition: color 0.15s, background-color 0.15s, border-color 0.15s;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     .input-side-btn:hover:not(:disabled) {
-      color: #374151;
-      background-color: #f3f4f6;
-      border-color: #d1d5db;
+      color: #0f172a;
+      background-color: #f1f5f9;
+      border-color: #cbd5e1;
     }
 
     .input-side-btn:disabled {
-      color: #d1d5db;
+      color: #cbd5e1;
       cursor: not-allowed;
-      background: #fafafa;
-      border-color: #f3f4f6;
+      background: #f8fafc;
+      border-color: #f1f5f9;
     }
 
     /* 設定モーダルのスクロールバーを非表示 */
@@ -9907,6 +9927,10 @@ pub fn run() {
     /* === DM & フレンド機能 UI スタイル (Discord完全準拠) === */
     .dm-tab-btn {
       color: #4e5058;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
       transition: all 0.15s ease;
     }
     .dm-tab-btn:hover:not(.active) {
@@ -9938,9 +9962,9 @@ pub fn run() {
     .dm-sidebar-item {
       display: flex;
       align-items: center;
-      gap: 0.65rem;
-      padding: 0.5rem 0.65rem;
-      border-radius: 0.5rem;
+      gap: 0.75rem;
+      padding: 8px 10px;
+      border-radius: 6px;
       cursor: pointer;
       transition: all 0.15s ease;
       position: relative;
@@ -9974,15 +9998,23 @@ pub fn run() {
       color: #ffffff !important;
     }
     .dm-sidebar-item .dm-close-btn {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
       opacity: 0;
-      transition: opacity 0.15s ease;
+      transition: opacity 0.15s ease, background-color 0.15s;
       color: #94a3b8;
+      aspect-ratio: 1 / 1;
     }
     .dm-sidebar-item:hover .dm-close-btn {
       opacity: 1;
     }
     .dm-sidebar-item .dm-close-btn:hover {
       color: #ef4444;
+      background-color: rgba(239, 68, 68, 0.1);
     }
 
     /* フレンドカード (Discord本家準拠のフラットリスト行) */
@@ -9990,8 +10022,8 @@ pub fn run() {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.65rem 0.85rem;
-      border-radius: 0.5rem;
+      padding: 10px 12px;
+      border-radius: 8px;
       border-top: 1px solid #e3e5e8;
       background: transparent;
       transition: background-color 0.15s ease;
@@ -10015,6 +10047,7 @@ pub fn run() {
     .friend-action-btn {
       width: 36px;
       height: 36px;
+      aspect-ratio: 1 / 1;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -10025,6 +10058,7 @@ pub fn run() {
       transition: all 0.15s ease;
       cursor: pointer;
       border: none;
+      flex-shrink: 0;
     }
     .friend-action-btn:hover {
       background: #d7d9dc !important;
@@ -12828,24 +12862,28 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       #messageInputArea .flex.items-end {
         align-items: center !important;
       }
-      /* mobile: ファイル添付ボタンを入力ボックスと同じ「枠線なし・薄グレー・同じ高さ」に統一。
-         送信ボタン(.send-btn)は主要アクションなので対象外。 */
-      #fileAttachButton, #stickerButton {
+      /* mobile: ファイル添付・スタンプボタンのアスペクト比と位置を整流 */
+      #fileAttachButton, #stickerButton, #plusMenuButton, #sendMessageButton {
         border: 0 none !important;
-        background: #f3f4f6 !important;
         box-shadow: none !important;
-        color: #6b7280 !important;
-        height: 42px !important;
+        width: 44px !important;
+        height: 44px !important;
+        aspect-ratio: 1 / 1 !important;
+        border-radius: 8px !important;
       }
-      #fileAttachButton:disabled, #stickerButton:disabled {
+      #fileAttachButton, #stickerButton, #plusMenuButton {
+        background: #f3f4f6 !important;
+        color: #6b7280 !important;
+      }
+      #fileAttachButton:disabled, #stickerButton:disabled, #plusMenuButton:disabled {
         background: #f3f4f6 !important;
         color: #c4c8ce !important;
       }
-      body.dark-server-theme #fileAttachButton, body.dark-server-theme #stickerButton {
+      body.dark-server-theme #fileAttachButton, body.dark-server-theme #stickerButton, body.dark-server-theme #plusMenuButton {
         background: #0f172a !important;
         color: #94a3b8 !important;
       }
-      body.dark-server-theme #fileAttachButton:disabled, body.dark-server-theme #stickerButton:disabled {
+      body.dark-server-theme #fileAttachButton:disabled, body.dark-server-theme #stickerButton:disabled, body.dark-server-theme #plusMenuButton:disabled {
         background: #0f172a !important;
         color: #475569 !important;
       }
@@ -15112,7 +15150,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           dmKeyObj = dmIdOrKey;
         } else if (typeof dmIdOrKey === 'string') {
           dmId = dmIdOrKey;
-          dmKeyObj = await _getOrCreateDmKey(dmIdOrKey, participants);
+          dmKeyObj = _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmIdOrKey, participants, 2500);
         }
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
 
@@ -15130,6 +15168,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch(e) {}
         }
 
+        // バージョン不一致時の総当たり復号フォールバック
         for (const ver in dmKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
           try {
@@ -15151,17 +15190,19 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     /**
-     * DMメッセージ配列の一括復号
+     * DMメッセージ配列の一括復号（初期ロード時の未復号メッセージを安全に再復号）
      */
     export async function _decryptDmMessagesInPlace(messages, dmId, participants) {
       if (!_subtleOK || !Array.isArray(messages)) return;
+      const dmKeyObj = await _getDmKeyWithWait(dmId, participants, 2500);
+
       await Promise.all(messages.map(async (m) => {
         if (!m) return;
 
         // DMリプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
           try {
-            const decReply = await _decryptDmText(m.replyTo.text, dmId, participants);
+            const decReply = await _decryptDmText(m.replyTo.text, dmKeyObj || dmId, participants);
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
               m.replyTo.text = decReply;
             }
@@ -15169,7 +15210,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
 
         if (typeof m.text !== "string") return;
-        if (m._decrypted) return;
+        if (m._decrypted && !m._decryptedErrorText) return;
 
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
@@ -15178,7 +15219,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
         if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
-          const decrypted = await _decryptDmText(textToDecrypt, dmId, participants);
+          const decrypted = await _decryptDmText(textToDecrypt, dmKeyObj || dmId, participants);
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
             m._decryptedErrorText = decrypted;
             m._decrypted = false;
@@ -20391,14 +20432,26 @@ async function handleD1Api(request, env, url) {
 
   <!-- カスタム確認ダイアログ -->
   <div id="customConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in">
-      <p id="customConfirmMessage" class="text-gray-800 font-medium mb-1 text-base leading-snug"></p>
-      <p id="customConfirmSub" class="text-gray-500 text-sm mb-6 hidden"></p>
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
+      <p id="customConfirmMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-1 text-base leading-snug"></p>
+      <p id="customConfirmSub" class="text-gray-500 dark:text-gray-400 text-xs mb-6 hidden leading-relaxed"></p>
       <div class="flex gap-3 mt-4">
         <button id="customConfirmCancel"
-          class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
+          class="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
         <button id="customConfirmOk"
-          class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">確認</button>
+          class="flex-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-sm shadow-xs">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- カスタム入力プロンプトダイアログ -->
+  <div id="customPromptModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
+      <p id="customPromptMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-3 text-base leading-snug"></p>
+      <input type="text" id="customPromptInput" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all mb-4" />
+      <div class="flex gap-3">
+        <button id="customPromptCancel" class="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
+        <button id="customPromptOk" class="flex-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-sm shadow-xs">決定</button>
       </div>
     </div>
   </div>
@@ -22185,19 +22238,26 @@ function initializeFirebase() {
       auth.languageCode = 'ja';
       _flushPendingTelemetryErrors();
       
-      // Safari / モバイル向け Google リダイレクト認証結果の受信
-      getRedirectResult(auth).then((result) => {
+      // Safari / モバイル向け Google リダイレクト認証結果の受信 (ログイン / 連携 両対応)
+      getRedirectResult(auth).then(async (result) => {
         if (result && result.user) {
-          console.log('[Auth] Google redirect sign-in success:', result.user.email);
+          console.log('[Auth] Google redirect operation success:', result.user.email, result.operationType);
+          await result.user.reload().catch(() => {});
+          if (typeof updateAccountSecurityUI === 'function') {
+            updateAccountSecurityUI(result.user);
+          }
+          if (result.operationType === 'link') {
+            alertMessage('Googleアカウントと正常に連携しました！', 'success');
+          }
         }
       }).catch((err) => {
         console.error('[Auth] Google redirect result error:', err);
         const authMsg = document.getElementById("authMessage");
         if (authMsg) {
-          if (err.code === "auth/account-exists-with-different-credential") {
-            authMsg.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+          if (err.code === "auth/account-exists-with-different-credential" || err.code === "auth/credential-already-in-use") {
+            authMsg.textContent = "このGoogleアカウントは既に別のアカウントで使用されています。";
           } else if (err.message) {
-            authMsg.textContent = `Googleログインエラー: ${err.message}`;
+            authMsg.textContent = `Google認証エラー: ${err.message}`;
           }
         }
       });
@@ -22380,6 +22440,9 @@ function initializeFirebase() {
               isListAdmin = hasEmail || hasUid;
             }
           }
+
+          // リアルタイム管理者ロール同期リスナーを起動
+          setupGlobalAdminRoleListener();
 
           // 管理者またはリスト管理者であれば「管理者設定」ボタンを表示
           if (isAdmin || isListAdmin) {
@@ -23191,7 +23254,7 @@ window.downloadRecoveryKitFile = function () {
 window.generateNewRecoveryKey = async function (showPrompt = false) {
   const user = auth.currentUser;
   if (!user || !user.uid || !user.email) return;
-  if (showPrompt && !confirm('新しい緊急リカバリーキーを発行しますか？\n過去に発行した古いキーは無効化されます。')) {
+  if (showPrompt && !await showCustomConfirm('新しい緊急リカバリーキーを発行しますか？\n過去に発行した古いキーは無効化されます。', '発行する', 'キャンセル')) {
     return;
   }
 
@@ -23554,7 +23617,7 @@ window.issueAdminRecoveryPin = async function (targetEmail, targetUserId = '') {
   }
   const cleanEmail = targetEmail.toLowerCase().trim();
   const confirmMsg = `対象ユーザー: ${cleanEmail}\n\nこのユーザーに対して「10分間有効のエマージェンシーコード」を発行しますか？`;
-  if (!confirm(confirmMsg)) return;
+  if (!await showCustomConfirm(confirmMsg, '発行する', 'キャンセル')) return;
 
   try {
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -23651,9 +23714,10 @@ window.toggleGoogleLinkAction = async function () {
       alertMessage('Googleアカウントのみでログインしているため、連携を解除できません。先にパスワードを設定してください。', 'warning');
       return;
     }
-    if (!confirm('Googleアカウントとの連携を解除しますか？')) return;
+    if (!await showCustomConfirm('Googleアカウントとの連携を解除しますか？', '解除する', 'キャンセル')) return;
     try {
       await unlink(user, 'google.com');
+      await user.reload().catch(() => {});
       alertMessage('Google連携を解除しました。', 'success');
       updateAccountSecurityUI(auth.currentUser);
     } catch (err) {
@@ -23669,11 +23733,25 @@ window.toggleGoogleLinkAction = async function () {
         if (authResult?.id_token) {
           const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
           await linkWithCredential(user, credential);
+          await user.reload().catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         }
       } else {
-        await linkWithRedirect(user, provider);
+        try {
+          // Web版: まず linkWithPopup を試みる（画面遷移や状態消失を防ぐ）
+          await linkWithPopup(user, provider);
+          await user.reload().catch(() => {});
+          alertMessage('Googleアカウントと正常に連携しました！', 'success');
+          updateAccountSecurityUI(auth.currentUser);
+        } catch (popupErr) {
+          if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
+            console.log("[Auth] ポップアップ制限を検知。リダイレクト方式で連携します...");
+            await linkWithRedirect(user, provider);
+            return;
+          }
+          throw popupErr;
+        }
       }
     } catch (err) {
       console.error('[Auth] Link Google error:', err);
@@ -23682,7 +23760,7 @@ window.toggleGoogleLinkAction = async function () {
       } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         // キャンセル
       } else {
-        alertMessage(`連携エラー: ${err.message}`, 'error');
+        alertMessage(`連携エラー: ${err.message || err}`, 'error');
       }
     }
   }
@@ -24235,7 +24313,7 @@ window.copyAllTelemetryErrors = function () {
 
 window.clearAllTelemetryErrors = async function () {
   if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
-  if (!confirm("記録されているすべてのエラーログを削除（解決済み）にしますか？")) return;
+  if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
   try {
     const batch = writeBatch(db);
     _cachedTelemetryErrors.forEach(err => {
@@ -24371,7 +24449,7 @@ window.loadAdminFeedbacks = async function () {
       });
 
       item.querySelector(".fb-del-btn").addEventListener("click", async () => {
-        if (!confirm("本当に削除しますか？")) return;
+        if (!await showCustomConfirm("本当にこのフィードバックを削除しますか？", "削除する", "キャンセル")) return;
         try {
           await deleteDoc(doc(db, `artifacts/${appId}/feedbacks`, fb.id));
           loadAdminFeedbacks();
@@ -24910,19 +24988,127 @@ if (addAdminEmailBtn && newAdminEmailInp) {
   });
 }
 
+let _globalAdminListUnsub = null;
+let _globalListAdminUnsub = null;
+
+function setupGlobalAdminRoleListener() {
+  if (_globalAdminListUnsub) { _globalAdminListUnsub(); _globalAdminListUnsub = null; }
+  if (_globalListAdminUnsub) { _globalListAdminUnsub(); _globalListAdminUnsub = null; }
+  if (!userId || !auth?.currentUser) return;
+
+  const currentUid = userId;
+  const candidateEmails = new Set();
+  if (auth.currentUser.email) candidateEmails.add(auth.currentUser.email.toLowerCase().trim());
+  if (Array.isArray(auth.currentUser.providerData)) {
+    auth.currentUser.providerData.forEach(p => {
+      if (p && p.email) candidateEmails.add(p.email.toLowerCase().trim());
+    });
+  }
+  const allUserEmails = Array.from(candidateEmails);
+
+  const updateAdminRoleState = (adminData, listAdminData) => {
+    let newIsAdmin = false;
+    let newListAdmin = false;
+
+    if (adminData) {
+      const adminEmails = (adminData.emails || []).map(e => String(e).toLowerCase().trim());
+      const adminUids = adminData.admins || [];
+      const hasEmail = allUserEmails.some(em => adminEmails.includes(em));
+      const hasUid = adminUids.includes(currentUid);
+      newIsAdmin = hasEmail || hasUid;
+    }
+
+    if (!newIsAdmin && listAdminData) {
+      const listAdminEmails = (listAdminData.emails || []).map(e => String(e).toLowerCase().trim());
+      const listAdminUids = listAdminData.admins || [];
+      const hasEmail = allUserEmails.some(em => listAdminEmails.includes(em));
+      const hasUid = listAdminUids.includes(currentUid);
+      newListAdmin = hasEmail || hasUid;
+    }
+
+    const adminChanged = (isAdmin !== newIsAdmin);
+    const listAdminChanged = (isListAdmin !== newListAdmin);
+
+    isAdmin = newIsAdmin;
+    isListAdmin = newListAdmin;
+
+    if (adminPanelContainer) {
+      adminPanelContainer.classList.toggle("hidden", !(isAdmin || isListAdmin));
+    }
+    const mobileAdminSec = document.getElementById("mobileAdminRowSection");
+    if (mobileAdminSec) {
+      mobileAdminSec.style.display = (isAdmin || isListAdmin) ? "" : "none";
+      mobileAdminSec.classList.toggle("hidden", !(isAdmin || isListAdmin));
+    }
+
+    const hdrTitle = document.getElementById("headerTitle");
+    if (hdrTitle && userNickname) {
+      hdrTitle.textContent = `ニックネーム：${userNickname}${isAdmin ? " (管理者)" : ""}`;
+    }
+
+    if (adminChanged || listAdminChanged) {
+      if (typeof updateDmViewVisibility === 'function') updateDmViewVisibility();
+      if (typeof renderServerList === 'function') renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      
+      if (!isAdmin && !isListAdmin) {
+        const adminModalEl = document.getElementById("adminModal");
+        if (adminModalEl && !adminModalEl.classList.contains("hidden")) {
+          adminModalEl.classList.add("hidden");
+          alertMessage("管理者権限が解除されました", "info");
+        }
+      }
+    }
+  };
+
+  let cachedAdminData = null;
+  let cachedListAdminData = null;
+
+  try {
+    _globalAdminListUnsub = onSnapshot(doc(db, `artifacts/${appId}/settings`, "adminList"), (snap) => {
+      cachedAdminData = snap.exists() ? snap.data() : null;
+      updateAdminRoleState(cachedAdminData, cachedListAdminData);
+    }, (err) => {
+      console.warn('[GlobalAdminList onSnapshot] notice:', err?.message || err);
+    });
+
+    _globalListAdminUnsub = onSnapshot(doc(db, `artifacts/${appId}/settings`, "listAdminList"), (snap) => {
+      cachedListAdminData = snap.exists() ? snap.data() : null;
+      updateAdminRoleState(cachedAdminData, cachedListAdminData);
+    }, (err) => {
+      console.warn('[GlobalListAdmin onSnapshot] notice:', err?.message || err);
+    });
+  } catch (e) {
+    console.warn('setupGlobalAdminRoleListener error:', e);
+  }
+}
+
 async function removeAdminEmail(email) {
   if (email === userAuthEmail) { adminMessage.textContent = "自分自身は削除できません。"; return; }
   if (!await showCustomConfirm(`「${email}」を管理者から削除しますか？`, "削除")) return;
   adminMessage.textContent = "削除中...";
   try {
     const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
-    await updateDoc(ref, { emails: arrayRemove(email) });
+    let targetUid = window.__adminUsersByEmail && window.__adminUsersByEmail[email]?.id;
+    if (!targetUid) {
+      try {
+        const uSnap = await getDocs(query(collection(db, `artifacts/${appId}/users`), where("email", "==", email), limit(1)));
+        if (!uSnap.empty) targetUid = uSnap.docs[0].id;
+      } catch (_) {}
+    }
+    const updateData = { emails: arrayRemove(email) };
+    if (targetUid) {
+      updateData.admins = arrayRemove(targetUid);
+    }
+    await updateDoc(ref, updateData);
     const snap = await getDoc(ref);
     renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
     adminMessage.textContent = "削除しました。";
+    alertMessage(`「${email}」の管理者権限を削除しました`, "success");
   } catch (e) {
     console.error(e);
     adminMessage.textContent = "エラーが発生しました。";
+    alertMessage("削除エラー: " + e.message, "error");
   }
 }
 
@@ -24966,13 +25152,26 @@ async function removeListAdminEmail(email) {
   adminMessage.textContent = "削除中...";
   try {
     const ref = doc(db, `artifacts/${appId}/settings`, "listAdminList");
-    await updateDoc(ref, { emails: arrayRemove(email) });
+    let targetUid = window.__adminUsersByEmail && window.__adminUsersByEmail[email]?.id;
+    if (!targetUid) {
+      try {
+        const uSnap = await getDocs(query(collection(db, `artifacts/${appId}/users`), where("email", "==", email), limit(1)));
+        if (!uSnap.empty) targetUid = uSnap.docs[0].id;
+      } catch (_) {}
+    }
+    const updateData = { emails: arrayRemove(email) };
+    if (targetUid) {
+      updateData.admins = arrayRemove(targetUid);
+    }
+    await updateDoc(ref, updateData);
     const snap = await getDoc(ref);
     renderListAdminEmails(snap.exists() ? snap.data().emails || [] : []);
     adminMessage.textContent = "削除しました。";
+    alertMessage(`「${email}」のリスト管理者権限を削除しました`, "success");
   } catch (e) {
     console.error(e);
     adminMessage.textContent = "エラーが発生しました。";
+    alertMessage("削除エラー: " + e.message, "error");
   }
 }
 
@@ -26398,7 +26597,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         upActionFriendBtn.title = "フレンド解除";
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
         upActionFriendBtn.onclick = async () => {
-          if (!confirm(`${safeName} さんをフレンドから削除しますか？`)) return;
+          if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
           closeUserProfileModal();
           rejectFriendRequest(targetUid);
         };
@@ -26598,7 +26797,7 @@ function updateSettingsCustomStatusUI() {
 }
 
 window.clearCustomStatusAction = async function () {
-  if (!confirm("カスタムステータスをクリアしますか？")) return;
+  if (!await showCustomConfirm("カスタムステータスをクリアしますか？", "クリア", "キャンセル")) return;
   try {
     window._currentUserCustomStatus = null;
     await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
@@ -28200,7 +28399,7 @@ window.cancelFriendRequest = async function(targetUid) {
 };
 
 window.blockUser = async function(targetUid) {
-  if (!confirm("このユーザーをブロックしますか？")) return;
+  if (!await showCustomConfirm("このユーザーをブロックしますか？", "ブロック", "キャンセル")) return;
   try {
     await setDoc(doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUid}`), {
       targetUid,
@@ -28462,11 +28661,46 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   renderDmConversationsList();
 
+  if (window._activeDmKeyCheckTimer) {
+    clearInterval(window._activeDmKeyCheckTimer);
+    window._activeDmKeyCheckTimer = null;
+  }
+
   try {
-    await _getOrCreateDmKey(dmId, currentDmParticipants);
+    await _getDmKeyWithWait(dmId, currentDmParticipants, 2500);
   } catch (e) {
     console.warn('[E2EE] DM key init error:', e);
   }
+
+  // DM鍵がまだ到着していない場合、自動監視タイマーを起動して鍵到着時に一括復号
+  (async () => {
+    try {
+      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+      const activeDmId = dmId;
+      const activeParticipants = currentDmParticipants;
+      const key = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
+      if (!key) {
+        let retryCount = 0;
+        window._activeDmKeyCheckTimer = setInterval(async () => {
+          retryCount++;
+          if (retryCount > 15 || currentDmId !== activeDmId || _e2ee.dmKeyCache[activeDmId]) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            return;
+          }
+          const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
+          if (arrived) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            if (currentDmId === activeDmId && typeof renderMessagesWithReadReceipts === 'function') {
+              await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
+              renderMessagesWithReadReceipts();
+            }
+          }
+        }, 2000);
+      }
+    } catch (e) {}
+  })();
 
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -29323,7 +29557,7 @@ async function loadServerSettingsRooms() {
   const createCategoryBtn = document.getElementById("createCategoryBtn");
   if (createCategoryBtn) {
     createCategoryBtn.addEventListener("click", async () => {
-      const name = prompt("カテゴリー名を入力してください");
+      const name = await window.showCustomPrompt("カテゴリー名を入力してください", "", "作成", "キャンセル");
       if (!name) return;
       loadingOverlay.classList.remove("hidden");
       try {
@@ -29337,11 +29571,11 @@ async function loadServerSettingsRooms() {
           const newId = "cat_" + Date.now();
           cats.push({ id: newId, name: name, order: cats.length, isExpanded: true });
           await updateDoc(serverRef, { categories: cats });
-          alert("カテゴリーを作成しました");
+          alertMessage("カテゴリーを作成しました", "success");
         }
       } catch (e) {
         console.error("カテゴリー作成エラー", e);
-        alert("エラーが発生しました");
+        alertMessage("エラーが発生しました: " + e.message, "error");
       }
       loadingOverlay.classList.add("hidden");
     });
@@ -30495,6 +30729,60 @@ function showCustomAlert(message) {
     else resolve();
   });
 }
+
+window.showCustomPrompt = function (message, defaultValue = "", okText = "決定", cancelText = "キャンセル") {
+  return new Promise(resolve => {
+    const modal = document.getElementById("customPromptModal");
+    const msgEl = document.getElementById("customPromptMessage");
+    const inputEl = document.getElementById("customPromptInput");
+    const okBtn = document.getElementById("customPromptOk");
+    const cancelBtn = document.getElementById("customPromptCancel");
+
+    if (!modal || !msgEl || !inputEl || !okBtn || !cancelBtn) {
+      return resolve(null);
+    }
+
+    msgEl.textContent = message;
+    inputEl.value = defaultValue || "";
+    okBtn.textContent = okText;
+    cancelBtn.textContent = cancelText;
+
+    openModal(modal);
+    setTimeout(() => {
+      inputEl.focus();
+      inputEl.select();
+    }, 100);
+
+    function onOk() {
+      const val = inputEl.value.trim();
+      cleanup();
+      resolve(val);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(null);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onOk();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    function cleanup() {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      inputEl.removeEventListener("keydown", onKeyDown);
+    }
+
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    inputEl.addEventListener("keydown", onKeyDown);
+  });
+};
 
 // === 旧UI（レガシー）切り替え時の注意書きハンドラ ===
 window.handleLegacyUIToggle = async function (enableLegacy) {
@@ -33022,7 +33310,7 @@ async function sendMessage() {
     if (text) {
       if (!_subtleOK) {
         console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
-        if (!confirm("⚠️ セキュリティ保護警告: 現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？")) {
+        if (!await showCustomConfirm("現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？", "平文で送信", "キャンセル", "セキュリティ警告")) {
           messageInput.value = previousInputText;
           return;
         }
@@ -34713,6 +35001,28 @@ function showContextMenu(bubble, clientX, clientY) {
     if (downloadMessageButton) downloadMessageButton.style.display = 'none';
   }
 
+  // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
+  const isMsgSender = msgData.senderId === userId;
+  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDeleteMsg = currentDmId
+    ? isMsgSender // DMでは本人のみ削除可能（他者メッセージは削除不可）
+    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+
+  const deleteBtn = document.getElementById("deleteMessageButton");
+  if (deleteBtn) {
+    deleteBtn.style.display = canDeleteMsg ? 'block' : 'none';
+  }
+
+  const canPinMsg = currentDmId
+    ? true
+    : (isServerAdminRole || isServerOwner || isAdmin || isMsgSender);
+  const pinBtn = document.getElementById("pinMessageButton");
+  if (pinBtn) {
+    pinBtn.style.display = canPinMsg ? 'block' : 'none';
+    pinBtn.textContent = msgData.isPinned ? 'ピン留めを解除' : 'ピン留め';
+  }
+
   messageContextMenu.classList.remove("hidden");
 
   let menuWidth = messageContextMenu.offsetWidth;
@@ -34878,13 +35188,22 @@ if (deleteMsgBtn) {
   if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
   messageContextMenu.classList.add("hidden");
   if (!selectedMessageForContext) return;
-  const canDelete = selectedMessageForContext.senderId === userId || isAdmin ||
-    (currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  if (!canDelete) { alertMessage("権限がありません", "warning"); return; }
 
   const msgToDelete = selectedMessageForContext;
-  const isServerAdmin = !!(currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const forceDelete = (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
+  const isMsgSender = msgToDelete.senderId === userId;
+  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDelete = currentDmId
+    ? isMsgSender
+    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+
+  if (!canDelete) {
+    alertMessage("メッセージを削除する権限がありません", "warning");
+    return;
+  }
+
+  const isServerAdmin = isServerAdminRole || isServerOwner;
+  const forceDelete = !currentDmId && (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
@@ -37771,7 +38090,7 @@ async function startCall(uid, name, avatar) {
     _localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch (e) {
     endCall(false);
-    alert('マイクへのアクセスが拒否されました。設定を確認してください。');
+    alertMessage('マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。', 'error');
     return;
   }
 
@@ -37935,7 +38254,7 @@ async function acceptCall() {
   } catch (e) {
     const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
     if (isMicError) {
-      alert('マイクへのアクセスが拒否されました。');
+      alertMessage('マイクへのアクセスが拒否されました。', 'error');
       endCall(false, 'micDenied');
     } else {
       endCall(false);
@@ -38446,7 +38765,7 @@ window.downloadLatestWindowsApp = async function (btn) {
     const url = exeAsset ? exeAsset.browser_download_url : release.html_url;
     window.open(url, '_blank');
   } catch (e) {
-    alert("最新バージョンの取得に失敗しました。GitHubページを開きます。");
+    alertMessage("最新バージョンの取得に失敗しました。ダウンロードページを開きます。", "warning");
     window.open('https://github.com/qwertyuiop1229/Covo/releases/latest', '_blank');
   } finally {
     btn.textContent = origText;
@@ -38674,16 +38993,16 @@ window.emergencyCheckUpdate = async function (btn) {
     if (!invoke) throw new Error('Tauri API unavailable');
     const metadata = await invoke('plugin:updater|check');
     if (metadata) {
-      alert(`最新バージョン v${metadata.version} が利用可能です！ただちに自動更新を開始します。`);
+      alertMessage(`最新バージョン v${metadata.version} が利用可能です！自動更新を開始します。`, 'success');
       document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');
       document.getElementById('emergencyRecoveryOverlay').style.display = 'none';
       localStorage.setItem('covo_ignore_force_update', '0');
       await blockingUpdateCheck();
     } else {
-      alert('現在提供されている最新バージョンです。更新プログラムはありません。');
+      alertMessage('現在提供されている最新バージョンです。更新プログラムはありません。', 'info');
     }
   } catch (e) {
-    alert('アップデートの確認に失敗しました: ' + e.message);
+    alertMessage('アップデートの確認に失敗しました: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
@@ -40346,6 +40665,11 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
       if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
       if (topModal.id === 'recoveryKeyManagerModal') { window.closeRecoveryKeyManagerModal(); return; }
+      if (topModal.id === 'customPromptModal') {
+        const cancelBtn = document.getElementById("customPromptCancel");
+        if (cancelBtn) cancelBtn.click();
+        return;
+      }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
     }
@@ -40411,7 +40735,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.109",
+  "version": "1.1.110",
   "force": false
 }
 </file>
@@ -40420,7 +40744,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.109",
+  "version": "1.1.110",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

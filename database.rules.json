@@ -10,16 +10,15 @@
       "$appId": {
         "settings": {
           ".read": "auth != null",
-          ".write": "false"
+          ".write": false
         },
         "latestAnnouncement": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          ".write": false
         },
         "servers": {
           "$serverId": {
             ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-            ".write": "auth != null",
             "members": {
               "$uid": {
                 ".write": "auth != null && auth.uid === $uid"
@@ -27,11 +26,16 @@
             },
             "rooms": {
               "$roomId": {
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
                 "messages": {
                   ".indexOn": ["timestamp"],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())"
+                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && auth.uid === $reactUid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                      }
+                    }
                   }
                 },
                 "typing": {
@@ -51,10 +55,14 @@
         "dm_messages": {
           "$dmId": {
             ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".write": "auth != null && $dmId.contains(auth.uid)",
             ".indexOn": ["timestamp"],
             "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid)"
+              ".write": "auth != null && $dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && auth.uid === $reactUid && $dmId.contains(auth.uid)"
+                }
+              }
             }
           }
         },
@@ -77,7 +85,15 @@
         "users": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
+            ".write": "auth != null && auth.uid === $uid",
+            "readStates": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid",
+              "$roomId": {
+                ".read": "auth != null && auth.uid === $uid",
+                ".write": "auth != null && auth.uid === $uid"
+              }
+            }
           }
         }
       }

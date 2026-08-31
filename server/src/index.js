@@ -65,9 +65,6 @@ export default {
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
     }
-    if (url.pathname === "/api/shareFile" && request.method === "POST") {
-      return await handleShareFile(request, env);
-    }
     if (url.pathname === "/api/download" && request.method === "GET") {
       return await handleDownloadProxy(request, env, url);
     }
@@ -514,10 +511,26 @@ async function handleSendCallNotification(request, env) {
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
     }
-    const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
 
     const projectId = env.FIREBASE_PROJECT_ID;
 
+    // 実際の通話ドキュメントの存在と整合性を検証（偽装着信スパムの完全遮断）
+    const callDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/calls/${callId}`;
+    const callDocRes = await fetch(callDocUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+    const callDocData = await callDocRes.json();
+    if (callDocData.error || !callDocData.fields) {
+      return new Response(JSON.stringify({ success: false, error: "Call record not found" }), { status: 404, headers: corsHeaders });
+    }
+
+    const docCallerUid = callDocData.fields.caller?.mapValue?.fields?.uid?.stringValue;
+    const docCalleeUid = callDocData.fields.calleeUid?.stringValue || callDocData.fields.callee?.mapValue?.fields?.uid?.stringValue;
+    const docStatus = callDocData.fields.status?.stringValue;
+
+    if (docCallerUid !== callerId || docCalleeUid !== calleeId || docStatus !== 'ringing') {
+      return new Response(JSON.stringify({ success: false, error: "Invalid call authorization" }), { status: 403, headers: corsHeaders });
+    }
+
+    const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
     const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${calleeId}`;
     const userRes = await fetch(userUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
     const userData = await userRes.json();
@@ -1381,84 +1394,7 @@ async function handleBulkDeleteFiles(request, env) {
 }
 
 
-// -------------------------------------------------------------
-// 外部ファイル共有プロキシ（catbox.moe → 0x0.st の順で試行）
-// -------------------------------------------------------------
-async function handleShareFile(request, env) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const idToken = formData.get('idToken') || '';
-    const uploaderId = formData.get('uploaderId') || formData.get('userId') || '';
-
-    if (!file || !idToken || !uploaderId) {
-      return new Response(JSON.stringify({ error: '必須パラメータが不足しています' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    if (file.size > 25 * 1024 * 1024) {
-      return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const fileName = file.name || 'file';
-    if (isFileExtensionBlocked(fileName)) {
-      return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUser || verifiedUser.uid !== uploaderId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
-    }
-
-    // ArrayBufferとして読み込んでBlobを再構築（Worker間の転送を安定させる）
-    const arrayBuffer = await file.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
-
-    // 1. catbox.moe を試す
-    try {
-      const f1 = new FormData();
-      f1.append('reqtype', 'fileupload');
-      f1.append('fileToUpload', blob, fileName);
-      const r1 = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: f1 });
-      const t1 = (await r1.text()).trim();
-      if (t1.startsWith('https://')) {
-        return new Response(JSON.stringify({ url: t1, service: 'catbox.moe' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      console.warn('[shareFile] catbox.moe failed:', r1.status, t1.slice(0, 100));
-    } catch (e1) {
-      console.warn('[shareFile] catbox.moe error:', e1.toString());
-    }
-
-    // 2. 0x0.st にフォールバック
-    try {
-      const f2 = new FormData();
-      f2.append('file', blob, fileName);
-      const r2 = await fetch('https://0x0.st', { method: 'POST', body: f2 });
-      const t2 = (await r2.text()).trim();
-      if (t2.startsWith('https://')) {
-        return new Response(JSON.stringify({ url: t2, service: '0x0.st' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      console.warn('[shareFile] 0x0.st failed:', r2.status, t2.slice(0, 100));
-    } catch (e2) {
-      console.warn('[shareFile] 0x0.st error:', e2.toString());
-    }
-
-    return new Response(JSON.stringify({ error: 'すべてのアップロードサービスに失敗しました' }), {
-      status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-      return new Response(JSON.stringify({ error: 'Proxy error', details: err.toString() }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-}
+// （不要な外部共有プロキシ handleShareFile はセキュリティ向上のため削除されました）
 
 
 

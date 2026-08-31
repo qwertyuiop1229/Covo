@@ -187,6 +187,9 @@
           const keys = await caches.keys();
           for (const k of keys) await caches.delete(k);
         }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
       } catch (e) {
         logMessage(`Cache clear warning: ${e.message}`);
       }

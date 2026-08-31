@@ -764,19 +764,26 @@ function initializeFirebase() {
       auth.languageCode = 'ja';
       _flushPendingTelemetryErrors();
       
-      // Safari / モバイル向け Google リダイレクト認証結果の受信
-      getRedirectResult(auth).then((result) => {
+      // Safari / モバイル向け Google リダイレクト認証結果の受信 (ログイン / 連携 両対応)
+      getRedirectResult(auth).then(async (result) => {
         if (result && result.user) {
-          console.log('[Auth] Google redirect sign-in success:', result.user.email);
+          console.log('[Auth] Google redirect operation success:', result.user.email, result.operationType);
+          await result.user.reload().catch(() => {});
+          if (typeof updateAccountSecurityUI === 'function') {
+            updateAccountSecurityUI(result.user);
+          }
+          if (result.operationType === 'link') {
+            alertMessage('Googleアカウントと正常に連携しました！', 'success');
+          }
         }
       }).catch((err) => {
         console.error('[Auth] Google redirect result error:', err);
         const authMsg = document.getElementById("authMessage");
         if (authMsg) {
-          if (err.code === "auth/account-exists-with-different-credential") {
-            authMsg.textContent = "同じメールアドレスで別のアカウントが存在します。通常のメール/パスワードでログイン後、設定からGoogle連携してください。";
+          if (err.code === "auth/account-exists-with-different-credential" || err.code === "auth/credential-already-in-use") {
+            authMsg.textContent = "このGoogleアカウントは既に別のアカウントで使用されています。";
           } else if (err.message) {
-            authMsg.textContent = `Googleログインエラー: ${err.message}`;
+            authMsg.textContent = `Google認証エラー: ${err.message}`;
           }
         }
       });
@@ -2236,6 +2243,7 @@ window.toggleGoogleLinkAction = async function () {
     if (!await showCustomConfirm('Googleアカウントとの連携を解除しますか？', '解除する', 'キャンセル')) return;
     try {
       await unlink(user, 'google.com');
+      await user.reload().catch(() => {});
       alertMessage('Google連携を解除しました。', 'success');
       updateAccountSecurityUI(auth.currentUser);
     } catch (err) {
@@ -2251,11 +2259,25 @@ window.toggleGoogleLinkAction = async function () {
         if (authResult?.id_token) {
           const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
           await linkWithCredential(user, credential);
+          await user.reload().catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         }
       } else {
-        await linkWithRedirect(user, provider);
+        try {
+          // Web版: まず linkWithPopup を試みる（画面遷移や状態消失を防ぐ）
+          await linkWithPopup(user, provider);
+          await user.reload().catch(() => {});
+          alertMessage('Googleアカウントと正常に連携しました！', 'success');
+          updateAccountSecurityUI(auth.currentUser);
+        } catch (popupErr) {
+          if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
+            console.log("[Auth] ポップアップ制限を検知。リダイレクト方式で連携します...");
+            await linkWithRedirect(user, provider);
+            return;
+          }
+          throw popupErr;
+        }
       }
     } catch (err) {
       console.error('[Auth] Link Google error:', err);
@@ -2264,7 +2286,7 @@ window.toggleGoogleLinkAction = async function () {
       } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         // キャンセル
       } else {
-        alertMessage(`連携エラー: ${err.message}`, 'error');
+        alertMessage(`連携エラー: ${err.message || err}`, 'error');
       }
     }
   }
@@ -7225,8 +7247,12 @@ window.hideDmConversation = async function(dmId) {
 
 window.initiateMigrationReceive = async function() {
   if (!userId) return;
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
-  const sessionCode = `COVO-${randomNum}`;
+  const _codeChars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const _codeBytes = new Uint8Array(8);
+  crypto.getRandomValues(_codeBytes);
+  const part1 = Array.from(_codeBytes.slice(0, 4)).map(b => _codeChars[b % _codeChars.length]).join('');
+  const part2 = Array.from(_codeBytes.slice(4, 8)).map(b => _codeChars[b % _codeChars.length]).join('');
+  const sessionCode = `COVO-${part1}-${part2}`;
   activeMigrationSession = sessionCode;
 
   const initEl = document.getElementById('migrationReceiveInitialState');
@@ -7583,11 +7609,13 @@ async function createServer(name, customId, password) {
   const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${customId}/rooms`), {
     name: "一般",
     createdAt: serverTimestamp(),
-    createdBy: userId
+    createdBy: userId,
+    currentKeyVersion: 1
   });
   try {
-    const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
-    await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+    const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    const rawKey = await window.crypto.subtle.exportKey("raw", key);
+    await _distributeRoomKeyVersion(customId, newRoomRef.id, rawKey, [userId], 1);
   } catch (e) { console.error("E2EE key gen failed", e); }
 
   enterServer(customId, serverData);
@@ -8367,11 +8395,13 @@ document.getElementById("createRoomInServerBtn")?.addEventListener("click", asyn
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
     const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
-      name, categoryId, createdAt: serverTimestamp(), createdBy: userId
+      name, categoryId, createdAt: serverTimestamp(), createdBy: userId, currentKeyVersion: 1
     });
     try {
-      const b64 = await crypto.subtle.exportKey("raw", await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])).then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
-      await updateDoc(newRoomRef, { sharedKey: b64, currentKeyVersion: 1 });
+      const members = (currentServerData && currentServerData.joinedUsers) || [userId];
+      const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+      const rawKey = await window.crypto.subtle.exportKey("raw", key);
+      await _distributeRoomKeyVersion(currentServerId, newRoomRef.id, rawKey, members, 1);
     } catch (e) { console.error("E2EE key gen failed", e); }
     const nameInp = document.getElementById("newRoomNameInput");
     if (nameInp) nameInp.value = "";
@@ -13505,6 +13535,28 @@ function showContextMenu(bubble, clientX, clientY) {
     if (downloadMessageButton) downloadMessageButton.style.display = 'none';
   }
 
+  // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
+  const isMsgSender = msgData.senderId === userId;
+  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDeleteMsg = currentDmId
+    ? isMsgSender // DMでは本人のみ削除可能（他者メッセージは削除不可）
+    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+
+  const deleteBtn = document.getElementById("deleteMessageButton");
+  if (deleteBtn) {
+    deleteBtn.style.display = canDeleteMsg ? 'block' : 'none';
+  }
+
+  const canPinMsg = currentDmId
+    ? true
+    : (isServerAdminRole || isServerOwner || isAdmin || isMsgSender);
+  const pinBtn = document.getElementById("pinMessageButton");
+  if (pinBtn) {
+    pinBtn.style.display = canPinMsg ? 'block' : 'none';
+    pinBtn.textContent = msgData.isPinned ? 'ピン留めを解除' : 'ピン留め';
+  }
+
   messageContextMenu.classList.remove("hidden");
 
   let menuWidth = messageContextMenu.offsetWidth;
@@ -13670,13 +13722,22 @@ if (deleteMsgBtn) {
   if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
   messageContextMenu.classList.add("hidden");
   if (!selectedMessageForContext) return;
-  const canDelete = selectedMessageForContext.senderId === userId || isAdmin ||
-    (currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  if (!canDelete) { alertMessage("権限がありません", "warning"); return; }
 
   const msgToDelete = selectedMessageForContext;
-  const isServerAdmin = !!(currentServerData && currentServerData.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const forceDelete = (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
+  const isMsgSender = msgToDelete.senderId === userId;
+  const isServerAdminRole = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isServerOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDelete = currentDmId
+    ? isMsgSender
+    : (isMsgSender || isServerAdminRole || isServerOwner || isAdmin);
+
+  if (!canDelete) {
+    alertMessage("メッセージを削除する権限がありません", "warning");
+    return;
+  }
+
+  const isServerAdmin = isServerAdminRole || isServerOwner;
+  const forceDelete = !currentDmId && (isAdmin || isServerAdmin) && msgToDelete.senderId !== userId;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
