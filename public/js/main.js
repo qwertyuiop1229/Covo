@@ -11781,14 +11781,11 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
 
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
     const isGlobal = Boolean(isAdmin);
-    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-    const isPrivileged = isGlobal || isSvOwner || isSvAdmin;
 
     for (const msg of toDelete) {
-      // 権限判定: 送信者本人 または 管理者/オーナーのみ削除を実行
-      const canDeleteThisMsg = Boolean(dmId) || isPrivileged || (msg.senderId === userId);
-      if (!canDeleteThisMsg) continue; // 権限がない他者のメッセージはスキップ（permission_denied を完全回避）
+      // クライアント側での自動プルーニングは、自分が送信したメッセージ（または全体管理者）のみ直接削除する
+      // （他人のメッセージを直接removeしようとしてPermission Deniedエラーが発生するのを防止）
+      if (!isGlobal && msg.senderId !== userId) continue;
 
       // 1. Cloudflare KV ファイル連動削除
       const fileUrls = [msg.kvFileUrl, msg.fileData, msg.text].filter(Boolean);
@@ -11798,15 +11795,15 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
           if (m && m[1]) {
             const fileKey = m[1];
             const extraParams = `&appId=${encodeURIComponent(appId)}${serverId ? `&serverId=${encodeURIComponent(serverId)}` : ''}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${isPrivileged ? '&forceDelete=1' : ''}${extraParams}`, {
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${isGlobal ? '&forceDelete=1' : ''}${extraParams}`, {
               method: 'DELETE'
-            }).catch(e => console.warn('[pruneExcessMessages] KV delete failed:', fileKey, e));
+            }).catch(() => {});
           }
         }
       }
 
       // 2. RTDB から削除
-      await remove(ref(rtdb, `${basePath}/${msg.id}`)).catch(e => console.warn('[pruneExcessMessages] RTDB remove failed:', msg.id, e));
+      await remove(ref(rtdb, `${basePath}/${msg.id}`)).catch(() => {});
     }
   } catch (err) {
     console.warn('[pruneExcessMessages] Error during prune:', err);
@@ -12653,137 +12650,22 @@ function createMessageElement(message, messageId, readByCount = 0) {
       return card;
     };
 
-    const setMediaSrc = (element, propName, url) => {
-      if (message.isFileEncrypted) {
-        if (message._decryptedFileUrl) {
-          if (propName) element[propName] = message._decryptedFileUrl;
-          if (element.tagName === 'IMG') element.style.opacity = '1';
-          if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
-        } else {
-          if (element.tagName === 'IMG') element.style.opacity = '0.3';
-          (async () => {
-            try {
-              let key;
-              if (currentDmId) {
-                key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
-              } else {
-                const members = (currentServerData && currentServerData.joinedUsers) || [];
-                key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
-              }
-              if (!key) throw new Error("No key");
-              const res = await fetch(message.fileData);
-              if (res.status === 404 || !res.ok) {
-                const expiredCard = createExpiredFileCard(message.fileName);
-                element.replaceWith(expiredCard);
-                return;
-              }
-              const buf = await res.arrayBuffer();
-              const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
-              const blob = new Blob([dec], { type: message.fileType });
-              message._decryptedFileUrl = URL.createObjectURL(blob);
-              if (propName) element[propName] = message._decryptedFileUrl;
-              if (element.tagName === 'IMG') element.style.opacity = '1';
-              if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
-            } catch (e) {
-              const expiredCard = createExpiredFileCard(message.fileName);
-              element.replaceWith(expiredCard);
-            }
-          })();
+    if (message._fileExpired) {
+      messageElement.appendChild(createExpiredFileCard(message.fileName));
+    } else {
+      const setMediaSrc = (element, propName, url) => {
+        if (message._fileExpired) {
+          const expiredCard = createExpiredFileCard(message.fileName);
+          element.replaceWith(expiredCard);
+          return;
         }
-      } else {
-        const targetUrl = url || message.fileData;
-        if (propName) element[propName] = targetUrl;
-        if (element.tagName === 'IMG') {
-          element.onerror = () => {
-            const expiredCard = createExpiredFileCard(message.fileName);
-            element.replaceWith(expiredCard);
-          };
-        } else if (element.tagName === 'VIDEO') {
-          element.onerror = () => {
-            const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
-            element.replaceWith(expiredCard);
-          };
-        }
-        if (element.tagName === 'CANVAS') window.renderPdfCanvas(targetUrl, element);
-      }
-    };
-
-    if (message.fileType && message.fileType.startsWith('image/')) {
-      const img = document.createElement('img');
-      img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
-      img.style.maxHeight = '250px';
-      img.loading = 'lazy';
-      setMediaSrc(img, 'src');
-      img.addEventListener("click", () => {
-        const url = message._decryptedFileUrl || message.fileData;
-        openPhotoSwipeModal(url, message.fileName);
-      });
-      messageElement.appendChild(img);
-    } else if (message.fileType && message.fileType.startsWith('video/')) {
-      const video = document.createElement('video');
-      video.controls = true;
-      video.className = 'mt-2 rounded-lg max-w-full h-auto';
-      video.style.maxHeight = '250px';
-      setMediaSrc(video, 'src');
-      messageElement.appendChild(video);
-    } else if (message.fileType === 'application/pdf') {
-      // Teams風PDFカードを作成
-      const pdfWrapper = document.createElement('div');
-      pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
-
-      const thumbContainer = document.createElement('div');
-      thumbContainer.className = 'relative w-32 h-40 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center overflow-hidden shadow-sm';
-      thumbContainer.style.flexShrink = '0';
-
-      // PDFバッジ（右上）
-      const badge = document.createElement('div');
-      badge.className = 'absolute top-1 right-1 bg-red-500 text-white rounded shadow-sm z-20 flex items-center gap-0.5 pointer-events-none';
-      badge.style.cssText = 'font-size:10px;font-weight:700;padding:2px 5px;';
-      badge.innerHTML = '<i class="fas fa-file-pdf"></i> PDF';
-      thumbContainer.appendChild(badge);
-
-      // デフォルトアイコン（canvas読み込み成功時に非表示）
-      const iconDiv = document.createElement('div');
-      iconDiv.className = 'absolute inset-0 flex flex-col items-center justify-center gap-1 z-10 default-pdf-icon pointer-events-none';
-      iconDiv.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-3xl opacity-40"></i>';
-      thumbContainer.appendChild(iconDiv);
-
-      // サムネイルcanvas
-      const thumbCanvas = document.createElement('canvas');
-      thumbCanvas.className = 'absolute inset-0 z-0 pdf-thumb-canvas';
-      thumbCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.3s;';
-      thumbContainer.appendChild(thumbCanvas);
-
-      pdfWrapper.appendChild(thumbContainer);
-
-      // ファイル名ラベル
-      const pdfLabel = document.createElement('div');
-      pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
-      const labelIcon = document.createElement('i');
-      labelIcon.className = 'fas fa-file-pdf text-red-500 flex-shrink-0';
-      const safeName = document.createElement('span');
-      safeName.className = 'truncate';
-      safeName.style.maxWidth = '128px';
-      safeName.textContent = message.fileName;
-      pdfLabel.appendChild(labelIcon);
-      pdfLabel.appendChild(safeName);
-      pdfWrapper.appendChild(pdfLabel);
-
-      // クリックでPDFプレビュー
-      pdfWrapper.addEventListener('click', () => {
-        const url = message._decryptedFileUrl || message.fileData;
-        openPdfLightbox(url, message.fileName);
-      });
-
-      messageElement.appendChild(pdfWrapper);
-
-      // DOMに追加されてからサムネイルを描画（clientWidth/Height が確定するのを待つ）
-      const renderThumb = () => {
-        // 暗号化ファイルの場合はまず復号する
         if (message.isFileEncrypted) {
           if (message._decryptedFileUrl) {
-            window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+            if (propName) element[propName] = message._decryptedFileUrl;
+            if (element.tagName === 'IMG') element.style.opacity = '1';
+            if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
           } else {
+            if (element.tagName === 'IMG') element.style.opacity = '0.3';
             (async () => {
               try {
                 let key;
@@ -12793,110 +12675,288 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   const members = (currentServerData && currentServerData.joinedUsers) || [];
                   key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
                 }
-                if (!key) return;
+                if (!key) throw new Error("No key");
                 const res = await fetch(message.fileData);
+                if (res.status === 404 || res.status === 410 || !res.ok) {
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  element.replaceWith(expiredCard);
+                  return;
+                }
                 const buf = await res.arrayBuffer();
                 const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
-                const blob = new Blob([dec], { type: 'application/pdf' });
+                const blob = new Blob([dec], { type: message.fileType });
                 message._decryptedFileUrl = URL.createObjectURL(blob);
-                window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+                if (propName) element[propName] = message._decryptedFileUrl;
+                if (element.tagName === 'IMG') element.style.opacity = '1';
+                if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
               } catch (e) {
-                console.error('PDF decrypt error for thumb:', e);
+                message._fileExpired = true;
+                const expiredCard = createExpiredFileCard(message.fileName);
+                element.replaceWith(expiredCard);
               }
             })();
           }
-        } else if (message.fileData && message.fileData.startsWith('http')) {
-          // 非暗号化の場合、Cloudinaryのimage/uploadは直接URL、rawはCORSが厳しいので試みる
-          window.renderPdfCanvas(message.fileData, thumbCanvas, 128, 160);
+        } else {
+          const targetUrl = url || message.fileData;
+          if (propName) element[propName] = targetUrl;
+          if (element.tagName === 'IMG') {
+            element.onerror = () => {
+              message._fileExpired = true;
+              const expiredCard = createExpiredFileCard(message.fileName);
+              element.replaceWith(expiredCard);
+            };
+          } else if (element.tagName === 'VIDEO') {
+            element.onerror = () => {
+              message._fileExpired = true;
+              const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
+              element.replaceWith(expiredCard);
+            };
+          }
+          if (element.tagName === 'CANVAS') window.renderPdfCanvas(targetUrl, element);
         }
       };
 
-      // requestAnimationFrameでDOMレイアウト確定後に実行
-      requestAnimationFrame(() => requestAnimationFrame(renderThumb));
-      // (新しいPDFレンダリングはrequestAnimationFrame上で実行済み)
+      if (message.fileType && message.fileType.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
+        img.style.maxHeight = '250px';
+        img.loading = 'lazy';
+        setMediaSrc(img, 'src');
+        img.addEventListener("click", () => {
+          const url = message._decryptedFileUrl || message.fileData;
+          openPhotoSwipeModal(url, message.fileName);
+        });
+        messageElement.appendChild(img);
+      } else if (message.fileType && message.fileType.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.className = 'mt-2 rounded-lg max-w-full h-auto';
+        video.style.maxHeight = '250px';
+        setMediaSrc(video, 'src');
+        messageElement.appendChild(video);
+      } else if (message.fileType === 'application/pdf') {
+        // Teams風PDFカードを作成
+        const pdfWrapper = document.createElement('div');
+        pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
 
-    } else {
-      const fileAttachmentDiv = document.createElement("div");
-      fileAttachmentDiv.className = `mt-2 p-2 rounded-lg border border-gray-300 ${isMyMessage ? "bg-gray-200" : "bg-gray-100"} flex items-center space-x-2 cursor-pointer`;
-      fileAttachmentDiv.style.color = "#333";
-      const fnSpan = document.createElement("span");
-      fnSpan.className = "flex-1 text-sm font-semibold truncate";
-      fnSpan.textContent = message.fileName;
-      const arrSpan = document.createElement("span");
-      arrSpan.textContent = "▼";
-      fileAttachmentDiv.appendChild(fnSpan);
-      fileAttachmentDiv.appendChild(arrSpan);
-      // ダウンロード＆復号をトリガー
-      setMediaSrc(fileAttachmentDiv, null);
-      fileAttachmentDiv.addEventListener("click", async () => {
-        if (message.isFileEncrypted && !message._decryptedFileUrl) {
-          try {
-            let key;
-            if (currentDmId) {
-              key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
-            } else {
-              const members = (currentServerData && currentServerData.joinedUsers) || [];
-              key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
-            }
-            if (!key) throw new Error("鍵が見つかりません");
-            const res = await fetch(message.fileData);
-            if (res.status === 404 || !res.ok) {
-              alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-              return;
-            }
-            const buf = await res.arrayBuffer();
-            const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
-            const blob = new Blob([dec], { type: message.fileType });
-            message._decryptedFileUrl = URL.createObjectURL(blob);
-          } catch (e) {
-            alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
+        const thumbContainer = document.createElement('div');
+        thumbContainer.className = 'relative w-32 h-40 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center overflow-hidden shadow-sm';
+        thumbContainer.style.flexShrink = '0';
+
+        // PDFバッジ（右上）
+        const badge = document.createElement('div');
+        badge.className = 'absolute top-1 right-1 bg-red-500 text-white rounded shadow-sm z-20 flex items-center gap-0.5 pointer-events-none';
+        badge.style.cssText = 'font-size:10px;font-weight:700;padding:2px 5px;';
+        badge.innerHTML = '<i class="fas fa-file-pdf"></i> PDF';
+        thumbContainer.appendChild(badge);
+
+        // デフォルトアイコン（canvas読み込み成功時に非表示）
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'absolute inset-0 flex flex-col items-center justify-center gap-1 z-10 default-pdf-icon pointer-events-none';
+        iconDiv.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-3xl opacity-40"></i>';
+        thumbContainer.appendChild(iconDiv);
+
+        // サムネイルcanvas
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.className = 'absolute inset-0 z-0 pdf-thumb-canvas';
+        thumbCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.3s;';
+        thumbContainer.appendChild(thumbCanvas);
+
+        pdfWrapper.appendChild(thumbContainer);
+
+        // ファイル名ラベル
+        const pdfLabel = document.createElement('div');
+        pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
+        const labelIcon = document.createElement('i');
+        labelIcon.className = 'fas fa-file-pdf text-red-500 flex-shrink-0';
+        const safeName = document.createElement('span');
+        safeName.className = 'truncate';
+        safeName.style.maxWidth = '128px';
+        safeName.textContent = message.fileName;
+        pdfLabel.appendChild(labelIcon);
+        pdfLabel.appendChild(safeName);
+        pdfWrapper.appendChild(pdfLabel);
+
+        // クリックでPDFプレビュー
+        pdfWrapper.addEventListener('click', () => {
+          if (message._fileExpired) {
+            alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
             return;
           }
-        }
-        const url = message._decryptedFileUrl || message.fileData;
-        downloadFile(url, message.fileName, message.fileType);
-      });
-      messageElement.appendChild(fileAttachmentDiv);
+          const url = message._decryptedFileUrl || message.fileData;
+          openPdfLightbox(url, message.fileName);
+        });
+
+        messageElement.appendChild(pdfWrapper);
+
+        // DOMに追加されてからサムネイルを描画
+        const renderThumb = () => {
+          if (message._fileExpired) {
+            const expiredCard = createExpiredFileCard(message.fileName);
+            pdfWrapper.replaceWith(expiredCard);
+            return;
+          }
+          // 暗号化ファイルの場合はまず復号する
+          if (message.isFileEncrypted) {
+            if (message._decryptedFileUrl) {
+              window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+            } else {
+              (async () => {
+                try {
+                  let key;
+                  if (currentDmId) {
+                    key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+                  } else {
+                    const members = (currentServerData && currentServerData.joinedUsers) || [];
+                    key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                  }
+                  if (!key) return;
+                  const res = await fetch(message.fileData);
+                  if (res.status === 404 || res.status === 410 || !res.ok) {
+                    message._fileExpired = true;
+                    const expiredCard = createExpiredFileCard(message.fileName);
+                    pdfWrapper.replaceWith(expiredCard);
+                    return;
+                  }
+                  const buf = await res.arrayBuffer();
+                  const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+                  const blob = new Blob([dec], { type: 'application/pdf' });
+                  message._decryptedFileUrl = URL.createObjectURL(blob);
+                  window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
+                } catch (e) {
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  pdfWrapper.replaceWith(expiredCard);
+                }
+              })();
+            }
+          } else if (message.fileData && message.fileData.startsWith('http')) {
+            window.renderPdfCanvas(message.fileData, thumbCanvas, 128, 160);
+          }
+        };
+
+        requestAnimationFrame(() => requestAnimationFrame(renderThumb));
+      } else {
+        const fileAttachmentDiv = document.createElement("div");
+        fileAttachmentDiv.className = `mt-2 p-2 rounded-lg border border-gray-300 ${isMyMessage ? "bg-gray-200" : "bg-gray-100"} flex items-center space-x-2 cursor-pointer`;
+        fileAttachmentDiv.style.color = "#333";
+        const fnSpan = document.createElement("span");
+        fnSpan.className = "flex-1 text-sm font-semibold truncate";
+        fnSpan.textContent = message.fileName;
+        const arrSpan = document.createElement("span");
+        arrSpan.textContent = "▼";
+        fileAttachmentDiv.appendChild(fnSpan);
+        fileAttachmentDiv.appendChild(arrSpan);
+
+        fileAttachmentDiv.addEventListener("click", async () => {
+          if (message._fileExpired) {
+            alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+            return;
+          }
+          if (message.isFileEncrypted && !message._decryptedFileUrl) {
+            try {
+              let key;
+              if (currentDmId) {
+                key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+              } else {
+                const members = (currentServerData && currentServerData.joinedUsers) || [];
+                key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+              }
+              if (!key) throw new Error("鍵が見つかりません");
+              const res = await fetch(message.fileData);
+              if (res.status === 404 || res.status === 410 || !res.ok) {
+                message._fileExpired = true;
+                alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+                const expiredCard = createExpiredFileCard(message.fileName);
+                fileAttachmentDiv.replaceWith(expiredCard);
+                return;
+              }
+              const buf = await res.arrayBuffer();
+              const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+              const blob = new Blob([dec], { type: message.fileType });
+              message._decryptedFileUrl = URL.createObjectURL(blob);
+            } catch (e) {
+              message._fileExpired = true;
+              alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
+              const expiredCard = createExpiredFileCard(message.fileName);
+              fileAttachmentDiv.replaceWith(expiredCard);
+              return;
+            }
+          }
+          const url = message._decryptedFileUrl || message.fileData;
+          downloadFile(url, message.fileName, message.fileType);
+        });
+        messageElement.appendChild(fileAttachmentDiv);
+      }
     }
   }
   // KV ファイル添付カード
   if (message.kvFileUrl && message.fileName) {
-    const kvDiv = document.createElement("div");
-    kvDiv.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400 bg-gray-300" : "border-gray-200 bg-gray-50"} flex items-center gap-2.5 cursor-pointer select-none`;
-    const iconWrap = document.createElement("div");
-    iconWrap.className = "flex-shrink-0 w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center";
-    iconWrap.innerHTML = '<i class="fas fa-paperclip text-gray-500 text-sm"></i>';
-    const infoDiv = document.createElement("div");
-    infoDiv.className = "flex-1 min-w-0";
-    const nameSpan = document.createElement("div");
-    nameSpan.className = "text-sm font-semibold text-gray-800 truncate";
-    nameSpan.textContent = message.fileName;
-    const metaSpan = document.createElement("div");
-    metaSpan.className = "text-xs text-gray-400";
-    if (message.fileSize) {
-      metaSpan.textContent = message.fileSize >= 1048576
-        ? `${(message.fileSize / 1048576).toFixed(1)} MB`
-        : `${(message.fileSize / 1024).toFixed(1)} KB`;
+    if (message._fileExpired) {
+      const card = document.createElement("div");
+      card.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
+      card.innerHTML = `
+        <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
+          <i class="fas fa-clock-rotate-left"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(message.fileName || 'ファイル')}</div>
+          <div class="text-[10px] text-gray-400">保存期間（100件制限）が終了したため削除されました</div>
+        </div>
+      `;
+      messageElement.appendChild(card);
+    } else {
+      const kvDiv = document.createElement("div");
+      kvDiv.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400 bg-gray-300" : "border-gray-200 bg-gray-50"} flex items-center gap-2.5 cursor-pointer select-none`;
+      const iconWrap = document.createElement("div");
+      iconWrap.className = "flex-shrink-0 w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center";
+      iconWrap.innerHTML = '<i class="fas fa-paperclip text-gray-500 text-sm"></i>';
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "flex-1 min-w-0";
+      const nameSpan = document.createElement("div");
+      nameSpan.className = "text-sm font-semibold text-gray-800 truncate";
+      nameSpan.textContent = message.fileName;
+      const metaSpan = document.createElement("div");
+      metaSpan.className = "text-xs text-gray-400";
+      if (message.fileSize) {
+        metaSpan.textContent = message.fileSize >= 1048576
+          ? `${(message.fileSize / 1048576).toFixed(1)} MB`
+          : `${(message.fileSize / 1024).toFixed(1)} KB`;
+      }
+      infoDiv.appendChild(nameSpan);
+      infoDiv.appendChild(metaSpan);
+      const dlIcon = document.createElement("div");
+      dlIcon.className = "flex-shrink-0 text-gray-400";
+      dlIcon.innerHTML = '<i class="fas fa-download text-sm"></i>';
+      kvDiv.appendChild(iconWrap);
+      kvDiv.appendChild(infoDiv);
+      kvDiv.appendChild(dlIcon);
+      kvDiv.addEventListener("click", async () => {
+        try {
+          const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
+          if (res && (res.status === 404 || res.status === 410)) {
+            message._fileExpired = true;
+            alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+            const expiredCard = document.createElement("div");
+            expiredCard.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
+            expiredCard.innerHTML = `
+              <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
+                <i class="fas fa-clock-rotate-left"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(message.fileName || 'ファイル')}</div>
+                <div class="text-[10px] text-gray-400">保存期間（100件制限）が終了したため削除されました</div>
+              </div>
+            `;
+            kvDiv.replaceWith(expiredCard);
+            return;
+          }
+        } catch (_) {}
+        downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
+      });
+      messageElement.appendChild(kvDiv);
     }
-    infoDiv.appendChild(nameSpan);
-    infoDiv.appendChild(metaSpan);
-    const dlIcon = document.createElement("div");
-    dlIcon.className = "flex-shrink-0 text-gray-400";
-    dlIcon.innerHTML = '<i class="fas fa-download text-sm"></i>';
-    kvDiv.appendChild(iconWrap);
-    kvDiv.appendChild(infoDiv);
-    kvDiv.appendChild(dlIcon);
-    kvDiv.addEventListener("click", async () => {
-      try {
-        const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
-        if (res && res.status === 404) {
-          alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-          return;
-        }
-      } catch (_) {}
-      downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
-    });
-    messageElement.appendChild(kvDiv);
   }
 
   updateReactionsUI(messageElement, message);

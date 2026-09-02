@@ -577,6 +577,28 @@ async function handleJoinServer(request, env) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(true)
         });
+
+        // サーバー作成者(createdBy)および管理者リスト(serverAdmins)もRTDBへ同期
+        if (srvData && srvData.fields) {
+          if (srvData.fields.createdBy?.stringValue) {
+            await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/createdBy.json?access_token=${adminToken}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(srvData.fields.createdBy.stringValue)
+            }).catch(() => {});
+          }
+          if (srvData.fields.serverAdmins?.arrayValue?.values) {
+            const adminObj = {};
+            srvData.fields.serverAdmins.arrayValue.values.forEach(v => {
+              if (v.stringValue) adminObj[v.stringValue] = true;
+            });
+            await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/serverAdmins.json?access_token=${adminToken}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(adminObj)
+            }).catch(() => {});
+          }
+        }
       } catch (e) {
         console.error("RTDB Update Error:", e);
       }
@@ -635,6 +657,28 @@ async function handleSyncRtdb(request, env) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(true)
       });
+
+      // サーバー作成者(createdBy)および管理者リスト(serverAdmins)もRTDBへ同期
+      if (srvData && srvData.fields) {
+        if (srvData.fields.createdBy?.stringValue) {
+          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/createdBy.json?access_token=${adminToken}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(srvData.fields.createdBy.stringValue)
+          }).catch(() => {});
+        }
+        if (srvData.fields.serverAdmins?.arrayValue?.values) {
+          const adminObj = {};
+          srvData.fields.serverAdmins.arrayValue.values.forEach(v => {
+            if (v.stringValue) adminObj[v.stringValue] = true;
+          });
+          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/serverAdmins.json?access_token=${adminToken}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(adminObj)
+          }).catch(() => {});
+        }
+      }
     } catch (e) {
       console.error("RTDB Sync Error:", e);
       return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: corsHeaders });
