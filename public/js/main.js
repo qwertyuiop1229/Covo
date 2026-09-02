@@ -914,19 +914,6 @@ function initializeFirebase() {
             if (isAdmin && !hasUid) {
               updateDoc(adminDocRef, { admins: arrayUnion(user.uid) }).catch(() => {});
             }
-
-            // RTDB側の adminList/admins にもマップ形式 { [uid]: true } で自己治癒同期
-            if (isAdmin) {
-              try {
-                import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
-                  const rtdb = await _getOrInitRTDB();
-                  await set(ref(rtdb, `artifacts/${appId}/settings/adminList/admins/${user.uid}`), true).catch(() => {});
-                  if (appId !== 'simplechat-65a0d') {
-                    await set(ref(rtdb, `artifacts/simplechat-65a0d/settings/adminList/admins/${user.uid}`), true).catch(() => {});
-                  }
-                });
-              } catch (_) {}
-            }
           }
 
           // 非管理者は allowedEmails を確認（連携メールのいずれか1つでも許可されていればOK）
@@ -6307,17 +6294,11 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
-    // クライアント側からも直接 RTDB members/$userId, serverAdmins, createdBy に同期して自己治癒
+    // クライアント側からは本人のメンバーシップのみ直接書き込み（createdBy等のサーバー全体メタデータはWorker側で安全同期）
     try {
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
         const rtdb = await _getOrInitRTDB();
         await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-        if (serverData.createdBy) {
-          await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/createdBy`), serverData.createdBy).catch(() => {});
-        }
-        if (serverData.serverAdmins && Array.isArray(serverData.serverAdmins) && serverData.serverAdmins.includes(userId)) {
-          await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/serverAdmins/${userId}`), true).catch(() => {});
-        }
       });
     } catch (e) {}
   }
@@ -7768,17 +7749,11 @@ async function adminJoinServer(serverId, serverData) {
       avatarUrl: userAvatarUrl || null,
       joinedAt: serverTimestamp()
     });
-    // RTDB にもメンバーシップおよびサーバーメタデータを直接セット
+    // RTDB にも本人のメンバーシップをセット
     try {
       const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-      if (serverData.createdBy) {
-        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/createdBy`), serverData.createdBy).catch(() => {});
-      }
-      if (serverData.serverAdmins && Array.isArray(serverData.serverAdmins) && serverData.serverAdmins.includes(userId)) {
-        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/serverAdmins/${userId}`), true).catch(() => {});
-      }
     } catch (rtdbErr) {}
     document.getElementById("adminJoinModal").classList.add("hidden");
     enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
@@ -11830,15 +11805,11 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     if (toDelete.length === 0) return;
 
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-    const isGlobal = Boolean(isAdmin);
-    const isSvAdmin = Boolean(currentServerData?.serverAdmins && Array.isArray(currentServerData.serverAdmins) && currentServerData.serverAdmins.includes(userId));
-    const isOwner = Boolean(currentServerData?.createdBy === userId);
-    const canPruneOthers = isGlobal || isSvAdmin || isOwner || Boolean(dmId);
 
     for (const msg of toDelete) {
-      // クライアント側での自動プルーニングは、自分が送信したメッセージ（または全体管理者・サーバー管理者・サーバーオーナー・DM）のみ直接削除する
-      // （権限のない他人のメッセージを直接removeしようとしてPermission Deniedエラーが発生するのを防止）
-      if (!canPruneOthers && msg.senderId !== userId) continue;
+      // クライアント側からの自動プルーニングは、自分が送信したメッセージのみを削除する
+      // （RTDBルール senderId === auth.uid に100%合致するため permission_denied が絶対に発生しない）
+      if (msg.senderId !== userId) continue;
 
       // 1. Cloudflare KV ファイル連動削除
       const fileUrls = [msg.kvFileUrl, msg.fileData, msg.text].filter(Boolean);
@@ -11848,7 +11819,7 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
           if (m && m[1]) {
             const fileKey = m[1];
             const extraParams = `&appId=${encodeURIComponent(appId)}${serverId ? `&serverId=${encodeURIComponent(serverId)}` : ''}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${canPruneOthers ? '&forceDelete=1' : ''}${extraParams}`, {
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${extraParams}`, {
               method: 'DELETE'
             }).catch(() => {});
           }
