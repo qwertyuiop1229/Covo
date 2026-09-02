@@ -967,171 +967,6 @@ async function main() {
 main().catch(e => { console.error(e); process.exit(1); });
 </file>
 
-<file path="scripts/migrate_firestore_to_rtdb.js">
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
-const { getDatabase } = require('firebase-admin/database');
-const fs = require('fs');
-const path = require('path');
-
-// サービスアカウントキーのパス
-const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
-
-if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
-  console.error("❌ エラー: serviceAccountKey.json がプロジェクトのルートディレクトリに見つかりません。");
-  console.error("Firebase Console (プロジェクト設定 > サービスアカウント) から新しい秘密鍵を生成し、プロジェクトの直下 (package.jsonと同じ階層) に配置してください。");
-  process.exit(1);
-}
-
-const serviceAccount = require(SERVICE_ACCOUNT_PATH);
-
-// RTDBのURL (index.html から抽出したURL)
-const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
-const APP_ID = "simplechat-65a0d";
-
-initializeApp({
-  credential: cert(serviceAccount),
-  databaseURL: DATABASE_URL
-});
-
-const firestore = getFirestore();
-const rtdb = getDatabase();
-
-/**
- * オブジェクト内のFirestore Timestampを再帰的に探し、
- * RTDB用のミリ秒整数 (Unix Timestamp) に変換する
- */
-function convertDataForRTDB(data) {
-  if (data === null || typeof data !== 'object') {
-    return data;
-  }
-  
-  if (Array.isArray(data)) {
-    return data.map(item => convertDataForRTDB(item));
-  }
-
-  const newData = {};
-  for (const [key, value] of Object.entries(data)) {
-    // Undefined は RTDB に保存できないためスキップ
-    if (value === undefined) continue;
-
-    let finalValue = value;
-
-    // FirestoreのTimestamp型判定
-    if (value && typeof value === 'object' && typeof value.toDate === 'function') {
-      finalValue = value.toDate().getTime();
-    } else if (value && typeof value === 'object' && typeof value.toMillis === 'function') {
-      finalValue = value.toMillis();
-    } else if (value && typeof value === 'object' && value._seconds !== undefined && value._nanoseconds !== undefined) {
-      finalValue = value._seconds * 1000 + Math.floor(value._nanoseconds / 1000000);
-    } else {
-      finalValue = convertDataForRTDB(value);
-    }
-    
-    // 🔴 RTDBはキーに "." を含められないため、"versions.1" 等を { versions: { "1": ... } } のように階層化して退避する
-    if (key.includes('.')) {
-      const parts = key.split('.');
-      let current = newData;
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (!current[parts[i]] || typeof current[parts[i]] !== 'object') {
-          current[parts[i]] = {};
-        }
-        current = current[parts[i]];
-      }
-      current[parts[parts.length - 1]] = finalValue;
-    } else {
-      // 既に階層化でオブジェクトが作られている場合のマージ
-      if (typeof newData[key] === 'object' && typeof finalValue === 'object' && !Array.isArray(finalValue)) {
-         Object.assign(newData[key], finalValue);
-      } else {
-         newData[key] = finalValue;
-      }
-    }
-  }
-
-  return newData;
-}
-
-/**
- * 特定のコレクションを再帰的に取得し、RTDBに書き込む
- */
-async function migrateCollection(collectionRef, rtdbPath) {
-  const snapshot = await collectionRef.get();
-  
-  if (snapshot.empty) {
-    return;
-  }
-
-  console.log(`\n📂 コレクション [${collectionRef.path}] の移行を開始... (${snapshot.size} ドキュメント)`);
-  
-  let count = 0;
-  for (const doc of snapshot.docs) {
-    const docData = doc.data();
-    const docId = doc.id;
-    const newRtdbPath = `${rtdbPath}/${docId}`;
-    
-    // データ変換 (タイムスタンプなど)
-    const convertedData = convertDataForRTDB(docData);
-    
-    // RTDBに書き込み (暗号化文字列等もそのまま保持される)
-    await rtdb.ref(newRtdbPath).set(convertedData);
-    count++;
-    
-    // ログ表示: 現在のドキュメントの処理中であることを明記
-    process.stdout.write(`\r⏳ 進行状況: ${count} / ${snapshot.size} (Doc: ${docId})`);
-
-    // サブコレクションの再帰的取得
-    const subCollections = await doc.ref.listCollections();
-    if (subCollections.length > 0) {
-      process.stdout.write(`\n`); // サブコレクションがある場合は改行してログを崩さないようにする
-      for (const subCol of subCollections) {
-        await migrateCollection(subCol, `${newRtdbPath}/${subCol.id}`);
-      }
-    }
-  }
-  process.stdout.write(`\n`);
-  console.log(`✅ [${collectionRef.path}] の移行完了`);
-}
-
-async function runMigration() {
-  console.log("🚀 Firestore から Realtime Database への完全移行スクリプトを開始します...");
-  console.log(`対象 APP_ID: ${APP_ID}`);
-  console.log(`RTDB URL: ${DATABASE_URL}\n`);
-
-  try {
-    // 移行のルートとなるアーティファクトドキュメントを取得
-    const artifactsRef = firestore.collection('artifacts').doc(APP_ID);
-    
-    // アプリケーション直下のコレクションをリストアップして全て移行する
-    const rootCollections = await artifactsRef.listCollections();
-    
-    if (rootCollections.length === 0) {
-      console.log("⚠️ 移行対象のコレクションが見つかりませんでした。");
-    }
-
-    for (const collection of rootCollections) {
-      if (collection.id === 'calls') {
-        console.log(`\n⏭️  コレクション [${collection.id}] は一時的な通話データのためスキップします。`);
-        continue;
-      }
-      
-      const rtdbBasePath = `artifacts/${APP_ID}/${collection.id}`;
-      await migrateCollection(collection, rtdbBasePath);
-    }
-
-    console.log("\n🎉 全てのデータの移行が完了しました！エラーは発生していません。");
-    console.log("アプリを再読み込みし、RTDB同期モードでデータが正しく表示されるかご確認ください。");
-    process.exit(0);
-
-  } catch (error) {
-    console.error("\n❌ 移行中にエラーが発生しました:", error);
-    process.exit(1);
-  }
-}
-
-runMigration();
-</file>
-
 <file path="scripts/print-deployed-version.js">
 #!/usr/bin/env node
 const fs = require('fs');
@@ -2350,6 +2185,183 @@ iPhone等で開発者コンソールが無くてもデバッグできるよう�
 - `server/src/index.js` は **UTF-16LE** で保存されています（通常のエディタで文字化けする場合あり）。
 </file>
 
+<file path="scripts/migrate_firestore_to_rtdb.js">
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getDatabase } = require('firebase-admin/database');
+const fs = require('fs');
+const path = require('path');
+
+// サービスアカウントキーのパス
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
+
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+  console.error("❌ エラー: serviceAccountKey.json がプロジェクトのルートディレクトリに見つかりません。");
+  console.error("Firebase Console (プロジェクト設定 > サービスアカウント) から新しい秘密鍵を生成し、プロジェクトの直下 (package.jsonと同じ階層) に配置してください。");
+  process.exit(1);
+}
+
+const serviceAccount = require(SERVICE_ACCOUNT_PATH);
+
+// RTDBのURL (index.html から抽出したURL)
+const DATABASE_URL = "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app";
+const APP_ID = "simplechat-65a0d";
+
+initializeApp({
+  credential: cert(serviceAccount),
+  databaseURL: DATABASE_URL
+});
+
+const firestore = getFirestore();
+const rtdb = getDatabase();
+
+/**
+ * オブジェクト内のFirestore Timestampを再帰的に探し、
+ * RTDB用のミリ秒整数 (Unix Timestamp) に変換する
+ */
+function convertDataForRTDB(data) {
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  
+  if (Array.isArray(data)) {
+    return data.map(item => convertDataForRTDB(item));
+  }
+
+  const newData = {};
+  for (const [key, value] of Object.entries(data)) {
+    // Undefined は RTDB に保存できないためスキップ
+    if (value === undefined) continue;
+
+    let finalValue = value;
+
+    // FirestoreのTimestamp型判定
+    if (value && typeof value === 'object' && typeof value.toDate === 'function') {
+      finalValue = value.toDate().getTime();
+    } else if (value && typeof value === 'object' && typeof value.toMillis === 'function') {
+      finalValue = value.toMillis();
+    } else if (value && typeof value === 'object' && value._seconds !== undefined && value._nanoseconds !== undefined) {
+      finalValue = value._seconds * 1000 + Math.floor(value._nanoseconds / 1000000);
+    } else {
+      finalValue = convertDataForRTDB(value);
+    }
+    
+    // 🔴 RTDBはキーに "." を含められないため、"versions.1" 等を { versions: { "1": ... } } のように階層化して退避する
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      let current = newData;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]] || typeof current[parts[i]] !== 'object') {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = finalValue;
+    } else {
+      // 既に階層化でオブジェクトが作られている場合のマージ
+      if (typeof newData[key] === 'object' && typeof finalValue === 'object' && !Array.isArray(finalValue)) {
+         Object.assign(newData[key], finalValue);
+      } else {
+         newData[key] = finalValue;
+      }
+    }
+  }
+
+  return newData;
+}
+
+/**
+ * 特定のコレクションを再帰的に取得し、RTDBに書き込む
+ */
+async function migrateCollection(collectionRef, rtdbPath) {
+  const snapshot = await collectionRef.get();
+  
+  if (snapshot.empty) {
+    return;
+  }
+
+  console.log(`\n📂 コレクション [${collectionRef.path}] の移行を開始... (${snapshot.size} ドキュメント)`);
+  
+  let count = 0;
+  for (const doc of snapshot.docs) {
+    const docData = doc.data();
+    const docId = doc.id;
+    const newRtdbPath = `${rtdbPath}/${docId}`;
+    
+    // データ変換 (タイムスタンプなど)
+    const convertedData = convertDataForRTDB(docData);
+
+    // サーバーコレクションの場合、配列 joinedUsers / serverAdmins を members / serverAdmins オブジェクトに展開して書き込み
+    if (rtdbPath.endsWith('/servers') && convertedData && typeof convertedData === 'object') {
+      if (Array.isArray(docData.joinedUsers)) {
+        convertedData.members = {};
+        docData.joinedUsers.forEach(uid => { if (uid) convertedData.members[uid] = true; });
+      }
+      if (Array.isArray(docData.serverAdmins)) {
+        convertedData.serverAdmins = {};
+        docData.serverAdmins.forEach(uid => { if (uid) convertedData.serverAdmins[uid] = true; });
+      }
+    }
+    
+    // RTDBに書き込み (暗号化文字列等もそのまま保持される)
+    await rtdb.ref(newRtdbPath).set(convertedData);
+    count++;
+    
+    // ログ表示: 現在のドキュメントの処理中であることを明記
+    process.stdout.write(`\r⏳ 進行状況: ${count} / ${snapshot.size} (Doc: ${docId})`);
+
+    // サブコレクションの再帰的取得
+    const subCollections = await doc.ref.listCollections();
+    if (subCollections.length > 0) {
+      process.stdout.write(`\n`); // サブコレクションがある場合は改行してログを崩さないようにする
+      for (const subCol of subCollections) {
+        await migrateCollection(subCol, `${newRtdbPath}/${subCol.id}`);
+      }
+    }
+  }
+  process.stdout.write(`\n`);
+  console.log(`✅ [${collectionRef.path}] の移行完了`);
+}
+
+async function runMigration() {
+  console.log("🚀 Firestore から Realtime Database への完全移行スクリプトを開始します...");
+  console.log(`対象 APP_ID: ${APP_ID}`);
+  console.log(`RTDB URL: ${DATABASE_URL}\n`);
+
+  try {
+    // 移行のルートとなるアーティファクトドキュメントを取得
+    const artifactsRef = firestore.collection('artifacts').doc(APP_ID);
+    
+    // アプリケーション直下のコレクションをリストアップして全て移行する
+    const rootCollections = await artifactsRef.listCollections();
+    
+    if (rootCollections.length === 0) {
+      console.log("⚠️ 移行対象のコレクションが見つかりませんでした。");
+    }
+
+    for (const collection of rootCollections) {
+      if (collection.id === 'calls') {
+        console.log(`\n⏭️  コレクション [${collection.id}] は一時的な通話データのためスキップします。`);
+        continue;
+      }
+      
+      const rtdbBasePath = `artifacts/${APP_ID}/${collection.id}`;
+      await migrateCollection(collection, rtdbBasePath);
+    }
+
+    console.log("\n🎉 全てのデータの移行が完了しました！エラーは発生していません。");
+    console.log("アプリを再読み込みし、RTDB同期モードでデータが正しく表示されるかご確認ください。");
+    process.exit(0);
+
+  } catch (error) {
+    console.error("\n❌ 移行中にエラーが発生しました:", error);
+    process.exit(1);
+  }
+}
+
+runMigration();
+</file>
+
 <file path="src-tauri/capabilities/default.json">
 {
   "$schema": "../gen/schemas/desktop-schema.json",
@@ -3286,16 +3298,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/css/main.css">
-@import url('./modules/base.css');
-@import url('./modules/sidebar.css');
-@import url('./modules/chat.css');
-@import url('./modules/components.css');
-@import url('./modules/mobile.css');
-@import url('./modules/animations.css');
-@import url('./modules/theme.css');
-</file>
-
 <file path="public/css/modules/animations.css">
 /* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
 .splash-icon-container {
@@ -3852,6 +3854,572 @@ module.exports = {
       border: 1px solid #e5e7eb;
       font-size: 0.85rem;
       color: #374151;
+    }
+</file>
+
+<file path="public/css/main.css">
+@import url('./modules/base.css');
+@import url('./modules/sidebar.css');
+@import url('./modules/chat.css');
+@import url('./modules/components.css');
+@import url('./modules/mobile.css');
+@import url('./modules/animations.css');
+@import url('./modules/theme.css');
+</file>
+
+<file path="public/css/modules/components.css">
+/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
+    .flipped {
+      transform: scaleY(-1);
+    }
+
+    .message-bubble {
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      margin-bottom: 0;
+      word-wrap: break-word;
+      -webkit-touch-callout: none;
+      /* iOS長押しメニュー防止 */
+    }
+
+
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+      transition: opacity 0.15s;
+    }
+
+    .msg-avatar:hover {
+      opacity: 0.85;
+    }
+
+    .msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .my-message {
+      background-color: #e0e0e0;
+      /* 薄いグレー */
+      border-top-right-radius: 0.25rem;
+    }
+
+    .other-message {
+      background-color: #f0f0f0;
+      /* 非常に薄いグレー */
+      border-top-left-radius: 0.25rem;
+    }
+
+    .scrollable {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
+    #updateOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      flex-direction: column;
+    }
+
+    #updateOverlay.show {
+      display: flex;
+    }
+
+    .update-card {
+      position: relative;
+      background: #ffffff;
+      color: #1f2937;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+
+    .update-close-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #111827;
+      transform: scale(1.05);
+    }
+
+    @keyframes updateCardPopIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .update-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #4f46e5;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: white;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+    }
+
+    .update-title {
+      color: #111827;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .update-version {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .update-body {
+      color: #4b5563;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      padding: 1rem;
+      background: #f3f4f6;
+      border-radius: 1rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .update-btn {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #4f46e5;
+      color: white;
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .update-btn:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    }
+
+    .update-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .update-progress {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    .update-progress.show {
+      display: block;
+    }
+
+    .update-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* === 設定トグルスイッチ === */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+
+    .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .setting-label i {
+      width: 18px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background-color: #d1d5db;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background-color 0.25s;
+    }
+
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #374151;
+    }
+
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+
+    #updateErrorBox textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      font-size: 0.7rem;
+      background: #1e293b;
+      color: #fca5a5;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 8px;
+      white-space: pre;
+      overflow: auto;
+    }
+
+    #updateErrorBox button {
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #updateErrorBox button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    /* === モーダルアニメーション === */
+    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
+    /* .modal-box { placeholder } */
+    .modal-opening {
+      animation: scaleInFade 0.22s ease both;
+    }
+
+    /* === メッセージバブルフェードイン === */
+    .message-bubble {
+      animation: slideUpFade 0.18s ease both;
+    }
+
+    /* === ルームリストアイテムのフェード === */
+    .room-item-animate {
+      animation: fadeIn 0.15s ease both;
+    }
+
+    /* === ボタン全般のactiveフィードバック === */
+    button:not(.server-list-user-btn):active {
+      opacity: 0.8;
+    }
+
+    #backToServerListBtn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    /* サーバー設定モーダル内のタブ */
+    .ss-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .ss-tab.active {
+      background: #1f2937;
+      color: white;
+    }
+
+    .ss-tab:not(.active) {
+      background: transparent;
+      color: #6b7280;
+    }
+
+    .ss-tab:not(.active):hover {
+      background: #f3f4f6;
+    }
+
+    /* 招待コード表示 */
+    .invite-code-item {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .invite-code-text {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+      letter-spacing: 2px;
+    }
+
+    .invite-code-meta {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+
+    /* === サーバービュー用ニックネームヘッダー === */
+    #globalAppHeader {
+      display: none;
+      background: #374151;
+      color: white;
+      padding: 0.45rem 1rem;
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #globalAppHeader.server-mode {
+      display: flex;
+    }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
+
+    #headerTitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.88;
+    }
+
+    /* === カスタム確認ダイアログ === */
+    #customConfirmModal {
+      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
+    }
+    #customConfirmModal .confirm-box {
+      text-align: left;
+    }
+
+    /* === モーダル角丸崩れ防止 === */
+    .modal-dark-header {
+      border-radius: inherit;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    /* === メンションバッジ通知 === */
+    .mention-toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mention-toast-badge {
+      background: #4f46e5;
+      color: white;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 99px;
+      flex-shrink: 0;
+      letter-spacing: 0.03em;
+    }
+
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
     }
 </file>
 
@@ -4879,562 +5447,6 @@ if (typeof window !== 'undefined') {
   </script>
 </body>
 </html>
-</file>
-
-<file path="public/css/modules/components.css">
-/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
-    .flipped {
-      transform: scaleY(-1);
-    }
-
-    .message-bubble {
-      max-width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      margin-bottom: 0;
-      word-wrap: break-word;
-      -webkit-touch-callout: none;
-      /* iOS長押しメニュー防止 */
-    }
-
-
-    .msg-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      cursor: pointer;
-      overflow: hidden;
-      transition: opacity 0.15s;
-    }
-
-    .msg-avatar:hover {
-      opacity: 0.85;
-    }
-
-    .msg-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .my-message {
-      background-color: #e0e0e0;
-      /* 薄いグレー */
-      border-top-right-radius: 0.25rem;
-    }
-
-    .other-message {
-      background-color: #f0f0f0;
-      /* 非常に薄いグレー */
-      border-top-left-radius: 0.25rem;
-    }
-
-    .scrollable {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
-    #updateOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(16px);
-      flex-direction: column;
-    }
-
-    #updateOverlay.show {
-      display: flex;
-    }
-
-    .update-card {
-      position: relative;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.75rem;
-      padding: 2.75rem 2.25rem;
-      max-width: 420px;
-      width: 90%;
-      text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .update-close-btn {
-      position: absolute;
-      top: 1.25rem;
-      right: 1.25rem;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .update-close-btn.hidden {
-      display: none !important;
-    }
-
-    .update-close-btn:hover {
-      background: rgba(0, 0, 0, 0.1);
-      color: #111827;
-      transform: scale(1.05);
-    }
-
-    @keyframes updateCardPopIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-
-    .update-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 1.25rem;
-      background: #4f46e5;
-      border-radius: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    }
-
-    .update-title {
-      color: #111827;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-    }
-
-    .update-version {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .update-body {
-      color: #4b5563;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      margin-bottom: 1.75rem;
-      max-height: 140px;
-      overflow-y: auto;
-      text-align: left;
-      padding: 1rem;
-      background: #f3f4f6;
-      border-radius: 1rem;
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-
-    .update-btn {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: #4f46e5;
-      color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-
-    .update-btn:hover {
-      background: #4338ca;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
-    }
-
-    .update-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .update-progress {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.85rem;
-      display: none;
-    }
-
-    .update-progress.show {
-      display: block;
-    }
-
-    .update-spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e2e8f0;
-      border-top-color: #4f46e5;
-      border-radius: 50%;
-      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    /* === 設定トグルスイッチ === */
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #f3f4f6;
-    }
-
-    .setting-row:last-child {
-      border-bottom: none;
-    }
-
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-
-    .setting-label i {
-      width: 18px;
-      text-align: center;
-      color: #6b7280;
-    }
-
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background-color: #d1d5db;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: background-color 0.25s;
-    }
-
-    .toggle-slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-
-    .toggle-switch input:checked+.toggle-slider {
-      background-color: #374151;
-    }
-
-    .toggle-switch input:checked+.toggle-slider::before {
-      transform: translateX(20px);
-    }
-
-    #updateErrorBox textarea {
-      width: 100%;
-      height: 80px;
-      padding: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
-      font-size: 0.7rem;
-      background: #1e293b;
-      color: #fca5a5;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      resize: vertical;
-      margin-bottom: 8px;
-      white-space: pre;
-      overflow: auto;
-    }
-
-    #updateErrorBox button {
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f1f5f9;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    #updateErrorBox button:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-    /* === モーダルアニメーション === */
-    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-    /* .modal-box { placeholder } */
-    .modal-opening {
-      animation: scaleInFade 0.22s ease both;
-    }
-
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
-
-    /* === ルームリストアイテムのフェード === */
-    .room-item-animate {
-      animation: fadeIn 0.15s ease both;
-    }
-
-    /* === ボタン全般のactiveフィードバック === */
-    button:not(.server-list-user-btn):active {
-      opacity: 0.8;
-    }
-
-    #backToServerListBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    /* サーバー設定モーダル内のタブ */
-    .ss-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    .ss-tab.active {
-      background: #1f2937;
-      color: white;
-    }
-
-    .ss-tab:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-
-    .ss-tab:not(.active):hover {
-      background: #f3f4f6;
-    }
-
-    /* 招待コード表示 */
-    .invite-code-item {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-
-    .invite-code-text {
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-      flex: 1;
-      letter-spacing: 2px;
-    }
-
-    .invite-code-meta {
-      font-size: 0.7rem;
-      color: #9ca3af;
-    }
-
-    /* === サーバービュー用ニックネームヘッダー === */
-    #globalAppHeader {
-      display: none;
-      background: #374151;
-      color: white;
-      padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    #globalAppHeader.server-mode {
-      display: flex;
-    }
-    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
-    body.discord-ui-mode #globalAppHeader {
-      display: none !important;
-    }
-
-    #headerTitle {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.88;
-    }
-
-    /* === カスタム確認ダイアログ === */
-    #customConfirmModal {
-      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
-    }
-    #customConfirmModal .confirm-box {
-      text-align: left;
-    }
-
-    /* === モーダル角丸崩れ防止 === */
-    .modal-dark-header {
-      border-radius: inherit;
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-
-    /* === メンションバッジ通知 === */
-    .mention-toast {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .mention-toast-badge {
-      background: #4f46e5;
-      color: white;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 99px;
-      flex-shrink: 0;
-      letter-spacing: 0.03em;
-    }
-
-    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
-    .whatsnew-card {
-      background-color: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
-      border-radius: 1.5rem;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    }
-    body.dark-server-theme .whatsnew-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-      color: #f8fafc !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    body.discord-dark-theme .whatsnew-card {
-      background-color: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-
-    .whatsnew-header {
-      padding: 1.25rem 1.5rem 1rem;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-header {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-header {
-      background-color: #242629 !important;
-      border-bottom-color: #1f2023 !important;
-    }
-
-    .whatsnew-body-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 1.25rem;
-      font-size: 0.875rem;
-      line-height: 1.65;
-      color: #334155;
-    }
-    body.dark-server-theme .whatsnew-body-box {
-      background-color: rgba(15, 23, 42, 0.6) !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme .whatsnew-body-box {
-      background-color: #1e1f22 !important;
-      border-color: #1f2023 !important;
-      color: #dbdee1 !important;
-    }
-
-    .whatsnew-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-footer {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-footer {
-      background-color: #242629 !important;
-      border-top-color: #1f2023 !important;
-    }
 </file>
 
 <file path="public/js/geo_study.js">
@@ -10146,974 +10158,6 @@ pub fn run() {
     }
 </file>
 
-<file path="public/css/modules/theme.css">
-/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,0,0,0.18) transparent;
-    }
-    *::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    *::-webkit-scrollbar-button {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    *::-webkit-scrollbar-thumb {
-      background: rgba(0,0,0,0.18);
-      border-radius: 100px;
-    }
-    *::-webkit-scrollbar-thumb:hover {
-      background: rgba(0,0,0,0.32);
-    }
-    *::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    /* モーダル背景 */
-    .modal-overlay {
-      background-color: rgba(0, 0, 0, 0.75);
-    }
-
-    /* ドロップダウンコンテナのスタイル */
-    .dropdown-container {
-      position: relative;
-      display: inline-block;
-    }
-
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      background-color: white;
-      min-width: 100px;
-      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
-      z-index: 10;
-      right: 0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      border: 1px solid #ddd;
-    }
-
-    .dropdown-content button {
-      color: black;
-      padding: 8px 12px;
-      text-decoration: none;
-      display: block;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background-color: transparent;
-      cursor: pointer;
-      transition: background-color 0.2s;
-      font-size: 0.875rem;
-    }
-
-    .dropdown-content button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* メッセージ内容と入力欄 */
-    .message-content {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-    }
-
-    textarea#messageInput {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-      overflow-y: auto;
-      resize: none;
-      min-height: 0;
-      max-height: 200px;
-      background-color: transparent;
-      border: none;
-      font-size: 16px;
-      line-height: 1.5;
-
-      /* ★スクロールバーを非表示にする設定 */
-      -ms-overflow-style: none;
-      /* IE and Edge */
-      scrollbar-width: none;
-      /* Firefox */
-    }
-
-    /* ★Chrome, Safari, Opera用 */
-    textarea#messageInput::-webkit-scrollbar {
-      display: none;
-    }
-
-    textarea#messageInput:focus {
-      background-color: transparent;
-      outline: none;
-    }
-
-    /* 既読表示 */
-    .read-receipt {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 2px;
-      display: block;
-      text-align: right;
-    }
-
-    .other-message .read-receipt {
-      text-align: left;
-    }
-
-    /* 未読の境界線（「ここから未読」） */
-    .unread-divider {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      margin: 6px 0 2px;
-      padding: 0 4px;
-      color: #ef4444;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      user-select: none;
-    }
-    .unread-divider::before,
-    .unread-divider::after {
-      content: "";
-      flex: 1;
-      height: 1px;
-      background: currentColor;
-      opacity: 0.35;
-    }
-    body.dark-server-theme .unread-divider { color: #f87171; }
-
-    /* カスタムコンテキストメニュー */
-    .custom-context-menu {
-      position: fixed;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      z-index: 100;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 120px;
-    }
-    .custom-context-menu:not(.hidden) {
-      display: flex;
-    }
-    .custom-context-menu-inner {
-      background-color: white;
-      border: 1px solid #ddd;
-      border-radius: 0.5rem;
-      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-      padding: 4px 0;
-      overflow: hidden;
-    }
-
-    .custom-context-menu button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      text-align: left;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 0.875rem;
-      color: black;
-    }
-
-    .custom-context-menu button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
-    #resizer, #resizerRight {
-      width: 2px;
-      cursor: col-resize;
-      background-color: #e2e8f0;
-      transition: background-color 0.15s ease;
-      flex-shrink: 0;
-      position: relative;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      z-index: 25;
-    }
-
-    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
-    #resizer::before, #resizerRight::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: -10px;
-      right: -10px;
-      width: calc(100% + 20px);
-      height: 100%;
-      cursor: col-resize;
-      touch-action: none;
-      z-index: 26;
-    }
-
-    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
-    #resizer:hover, #resizerRight:hover,
-    #resizer.is-resizing, #resizerRight.is-resizing {
-      background-color: #1e293b;
-      box-shadow: none;
-    }
-
-    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
-    .reply-quote:hover {
-      text-decoration: underline;
-      text-decoration-color: #94a3b8;
-      text-underline-offset: 2px;
-    }
-
-    .reply-quote-nickname {
-      font-weight: 600;
-      color: #475569;
-      flex-shrink: 0;
-      max-width: 40%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .reply-quote-text {
-      color: #334155;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.9;
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    .message-highlight {
-      transition: background-color 0.8s ease-out;
-      background-color: #bde4ff !important;
-    }
-    /* === ダークモード全体 === */
-    body.dark-server-theme { background: #111827; }
-    body.dark-server-theme #mainContent,
-    body.dark-server-theme #appContainer { background: #111827; }
-
-    /* サーバーリスト・通知画面 */
-    body.dark-server-theme #serverListScreen { background: #1f2937; }
-    body.dark-server-theme #mobileNotifScreen { background: #111827; }
-    body.dark-server-theme .mobile-notif-item {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-
-    /* チャンネルサイドバー */
-    body.dark-server-theme #sidebar { background: #1e293b !important; }
-    body.dark-server-theme .room-item-animate {
-      background: transparent !important;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .room-item-animate:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: #f1f5f9;
-    }
-
-    /* ユーザーパネル */
-    body.dark-server-theme #userPanel {
-      background-color: #162032 !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme #userPanel:hover {
-      background-color: #1e2f42 !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-    }
-    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
-    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn:hover {
-      color: #f8fafc !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-    }
-
-    /* チャットエリア */
-    body.dark-server-theme #chatArea { background: #1a202c; }
-    body.dark-server-theme #currentRoomHeader {
-      background: #243040 !important;
-      border-bottom-color: rgba(255,255,255,0.08) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
-    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
-    body.dark-server-theme #messagesDisplay { background: #1a202c; }
-    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
-    body.dark-server-theme #pinnedMessagesArea {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .pinned-announcement-container {
-      background: #1e293b !important;
-      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme .pinned-announcement-header:hover {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .announcement-icon-wrap {
-      color: #818cf8 !important;
-    }
-    body.dark-server-theme .announcement-sender {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .announcement-text {
-      color: #cbd5e1 !important;
-    }
-    body.dark-server-theme .announcement-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-btn:hover {
-      background: rgba(255, 255, 255, 0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .pinned-announcement-list {
-      background: #162032 !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item:hover {
-      background: #1e293b !important;
-    }
-    body.dark-server-theme .announcement-item-icon {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer {
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn:hover {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .minimized-pin-icon {
-      background: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.12) !important;
-      color: #818cf8 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-    body.dark-server-theme .minimized-pin-badge {
-      border-color: #1e293b !important;
-    }
-
-    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
-    body.discord-dark-theme .pinned-announcement-container {
-      background: #2b2d31 !important;
-      border-bottom-color: #1f2023 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-header:hover {
-      background: #35373c !important;
-    }
-    body.discord-dark-theme .announcement-icon-wrap {
-      color: #5865f2 !important;
-    }
-    body.discord-dark-theme .announcement-sender {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .announcement-text {
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .announcement-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-btn:hover {
-      background: #35373c !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-list {
-      background: #1e1f22 !important;
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item:hover {
-      background: #2b2d31 !important;
-    }
-    body.discord-dark-theme .announcement-item-icon {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer {
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .minimized-pin-icon {
-      background: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #5865f2 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
-    }
-    body.discord-dark-theme .minimized-pin-badge {
-      border-color: #2b2d31 !important;
-    }
-
-    /* メッセージバブル */
-    body.dark-server-theme .my-message {
-      background-color: #2a3a52 !important;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .other-message {
-      background-color: #243040 !important;
-      color: #e2e8f0;
-    }
-    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
-    body.dark-server-theme .message-bubble.sticker-bubble {
-      background: transparent !important;
-      box-shadow: none !important;
-      padding: 2px 0 !important;
-      border: none !important;
-    }
-    body.dark-server-theme .message-content { color: #e2e8f0; }
-    body.dark-server-theme .read-receipt { color: #4b5563; }
-   /* ダークモード時のリプライのL字矢印の色調整 */
-    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
-    body.dark-server-theme .message-highlight {
-      background-color: rgba(96,165,250,0.25) !important;
-    }
-
-    /* 入力エリア */
-    body.dark-server-theme #messageInputArea {
-      background: #1e293b !important;
-      border-top-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme #messageInputInner {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      box-shadow: none !important;
-    }
-    body.dark-server-theme #messageInputInner:focus-within {
-      border-color: rgba(255,255,255,0.22) !important;
-    }
-    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
-    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
-    body.dark-server-theme .input-side-btn {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
-      color: #e2e8f0 !important;
-      background: #243040 !important;
-      border-color: rgba(255,255,255,0.2) !important;
-    }
-    body.dark-server-theme #replyingToContainer {
-      background: #1e2d3f !important;
-      border-left-color: #4b6280 !important;
-    }
-    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme #typingIndicator { color: #4b5563; }
-
-    /* メンバーリスト */
-    body.dark-server-theme #membersSidebar {
-      background: #1e293b;
-      border-left-color: rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
-    body.dark-server-theme .member-name { color: #cbd5e1; }
-    body.dark-server-theme .member-status-text { color: #64748b; }
-    body.dark-server-theme .member-group-title { color: #64748b; }
-    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
-
-    /* 検索バー */
-    body.dark-server-theme #searchContainer {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme #searchInput {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.15) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
-
-    /* コンテキストメニュー / ドロップダウン */
-    body.dark-server-theme .custom-context-menu-inner {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
-    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme .dropdown-content {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-    }
-    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
-    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
-
-    /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
-    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
-      background-color: #3b82f6;
-      box-shadow: none;
-    }
-    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
-    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
-    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
-      background-color: #5865f2;
-      box-shadow: none;
-    }
-    body.dark-server-theme * {
-      scrollbar-color: rgba(255,255,255,0.18) transparent;
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.18);
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.3);
-    }
-
-    /* 設定モーダル（コンテンツエリア）*/
-    body.dark-server-theme .settings-content {
-      background: #1a202c;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .settings-section-title {
-      color: #e2e8f0 !important;
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .bg-gray-50,
-    body.dark-server-theme .settings-content .bg-gray-100,
-    body.dark-server-theme .settings-content .bg-slate-50,
-    body.dark-server-theme .settings-content .bg-slate-100 {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .settings-content .text-gray-900,
-    body.dark-server-theme .settings-content .text-gray-800,
-    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .text-gray-600,
-    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .settings-content .border-gray-100,
-    body.dark-server-theme .settings-content .border-gray-200,
-    body.dark-server-theme .settings-content .border-slate-200,
-    body.dark-server-theme .settings-content .border-slate-300,
-    body.dark-server-theme .settings-content .border-t {
-      border-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme .settings-content .setting-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
-    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
-    body.dark-server-theme .settings-content input[type="text"],
-    body.dark-server-theme .settings-content input[type="email"],
-    body.dark-server-theme .settings-content input[type="password"] {
-      background: #101726 !important;
-      border-color: rgba(255,255,255,0.12) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #avatarUploadTrigger .border-white,
-    body.dark-server-theme #avatarUploadTriggerMobile .border-white,
-    body.discord-dark-theme #avatarUploadTrigger .border-white,
-    body.discord-dark-theme #avatarUploadTriggerMobile .border-white {
-      border-color: transparent !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer {
-      background: #162032 !important;
-      border-color: rgba(255,255,255,0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer .text-gray-800 {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer .text-gray-500 {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop {
-      background: #162032 !important;
-      border-color: rgba(255,255,255,0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-800 {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-500 {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme #versionLockContainer {
-      background: rgba(245, 158, 11, 0.12) !important;
-      border-color: rgba(245, 158, 11, 0.25) !important;
-    }
-    body.dark-server-theme #versionLockContainer .text-gray-600 {
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer,
-    body.discord-dark-theme #pastVersionsContainerDesktop {
-      background: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer .text-gray-800,
-    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-800 {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer .text-gray-500,
-    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-500 {
-      color: #949ba4 !important;
-    }
-
-    /* モバイル設定・プロフィール画面 */
-    body.dark-server-theme #mobileProfileScreen { background: #111827; }
-    body.dark-server-theme .mobile-settings-detail { background: #111827; }
-    body.dark-server-theme .mobile-settings-group {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-    body.dark-server-theme .mobile-settings-row {
-      border-bottom-color: rgba(255,255,255,0.05) !important;
-    }
-    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
-    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
-    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
-    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
-
-    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
-       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
-       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
-    body.dark-server-theme .modal-box,
-    body.dark-server-theme #serverSettingsModal .settings-content,
-    body.dark-server-theme #adminModal .settings-content {
-      background-color: #1e293b !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme .modal-box .bg-white,
-    body.dark-server-theme .modal-box .bg-gray-50,
-    body.dark-server-theme .modal-box .bg-gray-100,
-    body.dark-server-theme .modal-overlay .bg-gray-50,
-    body.dark-server-theme .modal-overlay .bg-white {
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme .modal-box .text-gray-900,
-    body.dark-server-theme .modal-box .text-gray-800,
-    body.dark-server-theme .modal-box .text-gray-700,
-    body.dark-server-theme .modal-overlay .text-gray-900,
-    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme .modal-box .text-gray-600,
-    body.dark-server-theme .modal-box .text-gray-500,
-    body.dark-server-theme .modal-overlay .text-gray-600,
-    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .modal-box .border-gray-200,
-    body.dark-server-theme .modal-box .border-gray-300,
-    body.dark-server-theme .modal-box .border-t,
-    body.dark-server-theme .modal-box .border-b,
-    body.dark-server-theme .modal-overlay .border-gray-200,
-    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
-    body.dark-server-theme .modal-box input[type="text"],
-    body.dark-server-theme .modal-box input[type="email"],
-    body.dark-server-theme .modal-box input[type="password"],
-    body.dark-server-theme .modal-box input[type="number"],
-    body.dark-server-theme .modal-box textarea,
-    body.dark-server-theme .modal-box select,
-    body.dark-server-theme .modal-overlay input[type="text"],
-    body.dark-server-theme .modal-overlay input[type="email"] {
-      background-color: #0f172a !important;
-      color: #e2e8f0 !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme .modal-box .bg-gray-100:hover,
-    body.dark-server-theme .modal-box .bg-gray-200:hover,
-    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
-    body.dark-server-theme .modal-box button.bg-gray-100,
-    body.dark-server-theme .modal-box button.bg-gray-200 {
-      background-color: #334155 !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* ===== ショートカット設定のダークモード対応 ===== */
-    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
-    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
-      background: #1e293b !important;
-      color: #e2e8f0 !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-    }
-    body.dark-server-theme #shortcutInfoContainer kbd,
-    body.discord-dark-theme #shortcutInfoContainer kbd {
-      background: #0f172a !important;
-      color: #93c5fd !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme #shortcutKeyInput,
-    body.discord-dark-theme #shortcutKeyInput {
-      background: #0f172a !important;
-      color: #60a5fa !important;
-      border-color: #3b82f6 !important;
-    }
-
-    /* =========================================================================
-       新テーマ: Discordダーク (body.discord-dark-theme)
-       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
-       ========================================================================= */
-    body.discord-dark-theme {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme #discordServerNav {
-      background-color: #1e1f22 !important;
-      border-right-color: #1e1f22 !important;
-    }
-    body.discord-dark-theme #sidebar,
-    body.discord-dark-theme #membersSidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme #serverHeader,
-    body.discord-dark-theme #currentRoomHeader,
-    body.discord-dark-theme #discordTopBar {
-      background-color: #313338 !important;
-      border-bottom-color: #1f2023 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #chatArea {
-      background-color: #313338 !important;
-    }
-    body.discord-dark-theme #messageInputArea {
-      background-color: #313338 !important;
-      border-top-color: transparent !important;
-    }
-    body.discord-dark-theme #messageInput,
-    body.discord-dark-theme .discord-input-box {
-      background-color: #383a40 !important;
-      color: #dbdee1 !important;
-      border-color: transparent !important;
-    }
-    body.discord-dark-theme #userPanel {
-      background-color: #232428 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-server-pill {
-      background-color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-hero-banner {
-      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .modal-box,
-    body.discord-dark-theme .settings-content {
-      background-color: #313338 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .settings-sidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme .settings-nav-item.active {
-      background-color: #3f4248 !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
-      background-color: #35373c !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .bg-gray-50,
-    body.discord-dark-theme .bg-gray-100 {
-      background-color: #2b2d31 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme input[type="text"],
-    body.discord-dark-theme input[type="email"],
-    body.discord-dark-theme input[type="password"] {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-      border-color: #232428 !important;
-    }
-
-    /* ===== アプリ独自カスタムドロップダウン ===== */
-    .covo-custom-select {
-      position: relative;
-      display: inline-block;
-      user-select: none;
-    }
-    .covo-select-trigger {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 8px 14px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: #1e293b;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-    }
-    .covo-select-trigger:hover {
-      background: #e2e8f0;
-      border-color: #94a3b8;
-    }
-    body.dark-server-theme .covo-select-trigger {
-      background: #0f172a;
-      border-color: rgba(255,255,255,0.15);
-      color: #e2e8f0;
-    }
-    body.discord-dark-theme .covo-select-trigger {
-      background: #1e1f22;
-      border-color: rgba(255,255,255,0.1);
-      color: #dbdee1;
-    }
-    .covo-select-options {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
-      min-width: 180px;
-      background: white;
-      border-radius: 12px;
-      padding: 6px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-      border: 1px solid #e2e8f0;
-      z-index: 60;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-8px) scale(0.96);
-      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-    .covo-custom-select.open .covo-select-options {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0) scale(1);
-    }
-    body.dark-server-theme .covo-select-options {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.12);
-    }
-    body.discord-dark-theme .covo-select-options {
-      background: #2b2d31;
-      border-color: #202225;
-    }
-    .covo-select-option {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 500;
-      color: #334155;
-      cursor: pointer;
-      transition: background 0.15s ease;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .covo-select-option:hover {
-      background: #f1f5f9;
-      color: #0f172a;
-    }
-    .covo-select-option.selected {
-      background: #e0e7ff;
-      color: #4338ca;
-      font-weight: 600;
-    }
-    body.dark-server-theme .covo-select-option {
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .covo-select-option:hover {
-      background: rgba(255,255,255,0.08);
-      color: white;
-    }
-    body.dark-server-theme .covo-select-option.selected {
-      background: #312e81;
-      color: #c7d2fe;
-    }
-    body.discord-dark-theme .covo-select-option {
-      color: #949ba4;
-    }
-    body.discord-dark-theme .covo-select-option:hover {
-      background: #35373c;
-      color: #dbdee1;
-    }
-    body.discord-dark-theme .covo-select-option.selected {
-      background: #5865f2;
-      color: white;
-    }
-
-    /* =========================================================================
-       Discord完全準拠 ユーザープロフィールポップアップ (User Profile Card)
-       ========================================================================= */
-    .user-profile-card {
-      border-radius: 16px !important;
-      overflow: hidden !important;
-      transition: background-color 0.2s ease, border-color 0.2s ease;
-    }
-    /* 1. ライトモード */
-    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-card {
-      background-color: #ffffff !important;
-      border-color: #e3e5e8 !important;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileAvatar {
-      border-color: #ffffff !important;
-      background-color: #e3e5e8 !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileStatusDot {
-      border-color: #ffffff !important;
-    }
-
-    /* 2. ダークネイビーモード (body.dark-server-theme) */
-    body.dark-server-theme .user-profile-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.08) !important;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
-    }
-    body.dark-server-theme #userProfileAvatar {
-      border-color: #1e293b !important;
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme #userProfileStatusDot {
-      border-color: #1e293b !important;
-    }
-    body.dark-server-theme #userProfileBanner {
-      background-color: #3b82f6 !important;
-    }
-
-    /* 3. Discordダークモード (body.discord-dark-theme) */
-    body.discord-dark-theme .user-profile-card {
-      background-color: #232428 !important;
-      border-color: #1f2023 !important;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
-    }
-    body.discord-dark-theme #userProfileAvatar {
-      border-color: #232428 !important;
-      background-color: #111214 !important;
-    }
-    body.discord-dark-theme #userProfileStatusDot {
-      border-color: #232428 !important;
-    }
-    body.discord-dark-theme #userProfileBanner {
-      background-color: #5865f2 !important;
-    }
-</file>
-
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -12140,6 +11184,974 @@ pub fn run() {
     }
 </file>
 
+<file path="public/css/modules/theme.css">
+/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* モーダル背景 */
+    .modal-overlay {
+      background-color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* ドロップダウンコンテナのスタイル */
+    .dropdown-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: white;
+      min-width: 100px;
+      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      right: 0;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+
+    .dropdown-content button {
+      color: black;
+      padding: 8px 12px;
+      text-decoration: none;
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background-color: transparent;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* メッセージ内容と入力欄 */
+    .message-content {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+    }
+
+    textarea#messageInput {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-y: auto;
+      resize: none;
+      min-height: 0;
+      max-height: 200px;
+      background-color: transparent;
+      border: none;
+      font-size: 16px;
+      line-height: 1.5;
+
+      /* ★スクロールバーを非表示にする設定 */
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* ★Chrome, Safari, Opera用 */
+    textarea#messageInput::-webkit-scrollbar {
+      display: none;
+    }
+
+    textarea#messageInput:focus {
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 既読表示 */
+    .read-receipt {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 2px;
+      display: block;
+      text-align: right;
+    }
+
+    .other-message .read-receipt {
+      text-align: left;
+    }
+
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
+    /* カスタムコンテキストメニュー */
+    .custom-context-menu {
+      position: fixed;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      z-index: 100;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      padding: 4px 0;
+      overflow: hidden;
+    }
+
+    .custom-context-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: black;
+    }
+
+    .custom-context-menu button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
+    #resizer, #resizerRight {
+      width: 2px;
+      cursor: col-resize;
+      background-color: #e2e8f0;
+      transition: background-color 0.15s ease;
+      flex-shrink: 0;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 25;
+    }
+
+    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
+    #resizer::before, #resizerRight::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -10px;
+      right: -10px;
+      width: calc(100% + 20px);
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 26;
+    }
+
+    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
+    #resizer:hover, #resizerRight:hover,
+    #resizer.is-resizing, #resizerRight.is-resizing {
+      background-color: #1e293b;
+      box-shadow: none;
+    }
+
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
+    .reply-quote:hover {
+      text-decoration: underline;
+      text-decoration-color: #94a3b8;
+      text-underline-offset: 2px;
+    }
+
+    .reply-quote-nickname {
+      font-weight: 600;
+      color: #475569;
+      flex-shrink: 0;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reply-quote-text {
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .message-highlight {
+      transition: background-color 0.8s ease-out;
+      background-color: #bde4ff !important;
+    }
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032 !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme #userPanel:hover {
+      background-color: #1e2f42 !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
+    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #f8fafc !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .pinned-announcement-container {
+      background: #1e293b !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme .pinned-announcement-header:hover {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .announcement-icon-wrap {
+      color: #818cf8 !important;
+    }
+    body.dark-server-theme .announcement-sender {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .announcement-text {
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme .announcement-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-btn:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .pinned-announcement-list {
+      background: #162032 !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item:hover {
+      background: #1e293b !important;
+    }
+    body.dark-server-theme .announcement-item-icon {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer {
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn:hover {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .minimized-pin-icon {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #818cf8 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.dark-server-theme .minimized-pin-badge {
+      border-color: #1e293b !important;
+    }
+
+    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
+    body.discord-dark-theme .pinned-announcement-container {
+      background: #2b2d31 !important;
+      border-bottom-color: #1f2023 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-header:hover {
+      background: #35373c !important;
+    }
+    body.discord-dark-theme .announcement-icon-wrap {
+      color: #5865f2 !important;
+    }
+    body.discord-dark-theme .announcement-sender {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .announcement-text {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .announcement-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-btn:hover {
+      background: #35373c !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-list {
+      background: #1e1f22 !important;
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item:hover {
+      background: #2b2d31 !important;
+    }
+    body.discord-dark-theme .announcement-item-icon {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer {
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .minimized-pin-icon {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #5865f2 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+    }
+    body.discord-dark-theme .minimized-pin-badge {
+      border-color: #2b2d31 !important;
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+   /* ダークモード時のリプライのL字矢印の色調整 */
+    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu-inner {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
+    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #3b82f6;
+      box-shadow: none;
+    }
+    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
+    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
+    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: none;
+    }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .settings-section-title {
+      color: #e2e8f0 !important;
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100,
+    body.dark-server-theme .settings-content .bg-slate-50,
+    body.dark-server-theme .settings-content .bg-slate-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .settings-content .text-gray-900,
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-100,
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-slate-200,
+    body.dark-server-theme .settings-content .border-slate-300,
+    body.dark-server-theme .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
+      background: #101726 !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #avatarUploadTrigger .border-white,
+    body.dark-server-theme #avatarUploadTriggerMobile .border-white,
+    body.discord-dark-theme #avatarUploadTrigger .border-white,
+    body.discord-dark-theme #avatarUploadTriggerMobile .border-white {
+      border-color: transparent !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer {
+      background: #162032 !important;
+      border-color: rgba(255,255,255,0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer .text-gray-800 {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop {
+      background: #162032 !important;
+      border-color: rgba(255,255,255,0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-800 {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #versionLockContainer {
+      background: rgba(245, 158, 11, 0.12) !important;
+      border-color: rgba(245, 158, 11, 0.25) !important;
+    }
+    body.dark-server-theme #versionLockContainer .text-gray-600 {
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer,
+    body.discord-dark-theme #pastVersionsContainerDesktop {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer .text-gray-800,
+    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-800 {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer .text-gray-500,
+    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-500 {
+      color: #949ba4 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.05) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* ===== ショートカット設定のダークモード対応 ===== */
+    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
+    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
+      background: #1e293b !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    body.dark-server-theme #shortcutInfoContainer kbd,
+    body.discord-dark-theme #shortcutInfoContainer kbd {
+      background: #0f172a !important;
+      color: #93c5fd !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme #shortcutKeyInput,
+    body.discord-dark-theme #shortcutKeyInput {
+      background: #0f172a !important;
+      color: #60a5fa !important;
+      border-color: #3b82f6 !important;
+    }
+
+    /* =========================================================================
+       新テーマ: Discordダーク (body.discord-dark-theme)
+       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
+       ========================================================================= */
+    body.discord-dark-theme {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #discordServerNav {
+      background-color: #1e1f22 !important;
+      border-right-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme #sidebar,
+    body.discord-dark-theme #membersSidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme #serverHeader,
+    body.discord-dark-theme #currentRoomHeader,
+    body.discord-dark-theme #discordTopBar {
+      background-color: #313338 !important;
+      border-bottom-color: #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #chatArea {
+      background-color: #313338 !important;
+    }
+    body.discord-dark-theme #messageInputArea {
+      background-color: #313338 !important;
+      border-top-color: transparent !important;
+    }
+    body.discord-dark-theme #messageInput,
+    body.discord-dark-theme .discord-input-box {
+      background-color: #383a40 !important;
+      color: #dbdee1 !important;
+      border-color: transparent !important;
+    }
+    body.discord-dark-theme #userPanel {
+      background-color: #232428 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-server-pill {
+      background-color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-hero-banner {
+      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .modal-box,
+    body.discord-dark-theme .settings-content {
+      background-color: #313338 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .settings-sidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme .settings-nav-item.active {
+      background-color: #3f4248 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
+      background-color: #35373c !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .bg-gray-50,
+    body.discord-dark-theme .bg-gray-100 {
+      background-color: #2b2d31 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme input[type="text"],
+    body.discord-dark-theme input[type="email"],
+    body.discord-dark-theme input[type="password"] {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+      border-color: #232428 !important;
+    }
+
+    /* ===== アプリ独自カスタムドロップダウン ===== */
+    .covo-custom-select {
+      position: relative;
+      display: inline-block;
+      user-select: none;
+    }
+    .covo-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .covo-select-trigger:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+    body.dark-server-theme .covo-select-trigger {
+      background: #0f172a;
+      border-color: rgba(255,255,255,0.15);
+      color: #e2e8f0;
+    }
+    body.discord-dark-theme .covo-select-trigger {
+      background: #1e1f22;
+      border-color: rgba(255,255,255,0.1);
+      color: #dbdee1;
+    }
+    .covo-select-options {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: 180px;
+      background: white;
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
+      border: 1px solid #e2e8f0;
+      z-index: 60;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.96);
+      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .covo-custom-select.open .covo-select-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+    body.dark-server-theme .covo-select-options {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.12);
+    }
+    body.discord-dark-theme .covo-select-options {
+      background: #2b2d31;
+      border-color: #202225;
+    }
+    .covo-select-option {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #334155;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .covo-select-option:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .covo-select-option.selected {
+      background: #e0e7ff;
+      color: #4338ca;
+      font-weight: 600;
+    }
+    body.dark-server-theme .covo-select-option {
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .covo-select-option:hover {
+      background: rgba(255,255,255,0.08);
+      color: white;
+    }
+    body.dark-server-theme .covo-select-option.selected {
+      background: #312e81;
+      color: #c7d2fe;
+    }
+    body.discord-dark-theme .covo-select-option {
+      color: #949ba4;
+    }
+    body.discord-dark-theme .covo-select-option:hover {
+      background: #35373c;
+      color: #dbdee1;
+    }
+    body.discord-dark-theme .covo-select-option.selected {
+      background: #5865f2;
+      color: white;
+    }
+
+    /* =========================================================================
+       Discord完全準拠 ユーザープロフィールポップアップ (User Profile Card)
+       ========================================================================= */
+    .user-profile-card {
+      border-radius: 16px !important;
+      overflow: hidden !important;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    /* 1. ライトモード */
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-card {
+      background-color: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileAvatar {
+      border-color: #ffffff !important;
+      background-color: #e3e5e8 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileStatusDot {
+      border-color: #ffffff !important;
+    }
+
+    /* 2. ダークネイビーモード (body.dark-server-theme) */
+    body.dark-server-theme .user-profile-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+    }
+    body.dark-server-theme #userProfileAvatar {
+      border-color: #1e293b !important;
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme #userProfileStatusDot {
+      border-color: #1e293b !important;
+    }
+    body.dark-server-theme #userProfileBanner {
+      background-color: #3b82f6 !important;
+    }
+
+    /* 3. Discordダークモード (body.discord-dark-theme) */
+    body.discord-dark-theme .user-profile-card {
+      background-color: #232428 !important;
+      border-color: #1f2023 !important;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
+    }
+    body.discord-dark-theme #userProfileAvatar {
+      border-color: #232428 !important;
+      background-color: #111214 !important;
+    }
+    body.discord-dark-theme #userProfileStatusDot {
+      border-color: #232428 !important;
+    }
+    body.discord-dark-theme #userProfileBanner {
+      background-color: #5865f2 !important;
+    }
+</file>
+
 <file path="database.rules.json">
 {
   "rules": {
@@ -12369,12 +12381,12 @@ pub fn run() {
         },
         "servers": {
           "$serverId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
+            ".read": "auth != null",
             ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
             "members": {
               "$uid": {
                 ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (auth.uid === $uid && !newData.exists()) || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
               }
             },
             "secrets": {
@@ -12383,16 +12395,16 @@ pub fn run() {
             },
             "profiles": {
               "$profileUid": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".read": "auth != null",
                 ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
               }
             },
             "stamps": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".read": "auth != null",
               ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
             },
             "stampGroups": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".read": "auth != null",
               ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
             },
             "inviteCodes": {
@@ -12401,39 +12413,39 @@ pub fn run() {
             },
             "rooms": {
               "$roomId": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists()))",
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists()))",
                 "roomKeys": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  ".read": "auth != null",
                   "$keyId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                    ".write": "auth != null"
                   }
                 },
                 "rescueRequests": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  ".read": "auth != null",
                   "$reqUid": {
-                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                   }
                 },
                 "messages": {
                   ".indexOn": ["timestamp"],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || ((root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid) && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())))",
                     "reactions": {
                       "$reactUid": {
-                        ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                        ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                       }
                     }
                   }
                 },
                 "typing": {
                   "$uid": {
-                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                   }
                 },
                 "readReceipts": {
                   "$uid": {
-                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                   }
                 }
               }
@@ -28341,7 +28353,7 @@ async function enterServer(serverId, serverData) {
   if (messageInput) messageInput.disabled = true;
   if (sendMessageButton) sendMessageButton.disabled = true;
 
-  // Sync RTDB membership securely via Worker
+  // Sync RTDB membership securely via Worker + Client Direct Self-healing
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
     try {
       auth.currentUser.getIdToken().then(idToken => {
@@ -28358,6 +28370,13 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
+    // クライアント側からも直接 RTDB members/$userId に true を書いて自己治癒
+    try {
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
+        const rtdb = await _getOrInitRTDB();
+        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+      });
+    } catch (e) {}
   }
   try {
     const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
@@ -29663,6 +29682,18 @@ async function createServer(name, customId, password) {
   };
   await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
 
+  // RTDB にもサーバーメタデータとメンバーシップを直接同期
+  try {
+    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    await set(ref(rtdb, `artifacts/${appId}/servers/${customId}`), {
+      name: name,
+      createdBy: userId,
+      members: { [userId]: true },
+      serverAdmins: { [userId]: true }
+    }).catch(() => {});
+  } catch (rtdbErr) { console.warn("RTDB server init warning:", rtdbErr); }
+
   // 新しい形式：パスワードハッシュを secrets/auth に保存
   await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/secrets`, 'auth'), {
     passwordHash
@@ -29794,6 +29825,12 @@ async function adminJoinServer(serverId, serverData) {
       avatarUrl: userAvatarUrl || null,
       joinedAt: serverTimestamp()
     });
+    // RTDB にもメンバーシップを直接セット
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+    } catch (rtdbErr) {}
     document.getElementById("adminJoinModal").classList.add("hidden");
     enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
   } catch (e) {
@@ -41408,7 +41445,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.119",
+  "version": "1.1.120",
   "force": false
 }
 </file>
@@ -41417,7 +41454,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.119",
+  "version": "1.1.120",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
