@@ -1521,196 +1521,6 @@ reqwest = { version = "0.12", features = ["blocking", "stream"] }
 tokio = { version = "1", features = ["time"] }
 </file>
 
-<file path="tests/security.test.js">
-const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
-const fs = require('fs');
-
-const PROJECT_ID = "demo-covo-security-test";
-const APP_ID = "testApp";
-
-let testEnv;
-
-// ============================================================================
-// セットアップ & クリーンアップ
-// ============================================================================
-beforeAll(async () => {
-  testEnv = await initializeTestEnvironment({
-    projectId: PROJECT_ID,
-    firestore: {
-      rules: fs.readFileSync('firestore.rules', 'utf8'),
-    },
-  });
-});
-
-beforeEach(async () => {
-  await testEnv.clearFirestore();
-});
-
-afterAll(async () => {
-  await testEnv.cleanup();
-});
-
-const getDb = (auth) => {
-  return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
-};
-
-// ============================================================================
-// テストスイート
-// ============================================================================
-describe('Firestore Security Rules Testing', () => {
-
-  // ★これでJestが「テストがある」と必ず認識します
-  it('【環境確認】Jestが正しく動いているか (Must Pass)', () => {
-    expect(true).toBe(true);
-  });
-
-  // -----------------------------------------------------------------------
-  // 【脆弱性1】退出ロジックの欠陥 (Server Leave)
-  // -----------------------------------------------------------------------
-  describe('脆弱性1: サーバー退出時の破壊行為防止', () => {
-    const serverId = "server1";
-    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
-    
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, serverPath), {
-          joinedUsers: ['alice', 'bob', 'admin'],
-          serverAdmins: ['admin'],
-          memberCount: 3,
-          createdBy: 'admin'
-        });
-      });
-    });
-
-    it('【正常系】Aliceが自分自身のみを配列から削除して退出できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, serverPath);
-      await assertSucceeds(updateDoc(ref, {
-        joinedUsers: ['bob', 'admin'],
-        serverAdmins: ['admin'],
-        memberCount: 2
-      }));
-    });
-
-    it('【異常系】Aliceが退出時にBob等も一緒に削除しようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, serverPath);
-      await assertFails(updateDoc(ref, {
-        joinedUsers: ['admin'],
-        serverAdmins: ['admin'],
-        memberCount: 1
-      }));
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // 【脆弱性2】サーバー作成時の強制参加スパム (Forced Join)
-  // -----------------------------------------------------------------------
-  describe('脆弱性2: サーバー作成時の他者強制参加防止', () => {
-    const newServerId = "newServer";
-    const serverPath = `artifacts/${APP_ID}/servers/${newServerId}`;
-
-    it('【正常系】Aliceが自分だけを参加者としてサーバーを作成できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      await assertSucceeds(setDoc(doc(aliceDb, serverPath), {
-        createdBy: 'alice',
-        serverAdmins: ['alice'],
-        joinedUsers: ['alice'],
-        memberCount: 1
-      }));
-    });
-
-    it('【異常系】Aliceが他人のUID(Bob)を勝手に追加して作成しようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      await assertFails(setDoc(doc(aliceDb, serverPath), {
-        createdBy: 'alice',
-        serverAdmins: ['alice'],
-        joinedUsers: ['alice', 'bob'],
-        memberCount: 2
-      }));
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // 【脆弱性3】E2EEルームキーの暗号化DoS (Room Keys)
-  // -----------------------------------------------------------------------
-  describe('脆弱性3: E2EEルームキーの不正上書き/削除防止', () => {
-    const serverId = "server1";
-    const roomId = "room1";
-    const keyId = "bob_key";
-    const keyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/${keyId}`;
-
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
-          joinedUsers: ['alice', 'bob'],
-          serverAdmins: ['alice']
-        });
-        await setDoc(doc(db, keyPath), {
-          keyData: 'encrypted_data_for_bob'
-        });
-      });
-    });
-
-    it('【正常系】参加メンバー(Bob)が新しいメンバー(Charlie)用の鍵を作成(create)できること (Must Pass)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const newKeyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/charlie_key`;
-      await assertSucceeds(setDoc(doc(bobDb, newKeyPath), {
-        keyData: 'encrypted_data_for_charlie'
-      }));
-    });
-
-    it('【異常系】一般メンバー(Bob)が既存の鍵を削除(delete)・上書き(update)しようとすると弾かれること (Must Fail)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const ref = doc(bobDb, keyPath);
-      await assertFails(updateDoc(ref, { keyData: 'malicious_garbage_data' }));
-      await assertFails(deleteDoc(ref));
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // 【脆弱性5】P2Pシグナリングのなりすまし (Signaling Spoofing)
-  // -----------------------------------------------------------------------
-  describe('脆弱性5: P2PシグナリングID改ざん防止', () => {
-    const shareId = "share1";
-    const sharePath = `artifacts/${APP_ID}/fileshares/${shareId}`;
-
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, sharePath), {
-          sender: { uid: 'alice' },
-          receiverUid: 'bob',
-          status: 'init'
-        });
-      });
-    });
-
-    it('【正常系】Aliceが自分とBob間のシグナリングデータを更新(SDP追加など)できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, sharePath);
-      await assertSucceeds(updateDoc(ref, { status: 'connecting', sdp: 'dummy_sdp_data' }));
-    });
-
-    it('【異常系】Aliceが更新時に送信者(sender)をCharlieにすり替えようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, sharePath);
-      await assertFails(updateDoc(ref, { sender: { uid: 'charlie' }, status: 'connecting' }));
-    });
-    
-    it('【異常系】Bobが更新時に受信者(receiverUid)を自分以外にすり替えようとすると弾かれること (Must Fail)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const ref = doc(bobDb, sharePath);
-      await assertFails(updateDoc(ref, { receiverUid: 'charlie' }));
-    });
-  });
-
-});
-</file>
-
 <file path="tools/snippets/modal_snippet.html">
 <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
         <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
@@ -2576,6 +2386,320 @@ build/
 }
 </file>
 
+<file path="tests/security.test.js">
+const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
+const { doc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const fs = require('fs');
+
+const PROJECT_ID = "demo-covo-security-test";
+const APP_ID = "testApp";
+
+let testEnv;
+
+// ============================================================================
+// セットアップ & クリーンアップ
+// ============================================================================
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: {
+      rules: fs.readFileSync('firestore.rules', 'utf8'),
+    },
+  });
+});
+
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+});
+
+afterAll(async () => {
+  await testEnv.cleanup();
+});
+
+const getDb = (auth) => {
+  return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
+};
+
+// ============================================================================
+// テストスイート
+// ============================================================================
+describe('Firestore Security Rules Testing', () => {
+
+  // ★これでJestが「テストがある」と必ず認識します
+  it('【環境確認】Jestが正しく動いているか (Must Pass)', () => {
+    expect(true).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  // 【脆弱性1】退出ロジックの欠陥 (Server Leave)
+  // -----------------------------------------------------------------------
+  describe('脆弱性1: サーバー退出時の破壊行為防止', () => {
+    const serverId = "server1";
+    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
+    
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, serverPath), {
+          joinedUsers: ['alice', 'bob', 'admin'],
+          serverAdmins: ['admin'],
+          memberCount: 3,
+          createdBy: 'admin'
+        });
+      });
+    });
+
+    it('【正常系】Aliceが自分自身のみを配列から削除して退出できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, serverPath);
+      await assertSucceeds(updateDoc(ref, {
+        joinedUsers: ['bob', 'admin'],
+        serverAdmins: ['admin'],
+        memberCount: 2
+      }));
+    });
+
+    it('【異常系】Aliceが退出時にBob等も一緒に削除しようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, serverPath);
+      await assertFails(updateDoc(ref, {
+        joinedUsers: ['admin'],
+        serverAdmins: ['admin'],
+        memberCount: 1
+      }));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【脆弱性2】サーバー作成時の強制参加スパム (Forced Join)
+  // -----------------------------------------------------------------------
+  describe('脆弱性2: サーバー作成時の他者強制参加防止', () => {
+    const newServerId = "newServer";
+    const serverPath = `artifacts/${APP_ID}/servers/${newServerId}`;
+
+    it('【正常系】Aliceが自分だけを参加者としてサーバーを作成できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertSucceeds(setDoc(doc(aliceDb, serverPath), {
+        createdBy: 'alice',
+        serverAdmins: ['alice'],
+        joinedUsers: ['alice'],
+        memberCount: 1
+      }));
+    });
+
+    it('【異常系】Aliceが他人のUID(Bob)を勝手に追加して作成しようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertFails(setDoc(doc(aliceDb, serverPath), {
+        createdBy: 'alice',
+        serverAdmins: ['alice'],
+        joinedUsers: ['alice', 'bob'],
+        memberCount: 2
+      }));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【脆弱性3】E2EEルームキーの暗号化DoS (Room Keys)
+  // -----------------------------------------------------------------------
+  describe('脆弱性3: E2EEルームキーの不正上書き/削除防止', () => {
+    const serverId = "server1";
+    const roomId = "room1";
+    const keyId = "bob_key";
+    const keyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/${keyId}`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
+          joinedUsers: ['alice', 'bob'],
+          serverAdmins: ['alice']
+        });
+        await setDoc(doc(db, keyPath), {
+          keyData: 'encrypted_data_for_bob'
+        });
+      });
+    });
+
+    it('【正常系】参加メンバー(Bob)が新しいメンバー(Charlie)用の鍵を作成(create)できること (Must Pass)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const newKeyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/charlie_key`;
+      await assertSucceeds(setDoc(doc(bobDb, newKeyPath), {
+        keyData: 'encrypted_data_for_charlie'
+      }));
+    });
+
+    it('【異常系】一般メンバー(Bob)が既存の鍵を削除(delete)・上書き(update)しようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const ref = doc(bobDb, keyPath);
+      await assertFails(updateDoc(ref, { keyData: 'malicious_garbage_data' }));
+      await assertFails(deleteDoc(ref));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【脆弱性5】P2Pシグナリングのなりすまし (Signaling Spoofing)
+  // -----------------------------------------------------------------------
+  describe('脆弱性5: P2PシグナリングID改ざん防止', () => {
+    const shareId = "share1";
+    const sharePath = `artifacts/${APP_ID}/fileshares/${shareId}`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, sharePath), {
+          sender: { uid: 'alice' },
+          receiverUid: 'bob',
+          status: 'init'
+        });
+      });
+    });
+
+    it('【正常系】Aliceが自分とBob間のシグナリングデータを更新(SDP追加など)できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, sharePath);
+      await assertSucceeds(updateDoc(ref, { status: 'connecting', sdp: 'dummy_sdp_data' }));
+    });
+
+    it('【異常系】Aliceが更新時に送信者(sender)をCharlieにすり替えようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, sharePath);
+      await assertFails(updateDoc(ref, { sender: { uid: 'charlie' }, status: 'connecting' }));
+    });
+    
+    it('【異常系】Bobが更新時に受信者(receiverUid)を自分以外にすり替えようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const ref = doc(bobDb, sharePath);
+      await assertFails(updateDoc(ref, { receiverUid: 'charlie' }));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】メッセージ削除・改ざん防止と権限階層の検証 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('メッセージセキュリティ: 他人の発言削除・本文改ざん防止', () => {
+    const serverId = "server1";
+    const roomId = "room1";
+    const msgId = "msg_alice_1";
+    const msgPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/messages/${msgId}`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin'],
+          emails: ['superadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/listAdminList`), {
+          admins: ['list_admin'],
+          emails: ['listadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
+          joinedUsers: ['alice', 'bob', 'moderator', 'list_admin', 'super_admin'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user'
+        });
+        await setDoc(doc(db, msgPath), {
+          senderId: 'alice',
+          text: 'Hello from Alice',
+          createdAt: 1000,
+          timestamp: 1000,
+          isPinned: false
+        });
+      });
+    });
+
+    it('【正常系】送信者本人 (Alice) は自分のメッセージを削除できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertSucceeds(deleteDoc(doc(aliceDb, msgPath)));
+    });
+
+    it('【正常系】サーバーモデレーター (moderator) は他人の不適切メッセージを削除できること (Must Pass)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertSucceeds(deleteDoc(doc(modDb, msgPath)));
+    });
+
+    it('【正常系】全体管理者 (super_admin) は他人のメッセージを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, msgPath)));
+    });
+
+    it('【異常系】一般メンバー (Bob) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      await assertFails(deleteDoc(doc(bobDb, msgPath)));
+    });
+
+    it('【異常系】リスト管理者 (list_admin) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const listAdminDb = getDb({ uid: 'list_admin' });
+      await assertFails(deleteDoc(doc(listAdminDb, msgPath)));
+    });
+
+    it('【異常系】モデレーターや一般ユーザーが他人のメッセージ本文を改ざんしようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(updateDoc(doc(modDb, msgPath), {
+        text: 'Tampered malicious message by moderator'
+      }));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】サーバー・ルーム・管理者昇格の保護 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('サーバー・ルーム保護: オーナーシップ保護と権限昇格防止', () => {
+    const serverId = "server1";
+    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
+    const roomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/room1`;
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin']
+        });
+        await setDoc(doc(db, serverPath), {
+          joinedUsers: ['owner_user', 'moderator', 'regular_user'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user',
+          name: 'Original Server'
+        });
+        await setDoc(doc(db, roomPath), {
+          name: 'General',
+          createdBy: 'owner_user'
+        });
+      });
+    });
+
+    it('【正常系】サーバーオーナー (owner_user) はサーバーを削除できること (Must Pass)', async () => {
+      const ownerDb = getDb({ uid: 'owner_user' });
+      await assertSucceeds(deleteDoc(doc(ownerDb, serverPath)));
+    });
+
+    it('【正常系】全体管理者 (super_admin) はサーバーを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, serverPath)));
+    });
+
+    it('【異常系】モデレーター (moderator) や一般ユーザーがサーバー自体を削除しようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(deleteDoc(doc(modDb, serverPath)));
+    });
+
+    it('【異常系】一般ユーザー (regular_user) がルームを作成・削除しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const newRoomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/hack_room`;
+      await assertFails(setDoc(doc(userDb, newRoomPath), { name: 'Hack' }));
+      await assertFails(deleteDoc(doc(userDb, roomPath)));
+    });
+
+    it('【異常系】一般ユーザーやリスト管理者が全体管理者リスト (adminList) を書き換えて特権奪取しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const adminListPath = `artifacts/${APP_ID}/settings/adminList`;
+      await assertFails(setDoc(doc(userDb, adminListPath), { admins: ['regular_user'] }));
+    });
+  });
+
+});
+</file>
+
 <file path="tools/scripts/check.py">
 import json, sys; sys.stdout.reconfigure(encoding='utf-8'); [print(f'STEP {json.loads(line).get(\"step_index\")}: ' + json.loads(line).get('content').replace('\n', ' ')) for line in open(r'C:\Users\qwert\.gemini\antigravity\brain\113a457f-4371-42cc-bd5d-6223ddb6b12a\.system_generated\logs\transcript_full.jsonl', encoding='utf-8') if json.loads(line).get('type') == 'USER_INPUT']
 </file>
@@ -3170,6 +3294,565 @@ module.exports = {
 @import url('./modules/mobile.css');
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
+</file>
+
+<file path="public/css/modules/animations.css">
+/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
+.splash-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .splash-icon-container {
+    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
+  }
+}
+
+/* === サーバーリスト画面 === */
+    #serverListScreen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+      overflow-y: auto;
+    }
+
+    #serverListScreen.hidden {
+      display: none !important;
+    }
+
+    /* === アニメーション定義 === */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleInFade {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .anim-fade-in {
+      animation: fadeIn 0.18s ease both;
+    }
+
+    .anim-slide-up {
+      animation: slideUpFade 0.22s ease both;
+    }
+
+    .anim-scale-in {
+      animation: scaleInFade 0.22s ease both;
+    }
+
+    .anim-card {
+      animation: cardIn 0.28s ease both;
+      opacity: 0;
+    }
+
+    /* === サーバーリスト画面 === */
+    .server-list-header {
+      background: #1f2937;
+      color: white;
+      padding: 0.875rem 1.25rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .server-list-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .server-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .server-list-actions button:not(.server-list-user-btn) {
+      padding: 7px 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #joinServerBtn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    #joinServerBtn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    #createServerBtn {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+
+    #createServerBtn:hover {
+      background: #e5e7eb;
+    }
+
+    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
+    .server-list-user-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.12s;
+      flex-shrink: 0;
+    }
+
+    .server-list-user-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: scale(1.07);
+    }
+
+    .server-list-user-btn:active {
+      transform: scale(0.95);
+    }
+
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      padding: 1.25rem 1.25rem 0 1.25rem;
+    }
+
+    .server-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0 2px 2px;
+      border-bottom: 1px solid #f3f4f6;
+      margin-bottom: 2px;
+      margin-top: 4px;
+    }
+
+    .server-section-label:first-child {
+      margin-top: 0;
+    }
+
+    .admin-join-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid #f3f4f6;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .admin-join-item:hover {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+
+    .admin-join-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+
+    .admin-join-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .admin-join-meta {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+
+    .admin-join-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 3px 9px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .server-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+    }
+
+    .server-card:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .server-card-icon {
+      width: 44px;
+      height: 44px;
+      background: #4f46e5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: translateY(-1px);
+      background: #4338ca;
+    }
+
+    .server-card-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+
+    .server-card-meta {
+      font-size: 0.73rem;
+      color: #6b7280;
+    }
+
+    .server-card-admin-badge {
+      display: inline-block;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.63rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid #d1d5db;
+    }
+
+    .server-list-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: #6b7280;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .server-list-empty i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+    /* === ルームリストアイテムアニメーション === */
+    @keyframes roomSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .room-list-anim {
+      animation: roomSlideIn 0.2s ease both;
+    }
+
+    /* === メンバーリストアイテムアニメーション === */
+    @keyframes memberFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .member-anim {
+      animation: memberFadeIn 0.18s ease both;
+    }
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
+    }
+
+    /* Mobile full-screen pages (スライドインアニメーション対応) */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
+      z-index: 300;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    #mobileProfileScreen.closing,
+    #mobileNotifScreen.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }
 </file>
 
 <file path="public/js/local_store.js">
@@ -4196,565 +4879,6 @@ if (typeof window !== 'undefined') {
   </script>
 </body>
 </html>
-</file>
-
-<file path="public/css/modules/animations.css">
-/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
-.splash-icon-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s ease;
-}
-
-@media (max-width: 768px) {
-  .splash-icon-container {
-    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
-  }
-}
-
-/* === サーバーリスト画面 === */
-    #serverListScreen {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #f3f4f6;
-      overflow-y: auto;
-    }
-
-    #serverListScreen.hidden {
-      display: none !important;
-    }
-
-    /* === アニメーション定義 === */
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    @keyframes slideUpFade {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes scaleInFade {
-      from {
-        opacity: 0;
-        transform: scale(0.96) translateY(6px);
-      }
-
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-
-    @keyframes cardIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .anim-fade-in {
-      animation: fadeIn 0.18s ease both;
-    }
-
-    .anim-slide-up {
-      animation: slideUpFade 0.22s ease both;
-    }
-
-    .anim-scale-in {
-      animation: scaleInFade 0.22s ease both;
-    }
-
-    .anim-card {
-      animation: cardIn 0.28s ease both;
-      opacity: 0;
-    }
-
-    /* === サーバーリスト画面 === */
-    .server-list-header {
-      background: #1f2937;
-      color: white;
-      padding: 0.875rem 1.25rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-
-    .server-list-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-    }
-
-    .server-list-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .server-list-actions button:not(.server-list-user-btn) {
-      padding: 7px 13px;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    #joinServerBtn {
-      background: rgba(255, 255, 255, 0.12);
-      color: white;
-    }
-
-    #joinServerBtn:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-
-    #createServerBtn {
-      background: #f3f4f6;
-      color: #1f2937;
-    }
-
-    #createServerBtn:hover {
-      background: #e5e7eb;
-    }
-
-    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
-    .server-list-user-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s, transform 0.12s;
-      flex-shrink: 0;
-    }
-
-    .server-list-user-btn:hover {
-      background: rgba(255, 255, 255, 0.28);
-      transform: scale(1.07);
-    }
-
-    .server-list-user-btn:active {
-      transform: scale(0.95);
-    }
-
-    .server-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 14px;
-      padding: 1.25rem 1.25rem 0 1.25rem;
-    }
-
-    .server-section-label {
-      grid-column: 1 / -1;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #9ca3af;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 0 2px 2px;
-      border-bottom: 1px solid #f3f4f6;
-      margin-bottom: 2px;
-      margin-top: 4px;
-    }
-
-    .server-section-label:first-child {
-      margin-top: 0;
-    }
-
-    .admin-join-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: white;
-      border: 1px solid #f3f4f6;
-      cursor: pointer;
-      width: 100%;
-      text-align: left;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .admin-join-item:hover {
-      background: #f9fafb;
-      border-color: #e5e7eb;
-    }
-
-    .admin-join-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      flex-shrink: 0;
-      font-size: 0.85rem;
-    }
-
-    .admin-join-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #111827;
-    }
-
-    .admin-join-meta {
-      font-size: 0.72rem;
-      color: #9ca3af;
-      margin-top: 1px;
-    }
-
-    .admin-join-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      background: #e0e7ff;
-      color: #3730a3;
-      padding: 3px 9px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-
-    .server-card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 16px;
-      padding: 1.25rem;
-      cursor: pointer;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      position: relative;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-
-    .server-card:hover {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      transform: translateY(-2px);
-      border-color: #cbd5e1;
-    }
-
-    .server-card:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-
-    .server-card-icon {
-      width: 44px;
-      height: 44px;
-      background: #4f46e5;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: white;
-      margin-bottom: 2px;
-      font-weight: 700;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-
-    .server-card-icon img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: inherit;
-    }
-
-    .server-card:hover .server-card-icon {
-      border-radius: 14px;
-      transform: translateY(-1px);
-      background: #4338ca;
-    }
-
-    .server-card-name {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #111827;
-      line-height: 1.2;
-    }
-
-    .server-card-meta {
-      font-size: 0.73rem;
-      color: #6b7280;
-    }
-
-    .server-card-admin-badge {
-      display: inline-block;
-      background: #e5e7eb;
-      color: #374151;
-      font-size: 0.63rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 99px;
-      border: 1px solid #d1d5db;
-    }
-
-    .server-list-empty {
-      text-align: center;
-      padding: 3rem 1.5rem;
-      color: #6b7280;
-      animation: fadeIn 0.3s ease;
-    }
-
-    .server-list-empty i {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      color: #d1d5db;
-    }
-    /* === ルームリストアイテムアニメーション === */
-    @keyframes roomSlideIn {
-      from {
-        opacity: 0;
-        transform: translateX(-8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    .room-list-anim {
-      animation: roomSlideIn 0.2s ease both;
-    }
-
-    /* === メンバーリストアイテムアニメーション === */
-    @keyframes memberFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .member-anim {
-      animation: memberFadeIn 0.18s ease both;
-    }
-    /* === スムーズなアニメーション（UIの触り心地向上） === */
-    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
-      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
-    }
-    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
-      transform: scale(0.96);
-    }
-
-    /* Mobile full-screen pages (スライドインアニメーション対応) */
-    #mobileProfileScreen,
-    #mobileNotifScreen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      -webkit-overflow-scrolling: touch;
-      z-index: 300;
-      overflow-y: auto;
-      flex-direction: column;
-    }
-    #mobileProfileScreen.active,
-    #mobileNotifScreen.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    #mobileProfileScreen.closing,
-    #mobileNotifScreen.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-
-    .mobile-profile-header {
-      background: #1f2937;
-      padding: 1.25rem;
-      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-    .mobile-profile-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 1.3rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .mobile-profile-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .mobile-profile-name {
-      font-size: 1rem;
-      font-weight: 700;
-      color: white;
-    }
-    .mobile-profile-sub {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-
-    .mobile-settings-section {
-      margin: 1rem;
-    }
-    .mobile-settings-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #6b7280;
-      padding: 0 4px;
-      margin-bottom: 6px;
-    }
-    .mobile-settings-group {
-      background: white;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid #e5e7eb;
-    }
-    .mobile-settings-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 13px 16px;
-      cursor: pointer;
-      transition: background 0.12s;
-      border-bottom: 1px solid #f3f4f6;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-settings-row:last-child {
-      border-bottom: none;
-    }
-    .mobile-settings-row:active {
-      background: #f9fafb;
-    }
-    .mobile-settings-row-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.85rem;
-      flex-shrink: 0;
-    }
-    .mobile-settings-row-text {
-      flex: 1;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: #111827;
-    }
-    .mobile-settings-row-arrow {
-      color: #d1d5db;
-      font-size: 0.8rem;
-    }
-    .mobile-settings-row.danger .mobile-settings-row-text {
-      color: #ef4444;
-    }
-
-    /* Mobile settings slide-in detail */
-    .mobile-settings-detail {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      z-index: 300;
-      flex-direction: column;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mobile-settings-detail.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    @keyframes slideInFromRight {
-      from { transform: translateX(100%); opacity: 0.7; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOutToRight {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0.7; }
-    }
-    .mobile-settings-detail.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-detail-header {
-      background: #1f2937;
-      color: white;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0.875rem 1rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      flex-shrink: 0;
-    }
-    .mobile-detail-back {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
-    .mobile-detail-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-    .mobile-notif-item {
-      background: white;
-      margin: 0 1rem 0.75rem;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      color: #374151;
-    }
 </file>
 
 <file path="public/css/modules/components.css">
@@ -8779,111 +8903,6 @@ pub fn run() {
 }
 </file>
 
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": false
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": false
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-            "members": {
-              "$uid": {
-                ".write": "auth != null && auth.uid === $uid"
-              }
-            },
-            "rooms": {
-              "$roomId": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || !data.exists())",
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
-                    "reactions": {
-                      "$reactUid": {
-                        ".write": "auth != null && auth.uid === $reactUid && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                      }
-                    }
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && auth.uid === $uid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && $dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))",
-              "reactions": {
-                "$reactUid": {
-                  ".write": "auth != null && auth.uid === $reactUid && $dmId.contains(auth.uid)"
-                }
-              }
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && $dmId.contains(auth.uid)",
-            "$uid": {
-              ".write": "auth != null && auth.uid === $uid && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid",
-            "readStates": {
-              ".read": "auth != null && auth.uid === $uid",
-              ".write": "auth != null && auth.uid === $uid",
-              "$roomId": {
-                ".read": "auth != null && auth.uid === $uid",
-                ".write": "auth != null && auth.uid === $uid"
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-</file>
-
 <file path="public/css/modules/chat.css">
 /* --- 追加機能用スタイル --- */
     /* メンションのハイライト */
@@ -10127,972 +10146,109 @@ pub fn run() {
     }
 </file>
 
-<file path="public/css/modules/theme.css">
-/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,0,0,0.18) transparent;
-    }
-    *::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    *::-webkit-scrollbar-button {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    *::-webkit-scrollbar-thumb {
-      background: rgba(0,0,0,0.18);
-      border-radius: 100px;
-    }
-    *::-webkit-scrollbar-thumb:hover {
-      background: rgba(0,0,0,0.32);
-    }
-    *::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    /* モーダル背景 */
-    .modal-overlay {
-      background-color: rgba(0, 0, 0, 0.75);
-    }
-
-    /* ドロップダウンコンテナのスタイル */
-    .dropdown-container {
-      position: relative;
-      display: inline-block;
-    }
-
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      background-color: white;
-      min-width: 100px;
-      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
-      z-index: 10;
-      right: 0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      border: 1px solid #ddd;
-    }
-
-    .dropdown-content button {
-      color: black;
-      padding: 8px 12px;
-      text-decoration: none;
-      display: block;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background-color: transparent;
-      cursor: pointer;
-      transition: background-color 0.2s;
-      font-size: 0.875rem;
-    }
-
-    .dropdown-content button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* メッセージ内容と入力欄 */
-    .message-content {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-    }
-
-    textarea#messageInput {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      word-break: break-word;
-      overflow-y: auto;
-      resize: none;
-      min-height: 0;
-      max-height: 200px;
-      background-color: transparent;
-      border: none;
-      font-size: 16px;
-      line-height: 1.5;
-
-      /* ★スクロールバーを非表示にする設定 */
-      -ms-overflow-style: none;
-      /* IE and Edge */
-      scrollbar-width: none;
-      /* Firefox */
-    }
-
-    /* ★Chrome, Safari, Opera用 */
-    textarea#messageInput::-webkit-scrollbar {
-      display: none;
-    }
-
-    textarea#messageInput:focus {
-      background-color: transparent;
-      outline: none;
-    }
-
-    /* 既読表示 */
-    .read-receipt {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 2px;
-      display: block;
-      text-align: right;
-    }
-
-    .other-message .read-receipt {
-      text-align: left;
-    }
-
-    /* 未読の境界線（「ここから未読」） */
-    .unread-divider {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      margin: 6px 0 2px;
-      padding: 0 4px;
-      color: #ef4444;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      user-select: none;
-    }
-    .unread-divider::before,
-    .unread-divider::after {
-      content: "";
-      flex: 1;
-      height: 1px;
-      background: currentColor;
-      opacity: 0.35;
-    }
-    body.dark-server-theme .unread-divider { color: #f87171; }
-
-    /* カスタムコンテキストメニュー */
-    .custom-context-menu {
-      position: fixed;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      z-index: 100;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 120px;
-    }
-    .custom-context-menu:not(.hidden) {
-      display: flex;
-    }
-    .custom-context-menu-inner {
-      background-color: white;
-      border: 1px solid #ddd;
-      border-radius: 0.5rem;
-      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-      padding: 4px 0;
-      overflow: hidden;
-    }
-
-    .custom-context-menu button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      text-align: left;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 0.875rem;
-      color: black;
-    }
-
-    .custom-context-menu button:hover {
-      background-color: #f0f0f0;
-    }
-
-    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
-    #resizer, #resizerRight {
-      width: 2px;
-      cursor: col-resize;
-      background-color: #e2e8f0;
-      transition: background-color 0.15s ease;
-      flex-shrink: 0;
-      position: relative;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      z-index: 25;
-    }
-
-    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
-    #resizer::before, #resizerRight::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: -10px;
-      right: -10px;
-      width: calc(100% + 20px);
-      height: 100%;
-      cursor: col-resize;
-      touch-action: none;
-      z-index: 26;
-    }
-
-    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
-    #resizer:hover, #resizerRight:hover,
-    #resizer.is-resizing, #resizerRight.is-resizing {
-      background-color: #1e293b;
-      box-shadow: none;
-    }
-
-    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
-    .reply-quote:hover {
-      text-decoration: underline;
-      text-decoration-color: #94a3b8;
-      text-underline-offset: 2px;
-    }
-
-    .reply-quote-nickname {
-      font-weight: 600;
-      color: #475569;
-      flex-shrink: 0;
-      max-width: 40%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .reply-quote-text {
-      color: #334155;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.9;
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    .message-highlight {
-      transition: background-color 0.8s ease-out;
-      background-color: #bde4ff !important;
-    }
-    /* === ダークモード全体 === */
-    body.dark-server-theme { background: #111827; }
-    body.dark-server-theme #mainContent,
-    body.dark-server-theme #appContainer { background: #111827; }
-
-    /* サーバーリスト・通知画面 */
-    body.dark-server-theme #serverListScreen { background: #1f2937; }
-    body.dark-server-theme #mobileNotifScreen { background: #111827; }
-    body.dark-server-theme .mobile-notif-item {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-
-    /* チャンネルサイドバー */
-    body.dark-server-theme #sidebar { background: #1e293b !important; }
-    body.dark-server-theme .room-item-animate {
-      background: transparent !important;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .room-item-animate:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: #f1f5f9;
-    }
-
-    /* ユーザーパネル */
-    body.dark-server-theme #userPanel {
-      background-color: #162032 !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme #userPanel:hover {
-      background-color: #1e2f42 !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-    }
-    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
-    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
-    body.dark-server-theme #openSettingsBtn:hover {
-      color: #f8fafc !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-    }
-
-    /* チャットエリア */
-    body.dark-server-theme #chatArea { background: #1a202c; }
-    body.dark-server-theme #currentRoomHeader {
-      background: #243040 !important;
-      border-bottom-color: rgba(255,255,255,0.08) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
-    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
-    body.dark-server-theme #messagesDisplay { background: #1a202c; }
-    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
-    body.dark-server-theme #pinnedMessagesArea {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .pinned-announcement-container {
-      background: #1e293b !important;
-      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
-    }
-    body.dark-server-theme .pinned-announcement-header:hover {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .announcement-icon-wrap {
-      color: #818cf8 !important;
-    }
-    body.dark-server-theme .announcement-sender {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .announcement-text {
-      color: #cbd5e1 !important;
-    }
-    body.dark-server-theme .announcement-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-btn:hover {
-      background: rgba(255, 255, 255, 0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .pinned-announcement-list {
-      background: #162032 !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
-    }
-    body.dark-server-theme .pinned-announcement-item:hover {
-      background: #1e293b !important;
-    }
-    body.dark-server-theme .announcement-item-icon {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer {
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .pinned-announcement-footer-btn:hover {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme .minimized-pin-icon {
-      background: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.12) !important;
-      color: #818cf8 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-    body.dark-server-theme .minimized-pin-badge {
-      border-color: #1e293b !important;
-    }
-
-    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
-    body.discord-dark-theme .pinned-announcement-container {
-      background: #2b2d31 !important;
-      border-bottom-color: #1f2023 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-header:hover {
-      background: #35373c !important;
-    }
-    body.discord-dark-theme .announcement-icon-wrap {
-      color: #5865f2 !important;
-    }
-    body.discord-dark-theme .announcement-sender {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .announcement-text {
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .announcement-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-btn:hover {
-      background: #35373c !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-list {
-      background: #1e1f22 !important;
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item {
-      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
-    }
-    body.discord-dark-theme .pinned-announcement-item:hover {
-      background: #2b2d31 !important;
-    }
-    body.discord-dark-theme .announcement-item-icon {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .announcement-unpin-btn:hover {
-      background: rgba(239, 68, 68, 0.2) !important;
-      color: #f87171 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer {
-      border-top-color: #1f2023 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn {
-      color: #949ba4 !important;
-    }
-    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .minimized-pin-icon {
-      background: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #5865f2 !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
-    }
-    body.discord-dark-theme .minimized-pin-badge {
-      border-color: #2b2d31 !important;
-    }
-
-    /* メッセージバブル */
-    body.dark-server-theme .my-message {
-      background-color: #2a3a52 !important;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .other-message {
-      background-color: #243040 !important;
-      color: #e2e8f0;
-    }
-    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
-    body.dark-server-theme .message-bubble.sticker-bubble {
-      background: transparent !important;
-      box-shadow: none !important;
-      padding: 2px 0 !important;
-      border: none !important;
-    }
-    body.dark-server-theme .message-content { color: #e2e8f0; }
-    body.dark-server-theme .read-receipt { color: #4b5563; }
-   /* ダークモード時のリプライのL字矢印の色調整 */
-    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
-    body.dark-server-theme .message-highlight {
-      background-color: rgba(96,165,250,0.25) !important;
-    }
-
-    /* 入力エリア */
-    body.dark-server-theme #messageInputArea {
-      background: #1e293b !important;
-      border-top-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme #messageInputInner {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      box-shadow: none !important;
-    }
-    body.dark-server-theme #messageInputInner:focus-within {
-      border-color: rgba(255,255,255,0.22) !important;
-    }
-    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
-    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
-    body.dark-server-theme .input-side-btn {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.1) !important;
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
-      color: #e2e8f0 !important;
-      background: #243040 !important;
-      border-color: rgba(255,255,255,0.2) !important;
-    }
-    body.dark-server-theme #replyingToContainer {
-      background: #1e2d3f !important;
-      border-left-color: #4b6280 !important;
-    }
-    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme #typingIndicator { color: #4b5563; }
-
-    /* メンバーリスト */
-    body.dark-server-theme #membersSidebar {
-      background: #1e293b;
-      border-left-color: rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
-    body.dark-server-theme .member-name { color: #cbd5e1; }
-    body.dark-server-theme .member-status-text { color: #64748b; }
-    body.dark-server-theme .member-group-title { color: #64748b; }
-    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
-
-    /* 検索バー */
-    body.dark-server-theme #searchContainer {
-      background: #1e293b;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-    }
-    body.dark-server-theme #searchInput {
-      background: #0f172a !important;
-      border-color: rgba(255,255,255,0.15) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
-
-    /* コンテキストメニュー / ドロップダウン */
-    body.dark-server-theme .custom-context-menu-inner {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
-    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme .dropdown-content {
-      background-color: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-    }
-    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
-    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
-
-    /* リサイザー / スクロールバー */
-    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
-    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
-    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
-      background-color: #3b82f6;
-      box-shadow: none;
-    }
-    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
-    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
-    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
-      background-color: #5865f2;
-      box-shadow: none;
-    }
-    body.dark-server-theme * {
-      scrollbar-color: rgba(255,255,255,0.18) transparent;
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.18);
-    }
-    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.3);
-    }
-
-    /* 設定モーダル（コンテンツエリア）*/
-    body.dark-server-theme .settings-content {
-      background: #1a202c;
-      color: #e2e8f0;
-    }
-    body.dark-server-theme .settings-section-title {
-      color: #e2e8f0 !important;
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .bg-gray-50,
-    body.dark-server-theme .settings-content .bg-gray-100,
-    body.dark-server-theme .settings-content .bg-slate-50,
-    body.dark-server-theme .settings-content .bg-slate-100 {
-      background: #243040 !important;
-    }
-    body.dark-server-theme .settings-content .text-gray-900,
-    body.dark-server-theme .settings-content .text-gray-800,
-    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
-    body.dark-server-theme .settings-content .text-gray-600,
-    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .settings-content .border-gray-100,
-    body.dark-server-theme .settings-content .border-gray-200,
-    body.dark-server-theme .settings-content .border-slate-200,
-    body.dark-server-theme .settings-content .border-slate-300,
-    body.dark-server-theme .settings-content .border-t {
-      border-color: rgba(255,255,255,0.08) !important;
-    }
-    body.dark-server-theme .settings-content .setting-row {
-      border-bottom-color: rgba(255,255,255,0.06) !important;
-    }
-    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
-    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
-    body.dark-server-theme .settings-content input[type="text"],
-    body.dark-server-theme .settings-content input[type="email"],
-    body.dark-server-theme .settings-content input[type="password"] {
-      background: #101726 !important;
-      border-color: rgba(255,255,255,0.12) !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme #avatarUploadTrigger .border-white,
-    body.dark-server-theme #avatarUploadTriggerMobile .border-white,
-    body.discord-dark-theme #avatarUploadTrigger .border-white,
-    body.discord-dark-theme #avatarUploadTriggerMobile .border-white {
-      border-color: transparent !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer {
-      background: #162032 !important;
-      border-color: rgba(255,255,255,0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer .text-gray-800 {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #windowsDownloadContainer .text-gray-500 {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop {
-      background: #162032 !important;
-      border-color: rgba(255,255,255,0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-800 {
-      color: #f8fafc !important;
-    }
-    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-500 {
-      color: #94a3b8 !important;
-    }
-    body.dark-server-theme #versionLockContainer {
-      background: rgba(245, 158, 11, 0.12) !important;
-      border-color: rgba(245, 158, 11, 0.25) !important;
-    }
-    body.dark-server-theme #versionLockContainer .text-gray-600 {
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer,
-    body.discord-dark-theme #pastVersionsContainerDesktop {
-      background: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer .text-gray-800,
-    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-800 {
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #windowsDownloadContainer .text-gray-500,
-    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-500 {
-      color: #949ba4 !important;
-    }
-
-    /* モバイル設定・プロフィール画面 */
-    body.dark-server-theme #mobileProfileScreen { background: #111827; }
-    body.dark-server-theme .mobile-settings-detail { background: #111827; }
-    body.dark-server-theme .mobile-settings-group {
-      background: #1e293b !important;
-      border-color: rgba(255,255,255,0.07) !important;
-    }
-    body.dark-server-theme .mobile-settings-row {
-      border-bottom-color: rgba(255,255,255,0.05) !important;
-    }
-    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
-    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
-    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
-    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
-
-    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
-       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
-       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
-    body.dark-server-theme .modal-box,
-    body.dark-server-theme #serverSettingsModal .settings-content,
-    body.dark-server-theme #adminModal .settings-content {
-      background-color: #1e293b !important;
-      color: #e2e8f0 !important;
-    }
-    body.dark-server-theme .modal-box .bg-white,
-    body.dark-server-theme .modal-box .bg-gray-50,
-    body.dark-server-theme .modal-box .bg-gray-100,
-    body.dark-server-theme .modal-overlay .bg-gray-50,
-    body.dark-server-theme .modal-overlay .bg-white {
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme .modal-box .text-gray-900,
-    body.dark-server-theme .modal-box .text-gray-800,
-    body.dark-server-theme .modal-box .text-gray-700,
-    body.dark-server-theme .modal-overlay .text-gray-900,
-    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
-    body.dark-server-theme .modal-box .text-gray-600,
-    body.dark-server-theme .modal-box .text-gray-500,
-    body.dark-server-theme .modal-overlay .text-gray-600,
-    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
-    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
-    body.dark-server-theme .modal-box .border-gray-200,
-    body.dark-server-theme .modal-box .border-gray-300,
-    body.dark-server-theme .modal-box .border-t,
-    body.dark-server-theme .modal-box .border-b,
-    body.dark-server-theme .modal-overlay .border-gray-200,
-    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
-    body.dark-server-theme .modal-box input[type="text"],
-    body.dark-server-theme .modal-box input[type="email"],
-    body.dark-server-theme .modal-box input[type="password"],
-    body.dark-server-theme .modal-box input[type="number"],
-    body.dark-server-theme .modal-box textarea,
-    body.dark-server-theme .modal-box select,
-    body.dark-server-theme .modal-overlay input[type="text"],
-    body.dark-server-theme .modal-overlay input[type="email"] {
-      background-color: #0f172a !important;
-      color: #e2e8f0 !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme .modal-box .bg-gray-100:hover,
-    body.dark-server-theme .modal-box .bg-gray-200:hover,
-    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
-    body.dark-server-theme .modal-box button.bg-gray-100,
-    body.dark-server-theme .modal-box button.bg-gray-200 {
-      background-color: #334155 !important;
-      color: #e2e8f0 !important;
-    }
-
-    /* ===== ショートカット設定のダークモード対応 ===== */
-    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
-    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
-      background: #1e293b !important;
-      color: #e2e8f0 !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-    }
-    body.dark-server-theme #shortcutInfoContainer kbd,
-    body.discord-dark-theme #shortcutInfoContainer kbd {
-      background: #0f172a !important;
-      color: #93c5fd !important;
-      border-color: rgba(255,255,255,0.15) !important;
-    }
-    body.dark-server-theme #shortcutKeyInput,
-    body.discord-dark-theme #shortcutKeyInput {
-      background: #0f172a !important;
-      color: #60a5fa !important;
-      border-color: #3b82f6 !important;
-    }
-
-    /* =========================================================================
-       新テーマ: Discordダーク (body.discord-dark-theme)
-       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
-       ========================================================================= */
-    body.discord-dark-theme {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme #discordServerNav {
-      background-color: #1e1f22 !important;
-      border-right-color: #1e1f22 !important;
-    }
-    body.discord-dark-theme #sidebar,
-    body.discord-dark-theme #membersSidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme #serverHeader,
-    body.discord-dark-theme #currentRoomHeader,
-    body.discord-dark-theme #discordTopBar {
-      background-color: #313338 !important;
-      border-bottom-color: #1f2023 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme #chatArea {
-      background-color: #313338 !important;
-    }
-    body.discord-dark-theme #messageInputArea {
-      background-color: #313338 !important;
-      border-top-color: transparent !important;
-    }
-    body.discord-dark-theme #messageInput,
-    body.discord-dark-theme .discord-input-box {
-      background-color: #383a40 !important;
-      color: #dbdee1 !important;
-      border-color: transparent !important;
-    }
-    body.discord-dark-theme #userPanel {
-      background-color: #232428 !important;
-      color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-server-pill {
-      background-color: #f2f3f5 !important;
-    }
-    body.discord-dark-theme .discord-hero-banner {
-      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .modal-box,
-    body.discord-dark-theme .settings-content {
-      background-color: #313338 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .settings-sidebar {
-      background-color: #2b2d31 !important;
-    }
-    body.discord-dark-theme .settings-nav-item.active {
-      background-color: #3f4248 !important;
-      color: #ffffff !important;
-    }
-    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
-      background-color: #35373c !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme .bg-gray-50,
-    body.discord-dark-theme .bg-gray-100 {
-      background-color: #2b2d31 !important;
-      color: #dbdee1 !important;
-    }
-    body.discord-dark-theme input[type="text"],
-    body.discord-dark-theme input[type="email"],
-    body.discord-dark-theme input[type="password"] {
-      background-color: #1e1f22 !important;
-      color: #dbdee1 !important;
-      border-color: #232428 !important;
-    }
-
-    /* ===== アプリ独自カスタムドロップダウン ===== */
-    .covo-custom-select {
-      position: relative;
-      display: inline-block;
-      user-select: none;
-    }
-    .covo-select-trigger {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 8px 14px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: #1e293b;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-    }
-    .covo-select-trigger:hover {
-      background: #e2e8f0;
-      border-color: #94a3b8;
-    }
-    body.dark-server-theme .covo-select-trigger {
-      background: #0f172a;
-      border-color: rgba(255,255,255,0.15);
-      color: #e2e8f0;
-    }
-    body.discord-dark-theme .covo-select-trigger {
-      background: #1e1f22;
-      border-color: rgba(255,255,255,0.1);
-      color: #dbdee1;
-    }
-    .covo-select-options {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
-      min-width: 180px;
-      background: white;
-      border-radius: 12px;
-      padding: 6px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-      border: 1px solid #e2e8f0;
-      z-index: 60;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-8px) scale(0.96);
-      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-    .covo-custom-select.open .covo-select-options {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0) scale(1);
-    }
-    body.dark-server-theme .covo-select-options {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.12);
-    }
-    body.discord-dark-theme .covo-select-options {
-      background: #2b2d31;
-      border-color: #202225;
-    }
-    .covo-select-option {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 500;
-      color: #334155;
-      cursor: pointer;
-      transition: background 0.15s ease;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .covo-select-option:hover {
-      background: #f1f5f9;
-      color: #0f172a;
-    }
-    .covo-select-option.selected {
-      background: #e0e7ff;
-      color: #4338ca;
-      font-weight: 600;
-    }
-    body.dark-server-theme .covo-select-option {
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .covo-select-option:hover {
-      background: rgba(255,255,255,0.08);
-      color: white;
-    }
-    body.dark-server-theme .covo-select-option.selected {
-      background: #312e81;
-      color: #c7d2fe;
-    }
-    body.discord-dark-theme .covo-select-option {
-      color: #949ba4;
-    }
-    body.discord-dark-theme .covo-select-option:hover {
-      background: #35373c;
-      color: #dbdee1;
-    }
-    body.discord-dark-theme .covo-select-option.selected {
-      background: #5865f2;
-      color: white;
-    }
-
-    /* =========================================================================
-       Discord完全準拠 ユーザープロフィールポップアップ (User Profile Card)
-       ========================================================================= */
-    .user-profile-card {
-      border-radius: 16px !important;
-      overflow: hidden !important;
-      transition: background-color 0.2s ease, border-color 0.2s ease;
-    }
-    /* 1. ライトモード */
-    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-card {
-      background-color: #ffffff !important;
-      border-color: #e3e5e8 !important;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileAvatar {
-      border-color: #ffffff !important;
-      background-color: #e3e5e8 !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileStatusDot {
-      border-color: #ffffff !important;
-    }
-
-    /* 2. ダークネイビーモード (body.dark-server-theme) */
-    body.dark-server-theme .user-profile-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.08) !important;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
-    }
-    body.dark-server-theme #userProfileAvatar {
-      border-color: #1e293b !important;
-      background-color: #0f172a !important;
-    }
-    body.dark-server-theme #userProfileStatusDot {
-      border-color: #1e293b !important;
-    }
-    body.dark-server-theme #userProfileBanner {
-      background-color: #3b82f6 !important;
-    }
-
-    /* 3. Discordダークモード (body.discord-dark-theme) */
-    body.discord-dark-theme .user-profile-card {
-      background-color: #232428 !important;
-      border-color: #1f2023 !important;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
-    }
-    body.discord-dark-theme #userProfileAvatar {
-      border-color: #232428 !important;
-      background-color: #111214 !important;
-    }
-    body.discord-dark-theme #userProfileStatusDot {
-      border-color: #232428 !important;
-    }
-    body.discord-dark-theme #userProfileBanner {
-      background-color: #5865f2 !important;
-    }
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()"
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()"
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
+            "members": {
+              "$uid": {
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (auth.uid === $uid && !newData.exists()))"
+              }
+            },
+            "rooms": {
+              "$roomId": {
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && ((data.child('senderId').val() === auth.uid && newData.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
+                      }
+                    }
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || ($dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('senderId').val() === auth.uid) || (data.exists() && newData.exists() && ((data.child('senderId').val() === auth.uid && newData.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && newData.child('senderId').val() === data.child('senderId').val()) || (newData.child('isPinned').exists() && newData.child('senderId').val() === data.child('senderId').val()))))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+                }
+              }
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "readStates": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$roomId": {
+                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 </file>
 
 <file path="public/css/modules/mobile.css">
@@ -12118,6 +11274,974 @@ pub fn run() {
       #joinServerBtn:hover, #createServerBtn:hover {
         background: rgba(255, 255, 255, 0.28) !important;
       }
+    }
+</file>
+
+<file path="public/css/modules/theme.css">
+/* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.18) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.18);
+      border-radius: 100px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,0,0,0.32);
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* モーダル背景 */
+    .modal-overlay {
+      background-color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* ドロップダウンコンテナのスタイル */
+    .dropdown-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: white;
+      min-width: 100px;
+      box-shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      right: 0;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+
+    .dropdown-content button {
+      color: black;
+      padding: 8px 12px;
+      text-decoration: none;
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background-color: transparent;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* メッセージ内容と入力欄 */
+    .message-content {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+    }
+
+    textarea#messageInput {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-y: auto;
+      resize: none;
+      min-height: 0;
+      max-height: 200px;
+      background-color: transparent;
+      border: none;
+      font-size: 16px;
+      line-height: 1.5;
+
+      /* ★スクロールバーを非表示にする設定 */
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* ★Chrome, Safari, Opera用 */
+    textarea#messageInput::-webkit-scrollbar {
+      display: none;
+    }
+
+    textarea#messageInput:focus {
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 既読表示 */
+    .read-receipt {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 2px;
+      display: block;
+      text-align: right;
+    }
+
+    .other-message .read-receipt {
+      text-align: left;
+    }
+
+    /* 未読の境界線（「ここから未読」） */
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 0 4px;
+      color: #ef4444;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .unread-divider::before,
+    .unread-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.35;
+    }
+    body.dark-server-theme .unread-divider { color: #f87171; }
+
+    /* カスタムコンテキストメニュー */
+    .custom-context-menu {
+      position: fixed;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      z-index: 100;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .custom-context-menu:not(.hidden) {
+      display: flex;
+    }
+    .custom-context-menu-inner {
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      padding: 4px 0;
+      overflow: hidden;
+    }
+
+    .custom-context-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: black;
+    }
+
+    .custom-context-menu button:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* サイドバーリサイズ用ハンドル (細線＋広域タッチ判定・発光なし) */
+    #resizer, #resizerRight {
+      width: 2px;
+      cursor: col-resize;
+      background-color: #e2e8f0;
+      transition: background-color 0.15s ease;
+      flex-shrink: 0;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 25;
+    }
+
+    /* タッチ・ホバー判定領域を左右に大幅拡張（見た目は細いまま指で簡単に掴める） */
+    #resizer::before, #resizerRight::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -10px;
+      right: -10px;
+      width: calc(100% + 20px);
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 26;
+    }
+
+    /* ホバー時およびドラッグ中: ライトモードは落ち着いたダークネイビー */
+    #resizer:hover, #resizerRight:hover,
+    #resizer.is-resizing, #resizerRight.is-resizing {
+      background-color: #1e293b;
+      box-shadow: none;
+    }
+
+    /* リプライ機能用CSS (Discord風L字ライン) - merged above */
+    .reply-quote:hover {
+      text-decoration: underline;
+      text-decoration-color: #94a3b8;
+      text-underline-offset: 2px;
+    }
+
+    .reply-quote-nickname {
+      font-weight: 600;
+      color: #475569;
+      flex-shrink: 0;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reply-quote-text {
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .message-highlight {
+      transition: background-color 0.8s ease-out;
+      background-color: #bde4ff !important;
+    }
+    /* === ダークモード全体 === */
+    body.dark-server-theme { background: #111827; }
+    body.dark-server-theme #mainContent,
+    body.dark-server-theme #appContainer { background: #111827; }
+
+    /* サーバーリスト・通知画面 */
+    body.dark-server-theme #serverListScreen { background: #1f2937; }
+    body.dark-server-theme #mobileNotifScreen { background: #111827; }
+    body.dark-server-theme .mobile-notif-item {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+
+    /* チャンネルサイドバー */
+    body.dark-server-theme #sidebar { background: #1e293b !important; }
+    body.dark-server-theme .room-item-animate {
+      background: transparent !important;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .room-item-animate:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: #f1f5f9;
+    }
+
+    /* ユーザーパネル */
+    body.dark-server-theme #userPanel {
+      background-color: #162032 !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme #userPanel:hover {
+      background-color: #1e2f42 !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    body.dark-server-theme .user-panel-name { color: #f1f5f9 !important; }
+    body.dark-server-theme .user-panel-id { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn { color: #94a3b8 !important; }
+    body.dark-server-theme #openSettingsBtn:hover {
+      color: #f8fafc !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* チャットエリア */
+    body.dark-server-theme #chatArea { background: #1a202c; }
+    body.dark-server-theme #currentRoomHeader {
+      background: #243040 !important;
+      border-bottom-color: rgba(255,255,255,0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #currentRoomHeader button { color: #94a3b8 !important; }
+    body.dark-server-theme #currentRoomHeader button:hover { color: #e2e8f0 !important; }
+    body.dark-server-theme #messagesDisplay { background: #1a202c; }
+    /* === ダークネイビーモード (body.dark-server-theme) ピン留めUI === */
+    body.dark-server-theme #pinnedMessagesArea {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .pinned-announcement-container {
+      background: #1e293b !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+    body.dark-server-theme .pinned-announcement-header:hover {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .announcement-icon-wrap {
+      color: #818cf8 !important;
+    }
+    body.dark-server-theme .announcement-sender {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .announcement-text {
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme .announcement-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-btn:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .pinned-announcement-list {
+      background: #162032 !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+    }
+    body.dark-server-theme .pinned-announcement-item:hover {
+      background: #1e293b !important;
+    }
+    body.dark-server-theme .announcement-item-icon {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer {
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .pinned-announcement-footer-btn:hover {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme .minimized-pin-icon {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #818cf8 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.dark-server-theme .minimized-pin-badge {
+      border-color: #1e293b !important;
+    }
+
+    /* === Discordダークモード (body.discord-dark-theme) ピン留めUI === */
+    body.discord-dark-theme .pinned-announcement-container {
+      background: #2b2d31 !important;
+      border-bottom-color: #1f2023 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-header:hover {
+      background: #35373c !important;
+    }
+    body.discord-dark-theme .announcement-icon-wrap {
+      color: #5865f2 !important;
+    }
+    body.discord-dark-theme .announcement-sender {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .announcement-text {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .announcement-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-btn:hover {
+      background: #35373c !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-list {
+      background: #1e1f22 !important;
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item {
+      border-bottom-color: rgba(255, 255, 255, 0.03) !important;
+    }
+    body.discord-dark-theme .pinned-announcement-item:hover {
+      background: #2b2d31 !important;
+    }
+    body.discord-dark-theme .announcement-item-icon {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .announcement-unpin-btn:hover {
+      background: rgba(239, 68, 68, 0.2) !important;
+      color: #f87171 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer {
+      border-top-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn {
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .pinned-announcement-footer-btn:hover {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .minimized-pin-icon {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #5865f2 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+    }
+    body.discord-dark-theme .minimized-pin-badge {
+      border-color: #2b2d31 !important;
+    }
+
+    /* メッセージバブル */
+    body.dark-server-theme .my-message {
+      background-color: #2a3a52 !important;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .other-message {
+      background-color: #243040 !important;
+      color: #e2e8f0;
+    }
+    /* スタンプはダークモードでも完全に背景・枠を消して透過させ、チャット背景をそのまま見せる */
+    body.dark-server-theme .message-bubble.sticker-bubble {
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 2px 0 !important;
+      border: none !important;
+    }
+    body.dark-server-theme .message-content { color: #e2e8f0; }
+    body.dark-server-theme .read-receipt { color: #4b5563; }
+   /* ダークモード時のリプライのL字矢印の色調整 */
+    body.dark-server-theme .reply-quote::before { border-color: #64748b; }
+    body.dark-server-theme .message-highlight {
+      background-color: rgba(96,165,250,0.25) !important;
+    }
+
+    /* 入力エリア */
+    body.dark-server-theme #messageInputArea {
+      background: #1e293b !important;
+      border-top-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme #messageInputInner {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      box-shadow: none !important;
+    }
+    body.dark-server-theme #messageInputInner:focus-within {
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    body.dark-server-theme textarea#messageInput { color: #e2e8f0 !important; }
+    body.dark-server-theme textarea#messageInput::placeholder { color: #4b5563 !important; }
+    body.dark-server-theme .input-side-btn {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.1) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .input-side-btn:hover:not(:disabled) {
+      color: #e2e8f0 !important;
+      background: #243040 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    body.dark-server-theme #replyingToContainer {
+      background: #1e2d3f !important;
+      border-left-color: #4b6280 !important;
+    }
+    body.dark-server-theme #replyingToContainer .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme #replyingToContainer .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme #typingIndicator { color: #4b5563; }
+
+    /* メンバーリスト */
+    body.dark-server-theme #membersSidebar {
+      background: #1e293b;
+      border-left-color: rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme .member-item:hover { background-color: rgba(255,255,255,0.07); }
+    body.dark-server-theme .member-name { color: #cbd5e1; }
+    body.dark-server-theme .member-status-text { color: #64748b; }
+    body.dark-server-theme .member-group-title { color: #64748b; }
+    body.dark-server-theme .status-indicator { border-color: #1e293b !important; }
+
+    /* 検索バー */
+    body.dark-server-theme #searchContainer {
+      background: #1e293b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    body.dark-server-theme #searchInput {
+      background: #0f172a !important;
+      border-color: rgba(255,255,255,0.15) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #closeSearchBtn { color: #94a3b8; }
+
+    /* コンテキストメニュー / ドロップダウン */
+    body.dark-server-theme .custom-context-menu-inner {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.dark-server-theme .custom-context-menu button { color: #e2e8f0; }
+    body.dark-server-theme .custom-context-menu button:hover { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme .dropdown-content {
+      background-color: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+    }
+    body.dark-server-theme .dropdown-content button { color: #e2e8f0; }
+    body.dark-server-theme .dropdown-content button:hover { background-color: rgba(255,255,255,0.08); }
+
+    /* リサイザー / スクロールバー */
+    body.dark-server-theme #resizer, body.dark-server-theme #resizerRight { background-color: rgba(255,255,255,0.08); }
+    body.dark-server-theme #resizer:hover, body.dark-server-theme #resizerRight:hover,
+    body.dark-server-theme #resizer.is-resizing, body.dark-server-theme #resizerRight.is-resizing {
+      background-color: #3b82f6;
+      box-shadow: none;
+    }
+    body.discord-dark-theme #resizer, body.discord-dark-theme #resizerRight { background-color: #1f2023; }
+    body.discord-dark-theme #resizer:hover, body.discord-dark-theme #resizerRight:hover,
+    body.discord-dark-theme #resizer.is-resizing, body.discord-dark-theme #resizerRight.is-resizing {
+      background-color: #5865f2;
+      box-shadow: none;
+    }
+    body.dark-server-theme * {
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+    }
+    body.dark-server-theme *::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* 設定モーダル（コンテンツエリア）*/
+    body.dark-server-theme .settings-content {
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+    body.dark-server-theme .settings-section-title {
+      color: #e2e8f0 !important;
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .bg-gray-50,
+    body.dark-server-theme .settings-content .bg-gray-100,
+    body.dark-server-theme .settings-content .bg-slate-50,
+    body.dark-server-theme .settings-content .bg-slate-100 {
+      background: #243040 !important;
+    }
+    body.dark-server-theme .settings-content .text-gray-900,
+    body.dark-server-theme .settings-content .text-gray-800,
+    body.dark-server-theme .settings-content .text-gray-700 { color: #e2e8f0 !important; }
+    body.dark-server-theme .settings-content .text-gray-600,
+    body.dark-server-theme .settings-content .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .settings-content .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .settings-content .border-gray-100,
+    body.dark-server-theme .settings-content .border-gray-200,
+    body.dark-server-theme .settings-content .border-slate-200,
+    body.dark-server-theme .settings-content .border-slate-300,
+    body.dark-server-theme .settings-content .border-t {
+      border-color: rgba(255,255,255,0.08) !important;
+    }
+    body.dark-server-theme .settings-content .setting-row {
+      border-bottom-color: rgba(255,255,255,0.06) !important;
+    }
+    body.dark-server-theme .settings-content .setting-label { color: #e2e8f0; }
+    body.dark-server-theme .settings-content .setting-label i { color: #94a3b8; }
+    body.dark-server-theme .settings-content input[type="text"],
+    body.dark-server-theme .settings-content input[type="email"],
+    body.dark-server-theme .settings-content input[type="password"] {
+      background: #101726 !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #avatarUploadTrigger .border-white,
+    body.dark-server-theme #avatarUploadTriggerMobile .border-white,
+    body.discord-dark-theme #avatarUploadTrigger .border-white,
+    body.discord-dark-theme #avatarUploadTriggerMobile .border-white {
+      border-color: transparent !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer {
+      background: #162032 !important;
+      border-color: rgba(255,255,255,0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer .text-gray-800 {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #windowsDownloadContainer .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop {
+      background: #162032 !important;
+      border-color: rgba(255,255,255,0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-800 {
+      color: #f8fafc !important;
+    }
+    body.dark-server-theme #pastVersionsContainerDesktop .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #versionLockContainer {
+      background: rgba(245, 158, 11, 0.12) !important;
+      border-color: rgba(245, 158, 11, 0.25) !important;
+    }
+    body.dark-server-theme #versionLockContainer .text-gray-600 {
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer,
+    body.discord-dark-theme #pastVersionsContainerDesktop {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer .text-gray-800,
+    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-800 {
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #windowsDownloadContainer .text-gray-500,
+    body.discord-dark-theme #pastVersionsContainerDesktop .text-gray-500 {
+      color: #949ba4 !important;
+    }
+
+    /* モバイル設定・プロフィール画面 */
+    body.dark-server-theme #mobileProfileScreen { background: #111827; }
+    body.dark-server-theme .mobile-settings-detail { background: #111827; }
+    body.dark-server-theme .mobile-settings-group {
+      background: #1e293b !important;
+      border-color: rgba(255,255,255,0.07) !important;
+    }
+    body.dark-server-theme .mobile-settings-row {
+      border-bottom-color: rgba(255,255,255,0.05) !important;
+    }
+    body.dark-server-theme .mobile-settings-row:active { background: rgba(255,255,255,0.06) !important; }
+    body.dark-server-theme .mobile-settings-row-text { color: #e2e8f0 !important; }
+    body.dark-server-theme .mobile-settings-row-arrow { color: #4b5563 !important; }
+    body.dark-server-theme .mobile-settings-label { color: #94a3b8 !important; }
+
+    /* ===== ダークモード: モーダル/ダイアログ全般の包括対応 =====
+       個別に未対応だったモーダル（参加・作成・パスワード・確認・通話など）や
+       サーバー設定・管理パネル内の全リストアイテム群を完全にダーク仕様に上書きする。 */
+    body.dark-server-theme .modal-box,
+    body.dark-server-theme #serverSettingsModal .settings-content,
+    body.dark-server-theme #adminModal .settings-content {
+      background-color: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .modal-box .bg-white,
+    body.dark-server-theme .modal-box .bg-gray-50,
+    body.dark-server-theme .modal-box .bg-gray-100,
+    body.dark-server-theme .modal-overlay .bg-gray-50,
+    body.dark-server-theme .modal-overlay .bg-white {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme .modal-box .text-gray-900,
+    body.dark-server-theme .modal-box .text-gray-800,
+    body.dark-server-theme .modal-box .text-gray-700,
+    body.dark-server-theme .modal-overlay .text-gray-900,
+    body.dark-server-theme .modal-overlay .text-gray-800 { color: #e2e8f0 !important; }
+    body.dark-server-theme .modal-box .text-gray-600,
+    body.dark-server-theme .modal-box .text-gray-500,
+    body.dark-server-theme .modal-overlay .text-gray-600,
+    body.dark-server-theme .modal-overlay .text-gray-500 { color: #94a3b8 !important; }
+    body.dark-server-theme .modal-box .text-gray-400 { color: #64748b !important; }
+    body.dark-server-theme .modal-box .border-gray-200,
+    body.dark-server-theme .modal-box .border-gray-300,
+    body.dark-server-theme .modal-box .border-t,
+    body.dark-server-theme .modal-box .border-b,
+    body.dark-server-theme .modal-overlay .border-gray-200,
+    body.dark-server-theme .modal-overlay .border-gray-100 { border-color: rgba(255,255,255,0.1) !important; }
+    body.dark-server-theme .modal-box input[type="text"],
+    body.dark-server-theme .modal-box input[type="email"],
+    body.dark-server-theme .modal-box input[type="password"],
+    body.dark-server-theme .modal-box input[type="number"],
+    body.dark-server-theme .modal-box textarea,
+    body.dark-server-theme .modal-box select,
+    body.dark-server-theme .modal-overlay input[type="text"],
+    body.dark-server-theme .modal-overlay input[type="email"] {
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme .modal-box .bg-gray-100:hover,
+    body.dark-server-theme .modal-box .bg-gray-200:hover,
+    body.dark-server-theme .modal-overlay button:hover.bg-gray-200 { background-color: #1e2f42 !important; }
+    body.dark-server-theme .modal-box button.bg-gray-100,
+    body.dark-server-theme .modal-box button.bg-gray-200 {
+      background-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
+
+    /* ===== ショートカット設定のダークモード対応 ===== */
+    body.dark-server-theme #shortcutInfoContainer .bg-blue-50,
+    body.discord-dark-theme #shortcutInfoContainer .bg-blue-50 {
+      background: #1e293b !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    body.dark-server-theme #shortcutInfoContainer kbd,
+    body.discord-dark-theme #shortcutInfoContainer kbd {
+      background: #0f172a !important;
+      color: #93c5fd !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    body.dark-server-theme #shortcutKeyInput,
+    body.discord-dark-theme #shortcutKeyInput {
+      background: #0f172a !important;
+      color: #60a5fa !important;
+      border-color: #3b82f6 !important;
+    }
+
+    /* =========================================================================
+       新テーマ: Discordダーク (body.discord-dark-theme)
+       Discord本家完全準拠のカラーパレット（#1e1f22, #2b2d31, #313338, #383a40）
+       ========================================================================= */
+    body.discord-dark-theme {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #discordServerNav {
+      background-color: #1e1f22 !important;
+      border-right-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme #sidebar,
+    body.discord-dark-theme #membersSidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme #serverHeader,
+    body.discord-dark-theme #currentRoomHeader,
+    body.discord-dark-theme #discordTopBar {
+      background-color: #313338 !important;
+      border-bottom-color: #1f2023 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme #chatArea {
+      background-color: #313338 !important;
+    }
+    body.discord-dark-theme #messageInputArea {
+      background-color: #313338 !important;
+      border-top-color: transparent !important;
+    }
+    body.discord-dark-theme #messageInput,
+    body.discord-dark-theme .discord-input-box {
+      background-color: #383a40 !important;
+      color: #dbdee1 !important;
+      border-color: transparent !important;
+    }
+    body.discord-dark-theme #userPanel {
+      background-color: #232428 !important;
+      color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-server-pill {
+      background-color: #f2f3f5 !important;
+    }
+    body.discord-dark-theme .discord-hero-banner {
+      background: linear-gradient(135deg, #5865f2, #4752c4) !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .modal-box,
+    body.discord-dark-theme .settings-content {
+      background-color: #313338 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .settings-sidebar {
+      background-color: #2b2d31 !important;
+    }
+    body.discord-dark-theme .settings-nav-item.active {
+      background-color: #3f4248 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .settings-nav-item:hover:not(.active) {
+      background-color: #35373c !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .bg-gray-50,
+    body.discord-dark-theme .bg-gray-100 {
+      background-color: #2b2d31 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme input[type="text"],
+    body.discord-dark-theme input[type="email"],
+    body.discord-dark-theme input[type="password"] {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+      border-color: #232428 !important;
+    }
+
+    /* ===== アプリ独自カスタムドロップダウン ===== */
+    .covo-custom-select {
+      position: relative;
+      display: inline-block;
+      user-select: none;
+    }
+    .covo-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .covo-select-trigger:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+    body.dark-server-theme .covo-select-trigger {
+      background: #0f172a;
+      border-color: rgba(255,255,255,0.15);
+      color: #e2e8f0;
+    }
+    body.discord-dark-theme .covo-select-trigger {
+      background: #1e1f22;
+      border-color: rgba(255,255,255,0.1);
+      color: #dbdee1;
+    }
+    .covo-select-options {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: 180px;
+      background: white;
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
+      border: 1px solid #e2e8f0;
+      z-index: 60;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.96);
+      transition: all 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .covo-custom-select.open .covo-select-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+    body.dark-server-theme .covo-select-options {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.12);
+    }
+    body.discord-dark-theme .covo-select-options {
+      background: #2b2d31;
+      border-color: #202225;
+    }
+    .covo-select-option {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #334155;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .covo-select-option:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .covo-select-option.selected {
+      background: #e0e7ff;
+      color: #4338ca;
+      font-weight: 600;
+    }
+    body.dark-server-theme .covo-select-option {
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .covo-select-option:hover {
+      background: rgba(255,255,255,0.08);
+      color: white;
+    }
+    body.dark-server-theme .covo-select-option.selected {
+      background: #312e81;
+      color: #c7d2fe;
+    }
+    body.discord-dark-theme .covo-select-option {
+      color: #949ba4;
+    }
+    body.discord-dark-theme .covo-select-option:hover {
+      background: #35373c;
+      color: #dbdee1;
+    }
+    body.discord-dark-theme .covo-select-option.selected {
+      background: #5865f2;
+      color: white;
+    }
+
+    /* =========================================================================
+       Discord完全準拠 ユーザープロフィールポップアップ (User Profile Card)
+       ========================================================================= */
+    .user-profile-card {
+      border-radius: 16px !important;
+      overflow: hidden !important;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    /* 1. ライトモード */
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-card {
+      background-color: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileAvatar {
+      border-color: #ffffff !important;
+      background-color: #e3e5e8 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileStatusDot {
+      border-color: #ffffff !important;
+    }
+
+    /* 2. ダークネイビーモード (body.dark-server-theme) */
+    body.dark-server-theme .user-profile-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+    }
+    body.dark-server-theme #userProfileAvatar {
+      border-color: #1e293b !important;
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme #userProfileStatusDot {
+      border-color: #1e293b !important;
+    }
+    body.dark-server-theme #userProfileBanner {
+      background-color: #3b82f6 !important;
+    }
+
+    /* 3. Discordダークモード (body.discord-dark-theme) */
+    body.discord-dark-theme .user-profile-card {
+      background-color: #232428 !important;
+      border-color: #1f2023 !important;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
+    }
+    body.discord-dark-theme #userProfileAvatar {
+      border-color: #232428 !important;
+      background-color: #111214 !important;
+    }
+    body.discord-dark-theme #userProfileStatusDot {
+      border-color: #232428 !important;
+    }
+    body.discord-dark-theme #userProfileBanner {
+      background-color: #5865f2 !important;
     }
 </file>
 
@@ -13880,12 +14004,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- ユーティリティ関数 ---
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
+    // ========================================================================
 
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    // アプリ全体管理者 (Super Admin / Global Admin)
     function isGlobalAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
@@ -13895,6 +14022,7 @@ service cloud.firestore {
         );
     }
 
+    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
     function isListAdmin(appId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
@@ -13904,13 +14032,24 @@ service cloud.firestore {
         );
     }
 
+    // サーバーオーナー (Server Owner: サーバー作成者)
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          || isGlobalAdmin(appId));
+    }
+
+    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
     function isServerAdmin(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
         (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          || isServerOwner(appId, serverId)
           || isGlobalAdmin(appId));
     }
 
+    // サーバー参加メンバー (Server Member)
     function isJoinedServer(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
@@ -13918,13 +14057,14 @@ service cloud.firestore {
           || isGlobalAdmin(appId));
     }
 
-    // --- 各コレクションのルール ---
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
 
     match /artifacts/{appId} {
 
-      // 1. 全体設定
+      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
       match /settings/{docId} {
-        // allowedEmailsは機密情報が含まれるため、旧ドキュメントへのアクセスを禁止（新しく allowedEmails サブコレクションを使用）
         allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
         allow write: if isGlobalAdmin(appId);
       }
@@ -13933,7 +14073,7 @@ service cloud.firestore {
         allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
       }
       
-      // ログイン許可リスト（単一取得は認証済みユーザー全員に許可し、連携アカウントの照合を保証）
+      // ログイン許可リスト (Allowed Emails)
       match /allowedEmails/{emailId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId) ||
@@ -13950,7 +14090,7 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // バグ報告・フィードバック (サイズ制限と作成者バリデーションでDoS/改ざん防止)
+      // バグ報告・フィードバック
       match /feedbacks/{docId} {
         allow create: if isAuthenticated() &&
           request.resource.data.createdBy == request.auth.uid &&
@@ -13966,7 +14106,7 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // システムエラー・警告テレメトリ (認証済みユーザーのみ作成・集約)
+      // システムエラー・警告テレメトリ
       match /error_reports/{docId} {
         allow create, update: if isAuthenticated() &&
           request.resource.data.message is string &&
@@ -13975,28 +14115,27 @@ service cloud.firestore {
         allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
       }
 
-      // 緊急アカウントリカバリー保管庫（メール不能時の暗号化パスワード復旧用）
+      // 緊急アカウントリカバリー保管庫
       match /recovery_vault/{userDocId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userDocId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
       }
       match /recovery_index/{emailHash} {
-        allow read: if true; // ログイン前の暗号照合検証用
-        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+        allow read: if true;
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
       }
 
-      // 管理者承認による緊急パスワード再設定支援（10分間ワンタイムPIN・バイパス）
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
       match /admin_recovery_requests/{userDocId} {
         allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
         allow write: if isGlobalAdmin(appId);
       }
       match /admin_recovery_index/{emailHash} {
-        allow read: if true; // ログイン前のPIN照合検証用
+        allow read: if true;
         allow write: if isGlobalAdmin(appId);
       }
 
-      // 招待コードインデックス（コード→サーバーID の逆引き）
-      // 認証済みユーザーなら読める、書き込みは認証済みユーザー（内容が正しくなくても実害なし）
+      // 招待コードインデックス (逆引き)
       match /inviteIndex/{code} {
         allow get: if isAuthenticated();
         allow create: if isServerAdmin(appId, request.resource.data.serverId);
@@ -14004,124 +14143,130 @@ service cloud.firestore {
         allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
 
-      // 2. ユーザー情報
+      // 2. ユーザー情報 (Users & Profiles)
       match /users/{userId} {
         allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // サーバー作成クォータ（本人のみ読み書き）
       match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == qUserId;
-        allow write: if false; // クライアントからの直接更新を禁止
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
       }
 
       match /users/{userId}/profile/{docId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // E2EE 秘密鍵バックアップ: 本人のみ読み書き可（他者・未認証は一切読めない）
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
       match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
       // 既読状態の同期
       match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // フレンド関係性 (relationships: 申請送信・承認フローの偽装防止)
+      // フレンド関係性 (Relationships)
       match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
         allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
             (request.resource.data.status == 'pending_received' && (resource == null || resource.data.status != 'blocked')) ||
             (request.resource.data.status == 'friends' && resource != null && resource.data.status == 'pending_sent')
           ))
         );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId);
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
       }
 
       // ダイレクトメッセージ (DM) チャンネル
       match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
-        allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-        allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        allow delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
         match /keys/{keyUserId} {
           allow get, list: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
              request.auth.uid in dmId.split('_') ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
           allow write: if isAuthenticated() &&
-            (request.auth.uid == keyUserId ||
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
              (request.auth.uid in dmId.split('_') && keyUserId in dmId.split('_')) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
         }
       }
 
-      // 端末間データ完全移行 (P2P Device Transfers)
+      // 端末間データ移行 (P2P Device Transfers)
       match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
         match /{subcollection}/{docId} {
-          allow get, list: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
-          allow write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid);
+          allow get, list, write: if isAuthenticated() &&
+            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid || isGlobalAdmin(appId));
         }
       }
 
-      // P2P 過去ログ分散補完シグナリング (P2P Log Sync)
+      // P2P 過去ログ分散補完 (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
         allow get, list, delete: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid);
-        allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
+          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.requesterUid == request.auth.uid || isGlobalAdmin(appId));
         allow update: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId']);
+          (isGlobalAdmin(appId) ||
+           ((resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
         match /{subcollection}/{docId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid);
+             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid ||
+             isGlobalAdmin(appId));
         }
       }
 
-      // 3. グローバルオンライン状態
+      // 3. グローバルオンライン状態 (Status)
       match /status/{userId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // 4. P2P音声通話シグナリング
+      // 4. P2P音声通話シグナリング (Calls)
       match /calls/{callId} {
         allow get, list, delete: if isAuthenticated() &&
           (
+            isGlobalAdmin(appId) ||
             resource.data.calleeUid == request.auth.uid ||
             ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
             ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            resource.data.calleeUid == request.auth.uid ||
-            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']);
+            isGlobalAdmin(appId) ||
+            ((resource.data.calleeUid == request.auth.uid ||
+              ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
+              ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
+          );
         allow create: if isAuthenticated() &&
-          'caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-          request.resource.data.caller.uid == request.auth.uid;
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (
+              isGlobalAdmin(appId) ||
               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid ||
               ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
               ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
@@ -14129,53 +14274,63 @@ service cloud.firestore {
         }
       }
 
-      // 4b. P2Pファイル共有シグナリング（本体はP2P。ここはofferやICE候補だけ）
+      // 4b. P2Pファイル共有シグナリング (File Shares)
       match /fileshares/{shareId} {
         allow get, list, delete: if isAuthenticated() &&
           (
+            isGlobalAdmin(appId) ||
             resource.data.receiverUid == request.auth.uid ||
             ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
-            resource.data.receiverUid == request.auth.uid ||
-            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
-          ) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']);
+            isGlobalAdmin(appId) ||
+            ((resource.data.receiverUid == request.auth.uid ||
+              ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
+          );
         allow create: if isAuthenticated() &&
-          'sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-          request.resource.data.sender.uid == request.auth.uid;
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
             (
+              isGlobalAdmin(appId) ||
               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid ||
               ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
             );
         }
       }
 
-      // ============================================================
-      // サーバーベース構造
-      // ============================================================
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
 
       match /servers/{serverId} {
-        // 単一ドキュメント取得は認証済みユーザー全員に許可（参加時のID検索・パスワード照合のため）
         allow get: if isAuthenticated();
-        // 一覧取得はグローバル管理者、または自分が joinedUsers に含まれるドキュメントのみ
         allow list: if isGlobalAdmin(appId) ||
           (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
 
-        // サーバー作成: 参加者および管理者は作成者（自身）のみに限定する
+        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
         allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.serverAdmins == [request.auth.uid] &&
-          request.resource.data.joinedUsers == [request.auth.uid];
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
 
-        allow update: if (isServerAdmin(appId, serverId) || isGlobalAdmin(appId)) &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid);
+        // サーバー設定の更新:
+        // 1) サーバーオーナーまたは全体管理者: 自由に変更可能
+        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
+        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) || resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId));
 
-        // 退出操作: 自分自身を joinedUsers/serverAdmins から削除する場合のみ
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || resource.data.createdBy in request.resource.data.serverAdmins);
+
         allow update: if isAuthenticated() &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
@@ -14184,110 +14339,114 @@ service cloud.firestore {
           (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
           request.resource.data.memberCount == resource.data.memberCount - 1;
 
-        // サーバー削除: グローバル管理者またはサーバー管理者
-        allow delete: if isGlobalAdmin(appId) || isServerAdmin(appId, serverId);
+        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
 
-        // サーバー内の秘密情報（管理者のみ）
+        // サーバー内の秘密情報 (パスワードハッシュ等)
         match /secrets/{docId} {
           allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId);
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
         }
 
-        // ルーム一覧
+        // ルーム一覧 (Channels / Rooms)
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
+          // ルーム更新: 管理者/モデレーターは設定変更、一般メンバーはメッセージ投稿に伴う最終メッセージ情報のみ更新可能
           allow update: if isServerAdmin(appId, serverId) || (
             isJoinedServer(appId, serverId) &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
           );
-          allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerAdmin(appId, serverId);
 
-          // ルーム内メッセージ
+          // ルーム内メッセージ (Messages)
           match /messages/{messageId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create: if isJoinedServer(appId, serverId) &&
-              request.resource.data.senderId == request.auth.uid;
+              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId));
+
+            // メッセージ更新:
+            // 1. リアクション追加・削除: 参加メンバー全員可能
+            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
+            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
+            // 4. 全体管理者によるモデレーション更新
             allow update: if isJoinedServer(appId, serverId) && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned']))
-              || (isServerAdmin(appId, serverId)
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp']))
+              || isGlobalAdmin(appId)
             );
+
+            // メッセージ削除: 送信者本人 または サーバー管理者 (モデレーター) または 全体管理者
+            // 一般メンバーやリスト管理者が他人のメッセージを削除することは不可！
             allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId));
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
           }
 
-          // 既読レシート
+          // 既読レシート (Read Receipts)
           match /readReceipts/{receiptUserId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create, update: if isJoinedServer(appId, serverId) &&
-              request.auth.uid == receiptUserId;
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
             allow delete: if isJoinedServer(appId, serverId) &&
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム共通鍵（各メンバーの公開鍵で暗号化済み）
-          // 参加メンバーなら読み取り可（自分宛の wrapped key を復号するため）。
-          // 新規の鍵の作成（配布）は参加メンバーなら許可するが、上書き(update)や削除(delete)はサーバー管理者に限定。
+          // E2EE ルーム暗号鍵 (Room Keys)
           match /roomKeys/{keyId} {
             allow read: if isJoinedServer(appId, serverId);
             allow create: if isJoinedServer(appId, serverId);
             allow update, delete: if isServerAdmin(appId, serverId);
           }
 
-          // E2EE 救済リクエスト（鍵の復号エラー時に自動自己治癒・鍵配布を要求）
+          // E2EE 救済リクエスト (Rescue Requests)
           match /rescueRequests/{reqUserId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && request.auth.uid == reqUserId;
+            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
             allow delete: if isJoinedServer(appId, serverId);
           }
 
-          // タイピングインジケーター（サーバー参加者のみ）
+          // タイピングインジケーター (Typing)
           match /typing/{userId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && request.auth.uid == userId;
+            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
           }
         }
 
-        // サーバー別プロフィール
+        // サーバー別プロフィール (Profiles)
         match /profiles/{profileUserId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create, update: if isJoinedServer(appId, serverId) &&
-            request.auth.uid == profileUserId;
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
           allow delete: if isJoinedServer(appId, serverId) &&
             (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
         }
 
-        // サーバーカスタムスタンプ
+        // サーバーカスタムスタンプ (Stamps)
         match /stamps/{stampId} {
           allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
           allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
             request.resource.data.name is string &&
             request.resource.data.url is string;
-          // スタンプの削除・更新はサーバー管理者または全体管理者のみ可能
-          allow delete: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-          allow update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
             (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
         }
 
-        // スタンプグループ（古い形式 / 拡張形式）
+        // スタンプグループ (Stamp Groups)
         match /stampGroups/{groupId} {
           allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
           allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            request.resource.data.createdBy == request.auth.uid &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
             request.resource.data.name is string;
           allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
             (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
         }
 
-        // 招待コード
+        // 招待コード (Invite Codes)
         match /inviteCodes/{code} {
           allow get: if isAuthenticated();
           allow list: if isServerAdmin(appId, serverId);
@@ -15310,6 +15469,9 @@ export default {
     if (url.pathname === "/api/setOffline" && request.method === "POST") {
       return await handleSetOffline(request, env);
     }
+    if (url.pathname === "/api/emergencyPasswordReset" && request.method === "POST") {
+      return await handleEmergencyPasswordReset(request, env);
+    }
 
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
@@ -15344,7 +15506,158 @@ export default {
   },
 };
 
+// -------------------------------------------------------------
+// エマージェンシーコードによるパスワード強制更新処理 (Firebase Identity Toolkit連携)
+// -------------------------------------------------------------
+async function handleEmergencyPasswordReset(request, env) {
+  const cors = getCorsHeaders(request);
+  try {
+    const { email, code, newPassword, appId } = await request.json();
+    if (!email || !code || !newPassword || !appId) {
+      return new Response(JSON.stringify({ success: false, error: "必須項目が不足しています" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (newPassword.length < 6) {
+      return new Response(JSON.stringify({ success: false, error: "新しいパスワードは6文字以上で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = code.trim().replace(/[^0-9A-Za-z]/g, '');
+
+    // 1. メールアドレスのSHA-256ハッシュを計算
+    const enc = new TextEncoder();
+    const emailBuf = await crypto.subtle.digest('SHA-256', enc.encode(cleanEmail));
+    const emailHash = Array.from(new Uint8Array(emailBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    // 2. Firestore から admin_recovery_index ドキュメントを取得
+    const indexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_index/${emailHash}`;
+    const indexRes = await fetch(indexUrl, {
+      headers: { "Authorization": `Bearer ${adminToken}` }
+    });
+    const indexData = await indexRes.json();
+
+    if (indexData.error || !indexData.fields) {
+      return new Response(JSON.stringify({ success: false, error: "このメールアドレスに対する有効なエマージェンシーコードが見つかりません" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    const fields = indexData.fields;
+    const isUsed = fields.used?.booleanValue || false;
+    const expiresAt = fields.expiresAt?.integerValue ? parseInt(fields.expiresAt.integerValue, 10) : (fields.expiresAt?.timestampValue ? new Date(fields.expiresAt.timestampValue).getTime() : 0);
+    const salt = fields.salt?.stringValue || '';
+    const storedPinHash = fields.pinHash?.stringValue || '';
+    const storedUserId = fields.userId?.stringValue || '';
+
+    if (isUsed) {
+      return new Response(JSON.stringify({ success: false, error: "このエマージェンシーコードは既に使用済みです。新しいコードの発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードの有効期限（10分間）が切れています。再発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 3. コードのハッシュを照合
+    const codeBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanCode));
+    const computedHash = Array.from(new Uint8Array(codeBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (computedHash !== storedPinHash) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードが一致しません。正しい6桁の番号をご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 4. Firebase Identity Toolkit API でユーザーのUIDを特定
+    let targetUid = storedUserId;
+    if (!targetUid) {
+      const lookupUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:lookup`;
+      const lookupRes = await fetch(lookupUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${adminToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: [cleanEmail] })
+      });
+      const lookupData = await lookupRes.json();
+      if (lookupData.users && lookupData.users.length > 0) {
+        targetUid = lookupData.users[0].localId;
+      }
+    }
+
+    if (!targetUid) {
+      return new Response(JSON.stringify({ success: false, error: "対象のアカウントが見つかりませんでした" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 5. Firebase Identity Toolkit API でパスワードを直接更新！
+    const updateUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`;
+    const updateRes = await fetch(updateUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${adminToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        localId: targetUid,
+        password: newPassword
+      })
+    });
+    const updateResult = await updateRes.json();
+
+    if (updateResult.error) {
+      console.error("Identity Toolkit update password error:", updateResult.error);
+      return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 6. コードを使用済みに更新 (admin_recovery_index & admin_recovery_requests)
+    const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+    const writes = [
+      {
+        update: {
+          name: indexData.name,
+          fields: {
+            ...fields,
+            used: { booleanValue: true },
+            usedAt: { timestampValue: new Date().toISOString() }
+          }
+        }
+      }
+    ];
+
+    if (targetUid) {
+      writes.push({
+        transform: {
+          document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
+          fieldTransforms: [
+            { fieldPath: "used", setToServerValue: "REQUEST_TIME" }
+          ]
+        }
+      });
+    }
+
+    await fetch(commitUrl, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ writes })
+    });
+
+    return new Response(JSON.stringify({ success: true, message: "パスワードを正常に変更しました" }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+
+  } catch (err) {
+    console.error("handleEmergencyPasswordReset error:", err);
+    return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+}
+
+// -------------------------------------------------------------
 // サインアップ処理（許可リストの検証を含む）
+// -------------------------------------------------------------
 async function handleSignup(request, env) {
   const cors = getCorsHeaders(request);
   try {
@@ -18480,6 +18793,36 @@ async function handleD1Api(request, env, url) {
               </button>
             </div>
           </form>
+
+          <!-- エマージェンシーコードによる直接パスワード変更（現在のパスワード不要） -->
+          <div class="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800 text-center">
+            <button type="button" id="toggleModalEmergencyCodeBtn" onclick="toggleModalEmergencyCodeSection()" class="text-[11px] font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors flex items-center justify-center gap-1 mx-auto">
+              <i class="fas fa-chevron-down text-[9px] transition-transform duration-200" id="modalEmergencyCodeArrowIcon"></i>
+              <span>現在のパスワードが分からない場合（エマージェンシーコード）</span>
+            </button>
+            <div id="modalEmergencyCodeSection" class="hidden mt-3 text-left space-y-3 pt-1">
+              <div class="p-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-[11px] text-gray-600 dark:text-slate-300 leading-relaxed font-medium">
+                管理者に発行してもらった6桁のエマージェンシーコードを入力することで、現在のパスワードなしで即座に新しいパスワードへ変更できます。
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">エマージェンシーコード (6桁)</label>
+                <input type="text" id="modalEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
+                <div class="relative">
+                  <input type="password" id="modalEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  <button type="button" onclick="toggleRecoveryPasswordVisibility('modalEmergencyNewPassword', 'modalEmergencyPwdEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
+                    <i id="modalEmergencyPwdEyeIcon" class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="modalEmergencyCodeMessage" class="text-xs min-h-[1rem] leading-relaxed"></div>
+              <button id="submitModalEmergencyResetBtn" type="button" onclick="submitModalEmergencyCodeReset()" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-98">
+                <span>コードでパスワードを変更</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -22960,7 +23303,7 @@ window.submitPasswordReset = async function () {
   }
 };
 
-// エマージェンシーコードによるパスワード再設定（絵文字なし・クリーン表示）
+// エマージェンシーコードによるパスワード再設定（Worker API経由で直接更新）
 window.submitEmergencyCodeReset = async function () {
   const emailInput = document.getElementById('resetEmergencyEmailInput');
   const codeInput = document.getElementById('resetEmergencyCodeInput');
@@ -22973,82 +23316,147 @@ window.submitEmergencyCodeReset = async function () {
   const newPwd = (newPwdInput?.value || '').trim();
 
   if (!email) {
-    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   if (!code || code.length < 6) {
-    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   if (!newPwd || newPwd.length < 6) {
-    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
 
   try {
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> コードを検証中...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> パスワードを更新中...'; }
 
-    const emailHash = await _sha256Hash(email);
-    const indexDocRef = doc(db, `artifacts/${appId}/admin_recovery_index`, emailHash);
-    const indexSnap = await getDoc(indexDocRef);
+    const res = await fetch(`${WORKER_BASE_URL}/api/emergencyPasswordReset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code, newPassword: newPwd, appId })
+    });
+    const result = await res.json();
 
-    if (!indexSnap.exists()) {
+    if (!res.ok || !result.success) {
       if (msg) {
-        msg.textContent = 'このメールアドレスに対する有効なエマージェンシーコードが見つかりません。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+        msg.textContent = result.error || 'パスワードの変更に失敗しました。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
       }
       return;
     }
-
-    const data = indexSnap.data();
-    if (data.used) {
-      if (msg) {
-        msg.textContent = 'このコードは既に使用されています。新しいコードの発行を依頼してください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    if (data.expiresAt && Date.now() > data.expiresAt) {
-      if (msg) {
-        msg.textContent = 'コードの有効期限（10分間）が切れています。新しいコードの再発行を依頼してください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    const computedHash = await _sha256Hash((data.salt || '') + ':' + code);
-    if (computedHash !== data.pinHash) {
-      if (msg) {
-        msg.textContent = 'コードが一致しません。正しい6桁の番号をご確認ください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    // コード認証成功
-    await updateDoc(indexDocRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
-    auth.languageCode = 'ja';
-    sendPasswordResetEmail(auth, email).catch(() => {});
 
     if (msg) {
-      msg.textContent = '本人確認が完了しました。まもなくログイン画面に戻ります。';
+      msg.textContent = 'パスワードを正常に変更しました！新しいパスワードでログインできます。';
       msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
     }
 
+    // ログインフォームにメアドと新パスワードを自動セット
+    const loginEmailInp = document.getElementById('emailInput');
+    const loginPwdInp = document.getElementById('passwordInput');
+    if (loginEmailInp) loginEmailInp.value = email;
+    if (loginPwdInp) loginPwdInp.value = newPwd;
+
     setTimeout(() => {
       closePasswordResetModal();
-      alertMessage('パスワードの再設定処理が完了しました。', 'success');
-    }, 2000);
+      alertMessage('パスワードを変更しました！そのままログインできます。', 'success');
+    }, 1500);
 
   } catch (err) {
     console.error('[Recovery] Emergency code reset error:', err);
     if (msg) {
-      msg.textContent = `再設定エラー: ${err.message}`;
-      msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+      msg.textContent = `通信エラー: ${err.message || err}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
     }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span>パスワードを再設定</span>'; }
+  }
+};
+
+// ログイン中モーダル用: エマージェンシーコード折りたたみトグル
+window.toggleModalEmergencyCodeSection = function () {
+  const sec = document.getElementById('modalEmergencyCodeSection');
+  const icon = document.getElementById('modalEmergencyCodeArrowIcon');
+  if (!sec) return;
+  const isHidden = sec.classList.contains('hidden');
+  if (isHidden) {
+    sec.classList.remove('hidden');
+    if (icon) icon.style.transform = 'rotate(180deg)';
+    document.getElementById('modalEmergencyCodeInput')?.focus();
+  } else {
+    sec.classList.add('hidden');
+    if (icon) icon.style.transform = 'rotate(0deg)';
+  }
+};
+
+// ログイン中モーダル用: エマージェンシーコードによる直接パスワード変更
+window.submitModalEmergencyCodeReset = async function () {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    alertMessage('ユーザーのメールアドレスが取得できませんでした', 'error');
+    return;
+  }
+
+  const codeInput = document.getElementById('modalEmergencyCodeInput');
+  const newPwdInput = document.getElementById('modalEmergencyNewPassword');
+  const msg = document.getElementById('modalEmergencyCodeMessage');
+  const btn = document.getElementById('submitModalEmergencyResetBtn');
+
+  const email = user.email.toLowerCase().trim();
+  const code = (codeInput?.value || '').trim().replace(/[^0-9A-Za-z]/g, '');
+  const newPwd = (newPwdInput?.value || '').trim();
+
+  if (!code || code.length < 6) {
+    if (msg) { msg.textContent = '6桁のエマージェンシーコードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> パスワードを更新中...'; }
+
+    const res = await fetch(`${WORKER_BASE_URL}/api/emergencyPasswordReset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code, newPassword: newPwd, appId })
+    });
+    const result = await res.json();
+
+    if (!res.ok || !result.success) {
+      if (msg) {
+        msg.textContent = result.error || 'パスワードの変更に失敗しました。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
+      }
+      return;
+    }
+
+    if (msg) {
+      msg.textContent = 'パスワードを正常に変更しました！';
+      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
+    }
+
+    if (codeInput) codeInput.value = '';
+    if (newPwdInput) newPwdInput.value = '';
+
+    setTimeout(() => {
+      closeChangePasswordModal();
+      alertMessage('エマージェンシーコードでパスワードを変更しました！', 'success');
+      if (typeof updateAccountSecurityUI === 'function') {
+        updateAccountSecurityUI(auth.currentUser);
+      }
+    }, 1200);
+
+  } catch (err) {
+    console.error('[Recovery] Modal emergency code reset error:', err);
+    if (msg) {
+      msg.textContent = `通信エラー: ${err.message || err}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>コードでパスワードを変更</span>'; }
   }
 };
 
@@ -35015,11 +35423,13 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
-  // （自分のメッセージは常に削除可能、他人のメッセージは「アプリ全体管理者（isAdmin）」のみ削除可能）
+  // （自分のメッセージは常に削除可能、他人のメッセージはサーバー管理者・サーバーオーナー・全体管理者のみ削除可能）
   const isMsgSender = msgData.senderId === userId;
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = currentDmId
     ? isMsgSender
-    : (isMsgSender || isAdmin);
+    : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -35028,7 +35438,7 @@ function showContextMenu(bubble, clientX, clientY) {
 
   const canPinMsg = currentDmId
     ? true
-    : (isServerAdminRole || isServerOwner || isAdmin || isMsgSender);
+    : (isSvAdmin || isSvOwner || isAdmin || isMsgSender);
   const pinBtn = document.getElementById("pinMessageButton");
   if (pinBtn) {
     pinBtn.style.display = canPinMsg ? 'block' : 'none';
@@ -35203,14 +35613,17 @@ if (deleteMsgBtn) {
 
   const msgToDelete = selectedMessageForContext;
   const isMsgSender = msgToDelete.senderId === userId;
-  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isAdmin);
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
 
   if (!canDelete) {
     alertMessage("メッセージを削除する権限がありません", "warning");
     return;
   }
 
-  const forceDelete = !currentDmId && isAdmin && msgToDelete.senderId !== userId;
+  const isPrivilegedDelete = !currentDmId && (isAdmin || isSvAdmin || isSvOwner) && msgToDelete.senderId !== userId;
+  const forceDelete = isPrivilegedDelete;
 
   // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
   const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
@@ -35314,8 +35727,8 @@ if (deleteMsgBtn) {
       }
     } else {
       // サーバーメッセージ削除
-      if (isAdmin && !isMsgSender) {
-        // 管理者による他者メッセージの削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
+      if (isPrivilegedDelete) {
+        // サーバー管理者/モデレーター/全体管理者による他者メッセージのモデレーション削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
         await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
@@ -40749,7 +41162,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.112",
+  "version": "1.1.114",
   "force": false
 }
 </file>
@@ -40758,7 +41171,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.112",
+  "version": "1.1.114",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
