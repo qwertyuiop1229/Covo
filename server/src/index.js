@@ -1386,7 +1386,7 @@ function categorizeKvFile(meta) {
 async function handleStorageStats(request, env) {
   try {
     const authHeader = request.headers.get("Authorization") || "";
-    const idToken = authHeader.replace("Bearer ", "");
+    const idToken = authHeader.replace("Bearer ", "").trim();
     if (!idToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -1395,18 +1395,10 @@ async function handleStorageStats(request, env) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const appId = new URL(request.url).searchParams.get("appId");
+    const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
     if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
-    const workerToken = await getWorkerAuthToken(env);
-    const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
-    const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
-    const adminData = await adminRes.json();
-    let isAdmin = false;
-    if (adminData.fields && adminData.fields.emails && adminData.fields.emails.arrayValue && adminData.fields.emails.arrayValue.values) {
-       const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
-       if (emails.includes(verifiedUser.email)) isAdmin = true;
-    }
+    const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -1465,7 +1457,7 @@ async function handleStorageStats(request, env) {
 async function handleBulkDeleteFiles(request, env) {
   try {
     const authHeader = request.headers.get("Authorization") || "";
-    const idToken = authHeader.replace("Bearer ", "");
+    const idToken = authHeader.replace("Bearer ", "").trim();
     if (!idToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -1474,18 +1466,10 @@ async function handleBulkDeleteFiles(request, env) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const appId = new URL(request.url).searchParams.get("appId");
+    const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
     if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
-    const workerToken = await getWorkerAuthToken(env);
-    const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
-    const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
-    const adminData = await adminRes.json();
-    let isAdmin = false;
-    if (adminData.fields && adminData.fields.emails && adminData.fields.emails.arrayValue && adminData.fields.emails.arrayValue.values) {
-       const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
-       if (emails.includes(verifiedUser.email)) isAdmin = true;
-    }
+    const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -1607,6 +1591,19 @@ async function isD1Admin(appId, verifiedUser, env) {
   return false;
 }
 
+// 特権Firestoreアクセストークンの安全な取得（SERVICE_ACCOUNT_JSONを最優先し、フォールバックでgetWorkerAuthTokenを使用）
+async function getAdminTokenForFirestore(env) {
+  if (env.SERVICE_ACCOUNT_JSON) {
+    try {
+      const token = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
+      if (token) return token;
+    } catch (e) {
+      console.warn("getFirestoreAdminToken failed, falling back to worker auth:", e);
+    }
+  }
+  return await getWorkerAuthToken(env);
+}
+
 async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
   if (!appId || !serverId || !verifiedUser) return false;
   if (env.DB) {
@@ -1624,16 +1621,16 @@ async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
     }
   }
   try {
-    const workerToken = await getWorkerAuthToken(env);
-    if (workerToken) {
+    const adminToken = await getAdminTokenForFirestore(env);
+    if (adminToken) {
       const srvUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`;
-      const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+      const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
       const srvData = await srvRes.json();
       if (!srvData.error && srvData.fields) {
         if (srvData.fields.createdBy?.stringValue === verifiedUser.uid) return true;
         if (srvData.fields.serverAdmins?.arrayValue?.values) {
-          const admins = srvData.fields.serverAdmins.arrayValue.values.map(v => v.stringValue);
-          if (admins.includes(verifiedUser.uid)) return true;
+          const admins = srvData.fields.serverAdmins.arrayValue.values.map(v => (v.stringValue || "").trim());
+          if (admins.includes(verifiedUser.uid.trim())) return true;
         }
       }
     }
@@ -1650,19 +1647,19 @@ async function isAppAdmin(appId, verifiedUser, env) {
     if (d1Result) return true;
   }
   try {
-    const workerToken = await getWorkerAuthToken(env);
-    if (workerToken) {
+    const adminToken = await getAdminTokenForFirestore(env);
+    if (adminToken) {
       const adminUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/settings/adminList`;
-      const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+      const adminRes = await fetch(adminUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
       const adminData = await adminRes.json();
       if (!adminData.error && adminData.fields) {
         if (adminData.fields.emails?.arrayValue?.values) {
-          const emails = adminData.fields.emails.arrayValue.values.map(v => v.stringValue);
-          if (verifiedUser.email && emails.includes(verifiedUser.email)) return true;
+          const emails = adminData.fields.emails.arrayValue.values.map(v => (v.stringValue || "").toLowerCase().trim());
+          if (verifiedUser.email && emails.includes(verifiedUser.email.toLowerCase().trim())) return true;
         }
         if (adminData.fields.admins?.arrayValue?.values) {
-          const admins = adminData.fields.admins.arrayValue.values.map(v => v.stringValue);
-          if (verifiedUser.uid && admins.includes(verifiedUser.uid)) return true;
+          const admins = adminData.fields.admins.arrayValue.values.map(v => (v.stringValue || "").trim());
+          if (verifiedUser.uid && admins.includes(verifiedUser.uid.trim())) return true;
         }
       }
     }

@@ -181,6 +181,7 @@ function isTransientNetworkError(args) {
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
+const _dismissedErrorSignatures = new Set();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
 
@@ -208,6 +209,8 @@ function _reportTelemetryError(type, message, stack) {
     if (!msgStr || msgStr === '[object Object]') return;
 
     const signature = _createErrorSignature(type, msgStr, stack);
+    if (_dismissedErrorSignatures.has(signature)) return; // 削除済みエラーの再報告を抑止
+
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
     if (now - lastReported < 2500) return; // 2.5秒間ローカル重複排除
@@ -242,7 +245,7 @@ function _reportTelemetryError(type, message, stack) {
       const badgeEl = document.getElementById("telemetryCountBadge");
       if (badgeEl) {
         badgeEl.textContent = window._cachedTelemetryErrors.length;
-        badgeEl.classList.remove('hidden');
+        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
         renderTelemetryErrorsList();
@@ -2376,75 +2379,6 @@ window.sendPasswordResetToCurrentUser = async function () {
   }
 };
 
-window.submitChangePassword = async function () {
-  const user = auth.currentUser;
-  if (!user) return;
-  const currInput = document.getElementById('currentPasswordInput');
-  const newInput = document.getElementById('newPasswordInput');
-  const confirmInput = document.getElementById('confirmNewPasswordInput');
-  const msg = document.getElementById('changePasswordMessage');
-  const btn = document.getElementById('changePasswordBtn');
-
-  const currPwd = currInput?.value || '';
-  const newPwd = newInput?.value || '';
-  const confirmPwd = confirmInput?.value || '';
-
-  const hasPasswordProvider = user.providerData && user.providerData.some(p => p.providerId === 'password');
-
-  if (hasPasswordProvider && !currPwd && !window._adminBypassActive) {
-    if (msg) { msg.textContent = '現在のパスワードを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
-    return;
-  }
-  if (!newPwd || newPwd.length < 6) {
-    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
-    return;
-  }
-  if (newPwd !== confirmPwd) {
-    if (msg) { msg.textContent = '新しいパスワードが一致しません。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
-    return;
-  }
-
-  try {
-    if (btn) { btn.disabled = true; btn.textContent = '更新中...'; }
-    if (hasPasswordProvider && user.email && !window._adminBypassActive) {
-      const cred = EmailAuthProvider.credential(user.email, currPwd);
-      await reauthenticateWithCredential(user, cred);
-    }
-    await updatePassword(user, newPwd);
-    
-    // バイパス使用済み処理
-    if (window._adminBypassActive) {
-      window._adminBypassActive = false;
-      const reqRef = doc(db, `artifacts/${appId}/admin_recovery_requests`, user.uid);
-      updateDoc(reqRef, { used: true, usedAt: serverTimestamp() }).catch(() => {});
-      const adminBypassBannerModal = document.getElementById('adminBypassNoticeBannerModal');
-      const adminBypassBadge = document.getElementById('adminBypassBadge');
-      const mobileAdminBypassBadge = document.getElementById('mobileAdminBypassBadge');
-      if (adminBypassBannerModal) adminBypassBannerModal.classList.add('hidden');
-      if (adminBypassBadge) adminBypassBadge.classList.add('hidden');
-      if (mobileAdminBypassBadge) mobileAdminBypassBadge.classList.add('hidden');
-    }
-
-    if (msg) {
-      msg.textContent = 'パスワードを正常に更新しました！';
-      msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
-    }
-    if (currInput) currInput.value = '';
-    if (newInput) newInput.value = '';
-    if (confirmInput) confirmInput.value = '';
-    alertMessage('パスワードを変更しました。', 'success');
-  } catch (err) {
-    console.error('[Auth] Update password error:', err);
-    let errMsg = 'パスワードの更新に失敗しました。';
-    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errMsg = '現在のパスワードが正しくありません。';
-    else if (err.code === 'auth/requires-recent-login') errMsg = 'セキュリティのため、一度ログアウトして再ログインしてからお試しください。';
-    else if (err.code === 'auth/weak-password') errMsg = 'パスワードが弱すぎます（6文字以上）。';
-    if (msg) { msg.textContent = errMsg; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'パスワードを変更'; }
-  }
-};
-
 // authEmail を保持するための変数
 let userAuthEmail = "";
 
@@ -2698,6 +2632,8 @@ function _syncLogsToTelemetryErrors() {
       const cleanMsg = line.replace(/^\[(ERR|WARN)\]\s*/, '').trim();
       if (!cleanMsg) return;
       const sig = _createErrorSignature(isWarn ? 'warn' : 'error', cleanMsg, '');
+      if (_dismissedErrorSignatures.has(sig)) return; // 削除済みエラーは無視
+
       const existing = (window._cachedTelemetryErrors || []).find(e => e.id === sig || e.signature === sig);
       if (!existing) {
         window._cachedTelemetryErrors.unshift({
@@ -2726,11 +2662,11 @@ window.loadErrorTelemetry = async function () {
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
 
-  // 1. 直前のコンソールログから直ちに未記録エラーをマージして即時描画
+  // 1. 直前のコンソールログから直ちに未記録エラーをマージして初期表示
   _syncLogsToTelemetryErrors();
   renderTelemetryErrorsList();
 
-  // 2. リモートFirestoreからエラーコレクションを取得
+  // 2. リモートFirestoreからエラーコレクションを取得（Firestore を Source of Truth とする）
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
@@ -2740,29 +2676,35 @@ window.loadErrorTelemetry = async function () {
 
     // getDocs で即時同期
     const snap = await getDocs(q).catch(() => null);
-    if (snap && !snap.empty) {
-      const remoteMap = new Map();
-      snap.forEach(d => remoteMap.set(d.id, { id: d.id, ...d.data() }));
-      (window._cachedTelemetryErrors || []).forEach(loc => {
-        if (!remoteMap.has(loc.id)) remoteMap.set(loc.id, loc);
+    if (snap) {
+      const remoteErrors = [];
+      snap.forEach(d => {
+        if (!_dismissedErrorSignatures.has(d.id)) {
+          remoteErrors.push({ id: d.id, ...d.data() });
+        }
       });
-      window._cachedTelemetryErrors = Array.from(remoteMap.values());
+      window._cachedTelemetryErrors = remoteErrors;
       window._cachedTelemetryErrors.sort((a, b) => {
         const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
         const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
         return timeB - timeA;
       });
+      if (badgeEl) {
+        badgeEl.textContent = window._cachedTelemetryErrors.length;
+        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
+      }
       renderTelemetryErrorsList();
     }
 
     // リアルタイムリスナーを継続
     _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
-      const remoteMap = new Map();
-      liveSnap.forEach(d => remoteMap.set(d.id, { id: d.id, ...d.data() }));
-      (window._cachedTelemetryErrors || []).forEach(loc => {
-        if (!remoteMap.has(loc.id)) remoteMap.set(loc.id, loc);
+      const remoteErrors = [];
+      liveSnap.forEach(d => {
+        if (!_dismissedErrorSignatures.has(d.id)) {
+          remoteErrors.push({ id: d.id, ...d.data() });
+        }
       });
-      window._cachedTelemetryErrors = Array.from(remoteMap.values());
+      window._cachedTelemetryErrors = remoteErrors;
       window._cachedTelemetryErrors.sort((a, b) => {
         const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
         const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -2864,8 +2806,15 @@ function renderTelemetryErrorsList() {
 
     item.querySelector(".err-del-item-btn").addEventListener("click", async () => {
       try {
-        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        _dismissedErrorSignatures.add(err.id);
+        _reportedSignaturesRecently.delete(err.id);
+        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id)).catch(() => {});
         _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+        const badgeEl = document.getElementById("telemetryCountBadge");
+        if (badgeEl) {
+          badgeEl.textContent = _cachedTelemetryErrors.length;
+          badgeEl.classList.toggle('hidden', _cachedTelemetryErrors.length === 0);
+        }
         renderTelemetryErrorsList();
         alertMessage("エラーログを削除しました", "success");
       } catch (e) {
@@ -2909,12 +2858,35 @@ window.clearAllTelemetryErrors = async function () {
   if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
   if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
   try {
+    const toDelete = [..._cachedTelemetryErrors];
+    toDelete.forEach(err => {
+      _dismissedErrorSignatures.add(err.id);
+      _reportedSignaturesRecently.delete(err.id);
+    });
+
+    // 1. Firestore 上の全エラードキュメントをバッチ削除
     const batch = writeBatch(db);
-    _cachedTelemetryErrors.forEach(err => {
+    toDelete.forEach(err => {
       batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
     });
-    await batch.commit();
+    await batch.commit().catch(e => console.warn("Batch delete error_reports warning:", e));
+
+    // 2. ローカル状態とキューを完全初期化
     _cachedTelemetryErrors = [];
+    _pendingTelemetryErrors.length = 0;
+    _reportedSignaturesRecently.clear();
+
+    // 3. インメモリログからエラー・警告行を除去（復活の根本原因を根絶）
+    if (window._covoLogs) {
+      window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
+    }
+
+    // 4. バッジとリストUIを即座に更新
+    const badgeEl = document.getElementById("telemetryCountBadge");
+    if (badgeEl) {
+      badgeEl.textContent = '0';
+      badgeEl.classList.add('hidden');
+    }
     renderTelemetryErrorsList();
     alertMessage("全エラーログをクリアしました", "success");
   } catch (err) {
@@ -13912,8 +13884,7 @@ if (deleteMsgBtn) {
     } else {
       // サーバーメッセージ削除
       if (isPrivilegedDelete) {
-        // サーバー管理者/モデレーター/全体管理者による他者メッセージのモデレーション削除: Firestore削除 + 特権Worker経由でRTDBからも確実に削除
-        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        // サーバー管理者/モデレーター/全体管理者による他者メッセージのモデレーション削除: 特権Worker API経由でFirestoreとRTDBを一元削除
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
           method: 'DELETE',
@@ -13921,7 +13892,8 @@ if (deleteMsgBtn) {
           body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
         });
         if (!res.ok) {
-          throw new Error("管理者権限でのリアルタイムDB削除に失敗しました");
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || "管理者権限でのメッセージ削除に失敗しました");
         }
       } else {
         // 本人によるメッセージ削除: Firestore + RTDB

@@ -10146,312 +10146,6 @@ pub fn run() {
     }
 </file>
 
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-      }
-    },
-    "rooms": {
-      "$roomId": {
-        "latestMessage": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "latestPin": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "latestReaction": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "latestDelete": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "typing": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    },
-    "webrtc": {
-      "$id": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "announcements": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "allowedEmails": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
-        },
-        "server_stamps": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "inviteIndex": {
-          "$code": {
-            ".read": "auth != null",
-            ".write": "auth != null"
-          }
-        },
-        "feedbacks": {
-          "$docId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "error_reports": {
-          "$docId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null"
-          }
-        },
-        "recovery_vault": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "recovery_index": {
-          "$emailHash": {
-            ".read": "true",
-            ".write": "auth != null"
-          }
-        },
-        "admin_recovery_requests": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "admin_recovery_index": {
-          "$emailHash": {
-            ".read": "true",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "private": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "readStates": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$roomId": {
-                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "relationships": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$targetUid": {
-                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_channels": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "keys": {
-              "$keyUserId": {
-                ".read": "auth != null && ($dmId.contains(auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && ($dmId.contains(auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".indexOn": ["timestamp"],
-            "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || ($dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
-              "reactions": {
-                "$reactUid": {
-                  ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
-                }
-              }
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
-            }
-          }
-        },
-        "device_transfers": {
-          "$sessionCode": {
-            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "sender_candidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            },
-            "receiver_candidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            }
-          }
-        },
-        "p2p_log_sync": {
-          "$syncId": {
-            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "requesterCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            },
-            "targetCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            }
-          }
-        },
-        "calls": {
-          "$callId": {
-            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "callerCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            },
-            "calleeCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            }
-          }
-        },
-        "fileshares": {
-          "$shareId": {
-            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "senderCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            },
-            "receiverCandidates": {
-              ".read": "auth != null",
-              ".write": "auth != null"
-            }
-          }
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
-            "members": {
-              "$uid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (auth.uid === $uid && !newData.exists()) || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
-              }
-            },
-            "secrets": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "profiles": {
-              "$profileUid": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "stamps": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "stampGroups": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "inviteCodes": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "rooms": {
-              "$roomId": {
-                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists()))",
-                "roomKeys": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                  "$keyId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "rescueRequests": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                  "$reqUid": {
-                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "messages": {
-                  ".indexOn": ["timestamp"],
-                  "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid) && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
-                    "reactions": {
-                      "$reactUid": {
-                        ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                      }
-                    }
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists()"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-</file>
-
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -12444,6 +12138,312 @@ pub fn run() {
     body.discord-dark-theme #userProfileBanner {
       background-color: #5865f2 !important;
     }
+</file>
+
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        "latestMessage": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "latestPin": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "latestReaction": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "latestDelete": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "typing": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "webrtc": {
+      "$id": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "announcements": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "allowedEmails": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
+        },
+        "server_stamps": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "inviteIndex": {
+          "$code": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          }
+        },
+        "feedbacks": {
+          "$docId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "error_reports": {
+          "$docId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null"
+          }
+        },
+        "recovery_vault": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "recovery_index": {
+          "$emailHash": {
+            ".read": "true",
+            ".write": "auth != null"
+          }
+        },
+        "admin_recovery_requests": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "admin_recovery_index": {
+          "$emailHash": {
+            ".read": "true",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "private": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "readStates": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$roomId": {
+                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "relationships": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$targetUid": {
+                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_channels": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "keys": {
+              "$keyUserId": {
+                ".read": "auth != null && ($dmId.contains(auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && ($dmId.contains(auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".indexOn": ["timestamp"],
+            "$messageId": {
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || ($dmId.contains(auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+                }
+              }
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.contains(auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && $dmId.contains(auth.uid)"
+            }
+          }
+        },
+        "device_transfers": {
+          "$sessionCode": {
+            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "sender_candidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            },
+            "receiver_candidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            }
+          }
+        },
+        "p2p_log_sync": {
+          "$syncId": {
+            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "requesterCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            },
+            "targetCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            }
+          }
+        },
+        "calls": {
+          "$callId": {
+            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "callerCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            },
+            "calleeCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            }
+          }
+        },
+        "fileshares": {
+          "$shareId": {
+            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "senderCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            },
+            "receiverCandidates": {
+              ".read": "auth != null",
+              ".write": "auth != null"
+            }
+          }
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            "members": {
+              "$uid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (auth.uid === $uid && !newData.exists()) || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+              }
+            },
+            "secrets": {
+              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "profiles": {
+              "$profileUid": {
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "stamps": {
+              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "stampGroups": {
+              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "inviteCodes": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "rooms": {
+              "$roomId": {
+                ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || !data.exists())",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists()))",
+                "roomKeys": {
+                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  "$keyId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "rescueRequests": {
+                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  "$reqUid": {
+                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "messages": {
+                  ".indexOn": ["timestamp"],
+                  "$messageId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || ((root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid) && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                      }
+                    }
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('joinedUsers').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 </file>
 
 <file path="public/css/modules/sidebar.css">
@@ -16883,8 +16883,8 @@ async function handleDeleteFile(request, env, url) {
 
     // メタデータで所有者確認
     const { value, metadata: meta } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
-    if (!value && !meta) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
-      status: 404, headers: { ...cors, 'Content-Type': 'application/json' }
+    if (!value && !meta) return new Response(JSON.stringify({ success: true, message: 'ファイルは既に削除されています' }), {
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';
@@ -22183,11 +22183,14 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // Auth ポップアップの正常なユーザーキャンセル動作
+    // Auth ポップアップの正常なユーザーキャンセル動作 & COOP警告
     if (
       str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request')
+      str.includes('auth/cancelled-popup-request') ||
+      str.includes('cross-origin-opener-policy') ||
+      str.includes('window.closed call') ||
+      str.includes('window.close call')
     ) {
       return true;
     }
@@ -32350,8 +32353,6 @@ async function subscribeToMessagesRTDB() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
-      // ローカル保存完了後、サーバー上の100件超過メッセージを自動クリーンアップ
-      pruneExcessMessages(currentServerId, currentRoomId, currentDmId);
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
     }
@@ -33838,9 +33839,10 @@ document.addEventListener('click', (e) => {
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
 
-// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除
+// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
+  if (!userId) return;
   try {
     const { ref, get, remove, query: rtdbQuery, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -33863,8 +33865,16 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     if (toDelete.length === 0) return;
 
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+    const isGlobal = Boolean(isAdmin);
+    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+    const isPrivileged = isGlobal || isSvOwner || isSvAdmin;
 
     for (const msg of toDelete) {
+      // 権限判定: 送信者本人 または 管理者/オーナーのみ削除を実行
+      const canDeleteThisMsg = Boolean(dmId) || isPrivileged || (msg.senderId === userId);
+      if (!canDeleteThisMsg) continue; // 権限がない他者のメッセージはスキップ（permission_denied を完全回避）
+
       // 1. Cloudflare KV ファイル連動削除
       const fileUrls = [msg.kvFileUrl, msg.fileData, msg.text].filter(Boolean);
       for (const urlStr of fileUrls) {
@@ -33872,7 +33882,8 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
           const m = urlStr.match(/\/api\/file\/([A-Za-z0-9_]+)/);
           if (m && m[1]) {
             const fileKey = m[1];
-            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1`, {
+            const extraParams = `&appId=${encodeURIComponent(appId)}${serverId ? `&serverId=${encodeURIComponent(serverId)}` : ''}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${isPrivileged ? '&forceDelete=1' : ''}${extraParams}`, {
               method: 'DELETE'
             }).catch(e => console.warn('[pruneExcessMessages] KV delete failed:', fileKey, e));
           }
@@ -33881,11 +33892,6 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
 
       // 2. RTDB から削除
       await remove(ref(rtdb, `${basePath}/${msg.id}`)).catch(e => console.warn('[pruneExcessMessages] RTDB remove failed:', msg.id, e));
-
-      // 3. Firestore からも削除 (サーバーメッセージの場合)
-      if (serverId && roomId) {
-        deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`)).catch(() => {});
-      }
     }
   } catch (err) {
     console.warn('[pruneExcessMessages] Error during prune:', err);
@@ -41253,7 +41259,7 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     // 3. コンテキストメニュー
-    const msgCtx逗 = document.getElementById('messageContextMenu');
+    const msgCtx = document.getElementById('messageContextMenu');
     const svCtx = document.getElementById('serverContextMenu');
     if (msgCtx && !msgCtx.classList.contains('hidden')) { msgCtx.classList.add('hidden'); return; }
     if (svCtx && !svCtx.classList.contains('hidden')) { svCtx.classList.add('hidden'); return; }
@@ -41271,7 +41277,7 @@ document.addEventListener("keydown", (e) => {
     }
     // 6. 各種ライトボックス (画像・PDF)
     const imageLb = document.getElementById('imageLightbox');
-    const pdfLb依然 = document.getElementById('pdfLightbox');
+    const pdfLb = document.getElementById('pdfLightbox');
     if (imageLb && imageLb.style.display !== 'none') { imageLb.style.display = 'none'; return; }
     if (pdfLb && pdfLb.style.display !== 'none') { pdfLb.style.display = 'none'; return; }
     // 7. モバイル設定詳細・ボトムシート
@@ -41363,7 +41369,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.115",
+  "version": "1.1.116",
   "force": false
 }
 </file>
@@ -41372,7 +41378,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.115",
+  "version": "1.1.116",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
