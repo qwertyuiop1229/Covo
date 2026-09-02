@@ -102,6 +102,18 @@ async function migrateCollection(collectionRef, rtdbPath) {
     
     // データ変換 (タイムスタンプなど)
     const convertedData = convertDataForRTDB(docData);
+
+    // サーバーコレクションの場合、配列 joinedUsers / serverAdmins を members / serverAdmins オブジェクトに展開して書き込み
+    if (rtdbPath.endsWith('/servers') && convertedData && typeof convertedData === 'object') {
+      if (Array.isArray(docData.joinedUsers)) {
+        convertedData.members = {};
+        docData.joinedUsers.forEach(uid => { if (uid) convertedData.members[uid] = true; });
+      }
+      if (Array.isArray(docData.serverAdmins)) {
+        convertedData.serverAdmins = {};
+        docData.serverAdmins.forEach(uid => { if (uid) convertedData.serverAdmins[uid] = true; });
+      }
+    }
     
     // RTDBに書き込み (暗号化文字列等もそのまま保持される)
     await rtdb.ref(newRtdbPath).set(convertedData);

@@ -6277,7 +6277,7 @@ async function enterServer(serverId, serverData) {
   if (messageInput) messageInput.disabled = true;
   if (sendMessageButton) sendMessageButton.disabled = true;
 
-  // Sync RTDB membership securely via Worker
+  // Sync RTDB membership securely via Worker + Client Direct Self-healing
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
     try {
       auth.currentUser.getIdToken().then(idToken => {
@@ -6294,6 +6294,13 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
+    // クライアント側からも直接 RTDB members/$userId に true を書いて自己治癒
+    try {
+      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
+        const rtdb = await _getOrInitRTDB();
+        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+      });
+    } catch (e) {}
   }
   try {
     const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
@@ -7599,6 +7606,18 @@ async function createServer(name, customId, password) {
   };
   await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
 
+  // RTDB にもサーバーメタデータとメンバーシップを直接同期
+  try {
+    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    await set(ref(rtdb, `artifacts/${appId}/servers/${customId}`), {
+      name: name,
+      createdBy: userId,
+      members: { [userId]: true },
+      serverAdmins: { [userId]: true }
+    }).catch(() => {});
+  } catch (rtdbErr) { console.warn("RTDB server init warning:", rtdbErr); }
+
   // 新しい形式：パスワードハッシュを secrets/auth に保存
   await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/secrets`, 'auth'), {
     passwordHash
@@ -7730,6 +7749,12 @@ async function adminJoinServer(serverId, serverData) {
       avatarUrl: userAvatarUrl || null,
       joinedAt: serverTimestamp()
     });
+    // RTDB にもメンバーシップを直接セット
+    try {
+      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+    } catch (rtdbErr) {}
     document.getElementById("adminJoinModal").classList.add("hidden");
     enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
   } catch (e) {
