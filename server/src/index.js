@@ -1274,8 +1274,8 @@ async function handleDeleteFile(request, env, url) {
 
     // メタデータで所有者確認
     const { value, metadata: meta } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
-    if (!value && !meta) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), {
-      status: 404, headers: { ...cors, 'Content-Type': 'application/json' }
+    if (!value && !meta) return new Response(JSON.stringify({ success: true, message: 'ファイルは既に削除されています' }), {
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';

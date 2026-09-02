@@ -160,11 +160,14 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // Auth ポップアップの正常なユーザーキャンセル動作
+    // Auth ポップアップの正常なユーザーキャンセル動作 & COOP警告
     if (
       str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request')
+      str.includes('auth/cancelled-popup-request') ||
+      str.includes('cross-origin-opener-policy') ||
+      str.includes('window.closed call') ||
+      str.includes('window.close call')
     ) {
       return true;
     }
@@ -10327,8 +10330,6 @@ async function subscribeToMessagesRTDB() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
-      // ローカル保存完了後、サーバー上の100件超過メッセージを自動クリーンアップ
-      pruneExcessMessages(currentServerId, currentRoomId, currentDmId);
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
     }
@@ -11815,9 +11816,10 @@ document.addEventListener('click', (e) => {
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
 
-// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除
+// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
+  if (!userId) return;
   try {
     const { ref, get, remove, query: rtdbQuery, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -11840,8 +11842,16 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     if (toDelete.length === 0) return;
 
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+    const isGlobal = Boolean(isAdmin);
+    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+    const isPrivileged = isGlobal || isSvOwner || isSvAdmin;
 
     for (const msg of toDelete) {
+      // 権限判定: 送信者本人 または 管理者/オーナーのみ削除を実行
+      const canDeleteThisMsg = Boolean(dmId) || isPrivileged || (msg.senderId === userId);
+      if (!canDeleteThisMsg) continue; // 権限がない他者のメッセージはスキップ（permission_denied を完全回避）
+
       // 1. Cloudflare KV ファイル連動削除
       const fileUrls = [msg.kvFileUrl, msg.fileData, msg.text].filter(Boolean);
       for (const urlStr of fileUrls) {
@@ -11849,7 +11859,8 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
           const m = urlStr.match(/\/api\/file\/([A-Za-z0-9_]+)/);
           if (m && m[1]) {
             const fileKey = m[1];
-            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1`, {
+            const extraParams = `&appId=${encodeURIComponent(appId)}${serverId ? `&serverId=${encodeURIComponent(serverId)}` : ''}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${isPrivileged ? '&forceDelete=1' : ''}${extraParams}`, {
               method: 'DELETE'
             }).catch(e => console.warn('[pruneExcessMessages] KV delete failed:', fileKey, e));
           }
@@ -11858,11 +11869,6 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
 
       // 2. RTDB から削除
       await remove(ref(rtdb, `${basePath}/${msg.id}`)).catch(e => console.warn('[pruneExcessMessages] RTDB remove failed:', msg.id, e));
-
-      // 3. Firestore からも削除 (サーバーメッセージの場合)
-      if (serverId && roomId) {
-        deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`)).catch(() => {});
-      }
     }
   } catch (err) {
     console.warn('[pruneExcessMessages] Error during prune:', err);
@@ -19230,7 +19236,7 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     // 3. コンテキストメニュー
-    const msgCtx逗 = document.getElementById('messageContextMenu');
+    const msgCtx = document.getElementById('messageContextMenu');
     const svCtx = document.getElementById('serverContextMenu');
     if (msgCtx && !msgCtx.classList.contains('hidden')) { msgCtx.classList.add('hidden'); return; }
     if (svCtx && !svCtx.classList.contains('hidden')) { svCtx.classList.add('hidden'); return; }
@@ -19248,7 +19254,7 @@ document.addEventListener("keydown", (e) => {
     }
     // 6. 各種ライトボックス (画像・PDF)
     const imageLb = document.getElementById('imageLightbox');
-    const pdfLb依然 = document.getElementById('pdfLightbox');
+    const pdfLb = document.getElementById('pdfLightbox');
     if (imageLb && imageLb.style.display !== 'none') { imageLb.style.display = 'none'; return; }
     if (pdfLb && pdfLb.style.display !== 'none') { pdfLb.style.display = 'none'; return; }
     // 7. モバイル設定詳細・ボトムシート
