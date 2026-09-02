@@ -75,11 +75,12 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 
 
-// === コンソールログの自動収集 & ネットワーク一時エラーのフィルタリング ===
+// === コンソールログの自動収集 & 確実なネイティブコンソール出力 ===
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 
-function isTransientNetworkError(args) {
+// テレメトリ（リモートFirestore）送信専用のノイズフィルタ
+function isTransientTelemetryError(args) {
   try {
     const str = Array.from(args || []).map(a => {
       if (!a) return '';
@@ -104,7 +105,7 @@ function isTransientNetworkError(args) {
       return true;
     }
 
-    // ネットワーク瞬断・QUIC・HTTP2・FetchStream・接続一時エラー
+    // ネットワーク瞬断・QUIC・HTTP2・接続一時エラー
     if (
       str.includes('quic_protocol_error') ||
       str.includes('quic_public_reset') ||
@@ -125,15 +126,6 @@ function isTransientNetworkError(args) {
       str.includes('unsupported-browser') ||
       str.includes("this browser doesn't support the api") ||
       str.includes('messaging/unsupported-browser')
-    ) {
-      return true;
-    }
-
-    // 正常な切断・権限移行
-    if (
-      str.includes('permission-denied') ||
-      str.includes('permission denied') ||
-      str.includes('missing or insufficient permissions')
     ) {
       return true;
     }
@@ -201,7 +193,7 @@ function _createErrorSignature(type, message, stack) {
 
 function _reportTelemetryError(type, message, stack) {
   if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
-  if (isTransientNetworkError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
+  if (isTransientTelemetryError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
 
   _isReportingTelemetry = true;
   try {
@@ -303,7 +295,7 @@ window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
 window.addEventListener('error', (event) => {
-  if (isTransientNetworkError([event.error, event.message])) return;
+  if (isTransientTelemetryError([event.error, event.message])) return;
   if (event.error) {
     _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
   } else if (event.message) {
@@ -313,7 +305,7 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  if (isTransientNetworkError([reason])) return;
+  if (isTransientTelemetryError([reason])) return;
   if (reason instanceof Error) {
     _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
   } else {
@@ -323,14 +315,17 @@ window.addEventListener('unhandledrejection', (event) => {
 
 const _pushLog = (type, args) => {
   try {
-    if (isTransientNetworkError(args)) return;
-    const msg = Array.from(args).map(a => {
+    const msg = Array.from(args || []).map(a => {
       if (a instanceof Error) return a.stack || a.message;
       if (typeof a === 'object') {
         try { return JSON.stringify(a); } catch (err) { return String(a); }
       }
       return String(a);
     }).join(' ');
+
+    // 拡張機能による不要なノイズのみアプリ内ログから除外
+    if (msg.includes('chrome-extension://') || msg.includes('moz-extension://')) return;
+
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
     if (window._covoLogs.length > 250) window._covoLogs.shift();
@@ -343,27 +338,18 @@ const _pushLog = (type, args) => {
   } catch (e) { }
 };
 
-console.log = function (...args) { _pushLog('INFO', args); _orgLog.apply(console, args); };
+// コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に100%出力）
+console.log = function (...args) {
+  _pushLog('INFO', args);
+  _orgLog.apply(console, args);
+};
 console.warn = function (...args) {
-  if (isTransientNetworkError(args)) return;
   _pushLog('WARN', args);
   _orgWarn.apply(console, args);
-  try {
-    const str = Array.from(args).map(a => (a instanceof Error ? a.message : String(a))).join(' ');
-    if (str.length > 3) {
-      _reportTelemetryError('warn', str, (new Error()).stack || '');
-    }
-  } catch (_) {}
 };
 console.error = function (...args) {
-  if (isTransientNetworkError(args)) return;
   _pushLog('ERR', args);
   _orgErr.apply(console, args);
-  try {
-    const errObj = args.find(a => a instanceof Error);
-    const str = Array.from(args).map(a => (a instanceof Error ? (a.message + '\n' + (a.stack || '')) : String(a))).join(' ');
-    _reportTelemetryError('error', errObj ? (errObj.stack || errObj.message) : str, errObj ? errObj.stack : (new Error()).stack || '');
-  } catch (_) {}
 };
 
 // ========= Cloudflare Worker ベースURL =========
@@ -2622,51 +2608,12 @@ window.filterErrorTelemetry = function (filter) {
 
 let _telemetryErrorsUnsub = null;
 
-// コンソールログからエラー・警告を収集してローカル配列にマージするヘルパー
-function _syncLogsToTelemetryErrors() {
-  const logs = window._covoLogs || [];
-  const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || '未ログイン';
-  logs.forEach(line => {
-    if (line.startsWith('[ERR]') || line.startsWith('[WARN]')) {
-      const isWarn = line.startsWith('[WARN]');
-      const cleanMsg = line.replace(/^\[(ERR|WARN)\]\s*/, '').trim();
-      if (!cleanMsg) return;
-      const sig = _createErrorSignature(isWarn ? 'warn' : 'error', cleanMsg, '');
-      if (_dismissedErrorSignatures.has(sig)) return; // 削除済みエラーは無視
-
-      const existing = (window._cachedTelemetryErrors || []).find(e => e.id === sig || e.signature === sig);
-      if (!existing) {
-        window._cachedTelemetryErrors.unshift({
-          id: sig,
-          signature: sig,
-          type: isWarn ? 'warn' : 'error',
-          message: cleanMsg,
-          stack: '',
-          firstOccurredAt: new Date(),
-          lastOccurredAt: new Date(),
-          count: 1,
-          affectedEmails: [email],
-          environment: {
-            userAgent: navigator.userAgent || 'unknown',
-            appVersion: _appVersion || 'web',
-            screenSize: `${window.innerWidth}x${window.innerHeight}`
-          }
-        });
-      }
-    }
-  });
-}
-
 window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
 
-  // 1. 直前のコンソールログから直ちに未記録エラーをマージして初期表示
-  _syncLogsToTelemetryErrors();
-  renderTelemetryErrorsList();
-
-  // 2. リモートFirestoreからエラーコレクションを取得（Firestore を Source of Truth とする）
+  // 1. リモートFirestoreからエラーコレクションを取得（Firestore を Source of Truth とする）
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
@@ -2675,36 +2622,34 @@ window.loadErrorTelemetry = async function () {
     const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
 
     // getDocs で即時同期
-    const snap = await getDocs(q).catch(() => null);
-    if (snap) {
-      const remoteErrors = [];
-      snap.forEach(d => {
-        if (!_dismissedErrorSignatures.has(d.id)) {
-          remoteErrors.push({ id: d.id, ...d.data() });
-        }
-      });
-      window._cachedTelemetryErrors = remoteErrors;
-      window._cachedTelemetryErrors.sort((a, b) => {
-        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-        return timeB - timeA;
-      });
-      if (badgeEl) {
-        badgeEl.textContent = window._cachedTelemetryErrors.length;
-        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
+    const snap = await getDocs(q);
+    const remoteErrors = [];
+    snap.forEach(d => {
+      if (!_dismissedErrorSignatures.has(d.id)) {
+        remoteErrors.push({ id: d.id, ...d.data() });
       }
-      renderTelemetryErrorsList();
+    });
+    window._cachedTelemetryErrors = remoteErrors;
+    window._cachedTelemetryErrors.sort((a, b) => {
+      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+      return timeB - timeA;
+    });
+    if (badgeEl) {
+      badgeEl.textContent = window._cachedTelemetryErrors.length;
+      badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
     }
+    renderTelemetryErrorsList();
 
     // リアルタイムリスナーを継続
     _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
-      const remoteErrors = [];
+      const liveErrors = [];
       liveSnap.forEach(d => {
         if (!_dismissedErrorSignatures.has(d.id)) {
-          remoteErrors.push({ id: d.id, ...d.data() });
+          liveErrors.push({ id: d.id, ...d.data() });
         }
       });
-      window._cachedTelemetryErrors = remoteErrors;
+      window._cachedTelemetryErrors = liveErrors;
       window._cachedTelemetryErrors.sort((a, b) => {
         const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
         const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -2716,11 +2661,11 @@ window.loadErrorTelemetry = async function () {
       }
       renderTelemetryErrorsList();
     }, (err) => {
-      console.warn("[Telemetry] snapshot connection state notice:", err?.message || err);
+      console.error("[Telemetry onSnapshot Error]", err);
       renderTelemetryErrorsList();
     });
   } catch (err) {
-    console.warn("[Telemetry] loadErrorTelemetry fetch error:", err);
+    console.error("[Telemetry loadErrorTelemetry Error]", err);
     renderTelemetryErrorsList();
   }
 };
@@ -2808,8 +2753,11 @@ function renderTelemetryErrorsList() {
       try {
         _dismissedErrorSignatures.add(err.id);
         _reportedSignaturesRecently.delete(err.id);
-        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id)).catch(() => {});
+        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
         _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+        if (window._covoLogs && err.message) {
+          window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
+        }
         const badgeEl = document.getElementById("telemetryCountBadge");
         if (badgeEl) {
           badgeEl.textContent = _cachedTelemetryErrors.length;
@@ -2818,8 +2766,9 @@ function renderTelemetryErrorsList() {
         renderTelemetryErrorsList();
         alertMessage("エラーログを削除しました", "success");
       } catch (e) {
-        console.error(e);
-        alertMessage("削除に失敗しました", "error");
+        _dismissedErrorSignatures.delete(err.id);
+        console.error("Failed to delete error report from Firestore:", e);
+        alertMessage("削除に失敗しました: " + (e.message || e), "error");
       }
     });
 
@@ -2869,14 +2818,14 @@ window.clearAllTelemetryErrors = async function () {
     toDelete.forEach(err => {
       batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
     });
-    await batch.commit().catch(e => console.warn("Batch delete error_reports warning:", e));
+    await batch.commit();
 
     // 2. ローカル状態とキューを完全初期化
     _cachedTelemetryErrors = [];
     _pendingTelemetryErrors.length = 0;
     _reportedSignaturesRecently.clear();
 
-    // 3. インメモリログからエラー・警告行を除去（復活の根本原因を根絶）
+    // 3. インメモリログからエラー・警告行を除去
     if (window._covoLogs) {
       window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
     }
@@ -2890,8 +2839,8 @@ window.clearAllTelemetryErrors = async function () {
     renderTelemetryErrorsList();
     alertMessage("全エラーログをクリアしました", "success");
   } catch (err) {
-    console.error(err);
-    alertMessage("クリアに失敗しました: " + err.message, "error");
+    console.error("Failed to clear all telemetry errors from Firestore:", err);
+    alertMessage("クリアに失敗しました: " + (err.message || err), "error");
   }
 };
 
@@ -3534,22 +3483,39 @@ const addAdminEmailBtn = document.getElementById("addAdminEmailButton");
 const newAdminEmailInp = document.getElementById("newAdminEmailInput");
 if (addAdminEmailBtn && newAdminEmailInp) {
   addAdminEmailBtn.addEventListener("click", async () => {
-    const email = newAdminEmailInp.value.trim();
+    const email = newAdminEmailInp.value.trim().toLowerCase();
     if (!email) return;
     if (adminMsgEl) adminMsgEl.textContent = "追加中...";
     try {
       const ref = doc(db, `artifacts/${appId}/settings`, "adminList");
       const snap = await getDoc(ref);
-      const emails = snap.exists() ? snap.data().emails || [] : [];
+      const emails = snap.exists() ? (snap.data().emails || []).map(e => String(e).toLowerCase().trim()) : [];
       if (emails.includes(email)) { if (adminMsgEl) adminMsgEl.textContent = "すでに管理者です。"; return; }
       emails.push(email);
-      await setDoc(ref, { emails }, { merge: true });
+
+      // UIDも判明していればadmins配列にも追加してFirestoreセキュリティルールの照合を強固にする
+      let targetUid = window.__adminUsersByEmail && window.__adminUsersByEmail[email]?.id;
+      if (!targetUid) {
+        try {
+          const uSnap = await getDocs(query(collection(db, `artifacts/${appId}/users`), where("email", "==", email), limit(1)));
+          if (!uSnap.empty) targetUid = uSnap.docs[0].id;
+        } catch (_) {}
+      }
+
+      const updatePayload = { emails };
+      if (targetUid) {
+        updatePayload.admins = arrayUnion(targetUid);
+      }
+
+      await setDoc(ref, updatePayload, { merge: true });
       newAdminEmailInp.value = "";
       renderAdminEmails(emails);
       if (adminMsgEl) adminMsgEl.textContent = "追加しました。";
+      alertMessage(`「${email}」を管理者に追加しました`, "success");
     } catch (e) {
-      console.error(e);
-      if (adminMsgEl) adminMsgEl.textContent = "エラーが発生しました。";
+      console.error("Failed to add admin email:", e);
+      if (adminMsgEl) adminMsgEl.textContent = "エラーが発生しました: " + (e.message || e);
+      alertMessage("管理者の追加に失敗しました: " + (e.message || e), "error");
     }
   });
 }
