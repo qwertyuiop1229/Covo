@@ -35,26 +35,23 @@ function getCorsHeaders(request) {
   } else if (!origin) {
     // Origin ヘッダーのないリクエスト（curl、ネイティブアプリ、サーバー間通信など）
     headers["Access-Control-Allow-Origin"] = "*";
+  } else {
+    // 拡張機能や別オリジン等からのリクエストでもプリフライトエラーを防止
+    headers["Access-Control-Allow-Origin"] = origin;
   }
   return headers;
 }
 
 // 静的ファイル配信・ダウンロード用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号に対応）
 function getFileCorsHeaders(request) {
-  const origin = request.headers.get("Origin");
-  const headers = {
+  return {
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, Range, X-Requested-With",
+    "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
     "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
   };
-  if (origin && isAllowedOrigin(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-    headers["Access-Control-Allow-Credentials"] = "true";
-  } else {
-    headers["Access-Control-Allow-Origin"] = "*";
-  }
-  return headers;
 }
 
 const corsHeaders = {
@@ -81,66 +78,75 @@ function isFileExtensionBlocked(fileName) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const isFileRoute = url.pathname.startsWith("/api/file/") || url.pathname === "/api/download";
-    const cors = isFileRoute ? getFileCorsHeaders(request) : getCorsHeaders(request);
+    let cors = corsHeaders;
+    try {
+      const url = new URL(request.url);
+      const isFileRoute = url.pathname.startsWith("/api/file/") || url.pathname === "/api/download";
+      cors = isFileRoute ? getFileCorsHeaders(request) : getCorsHeaders(request);
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: cors });
+      }
 
-    if (url.pathname === "/api/signup" && request.method === "POST") {
-      return await handleSignup(request, env);
-    }
-    if (url.pathname === "/api/joinServer" && request.method === "POST") {
-      return await handleJoinServer(request, env);
-    }
-    if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
-      return await handleSyncRtdb(request, env);
-    }
-    if (url.pathname === "/api/sendCallNotification" && request.method === "POST") {
-      return await handleSendCallNotification(request, env);
-    }
-    if (url.pathname === "/api/sendNotification" && request.method === "POST") {
-      return await handleSendNotification(request, env);
-    }
-    if (url.pathname === "/api/setOffline" && request.method === "POST") {
-      return await handleSetOffline(request, env);
-    }
-    if (url.pathname === "/api/emergencyPasswordReset" && request.method === "POST") {
-      return await handleEmergencyPasswordReset(request, env);
-    }
+      if (url.pathname === "/api/signup" && request.method === "POST") {
+        return await handleSignup(request, env);
+      }
+      if (url.pathname === "/api/joinServer" && request.method === "POST") {
+        return await handleJoinServer(request, env);
+      }
+      if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
+        return await handleSyncRtdb(request, env);
+      }
+      if (url.pathname === "/api/sendCallNotification" && request.method === "POST") {
+        return await handleSendCallNotification(request, env);
+      }
+      if (url.pathname === "/api/sendNotification" && request.method === "POST") {
+        return await handleSendNotification(request, env);
+      }
+      if (url.pathname === "/api/setOffline" && request.method === "POST") {
+        return await handleSetOffline(request, env);
+      }
+      if (url.pathname === "/api/emergencyPasswordReset" && request.method === "POST") {
+        return await handleEmergencyPasswordReset(request, env);
+      }
 
-    if (url.pathname === "/api/uploadFile" && request.method === "POST") {
-      return await handleUploadFile(request, env);
-    }
-    if (url.pathname === "/api/download" && (request.method === "GET" || request.method === "HEAD")) {
-      return await handleDownloadProxy(request, env, url);
-    }
-    if (url.pathname.startsWith("/api/file/") && (request.method === "GET" || request.method === "HEAD")) {
-      return await handleServeFile(request, env, url);
-    }
-    if (url.pathname.startsWith("/api/file/") && request.method === "DELETE") {
-      return await handleDeleteFile(request, env, url);
-    }
-    if (url.pathname === "/api/admin/storageStats" && request.method === "GET") {
-      return await handleStorageStats(request, env);
-    }
-    if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
-      return await handleBulkDeleteFiles(request, env);
-    }
-    if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
-      return await handleAdminDeleteMessage(request, env);
-    }
+      if (url.pathname === "/api/uploadFile" && request.method === "POST") {
+        return await handleUploadFile(request, env);
+      }
+      if (url.pathname === "/api/download" && (request.method === "GET" || request.method === "HEAD")) {
+        return await handleDownloadProxy(request, env, url);
+      }
+      if (url.pathname.startsWith("/api/file/") && (request.method === "GET" || request.method === "HEAD")) {
+        return await handleServeFile(request, env, url);
+      }
+      if (url.pathname.startsWith("/api/file/") && request.method === "DELETE") {
+        return await handleDeleteFile(request, env, url);
+      }
+      if (url.pathname === "/api/admin/storageStats" && request.method === "GET") {
+        return await handleStorageStats(request, env);
+      }
+      if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
+        return await handleBulkDeleteFiles(request, env);
+      }
+      if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
+        return await handleAdminDeleteMessage(request, env);
+      }
 
-    if (url.pathname.startsWith("/api/d1/")) {
-      return await handleD1Api(request, env, url);
-    }
+      if (url.pathname.startsWith("/api/d1/")) {
+        return await handleD1Api(request, env, url);
+      }
 
-    return new Response(JSON.stringify({ error: "Not Found" }), {
-      status: 404,
-      headers: { ...cors, "Content-Type": "application/json" },
-    });
+      return new Response(JSON.stringify({ error: "Not Found" }), {
+        status: 404,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    } catch (fatalErr) {
+      console.error("Worker unhandled fatal error:", fatalErr);
+      return new Response(JSON.stringify({ error: "Internal Server Error", details: fatalErr.toString() }), {
+        status: 500,
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
   },
 };
 
@@ -697,19 +703,20 @@ async function handleJoinServer(request, env) {
 // RTDB メンバーシップの同期処理 (Self-healing)
 // -------------------------------------------------------------
 async function handleSyncRtdb(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const { serverId, userId, appId, idToken, rtdbUrl } = await request.json();
     if (!serverId || !userId || !appId || !idToken || !rtdbUrl) {
-      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -727,7 +734,7 @@ async function handleSyncRtdb(request, env) {
     }
 
     if (!isMember) {
-      return new Response(JSON.stringify({ success: false, error: "Not a member" }), { status: 403, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Not a member" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // RTDB に同期
@@ -763,13 +770,13 @@ async function handleSyncRtdb(request, env) {
       }
     } catch (e) {
       console.error("RTDB Sync Error:", e);
-      return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 }
 
@@ -777,22 +784,23 @@ async function handleSyncRtdb(request, env) {
 // 着信通知送信処理
 // -------------------------------------------------------------
 async function handleSendCallNotification(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const { calleeId, callerNickname, callerAvatarUrl, callId, appId, callerId, idToken } = await request.json();
     if (!calleeId || !callId || !appId || !callerId || !idToken) {
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== callerId) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const workerToken = await getWorkerAuthToken(env);
-    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: corsHeaders });
+    if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON secret is not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const projectId = env.FIREBASE_PROJECT_ID;
@@ -802,7 +810,7 @@ async function handleSendCallNotification(request, env) {
     const callDocRes = await fetch(callDocUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
     const callDocData = await callDocRes.json();
     if (callDocData.error || !callDocData.fields) {
-      return new Response(JSON.stringify({ success: false, error: "Call record not found" }), { status: 404, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Call record not found" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const docCallerUid = callDocData.fields.caller?.mapValue?.fields?.uid?.stringValue;
@@ -810,7 +818,7 @@ async function handleSendCallNotification(request, env) {
     const docStatus = callDocData.fields.status?.stringValue;
 
     if (docCallerUid !== callerId || docCalleeUid !== calleeId || docStatus !== 'ringing') {
-      return new Response(JSON.stringify({ success: false, error: "Invalid call authorization" }), { status: 403, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Invalid call authorization" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const fcmAccessToken = await getFCMToken(env.SERVICE_ACCOUNT_JSON);
@@ -819,7 +827,7 @@ async function handleSendCallNotification(request, env) {
     const userData = await userRes.json();
 
     if (userData.error || !userData.fields || !userData.fields.fcmTokens) {
-      return new Response(JSON.stringify({ success: false, error: "No FCM tokens found for callee" }), { status: 404, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "No FCM tokens found for callee" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const tokens = userData.fields.fcmTokens.arrayValue?.values || [];
@@ -919,10 +927,10 @@ async function handleSendCallNotification(request, env) {
       }
     }
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 }
 

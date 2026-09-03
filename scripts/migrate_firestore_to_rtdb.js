@@ -114,6 +114,14 @@ async function migrateCollection(collectionRef, rtdbPath) {
         docData.serverAdmins.forEach(uid => { if (uid) convertedData.serverAdmins[uid] = true; });
       }
     }
+
+    // 設定コレクションの場合、adminList / listAdminList の admins 配列をオブジェクトに展開して書き込み
+    if (rtdbPath.endsWith('/settings') && convertedData && typeof convertedData === 'object') {
+      if (Array.isArray(docData.admins)) {
+        convertedData.admins = {};
+        docData.admins.forEach(uid => { if (uid) convertedData.admins[uid] = true; });
+      }
+    }
     
     // RTDBに書き込み (暗号化文字列等もそのまま保持される)
     await rtdb.ref(newRtdbPath).set(convertedData);

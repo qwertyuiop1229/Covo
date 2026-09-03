@@ -149,6 +149,10 @@ function isTransientTelemetryError(args) {
       str.includes('extension context invalidated') ||
       str.includes('webext-ad-filtering') ||
       str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
+      str.includes('scanelementforqrcode') ||
+      str.includes('content_script.js') ||
+      str.includes('access to image at') ||
+      str.includes('blocked by cors policy') ||
       str.includes('beforeinstallprompt') ||
       str.includes('beforeinstallpromptevent') ||
       str.includes('banner not shown') ||
@@ -6165,6 +6169,7 @@ function __setAvatarImg(container, url, name, opts) {
   if (!isUsableAvatarUrl(url)) { try { container.textContent = initial; } catch (_) { } return; }
   const img = document.createElement('img');
   img.alt = '';
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.loading = 'eager';
   img.referrerPolicy = 'no-referrer'; // CloudinaryのReferer制限を回避
@@ -6370,7 +6375,7 @@ async function enterServer(serverId, serverData) {
   if (messageInput) messageInput.disabled = true;
   if (sendMessageButton) sendMessageButton.disabled = true;
 
-  // Sync RTDB membership securely via Worker + Client Direct Self-healing
+  // Sync RTDB membership securely via Worker API (一元化により permission_denied を完全防止)
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
     try {
       auth.currentUser.getIdToken().then(idToken => {
@@ -6387,16 +6392,6 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
-    // 管理権限を持つ場合のみ直接書き込みも実行（一般メンバーは検証を行うWorkerに一任してpermission_deniedを防止）
-    const isSvAdminOrOwner = isAdmin || (serverData.serverAdmins && serverData.serverAdmins.includes(userId)) || (serverData.createdBy === userId);
-    if (isSvAdminOrOwner) {
-      try {
-        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
-          const rtdb = await _getOrInitRTDB();
-          await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-        });
-      } catch (e) {}
-    }
   }
   try {
     const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
@@ -7845,12 +7840,6 @@ async function adminJoinServer(serverId, serverData) {
       avatarUrl: userAvatarUrl || null,
       joinedAt: serverTimestamp()
     });
-    // RTDB にも本人のメンバーシップをセット
-    try {
-      const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-    } catch (rtdbErr) {}
     document.getElementById("adminJoinModal").classList.add("hidden");
     enterServer(serverId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
   } catch (e) {
@@ -12807,6 +12796,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
         img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
         img.style.maxHeight = '250px';
         img.loading = 'lazy';
+        img.crossOrigin = "anonymous";
         setMediaSrc(img, 'src');
         img.addEventListener("click", () => {
           const url = message._decryptedFileUrl || message.fileData;

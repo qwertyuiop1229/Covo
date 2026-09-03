@@ -14163,7 +14163,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
             "members": {
               "$uid": {
                 ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)"
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
               }
             },
             "secrets": {
@@ -15804,37 +15804,70 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 </file>
 
 <file path="server/src/index.js">
-// 🔒 許可するオリジンの明示的リスト（ワイルドカード * を廃止）
-const ALLOWED_ORIGINS = new Set([
-  "http://tauri.localhost",
-  "https://tauri.localhost",
-  "http://localhost",
-  "https://localhost",
-  "http://127.0.0.1",
-  "https://127.0.0.1",
-  // 本番フロントエンドドメインがあればここに追加
-]);
+// 🔒 許可するオリジン判定関数（本番・プレビュー・Tauri・ローカル開発を網羅）
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (
+    origin === "http://tauri.localhost" ||
+    origin === "https://tauri.localhost" ||
+    origin === "tauri://localhost" ||
+    origin === "https://covo.app" ||
+    origin === "https://simplechat-65a0d.web.app" ||
+    origin === "https://simplechat-65a0d.firebaseapp.com"
+  ) {
+    return true;
+  }
+  // ローカル開発環境（ポート番号付き: http://localhost:5173, http://127.0.0.1:8080 等）
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    return true;
+  }
+  // Firebase Hosting ドメイン（本番およびプレビューチャンネル等）
+  if (/^https:\/\/([a-zA-Z0-9\-]+\.)?(web\.app|firebaseapp\.com)$/.test(origin)) {
+    return true;
+  }
+  return false;
+}
 
 function getCorsHeaders(request) {
   const origin = request.headers.get("Origin");
   const headers = {
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret",
+    "Access-Control-Max-Age": "86400",
   };
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Credentials"] = "true";
-  } else if (origin) {
-    // 未知のオリジン: CORSを許可しない（Originヘッダーなしの非ブラウザリクエストは引き続き動作する）
-    headers["Access-Control-Allow-Origin"] = "null";
+  } else if (!origin) {
+    // Origin ヘッダーのないリクエスト（curl、ネイティブアプリ、サーバー間通信など）
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  return headers;
+}
+
+// 静的ファイル配信・ダウンロード用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号に対応）
+function getFileCorsHeaders(request) {
+  const origin = request.headers.get("Origin");
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Range, X-Requested-With",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
+    "Access-Control-Max-Age": "86400",
+  };
+  if (origin && isAllowedOrigin(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  } else {
+    headers["Access-Control-Allow-Origin"] = "*";
   }
   return headers;
 }
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret",
+  "Access-Control-Max-Age": "86400",
 };
 
 const BLOCKED_EXTENSIONS = new Set([
@@ -15854,12 +15887,13 @@ function isFileExtensionBlocked(fileName) {
 
 export default {
   async fetch(request, env, ctx) {
-    const cors = getCorsHeaders(request);
+    const url = new URL(request.url);
+    const isFileRoute = url.pathname.startsWith("/api/file/") || url.pathname === "/api/download";
+    const cors = isFileRoute ? getFileCorsHeaders(request) : getCorsHeaders(request);
+
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
-
-    const url = new URL(request.url);
 
     if (url.pathname === "/api/signup" && request.method === "POST") {
       return await handleSignup(request, env);
@@ -15886,10 +15920,10 @@ export default {
     if (url.pathname === "/api/uploadFile" && request.method === "POST") {
       return await handleUploadFile(request, env);
     }
-    if (url.pathname === "/api/download" && request.method === "GET") {
+    if (url.pathname === "/api/download" && (request.method === "GET" || request.method === "HEAD")) {
       return await handleDownloadProxy(request, env, url);
     }
-    if (url.pathname.startsWith("/api/file/") && request.method === "GET") {
+    if (url.pathname.startsWith("/api/file/") && (request.method === "GET" || request.method === "HEAD")) {
       return await handleServeFile(request, env, url);
     }
     if (url.pathname.startsWith("/api/file/") && request.method === "DELETE") {
@@ -16235,19 +16269,20 @@ async function getFirestoreAdminToken(serviceAccountJsonStr) {
 // サーバー参加処理
 // -------------------------------------------------------------
 async function handleJoinServer(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const { serverId, password, inviteCode, userId, appId, idToken, rtdbUrl } = await request.json();
     if (!serverId || !userId || !appId || !idToken) {
-      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
@@ -16278,7 +16313,7 @@ async function handleJoinServer(request, env) {
           console.error("RTDB Update Error:", e);
         }
       }
-      return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // パスワードまたは招待コードの検証
@@ -16306,7 +16341,7 @@ async function handleJoinServer(request, env) {
       }
 
       if (!hash) {
-         return new Response(JSON.stringify({ success: false, error: "Server password not set" }), { status: 400, headers: corsHeaders });
+         return new Response(JSON.stringify({ success: false, error: "Server password not set" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
       }
 
       // 🔒 サーバー側でパスワードをハッシュ化してから比較（パス・ザ・ハッシュ対策）
@@ -16316,7 +16351,7 @@ async function handleJoinServer(request, env) {
       const computedPwHash = Array.from(new Uint8Array(pwBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 
       if (computedPwHash !== hash) {
-         return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: corsHeaders });
+         return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
       }
       valid = true;
     } else if (inviteCode) {
@@ -16331,22 +16366,22 @@ async function handleJoinServer(request, env) {
         let invData = await invRes.json();
         
         if (invData.error || !invData.fields) {
-          return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: corsHeaders });
+          return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
         }
         
         if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
-          return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: corsHeaders });
+          return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
         
         let expiresAt = invData.fields.expiresAt?.timestampValue;
         if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
-          return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: corsHeaders });
+          return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
 
         let maxUses = invData.fields.maxUses?.integerValue;
         let uses = invData.fields.uses?.integerValue || 0;
         if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
-          return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: corsHeaders });
+          return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
         
         // 招待コードの uses をインクリメント (Precondition付きトランザクション風処理)
@@ -16377,14 +16412,14 @@ async function handleJoinServer(request, env) {
       }
       
       if (!success) {
-        return new Response(JSON.stringify({ success: false, error: "Conflict updating invite code, please try again" }), { status: 409, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: "Conflict updating invite code, please try again" }), { status: 409, headers: { ...cors, "Content-Type": "application/json" } });
       }
       
       valid = true;
     }
 
     if (!valid) {
-      return new Response(JSON.stringify({ success: false, error: "Authentication required" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: false, error: "Authentication required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // サーバーの joinedUsers に userId を追加し、memberCount をインクリメント
@@ -16418,7 +16453,7 @@ async function handleJoinServer(request, env) {
     const updateData = await updateRes.json();
     if (updateData.error) {
        console.error("Firestore Update Error:", updateData.error);
-       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 500, headers: corsHeaders });
+       return new Response(JSON.stringify({ success: false, error: "Failed to join server" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (rtdbUrl) {
@@ -16457,10 +16492,10 @@ async function handleJoinServer(request, env) {
       }
     }
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 }
 
@@ -17009,24 +17044,24 @@ async function handleUploadFile(request, env) {
 
     if (!file || !uploaderId || !idToken) {
       return new Response(JSON.stringify({ error: '必須パラメータが不足しています' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== uploaderId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     if (file.size > 25 * 1024 * 1024) {
       return new Response(JSON.stringify({ error: 'ファイルは25MBまでです' }), {
-        status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 413, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
 
     if (isFileExtensionBlocked(file.name)) {
       return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
-        status: 403, headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' }
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
 
@@ -17037,7 +17072,7 @@ async function handleUploadFile(request, env) {
     const serverId = formData.get('serverId') || '';
     if (folder && folder.includes('..')) {
       return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
     const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId };
@@ -17049,11 +17084,11 @@ async function handleUploadFile(request, env) {
 
     const fileUrl = `https://simplechat-api.astro-fray-server.workers.dev/api/file/${key}`;
     return new Response(JSON.stringify({ url: fileUrl, name: file.name }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   } catch (err) {
       return new Response(JSON.stringify({ error: 'アップロードエラー', details: err.toString() }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
 }
@@ -17070,6 +17105,7 @@ const ALLOWED_PROXY_DOMAINS = [
 ];
 
 async function handleDownloadProxy(request, env, url) {
+  const fileCors = getFileCorsHeaders(request);
   try {
     const targetUrlStr = url.searchParams.get('url');
     const fileName = url.searchParams.get('name') || 'download';
@@ -17078,7 +17114,7 @@ async function handleDownloadProxy(request, env, url) {
     if (!targetUrlStr) {
       return new Response(JSON.stringify({ error: 'Missing URL parameter' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...fileCors, 'Content-Type': 'application/json' }
       });
     }
 
@@ -17088,14 +17124,14 @@ async function handleDownloadProxy(request, env, url) {
     } catch {
       return new Response(JSON.stringify({ error: 'Malformed URL' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...fileCors, 'Content-Type': 'application/json' }
       });
     }
 
     if (parsedTarget.protocol !== 'https:') {
       return new Response(JSON.stringify({ error: 'Invalid protocol: Only HTTPS is allowed' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...fileCors, 'Content-Type': 'application/json' }
       });
     }
 
@@ -17104,7 +17140,7 @@ async function handleDownloadProxy(request, env, url) {
     if (!isAllowed) {
       return new Response(JSON.stringify({ error: 'Domain not allowed for proxy' }), {
         status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...fileCors, 'Content-Type': 'application/json' }
       });
     }
 
@@ -17118,7 +17154,7 @@ async function handleDownloadProxy(request, env, url) {
     if (!response.ok) {
       return new Response(JSON.stringify({ error: `Remote server returned HTTP ${response.status}` }), {
         status: response.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...fileCors, 'Content-Type': 'application/json' }
       });
     }
 
@@ -17127,7 +17163,7 @@ async function handleDownloadProxy(request, env, url) {
       ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
       : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 
-    const newHeaders = new Headers(corsHeaders);
+    const newHeaders = new Headers(fileCors);
     newHeaders.set('Content-Type', contentType);
     newHeaders.set('Content-Disposition', disposition);
     newHeaders.set('X-Content-Type-Options', 'nosniff');
@@ -17136,6 +17172,10 @@ async function handleDownloadProxy(request, env, url) {
     const contentLength = response.headers.get('Content-Length');
     if (contentLength) newHeaders.set('Content-Length', contentLength);
 
+    if (request.method === "HEAD") {
+      return new Response(null, { status: 200, headers: newHeaders });
+    }
+
     return new Response(response.body, {
       status: 200,
       headers: newHeaders
@@ -17143,7 +17183,7 @@ async function handleDownloadProxy(request, env, url) {
   } catch (err) {
     return new Response(JSON.stringify({ error: 'Download proxy error', details: err.toString() }), {
       status: 502,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...fileCors, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -17212,23 +17252,23 @@ async function handleDeleteFile(request, env, url) {
 }
 
 async function handleServeFile(request, env, url) {
-  const cors = getCorsHeaders(request);
+  const fileCors = getFileCorsHeaders(request);
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
     // 🔒 UUIDベースキー(32文字hex)またはレガシーキーを受け入れ
     if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
-      return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
     }
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
-    if (!value) return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
+    if (!value) return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
 
     const contentType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
     const isPreview = url.searchParams.get('preview') === '1';
 
     const headers = {
-      ...cors,
+      ...fileCors,
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
       // 🔒 1年キャッシュ→1日に短縮（不正コンテンツが長期キャッシュされるリスク軽減）
@@ -17246,13 +17286,17 @@ async function handleServeFile(request, env, url) {
         : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
     }
 
+    if (request.method === "HEAD") {
+      return new Response(null, { status: 200, headers });
+    }
+
     return new Response(value, {
       status: 200,
       headers
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...fileCors, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -17284,23 +17328,24 @@ function categorizeKvFile(meta) {
 }
 
 async function handleStorageStats(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const authHeader = request.headers.get("Authorization") || "";
     const idToken = authHeader.replace("Bearer ", "").trim();
     if (!idToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
-       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const kvStats = {
@@ -17342,11 +17387,11 @@ async function handleStorageStats(request, env) {
     }
 
     return new Response(JSON.stringify({ kv: kvStats }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -17355,23 +17400,24 @@ async function handleStorageStats(request, env) {
 // 管理者: 全ファイル・カテゴリ別一括削除
 // -------------------------------------------------------------
 async function handleBulkDeleteFiles(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const authHeader = request.headers.get("Authorization") || "";
     const idToken = authHeader.replace("Bearer ", "").trim();
     if (!idToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
-       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+       return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const deleteType = new URL(request.url).searchParams.get("deleteType") || "all_safe";
@@ -17425,11 +17471,11 @@ async function handleBulkDeleteFiles(request, env) {
     }
 
     return new Response(JSON.stringify({ success: true, kvDeleted }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }
@@ -17574,30 +17620,31 @@ async function isAppAdmin(appId, verifiedUser, env) {
 // 管理者専用: メッセージ強制削除 (Firestore & RTDB)
 // -------------------------------------------------------------
 async function handleAdminDeleteMessage(request, env) {
+  const cors = getCorsHeaders(request);
   try {
     const authHeader = request.headers.get("Authorization") || "";
     const idToken = authHeader.replace("Bearer ", "").trim();
     if (!idToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const { appId, serverId, roomId, messageId } = await request.json();
     if (!appId || !serverId || !roomId || !messageId) {
-      return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const isGlobal = await isAppAdmin(appId, verifiedUser, env);
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
     if (!isGlobal && !isSvAdmin) {
-      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const [adminToken, rtdbToken] = await Promise.all([
@@ -17619,10 +17666,10 @@ async function handleAdminDeleteMessage(request, env) {
       method: "DELETE"
     });
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("handleAdminDeleteMessage error:", err);
-    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 }
 
@@ -28710,13 +28757,16 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
-    // クライアント側からは本人のメンバーシップのみ直接書き込み（createdBy等のサーバー全体メタデータはWorker側で安全同期）
-    try {
-      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
-        const rtdb = await _getOrInitRTDB();
-        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-      });
-    } catch (e) {}
+    // 管理権限を持つ場合のみ直接書き込みも実行（一般メンバーは検証を行うWorkerに一任してpermission_deniedを防止）
+    const isSvAdminOrOwner = isAdmin || (serverData.serverAdmins && serverData.serverAdmins.includes(userId)) || (serverData.createdBy === userId);
+    if (isSvAdminOrOwner) {
+      try {
+        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
+          const rtdb = await _getOrInitRTDB();
+          await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+        });
+      } catch (e) {}
+    }
   }
   try {
     const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
@@ -41762,7 +41812,7 @@ document.addEventListener("keydown", (e) => {
 
 <file path="public/version.json">
 {
-  "version": "1.1.124",
+  "version": "1.1.125",
   "force": false
 }
 </file>
@@ -41771,7 +41821,7 @@ document.addEventListener("keydown", (e) => {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.124",
+  "version": "1.1.125",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
