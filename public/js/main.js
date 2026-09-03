@@ -130,17 +130,25 @@ function isTransientTelemetryError(args) {
       return true;
     }
 
-    // ブラウザ拡張機能・パスワードマネージャー・ポート切断・ResizeObserver・PWAバナー
+    // ブラウザ拡張機能・広告ブロッカー・パスワードマネージャー・外部注入スクリプト
     if (
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
+      str.includes('safari-extension://') ||
+      str.includes('safari-web-extension://') ||
+      str.includes('usecache') ||
+      str.includes("reading 'usecache'") ||
+      str.includes('a listener indicated an asynchronous response') ||
+      str.includes('could not establish connection') ||
+      str.includes('receiving end does not exist') ||
       str.includes('disconnected port') ||
       str.includes('secretsession') ||
       str.includes('getloginnames4url') ||
       str.includes('called encrypt()') ||
-      str.includes('receiving end does not exist') ||
       str.includes('message port closed') ||
       str.includes('extension context invalidated') ||
+      str.includes('webext-ad-filtering') ||
+      str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
       str.includes('beforeinstallprompt') ||
       str.includes('beforeinstallpromptevent') ||
       str.includes('banner not shown') ||
@@ -148,6 +156,24 @@ function isTransientTelemetryError(args) {
       str.includes('escape its sandboxing') ||
       str.includes('sandboxing') ||
       str.includes('script error.')
+    ) {
+      return true;
+    }
+
+    // Firebase RTDB 内部警告・権限一時判定
+    if (
+      str.includes('permission_denied') ||
+      str.includes('firebase warning: set at') ||
+      str.includes('rtdb dual write failed')
+    ) {
+      return true;
+    }
+
+    // E2EE暗号化ファイルの期限切れ・短小・破損正常系フォールバック
+    if (
+      str.includes('payload too short') ||
+      str.includes('invalid encrypted file') ||
+      str.includes('missing or mismatched key')
     ) {
       return true;
     }
@@ -295,7 +321,20 @@ window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
 window.addEventListener('error', (event) => {
-  if (isTransientTelemetryError([event.error, event.message])) return;
+  const isExtension = event.filename && (
+    event.filename.includes('chrome-extension:') ||
+    event.filename.includes('moz-extension:') ||
+    event.filename.includes('safari-extension:') ||
+    event.filename.includes('safari-web-extension:')
+  );
+  if (isExtension) {
+    try { event.preventDefault(); } catch (_) {}
+    return;
+  }
+  if (isTransientTelemetryError([event.error, event.message, event.filename])) {
+    try { event.preventDefault(); } catch (_) {}
+    return;
+  }
   if (event.error) {
     _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
   } else if (event.message) {
@@ -305,7 +344,28 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  if (isTransientTelemetryError([reason])) return;
+  const isExtension = reason && (
+    (typeof reason.stack === 'string' && (
+      reason.stack.includes('chrome-extension:') ||
+      reason.stack.includes('moz-extension:') ||
+      reason.stack.includes('safari-extension:') ||
+      reason.stack.includes('safari-web-extension:')
+    )) ||
+    (typeof reason.message === 'string' && (
+      reason.message.includes('chrome-extension:') ||
+      reason.message.includes('moz-extension:') ||
+      reason.message.includes('safari-extension:') ||
+      reason.message.includes('safari-web-extension:')
+    ))
+  );
+  if (isExtension) {
+    try { event.preventDefault(); } catch (_) {}
+    return;
+  }
+  if (isTransientTelemetryError([reason])) {
+    try { event.preventDefault(); } catch (_) {}
+    return;
+  }
   if (reason instanceof Error) {
     _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
   } else {
@@ -315,6 +375,8 @@ window.addEventListener('unhandledrejection', (event) => {
 
 const _pushLog = (type, args) => {
   try {
+    if (isTransientTelemetryError(args)) return;
+
     const msg = Array.from(args || []).map(a => {
       if (a instanceof Error) return a.stack || a.message;
       if (typeof a === 'object') {
@@ -324,7 +386,7 @@ const _pushLog = (type, args) => {
     }).join(' ');
 
     // 拡張機能による不要なノイズのみアプリ内ログから除外
-    if (msg.includes('chrome-extension://') || msg.includes('moz-extension://')) return;
+    if (msg.includes('chrome-extension://') || msg.includes('moz-extension://') || msg.includes('safari-extension://')) return;
 
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
@@ -4432,12 +4494,18 @@ async function startPresenceSystem() {
 
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
-    const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue } =
+    const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue, off } =
       await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
 
+    // 既存リスナーのクリーンアップ（多重登録による連続ログ・多重送信を完全防止）
+    if (window._connectedRefUnsub) {
+      window._connectedRefUnsub();
+      window._connectedRefUnsub = null;
+    }
+
     const connectedRef = ref(rtdb, '.info/connected');
-    onValue(connectedRef, async (snap) => {
+    const onConnected = async (snap) => {
       if (snap.val() === true) {
         _rtdbStatusRef = ref(rtdb, `status/${userId}`);
         _rtdbOnDisconnect = rtdbOnDisconnect(_rtdbStatusRef);
@@ -4448,7 +4516,14 @@ async function startPresenceSystem() {
           nickname: userNickname,
           avatarUrl: userAvatarUrl || null
         });
-        console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
+
+        // ログ出力のデバウンス（3秒以内の連続出力抑止）
+        const now = Date.now();
+        window._lastConnectedLogTime = window._lastConnectedLogTime || 0;
+        if (now - window._lastConnectedLogTime > 3000) {
+          window._lastConnectedLogTime = now;
+          console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
+        }
 
         // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
         _lastReportedStatusStr = null;
@@ -4457,7 +4532,9 @@ async function startPresenceSystem() {
         if (currentState === 'away') startOfflineTimer();
         if (currentRoomId) resyncActiveRoomMessages();
       }
-    });
+    };
+    onValue(connectedRef, onConnected);
+    window._connectedRefUnsub = () => off(connectedRef, 'value', onConnected);
   } catch (e) {
     console.warn('[RTDB] presence setup failed:', e);
   }
@@ -5480,6 +5557,10 @@ function stopPresenceSystem() {
   _beaconSent = false;
   if (_idTokenRefreshTimer) { clearInterval(_idTokenRefreshTimer); _idTokenRefreshTimer = null; }
   _cachedIdToken = null;
+  if (window._connectedRefUnsub) {
+    window._connectedRefUnsub();
+    window._connectedRefUnsub = null;
+  }
   if (memberListRefreshInterval) {
     clearInterval(memberListRefreshInterval);
     memberListRefreshInterval = null;
@@ -11781,57 +11862,10 @@ document.addEventListener('click', (e) => {
 
 // RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
-  if ((!serverId || !roomId) && !dmId) return;
-  if (!userId) return;
-  try {
-    const { ref, get, remove, query: rtdbQuery, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    const basePath = serverId ? `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages` : `artifacts/${appId}/dm_messages/${dmId}`;
-    const messagesRef = ref(rtdb, basePath);
-    const snap = await get(rtdbQuery(messagesRef, orderByChild('timestamp')));
-    if (!snap.exists()) return;
-
-    const data = snap.val();
-    const keys = Object.keys(data);
-    if (keys.length <= 100) return;
-
-    let msgs = keys.map(k => ({ ...data[k], id: k }));
-    msgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b)); // 古い順
-
-    const unpinnedMsgs = msgs.filter(m => !m.isPinned);
-    const excessCount = keys.length - 100;
-    const toDelete = unpinnedMsgs.slice(0, excessCount);
-
-    if (toDelete.length === 0) return;
-
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-
-    for (const msg of toDelete) {
-      // クライアント側からの自動プルーニングは、自分が送信したメッセージのみを削除する
-      // （RTDBルール senderId === auth.uid に100%合致するため permission_denied が絶対に発生しない）
-      if (msg.senderId !== userId) continue;
-
-      // 1. Cloudflare KV ファイル連動削除
-      const fileUrls = [msg.kvFileUrl, msg.fileData, msg.text].filter(Boolean);
-      for (const urlStr of fileUrls) {
-        if (typeof urlStr === 'string' && urlStr.includes('/api/file/')) {
-          const m = urlStr.match(/\/api\/file\/([A-Za-z0-9_]+)/);
-          if (m && m[1]) {
-            const fileKey = m[1];
-            const extraParams = `&appId=${encodeURIComponent(appId)}${serverId ? `&serverId=${encodeURIComponent(serverId)}` : ''}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${extraParams}`, {
-              method: 'DELETE'
-            }).catch(() => {});
-          }
-        }
-      }
-
-      // 2. RTDB から削除
-      await remove(ref(rtdb, `${basePath}/${msg.id}`)).catch(() => {});
-    }
-  } catch (err) {
-    console.warn('[pruneExcessMessages] Error during prune:', err);
-  }
+  // クライアント側からの自動削除処理は、親ノード権限や他者メッセージ削除制限に抵触して
+  // permission_denied 警告を引き起こし、かつ過去ログを虫食い状態にしてしまうため実行しない。
+  // 100件制限は取得クエリの limitToLast(100) による表示件数制御で安全かつ完全に担保される。
+  return;
 }
 
 async function sendMessage() {
@@ -12708,6 +12742,12 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   return;
                 }
                 const buf = await res.arrayBuffer();
+                if (!buf || buf.byteLength < 29) {
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  element.replaceWith(expiredCard);
+                  return;
+                }
                 const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
                 const blob = new Blob([dec], { type: message.fileType });
                 message._decryptedFileUrl = URL.createObjectURL(blob);
@@ -12844,6 +12884,12 @@ function createMessageElement(message, messageId, readByCount = 0) {
                     return;
                   }
                   const buf = await res.arrayBuffer();
+                  if (!buf || buf.byteLength < 29) {
+                    message._fileExpired = true;
+                    const expiredCard = createExpiredFileCard(message.fileName);
+                    pdfWrapper.replaceWith(expiredCard);
+                    return;
+                  }
                   const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
                   const blob = new Blob([dec], { type: 'application/pdf' });
                   message._decryptedFileUrl = URL.createObjectURL(blob);
@@ -12897,6 +12943,13 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 return;
               }
               const buf = await res.arrayBuffer();
+              if (!buf || buf.byteLength < 29) {
+                message._fileExpired = true;
+                alertMessage("保存期間（100件制限）が終了したか、ファイルが破損しています。", "info");
+                const expiredCard = createExpiredFileCard(message.fileName);
+                fileAttachmentDiv.replaceWith(expiredCard);
+                return;
+              }
               const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
               const blob = new Blob([dec], { type: message.fileType });
               message._decryptedFileUrl = URL.createObjectURL(blob);

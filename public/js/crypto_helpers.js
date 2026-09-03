@@ -584,7 +584,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       } else {
         throw new Error("Invalid buffer type for decryption");
       }
-      if (data.length < 29) throw new Error("Invalid encrypted file: payload too short");
+      if (!data || data.length < 29) {
+        console.warn("[E2EE] 復号対象バッファが暗号化ヘッダー長(29バイト)未満です。破損または期限切れファイルとして扱います。長さ:", data ? data.length : 0);
+        throw new Error("Invalid encrypted file: payload too short");
+      }
       const firstByte = data[0];
       let version, iv, ciphertext;
       if (firstByte < 255) {
