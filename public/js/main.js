@@ -6169,27 +6169,15 @@ function __setAvatarImg(container, url, name, opts) {
   if (!isUsableAvatarUrl(url)) { try { container.textContent = initial; } catch (_) { } return; }
   const img = document.createElement('img');
   img.alt = '';
-  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.loading = 'eager';
-  img.referrerPolicy = 'no-referrer'; // CloudinaryのReferer制限を回避
+  img.referrerPolicy = 'no-referrer'; // リファラー送信を抑制
   if (className) img.className = className;
   if (styleStr) img.style.cssText = styleStr;
-  img.dataset.retries = '0';
   img.onerror = function () {
-    const r = parseInt(img.dataset.retries || '0', 10);
-    if (r < 2) {
-      img.dataset.retries = String(r + 1);
-      setTimeout(() => {
-        try {
-          const sep = url.indexOf('?') >= 0 ? '&' : '?';
-          img.src = url + sep + '_r=' + Date.now();
-        } catch (_) { }
-      }, 800 * (r + 1));
-    } else {
-      _invalidAvatars.add(url);
-      try { container.innerHTML = ''; container.textContent = initial; } catch (_) { }
-    }
+    // 存在しない古いファイルや404時は即座に無効リストへ登録し、無駄な再試行によるエラー量産を防止
+    _invalidAvatars.add(url);
+    try { container.innerHTML = ''; container.textContent = initial; } catch (_) { }
   };
   img.src = url;
   try { container.appendChild(img); } catch (_) { }
@@ -12796,7 +12784,6 @@ function createMessageElement(message, messageId, readByCount = 0) {
         img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
         img.style.maxHeight = '250px';
         img.loading = 'lazy';
-        img.crossOrigin = "anonymous";
         setMediaSrc(img, 'src');
         img.addEventListener("click", () => {
           const url = message._decryptedFileUrl || message.fileData;
