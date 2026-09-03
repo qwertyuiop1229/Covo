@@ -6387,13 +6387,16 @@ async function enterServer(serverId, serverData) {
         }).catch(() => { });
       });
     } catch (e) { }
-    // クライアント側からは本人のメンバーシップのみ直接書き込み（createdBy等のサーバー全体メタデータはWorker側で安全同期）
-    try {
-      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
-        const rtdb = await _getOrInitRTDB();
-        await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
-      });
-    } catch (e) {}
+    // 管理権限を持つ場合のみ直接書き込みも実行（一般メンバーは検証を行うWorkerに一任してpermission_deniedを防止）
+    const isSvAdminOrOwner = isAdmin || (serverData.serverAdmins && serverData.serverAdmins.includes(userId)) || (serverData.createdBy === userId);
+    if (isSvAdminOrOwner) {
+      try {
+        import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(async ({ ref, set }) => {
+          const rtdb = await _getOrInitRTDB();
+          await set(ref(rtdb, `artifacts/${appId}/servers/${serverId}/members/${userId}`), true).catch(() => {});
+        });
+      } catch (e) {}
+    }
   }
   try {
     const rm = JSON.parse(localStorage.getItem('covo_recent_servers') || '{}');
