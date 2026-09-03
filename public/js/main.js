@@ -6182,23 +6182,13 @@ function isUsableAvatarUrl(url) {
   return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
 }
 
-// 永続化された欠落ファイル（404 Not Found）URLリスト（一度消えたファイルへのfetchを二度と行わない）
-const _missingFilesSet = (() => {
-  try {
-    const raw = localStorage.getItem('covo_missing_files');
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch (_) {
-    return new Set();
-  }
-})();
+// 過去に誤登録された欠落ファイルキャッシュを安全にクリア
+try { localStorage.removeItem('covo_missing_files'); } catch (_) {}
+const _missingFilesSet = new Set();
 
 function markFileAsMissing(url) {
   if (!url) return;
   _missingFilesSet.add(url);
-  try {
-    const arr = Array.from(_missingFilesSet).slice(-300);
-    localStorage.setItem('covo_missing_files', JSON.stringify(arr));
-  } catch (_) {}
 }
 
 function isFileMissing(url) {
@@ -12783,21 +12773,25 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   const members = (currentServerData && currentServerData.joinedUsers) || [];
                   key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
                 }
-                if (!key) throw new Error("No key");
+                if (!key) {
+                  // 鍵の取得待機中は削除カードにせず、そのままリトライ待機
+                  return;
+                }
                 const res = await fetch(message.fileData);
-                if (res.status === 404 || res.status === 410 || !res.ok) {
-                  markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
+                if (res.status === 404 || res.status === 410) {
+                  markFileAsMissing(message.fileData);
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName);
                   element.replaceWith(expiredCard);
                   return;
                 }
+                if (!res.ok) {
+                  console.warn("[Media] Fetch non-OK status:", res.status);
+                  return;
+                }
                 const buf = await res.arrayBuffer();
                 if (!buf || buf.byteLength < 29) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  element.replaceWith(expiredCard);
+                  console.warn("[Media] Encrypted buffer too small:", buf ? buf.byteLength : 0);
                   return;
                 }
                 const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
@@ -12807,10 +12801,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 if (element.tagName === 'IMG') element.style.opacity = '1';
                 if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
               } catch (e) {
-                markFileAsMissing(message.fileData);
-                message._fileExpired = true;
-                const expiredCard = createExpiredFileCard(message.fileName);
-                element.replaceWith(expiredCard);
+                console.warn("[Media] Decryption / fetch error for file:", message.fileName, e);
               }
             })();
           }
@@ -12819,17 +12810,25 @@ function createMessageElement(message, messageId, readByCount = 0) {
           if (propName) element[propName] = targetUrl;
           if (element.tagName === 'IMG') {
             element.onerror = () => {
-              markFileAsMissing(targetUrl);
-              message._fileExpired = true;
-              const expiredCard = createExpiredFileCard(message.fileName);
-              element.replaceWith(expiredCard);
+              fetch(targetUrl, { method: 'HEAD' }).then(res => {
+                if (res.status === 404 || res.status === 410) {
+                  markFileAsMissing(targetUrl);
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  element.replaceWith(expiredCard);
+                }
+              }).catch(() => {});
             };
           } else if (element.tagName === 'VIDEO') {
             element.onerror = () => {
-              markFileAsMissing(targetUrl);
-              message._fileExpired = true;
-              const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
-              element.replaceWith(expiredCard);
+              fetch(targetUrl, { method: 'HEAD' }).then(res => {
+                if (res.status === 404 || res.status === 410) {
+                  markFileAsMissing(targetUrl);
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
+                  element.replaceWith(expiredCard);
+                }
+              }).catch(() => {});
             };
           }
           if (element.tagName === 'CANVAS') window.renderPdfCanvas(targetUrl, element);

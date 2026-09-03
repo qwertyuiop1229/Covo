@@ -64,8 +64,10 @@
     select {
       font-size: 16px !important;
     }
-    .stamp-jump-anim {
-      animation: stampWiggle 0.8s ease-in-out;
+    .stamp-jump-anim,
+    .message-bubble.stamp-jump-anim {
+      animation: stampWiggle 0.8s ease-in-out !important;
+      will-change: transform;
     }
     @keyframes stampWiggle {
       0%, 100% { transform: translateX(0); }
