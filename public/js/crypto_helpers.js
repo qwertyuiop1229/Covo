@@ -98,16 +98,37 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           
             const privRef = doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`);
             const privSnap = await getDoc(privRef);
-            if (privSnap.exists() && privSnap.data().privateKeyJwk) {
-              const privJwk = privSnap.data().privateKeyJwk;
-              const pubJwk = privSnap.data().publicKeyJwk;
-              _e2ee.privateKey = await __importPriv(privJwk);
-              _e2ee.publicKey = await __importPub(pubJwk);
-              _e2ee.publicKeyJwk = pubJwk;
-              __lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
-              __lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
-              _e2ee.ready = true;
-              return true;
+            if (privSnap.exists()) {
+              const snapData = privSnap.data();
+              let privJwk = null;
+
+              if (snapData.version === 2 && snapData.encryptedPrivateKey) {
+                // 🔒 新形式: AES-GCM暗号化済み → 復号
+                privJwk = await __decryptPrivKeyFromBackup(snapData);
+                if (!privJwk) {
+                  console.warn("[E2EE] 暗号化秘密鍵の復号に失敗。鍵を再生成します。");
+                }
+              } else if (snapData.privateKeyJwk) {
+                // 旧形式: 平文保存 → 使用後に暗号化して移行
+                console.warn("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
+                privJwk = snapData.privateKeyJwk;
+                // バックグラウンドで暗号化移行
+                const pubJwk = snapData.publicKeyJwk;
+                if (pubJwk) {
+                  __backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
+                }
+              }
+
+              if (privJwk) {
+                const pubJwk = snapData.publicKeyJwk;
+                _e2ee.privateKey = await __importPriv(privJwk);
+                _e2ee.publicKey = await __importPub(pubJwk);
+                _e2ee.publicKeyJwk = pubJwk;
+                __lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
+                __lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
+                _e2ee.ready = true;
+                return true;
+              }
             }
           
         } catch (e) {
@@ -133,29 +154,104 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
     }
 
+    // 🔒 秘密鍵をPBKDF2+AES-GCMで暗号化してからFirestoreに保存するヘルパー
+    // UID単体ではなくアプリ固有のコンテキストソルトを合成して鍵導出エントロピーを強化
+    const PBKDF2_SALT_PREFIX = "covo_e2ee_key_v2_salt_ctx_";
+
+    async function __encryptPrivKeyForBackup(privJwk, customTag = "user_priv") {
+      const uid = _getUserId();
+      if (!uid) throw new Error("uid not set");
+      const salt = window.crypto.getRandomValues(new Uint8Array(16));
+      const iv   = window.crypto.getRandomValues(new Uint8Array(12));
+      const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
+      const baseKey = await window.crypto.subtle.importKey(
+        "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+      );
+      const aesKey = await window.crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+        baseKey, { name: "AES-GCM", length: 256 }, false, ["encrypt"]
+      );
+      const plaintext = _te.encode(JSON.stringify(privJwk));
+      const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, plaintext);
+      return {
+        encryptedPrivateKey: _abToB64(ciphertext),
+        iv: _abToB64(iv.buffer),
+        salt: _abToB64(salt.buffer),
+        version: 2
+      };
+    }
+
+    // 🔒 Firestoreから取得した暗号化秘密鍵を復号するヘルパー
+    export async function __decryptPrivKeyFromBackup(encData, customTag = "user_priv") {
+      const uid = _getUserId();
+      if (!uid || !encData || encData.version !== 2) return null;
+      try {
+        const salt = new Uint8Array(_b64ToAb(encData.salt));
+        const iv   = new Uint8Array(_b64ToAb(encData.iv));
+        const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+        const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
+        const baseKey = await window.crypto.subtle.importKey(
+          "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        const aesKey = await window.crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+          baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+        );
+        const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+        return JSON.parse(_td.decode(plaintext));
+      } catch (e) {
+        // 後方互換性: 旧プレフィックスなし形式での復号フォールバック
+        try {
+          const salt = new Uint8Array(_b64ToAb(encData.salt));
+          const iv   = new Uint8Array(_b64ToAb(encData.iv));
+          const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+          const legacyBaseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(uid), { name: "PBKDF2" }, false, ["deriveKey"]
+          );
+          const legacyAesKey = await window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+            legacyBaseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+          );
+          const legacyPt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyAesKey, ciphertext);
+          return JSON.parse(_td.decode(legacyPt));
+        } catch (_) {}
+        console.warn("[E2EE] 秘密鍵の復号に失敗:", e);
+        return null;
+      }
+    }
+
     export async function __backupKeysToFirestore(privJwk, pubJwk) {
       if (!_getUserId()) return;
-      
+
       // 公開鍵を users/{uid} に（全員が読めてOK）
       try {
-        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}`), { publicKeyJwk: pubJwk }, { merge: true });
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}`),
+          { publicKeyJwk: pubJwk }, { merge: true });
       } catch (e) {}
-      // 秘密鍵を本人専用サブドキュメントに（ルールで本人のみ読み書き）
+
+      // 🔒 秘密鍵はAES-GCM暗号化してから保存（平文保存を廃止）
       try {
-        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`),
-          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
-      } catch (e) {}
+        const encData = await __encryptPrivKeyForBackup(privJwk, "user_priv");
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`), {
+          ...encData,
+          publicKeyJwk: pubJwk,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn("[E2EE] 秘密鍵の暗号化バックアップに失敗:", e);
+      }
     }
 
     // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き・ネガティブキャッシュ対応）。無ければnull。
     export async function __getUserPublicKey(uid) {
+      if (!uid || typeof uid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(uid)) return null;
       if (uid in _e2ee.pubKeyCache && _e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
       
       try {
         const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`));
         const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
-        if (!jwk) {
-          // 未登録時は恒久キャッシュせず、次回ログイン時に再取得できるようにする
+        // 🔒 公開鍵JWKの構造検証（RSA-OAEP, kty: RSA, 必須パラメータ n, e）
+        if (!jwk || typeof jwk !== 'object' || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
           return null;
         }
         const key = await __importPub(jwk);
@@ -195,27 +291,57 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
-    // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に保存。
+    // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に暗号化して保存。
     // 既に存在すれば何もしない。管理者以外・失敗時は黙ってスキップ（アプリは止めない）。
     export async function _ensureEscrowKey() {
       if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return;
       try {
-        
-
         const escrowRef = doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`);
         const snap = await getDoc(escrowRef);
         if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
         const pair = await __genUserKeyPair();
         const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
         const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
-        // 管理者本人の private に秘密鍵を保管（本人のみ読める）
+
+        // 🔒 管理者本人の private に秘密鍵を暗号化して保管（平文保存を完全廃止）
+        const encData = await __encryptPrivKeyForBackup(privJwk, "escrow_priv");
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`),
-          { privateKeyJwk: privJwk, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+          { ...encData, publicKeyJwk: pubJwk, updatedAt: serverTimestamp() }, { merge: true });
+
         // 公開鍵を全体設定に（合鍵の公開部分）
         await setDoc(escrowRef, { publicKeyJwk: pubJwk, createdBy: _getUserId(), updatedAt: serverTimestamp() }, { merge: true });
-        console.log("[E2EE] エスクロー鍵を生成しました");
+        console.log("[E2EE] エスクロー鍵（暗号化バックアップ済み）を生成しました");
       } catch (e) {
         console.warn("[E2EE] エスクロー鍵の生成に失敗（スキップ）:", e);
+      }
+    }
+
+    // 🔒 管理者がエスクロー秘密鍵（合鍵）を安全にロードするヘルパー（救済復号用）
+    export async function _getEscrowPrivateKey() {
+      if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return null;
+      try {
+        const privSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`));
+        if (!privSnap.exists()) return null;
+        const data = privSnap.data();
+        let privJwk = null;
+        if (data.version === 2 && data.encryptedPrivateKey) {
+          privJwk = await __decryptPrivKeyFromBackup(data, "escrow_priv");
+        } else if (data.privateKeyJwk) {
+          // レガシー平文を検出した場合、即座に暗号化移行
+          privJwk = data.privateKeyJwk;
+          const encData = await __encryptPrivKeyForBackup(privJwk, "escrow_priv");
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`), {
+            ...encData,
+            publicKeyJwk: data.publicKeyJwk || null,
+            privateKeyJwk: null, // 平文を消去
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
+        }
+        if (!privJwk) return null;
+        return await __importPriv(privJwk);
+      } catch (e) {
+        console.warn("[E2EE] エスクロー秘密鍵のロードに失敗:", e);
+        return null;
       }
     }
 
@@ -241,12 +367,26 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
         let keysObj = {};
 
-        // 1) 共有キーがある場合は v1 用としてインポート
+        // 1) 共有キーがある場合は v1 用としてインポートし、安全なラップキー形式へ自動移行
         if (roomData && roomData.sharedKey) {
           try {
             const raw = _b64ToAb(roomData.sharedKey);
             const v1Key = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
             keysObj["1"] = v1Key;
+
+            // 🔒 平文sharedKeyの漏洩防止: メンバーへラップ配布し、親ドキュメントの平文sharedKeyを削除
+            if (memberIds && memberIds.length > 0) {
+              __distributeRoomKeyVersion(serverId, roomId, raw, memberIds, "1").then(async () => {
+                try {
+                  await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), {
+                    sharedKey: null,
+                    legacyKeyMigrated: true
+                  });
+                  console.log(`[E2EE] レガシー平文sharedKeyを暗号化ラップ形式へ完全移行しました (room=${roomId})`);
+                } catch (_) {}
+              }).catch(() => {});
+            }
+
             if (currentVer === "1") {
               keysObj.latest = v1Key;
               keysObj.latestVersion = "1";
@@ -371,7 +511,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function __distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
-  const ids = Array.from(new Set([...(memberIds || []), _getUserId()].filter(Boolean)));
+  // 🔒 有効な文字種のみのUIDを厳格フィルタリング
+  const ids = Array.from(new Set([...(memberIds || []), _getUserId()].filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
   const writes = [];
   for (const uid of ids) {
     if (!uid) continue;

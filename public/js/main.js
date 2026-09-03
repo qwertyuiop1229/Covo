@@ -1280,8 +1280,20 @@ window.handleUnifiedAuthSubmit = async function () {
       // 既存アカウントが存在しない、または未登録の場合 → 自動で安全に新規アカウント作成を試行
       if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
         try {
-          console.log("[Auth] 既存アカウントが見つからないため、新規作成を試行します...");
-          await createUserWithEmailAndPassword(auth, email, password);
+          console.log("[Auth] 既存アカウントが見つからないため、Worker API経由で新規作成を試行します...");
+          // 🔒 セキュリティ: Worker API経由でアカウント作成（招待許可リスト検証を実施）
+          const signupRes = await fetch(`${WORKER_BASE_URL}/api/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+          });
+          const signupData = await signupRes.json();
+          if (!signupRes.ok || signupData.error) {
+            const errMsg = signupData.error || "アカウント作成に失敗しました";
+            throw new Error(errMsg);
+          }
+          // Worker API でアカウント作成成功 → クライアント側でログイン
+          await signInWithEmailAndPassword(auth, email, password);
           return;
         } catch (signUpErr) {
           if (signUpErr.code === "auth/email-already-in-use") {
@@ -2978,7 +2990,7 @@ window.loadAdminFeedbacks = async function () {
       item.innerHTML = `
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2 cursor-pointer fb-toggle-details">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${catLabel}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${escapeHtml(catLabel)}</span>
                 <span class="text-xs text-gray-400 dark:text-gray-500">${dt}</span>
                 ${isClosed ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/40 dark:text-green-400">対応済</span>' : ''}
               </div>
@@ -10701,6 +10713,12 @@ function selectRoom(roomId, roomName) {
           const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
           for (const resDoc of resSnap.docs) {
             const reqUserId = resDoc.id;
+            // 🔒 メンバーシップ厳格検証: サーバー参加者リストに存在しないユーザーには鍵を絶対に配布しない
+            if (!members.includes(reqUserId)) {
+              console.warn(`[E2EE] サーバー未参加者(${reqUserId})からの救済リクエストを拒否・破棄しました`);
+              await deleteDoc(resDoc.ref).catch(() => {});
+              continue;
+            }
             await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], key.latestVersion);
             await deleteDoc(resDoc.ref).catch(() => {});
           }

@@ -127,6 +127,30 @@
         const callbackUrl = params.get('callback');
         const state = params.get('state') || '';
 
+        // 🔒 セキュリティ: callbackUrl をローカルループバックのみに制限（オープンリダイレクト防止）
+        function isAllowedCallback(urlStr) {
+            if (!urlStr) return false;
+            try {
+                const u = new URL(urlStr);
+                const host = u.hostname.toLowerCase();
+                return (u.protocol === 'http:') && (host === '127.0.0.1' || host === 'localhost');
+            } catch {
+                return false;
+            }
+        }
+
+        if (callbackUrl && !isAllowedCallback(callbackUrl)) {
+            window.addEventListener('load', () => {
+                const status = document.getElementById('status');
+                if (status) {
+                    status.className = 'status-box error';
+                    status.textContent = 'エラー: 不正なコールバックURLが指定されています。ローカルアプリからのみ認証できます。';
+                }
+                const btn = document.getElementById('googleBtn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         window.doGoogleLogin = async function (isAuto = false) {
             const status = document.getElementById('status');
             const btn = document.getElementById('googleBtn');
@@ -145,13 +169,13 @@
                 status.className = 'status-box success';
                 status.textContent = '認証成功！Covo アプリへ転送しています...';
 
-                if (callbackUrl) {
+                if (callbackUrl && isAllowedCallback(callbackUrl)) {
                     const target = new URL(callbackUrl);
                     target.searchParams.set('idToken', idToken);
                     if (accessToken) target.searchParams.set('accessToken', accessToken);
                     if (state) target.searchParams.set('state', state);
 
-                    // ローカルループバックサーバーへリダイレクト
+                    // 🔒 ローカルループバックサーバーへのみリダイレクト
                     window.location.href = target.toString();
                 } else {
                     btn.disabled = false;

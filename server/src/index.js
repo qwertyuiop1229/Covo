@@ -1,14 +1,26 @@
+// 🔒 許可するオリジンの明示的リスト（ワイルドカード * を廃止）
+const ALLOWED_ORIGINS = new Set([
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+  "http://localhost",
+  "https://localhost",
+  "http://127.0.0.1",
+  "https://127.0.0.1",
+  // 本番フロントエンドドメインがあればここに追加
+]);
+
 function getCorsHeaders(request) {
   const origin = request.headers.get("Origin");
   const headers = {
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret",
   };
-  if (origin) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Credentials"] = "true";
-  } else {
-    headers["Access-Control-Allow-Origin"] = "*";
+  } else if (origin) {
+    // 未知のオリジン: CORSを許可しない（Originヘッダーなしの非ブラウザリクエストは引き続き動作する）
+    headers["Access-Control-Allow-Origin"] = "null";
   }
   return headers;
 }
@@ -159,7 +171,38 @@ async function handleEmergencyPasswordReset(request, env) {
     const computedHash = Array.from(new Uint8Array(codeBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 
     if (computedHash !== storedPinHash) {
-      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードが一致しません。正しい6桁の番号をご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+      // 🔒 レートリミット: 失敗回数をインクリメントし、5回で自動無効化
+      const currentFailCount = fields.failCount?.integerValue ? parseInt(fields.failCount.integerValue, 10) : 0;
+      const newFailCount = currentFailCount + 1;
+      const shouldInvalidate = newFailCount >= 5;
+
+      const failUpdateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+      const failUpdateFields = {
+        ...fields,
+        failCount: { integerValue: newFailCount.toString() }
+      };
+      if (shouldInvalidate) {
+        failUpdateFields.used = { booleanValue: true };
+        failUpdateFields.invalidatedReason = { stringValue: 'rate_limit_exceeded' };
+      }
+      await fetch(failUpdateUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          writes: [{
+            update: {
+              name: indexData.name,
+              fields: failUpdateFields
+            }
+          }]
+        })
+      });
+
+      const remainingAttempts = Math.max(0, 5 - newFailCount);
+      const errorMsg = shouldInvalidate
+        ? "試行回数の上限（5回）に達しました。このエマージェンシーコードは無効化されました。新しいコードの発行を依頼してください。"
+        : `エマージェンシーコードが一致しません。残り${remainingAttempts}回試行できます。`;
+      return new Response(JSON.stringify({ success: false, error: errorMsg }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // 4. Firebase Identity Toolkit API でユーザーのUIDを特定
@@ -460,9 +503,13 @@ async function handleJoinServer(request, env) {
          return new Response(JSON.stringify({ success: false, error: "Server password not set" }), { status: 400, headers: corsHeaders });
       }
 
-      // クライアントで計算されたハッシュと比較 (クライアントがハッシュ化して送る前提)
-      // より安全にするならサーバー側でハッシュ化すべきだが、既存の互換性を考慮
-      if (password !== hash) {
+      // 🔒 サーバー側でパスワードをハッシュ化してから比較（パス・ザ・ハッシュ対策）
+      // クライアントから平文パスワードを受け取り、サーバー側でSHA-256を計算する
+      const enc = new TextEncoder();
+      const pwBuf = await crypto.subtle.digest('SHA-256', enc.encode(password));
+      const computedPwHash = Array.from(new Uint8Array(pwBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      if (computedPwHash !== hash) {
          return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: corsHeaders });
       }
       valid = true;
@@ -1178,7 +1225,8 @@ async function handleUploadFile(request, env) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // 🔒 予測不可能なUUIDをファイルキーとして使用（総当たり防止）
+    const key = crypto.randomUUID().replace(/-/g, '');
     const folder = formData.get('folder') || '';
     const serverId = formData.get('serverId') || '';
     if (folder && folder.includes('..')) {
@@ -1210,9 +1258,9 @@ async function handleUploadFile(request, env) {
 const ALLOWED_PROXY_DOMAINS = [
   "res.cloudinary.com",
   "firebasestorage.googleapis.com",
-  "files.catbox.moe",
-  "0x0.st",
-  "simplechat-api.astro-fray-server.workers.dev"
+  // 🔒 自サーバーURLと匿名アップロードサービスを削除:
+  //   - 自サーバーをプロキシ対象にするとSSRF的に内部エンドポイントへのアクセスが可能
+  //   - files.catbox.moe / 0x0.st はマルウェア配布に悪用される匿名サービス
 ];
 
 async function handleDownloadProxy(request, env, url) {
@@ -1362,6 +1410,7 @@ async function handleServeFile(request, env, url) {
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
+    // 🔒 UUIDベースキー(32文字hex)またはレガシーキーを受け入れ
     if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
       return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
@@ -1376,7 +1425,8 @@ async function handleServeFile(request, env, url) {
       ...cors,
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'public, max-age=31536000',
+      // 🔒 1年キャッシュ→1日に短縮（不正コンテンツが長期キャッシュされるリスク軽減）
+      'Cache-Control': 'public, max-age=86400',
     };
 
     if (contentType === 'image/svg+xml' || contentType.includes('html')) {
@@ -1606,8 +1656,9 @@ async function verifyFirebaseIdToken(idToken, env) {
     const data = await res.json();
     if (data.error || !data.users || data.users.length === 0) return null;
     const user = { uid: data.users[0].localId, email: data.users[0].email };
-    tokenCache.set(idToken, { user, expiresAt: now + 900000 });
-    if (tokenCache.size > 1000) {
+    // 🔒 TTLを15分→5分に短縮（パスワード変更後の古いトークン受け入れ期間を最小化）
+    tokenCache.set(idToken, { user, expiresAt: now + 300000 });
+    if (tokenCache.size > 500) {
       const firstKey = tokenCache.keys().next().value;
       tokenCache.delete(firstKey);
     }
@@ -1852,11 +1903,22 @@ async function handleD1Api(request, env, url) {
       if (request.method === "POST") {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const { appId, settingId, data } = await request.json();
+        // 🔒 appIdをenv変数と照合（クライアントが任意のappIdで書き込むのを防止）
+        if (appId !== env.FIREBASE_APP_ID && !await isD1Admin(env.FIREBASE_APP_ID || appId, verifiedUser, env)) {
+          return new Response(JSON.stringify({ error: "Forbidden: Invalid appId" }), { status: 403, headers: d1Cors });
+        }
+        // adminListが存在しない場合でも管理者チェックを実施（初回設定はenv.ADMIN_SECRET_KEYで保護）
+        const isAdmin = await isD1Admin(appId, verifiedUser, env);
         const existingAdminRow = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
         if (existingAdminRow && existingAdminRow.setting_data) {
-          const isAdmin = await isD1Admin(appId, verifiedUser, env);
           if (!isAdmin) {
             return new Response(JSON.stringify({ error: "Forbidden: Only admins can update settings" }), { status: 403, headers: d1Cors });
+          }
+        } else {
+          // adminListがまだない場合: Authorization headerにADMIN_SECRET_KEYが必要
+          const secretKey = request.headers.get("X-Admin-Secret") || "";
+          if (!env.ADMIN_SECRET_KEY || secretKey !== env.ADMIN_SECRET_KEY) {
+            return new Response(JSON.stringify({ error: "Forbidden: Initial setup requires X-Admin-Secret header" }), { status: 403, headers: d1Cors });
           }
         }
         await env.DB.prepare("INSERT INTO settings (app_id, setting_id, setting_data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, setting_id) DO UPDATE SET setting_data = excluded.setting_data, updated_at = excluded.updated_at")

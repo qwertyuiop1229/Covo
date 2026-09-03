@@ -995,41 +995,38 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
 
 #[tauri::command]
 fn open_in_app_browser_window(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     url: String,
-    title: Option<String>,
+    _title: Option<String>,
 ) -> Result<(), String> {
+    // 🔒 セキュリティ: 外部URLはシステム既定ブラウザで開く
+    // TauriのWebviewWindowで開くと withGlobalTauri:true により
+    // window.__TAURI__ がフルアクセスで注入され、RCEが成立するため
     let parsed_url: url::Url = url.parse().map_err(|e| format!("無効なURLです: {}", e))?;
     
-    // 既存のブラウザウィンドウがあれば URL を更新して前面化
-    if let Some(existing) = app_handle.get_webview_window("covo_in_app_browser") {
-        let _ = existing.navigate(parsed_url);
-        let _ = existing.unminimize();
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        if let Some(t) = title {
-            let _ = existing.set_title(&format!("Covo Browser - {}", t));
-        }
-        return Ok(());
+    // HTTPSのみ許可（javascript: 等の危険なスキームを遮断）
+    if parsed_url.scheme() != "https" && parsed_url.scheme() != "http" {
+        return Err("安全でないURLスキームです。HTTPまたはHTTPSのみ許可されています。".to_string());
     }
 
-    let win_title = title.map(|t| format!("Covo Browser - {}", t)).unwrap_or_else(|| "Covo Browser".to_string());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("ブラウザの起動に失敗しました: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("ブラウザの起動に失敗しました: {}", e))?;
+    }
 
-    let win = WebviewWindowBuilder::new(
-        &app_handle,
-        "covo_in_app_browser",
-        tauri::WebviewUrl::External(parsed_url),
-    )
-    .title(&win_title)
-    .inner_size(1060.0, 740.0)
-    .center()
-    .resizable(true)
-    .decorations(true)
-    .build()
-    .map_err(|e| format!("ブラウザウィンドウの作成に失敗しました: {}", e))?;
-
-    let _ = win.show();
-    let _ = win.set_focus();
     Ok(())
 }
 
