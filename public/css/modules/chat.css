@@ -1,4 +1,9 @@
     /* --- 追加機能用スタイル --- */
+    /* リプライ入力バーのスムーズなスライドインアニメーション */
+    #replyingToContainer:not(.hidden) {
+      animation: slideUpFade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
     /* メンションのハイライト */
     .mention-highlight {
       background-color: rgba(29, 78, 216, 0.1) !important; /* light indigo */

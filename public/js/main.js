@@ -13280,13 +13280,17 @@ async function jumpToUnloadedMessage(msgId) {
         messagesDisplay.style.transition = 'opacity 0.3s ease';
         messagesDisplay.style.opacity = '1';
         allowPagination = true;
+        el2.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
         const isStamp = el2.querySelector('img[alt^="stamp_"]') || el2.querySelector('.sticker-content');
         if (isStamp) {
+          isStamp.classList.remove('stamp-jump-anim');
+          void isStamp.offsetWidth;
           isStamp.classList.add('stamp-jump-anim');
           setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
         } else {
-          el2.classList.add('stamp-jump-anim', 'message-highlight');
-          setTimeout(() => el2.classList.remove('stamp-jump-anim', 'message-highlight'), 1200);
+          void el2.offsetWidth;
+          el2.classList.add('message-jump-anim', 'message-highlight');
+          setTimeout(() => el2.classList.remove('message-jump-anim', 'message-highlight'), 1200);
         }
       }, 50);
     } else {
@@ -14253,6 +14257,7 @@ function doJumpHighlight(el) {
       setTimeout(() => el.classList.remove('message-jump-anim', 'message-highlight'), 1200);
     }
   }, didScroll ? 350 : 50);
+}
 
 // iOS/Safari 判定
 const _isIOSSafari = (() => {
