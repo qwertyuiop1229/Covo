@@ -64,8 +64,8 @@
     select {
       font-size: 16px !important;
     }
-    .stamp-jump-anim,
-    .message-bubble.stamp-jump-anim {
+    /* スタンプ用（今まで通りの回転付きポップな揺れ） */
+    .stamp-jump-anim {
       animation: stampWiggle 0.8s ease-in-out !important;
       will-change: transform;
     }
@@ -76,6 +76,19 @@
       45% { transform: translateX(-6px) rotate(-2deg); }
       60% { transform: translateX(4px) rotate(1deg); }
       75% { transform: translateX(-2px); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の上品な微小シェイク */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageWiggle 0.5s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageWiggle {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-5px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-2px); }
+      80% { transform: translateX(1px); }
     }
     /* Reactions */
     .reaction-picker-bar {

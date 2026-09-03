@@ -14240,16 +14240,19 @@ function doJumpHighlight(el) {
 
   // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
   setTimeout(() => {
+    el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
     const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
     if (isStamp) {
+      isStamp.classList.remove('stamp-jump-anim');
+      void isStamp.offsetWidth;
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
     } else {
-      el.classList.add('stamp-jump-anim', 'message-highlight');
-      setTimeout(() => el.classList.remove('stamp-jump-anim', 'message-highlight'), 1200);
+      void el.offsetWidth;
+      el.classList.add('message-jump-anim', 'message-highlight');
+      setTimeout(() => el.classList.remove('message-jump-anim', 'message-highlight'), 1200);
     }
   }, didScroll ? 350 : 50);
-}
 
 // iOS/Safari 判定
 const _isIOSSafari = (() => {
