@@ -6151,10 +6151,51 @@ function formatTimeAgo(timestamp) {
 // Server Features
 // =========================================================================
 
-const _invalidAvatars = new Set();
+// 永続化された無効アバターURLリスト（リロード後も無駄な404リクエストを阻止）
+const _invalidAvatars = (() => {
+  try {
+    const raw = localStorage.getItem('covo_invalid_avatars');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+})();
+
+function markAvatarAsInvalid(url) {
+  if (!url) return;
+  _invalidAvatars.add(url);
+  try {
+    const arr = Array.from(_invalidAvatars).slice(-300);
+    localStorage.setItem('covo_invalid_avatars', JSON.stringify(arr));
+  } catch (_) {}
+}
 
 function isUsableAvatarUrl(url) {
   return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
+}
+
+// 永続化された欠落ファイル（404 Not Found）URLリスト（一度消えたファイルへのfetchを二度と行わない）
+const _missingFilesSet = (() => {
+  try {
+    const raw = localStorage.getItem('covo_missing_files');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+})();
+
+function markFileAsMissing(url) {
+  if (!url) return;
+  _missingFilesSet.add(url);
+  try {
+    const arr = Array.from(_missingFilesSet).slice(-300);
+    localStorage.setItem('covo_missing_files', JSON.stringify(arr));
+  } catch (_) {}
+}
+
+function isFileMissing(url) {
+  if (!url) return false;
+  return _missingFilesSet.has(url);
 }
 
 function __setAvatarImg(container, url, name, opts) {
@@ -6164,8 +6205,7 @@ function __setAvatarImg(container, url, name, opts) {
   const className = opts.className || '';
   const initial = ((name || '?').charAt(0) || '?').toUpperCase();
   try { container.innerHTML = ''; } catch (_) { }
-  // Cloudinary は廃止。旧Cloudinaryアイコンは表示せずデフォルト(イニシャル)に戻す。
-  // ユーザーが新しくアイコンを設定すると Cloudflare(KV) に保存され、自然に移行する。
+  // 存在しないURLや過去の無効URLは最初からリクエストせずイニシャルを表示
   if (!isUsableAvatarUrl(url)) { try { container.textContent = initial; } catch (_) { } return; }
   const img = document.createElement('img');
   img.alt = '';
@@ -6175,8 +6215,8 @@ function __setAvatarImg(container, url, name, opts) {
   if (className) img.className = className;
   if (styleStr) img.style.cssText = styleStr;
   img.onerror = function () {
-    // 存在しない古いファイルや404時は即座に無効リストへ登録し、無駄な再試行によるエラー量産を防止
-    _invalidAvatars.add(url);
+    // 存在しない古いファイルや404時は即座に永続リストへ登録し、以降の全リクエストを完全遮断
+    markAvatarAsInvalid(url);
     try { container.innerHTML = ''; container.textContent = initial; } catch (_) { }
   };
   img.src = url;
@@ -12706,11 +12746,15 @@ function createMessageElement(message, messageId, readByCount = 0) {
       return card;
     };
 
-    if (message._fileExpired) {
+    // 既に欠落（404）と分かっているURLは、fetch通信を一切行わずに直ちに期限切れカードを表示（404エラー完全防止）
+    const targetFileDataUrl = message.fileData;
+    if (message._fileExpired || isFileMissing(targetFileDataUrl)) {
+      message._fileExpired = true;
       messageElement.appendChild(createExpiredFileCard(message.fileName));
     } else {
       const setMediaSrc = (element, propName, url) => {
-        if (message._fileExpired) {
+        if (message._fileExpired || isFileMissing(targetFileDataUrl)) {
+          message._fileExpired = true;
           const expiredCard = createExpiredFileCard(message.fileName);
           element.replaceWith(expiredCard);
           return;
@@ -12734,6 +12778,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 if (!key) throw new Error("No key");
                 const res = await fetch(message.fileData);
                 if (res.status === 404 || res.status === 410 || !res.ok) {
+                  markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName);
                   element.replaceWith(expiredCard);
@@ -12741,6 +12786,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 }
                 const buf = await res.arrayBuffer();
                 if (!buf || buf.byteLength < 29) {
+                  markFileAsMissing(message.fileData);
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName);
                   element.replaceWith(expiredCard);
@@ -12753,6 +12799,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 if (element.tagName === 'IMG') element.style.opacity = '1';
                 if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
               } catch (e) {
+                markFileAsMissing(message.fileData);
                 message._fileExpired = true;
                 const expiredCard = createExpiredFileCard(message.fileName);
                 element.replaceWith(expiredCard);
@@ -12764,12 +12811,14 @@ function createMessageElement(message, messageId, readByCount = 0) {
           if (propName) element[propName] = targetUrl;
           if (element.tagName === 'IMG') {
             element.onerror = () => {
+              markFileAsMissing(targetUrl);
               message._fileExpired = true;
               const expiredCard = createExpiredFileCard(message.fileName);
               element.replaceWith(expiredCard);
             };
           } else if (element.tagName === 'VIDEO') {
             element.onerror = () => {
+              markFileAsMissing(targetUrl);
               message._fileExpired = true;
               const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
               element.replaceWith(expiredCard);
@@ -12842,7 +12891,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
         // クリックでPDFプレビュー
         pdfWrapper.addEventListener('click', () => {
-          if (message._fileExpired) {
+          if (message._fileExpired || isFileMissing(message.fileData)) {
             alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
             return;
           }
@@ -12854,7 +12903,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
         // DOMに追加されてからサムネイルを描画
         const renderThumb = () => {
-          if (message._fileExpired) {
+          if (message._fileExpired || isFileMissing(message.fileData)) {
+            message._fileExpired = true;
             const expiredCard = createExpiredFileCard(message.fileName);
             pdfWrapper.replaceWith(expiredCard);
             return;
@@ -12876,6 +12926,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   if (!key) return;
                   const res = await fetch(message.fileData);
                   if (res.status === 404 || res.status === 410 || !res.ok) {
+                    markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                     message._fileExpired = true;
                     const expiredCard = createExpiredFileCard(message.fileName);
                     pdfWrapper.replaceWith(expiredCard);
@@ -12883,6 +12934,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   }
                   const buf = await res.arrayBuffer();
                   if (!buf || buf.byteLength < 29) {
+                    markFileAsMissing(message.fileData);
                     message._fileExpired = true;
                     const expiredCard = createExpiredFileCard(message.fileName);
                     pdfWrapper.replaceWith(expiredCard);
@@ -12893,6 +12945,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   message._decryptedFileUrl = URL.createObjectURL(blob);
                   window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
                 } catch (e) {
+                  markFileAsMissing(message.fileData);
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName);
                   pdfWrapper.replaceWith(expiredCard);
@@ -12918,8 +12971,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
         fileAttachmentDiv.appendChild(arrSpan);
 
         fileAttachmentDiv.addEventListener("click", async () => {
-          if (message._fileExpired) {
+          if (message._fileExpired || isFileMissing(message.fileData)) {
+            message._fileExpired = true;
             alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+            const expiredCard = createExpiredFileCard(message.fileName);
+            fileAttachmentDiv.replaceWith(expiredCard);
             return;
           }
           if (message.isFileEncrypted && !message._decryptedFileUrl) {
@@ -12934,6 +12990,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               if (!key) throw new Error("鍵が見つかりません");
               const res = await fetch(message.fileData);
               if (res.status === 404 || res.status === 410 || !res.ok) {
+                markFileAsMissing(message.fileData);
                 message._fileExpired = true;
                 alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
                 const expiredCard = createExpiredFileCard(message.fileName);
@@ -12942,6 +12999,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               }
               const buf = await res.arrayBuffer();
               if (!buf || buf.byteLength < 29) {
+                markFileAsMissing(message.fileData);
                 message._fileExpired = true;
                 alertMessage("保存期間（100件制限）が終了したか、ファイルが破損しています。", "info");
                 const expiredCard = createExpiredFileCard(message.fileName);
@@ -12952,6 +13010,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               const blob = new Blob([dec], { type: message.fileType });
               message._decryptedFileUrl = URL.createObjectURL(blob);
             } catch (e) {
+              markFileAsMissing(message.fileData);
               message._fileExpired = true;
               alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
               const expiredCard = createExpiredFileCard(message.fileName);
@@ -12968,18 +13027,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
   }
   // KV ファイル添付カード
   if (message.kvFileUrl && message.fileName) {
-    if (message._fileExpired) {
-      const card = document.createElement("div");
-      card.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
-      card.innerHTML = `
-        <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
-          <i class="fas fa-clock-rotate-left"></i>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(message.fileName || 'ファイル')}</div>
-          <div class="text-[10px] text-gray-400">保存期間（100件制限）が終了したため削除されました</div>
-        </div>
-      `;
+    const targetKvUrl = message.kvFileUrl;
+    if (message._fileExpired || isFileMissing(targetKvUrl)) {
+      message._fileExpired = true;
+      const card = createExpiredFileCard(message.fileName);
       messageElement.appendChild(card);
     } else {
       const kvDiv = document.createElement("div");
@@ -13008,22 +13059,20 @@ function createMessageElement(message, messageId, readByCount = 0) {
       kvDiv.appendChild(infoDiv);
       kvDiv.appendChild(dlIcon);
       kvDiv.addEventListener("click", async () => {
+        if (message._fileExpired || isFileMissing(message.kvFileUrl)) {
+          message._fileExpired = true;
+          alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
+          const expiredCard = createExpiredFileCard(message.fileName);
+          kvDiv.replaceWith(expiredCard);
+          return;
+        }
         try {
           const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
           if (res && (res.status === 404 || res.status === 410)) {
+            markFileAsMissing(message.kvFileUrl);
             message._fileExpired = true;
             alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-            const expiredCard = document.createElement("div");
-            expiredCard.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
-            expiredCard.innerHTML = `
-              <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
-                <i class="fas fa-clock-rotate-left"></i>
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(message.fileName || 'ファイル')}</div>
-                <div class="text-[10px] text-gray-400">保存期間（100件制限）が終了したため削除されました</div>
-              </div>
-            `;
+            const expiredCard = createExpiredFileCard(message.fileName);
             kvDiv.replaceWith(expiredCard);
             return;
           }
