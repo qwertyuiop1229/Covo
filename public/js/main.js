@@ -5611,24 +5611,32 @@ function clearAppBadgeFull() {
   }
 }
 
-// アクティブなルームの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止）
+// アクティブなルームまたはDMの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止）
 let _lastResyncAt = 0;
 async function resyncActiveRoomMessages() {
-  if (!currentRoomId || !currentServerId || !userId) return;
+  if ((!currentRoomId && !currentDmId) || !userId) return;
   const now = Date.now();
   if (now - _lastResyncAt < 3000) return; // 3秒以内の連続再取得通信をブロック
   _lastResyncAt = now;
   try {
     const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const messagesRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
+    const basePath = currentServerId
+      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
+      : `artifacts/${appId}/dm_messages/${currentDmId}`;
+    const messagesRef = ref(rtdb, basePath);
     const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(25));
     const snapshot = await get(q);
     if (snapshot.exists()) {
       const data = snapshot.val();
-      const docs = Object.keys(data).map(k => ({ ...data[k], id: k }));
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+      const docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
+      if (currentServerId) {
+        const _members = (currentServerData && currentServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
+      } else if (currentDmId) {
+        await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
+      }
       let changed = false;
       docs.forEach(msg => {
         const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -9312,7 +9320,7 @@ async function setupGlobalNotificationListeners() {
                     svData.name || svId, rmName,
                     'メンバー',
                     body,
-                    svId, svData, rmId, rmName
+                    svId, svData, rmId, false
                   );
                   // バックグラウンド・非フォーカス時はOS通知 / デスクトップ通知を必ず送信
                   if (!document.hasFocus() || document.visibilityState === 'hidden') {
@@ -10101,7 +10109,7 @@ function loadServerRooms(serverId, _retry = 0) {
 
               // In-app Notification
               if (typeof showInAppNotification === 'function') {
-                showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, roomName);
+                showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, false);
               }
               // Push Notification
               if (!document.hasFocus()) {
@@ -13278,8 +13286,8 @@ async function jumpToUnloadedMessage(msgId) {
           isStamp.classList.add('stamp-jump-anim');
           setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
         } else {
-          el2.classList.add('message-highlight');
-          setTimeout(() => el2.classList.remove('message-highlight'), 1200);
+          el2.classList.add('stamp-jump-anim', 'message-highlight');
+          setTimeout(() => el2.classList.remove('stamp-jump-anim', 'message-highlight'), 1200);
         }
       }, 50);
     } else {
@@ -14238,8 +14246,8 @@ function doJumpHighlight(el) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
     } else {
-      el.classList.add('message-highlight');
-      setTimeout(() => el.classList.remove('message-highlight'), 1200);
+      el.classList.add('stamp-jump-anim', 'message-highlight');
+      setTimeout(() => el.classList.remove('stamp-jump-anim', 'message-highlight'), 1200);
     }
   }, didScroll ? 350 : 50);
 }
@@ -16543,7 +16551,10 @@ async function _fsSendFileData(file) {
   } catch (e) {
     console.error('[FileShare] 送信中エラー:', e);
     _fsShowProgress('error', file.name, '送信に失敗しました');
-    setTimeout(_fsCloseProgress, 1500);
+    setTimeout(() => {
+      _fsCloseProgress();
+      _fsCleanup();
+    }, 1500);
   }
 }
 async function _fsSendFileDataLegacy(file) {
@@ -16984,6 +16995,12 @@ async function acceptCall() {
     ]);
     stream = streamResult;
     callData = snapResult.data();
+    if (!snapResult.exists() || !callData || !callData.offer) {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      endCall(true, 'callerCancelled');
+      alertMessage('通話はすでに終了またはキャンセルされています', 'info');
+      return;
+    }
   } catch (e) {
     const isMicError = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError' || e?.name === 'NotFoundError';
     if (isMicError) {

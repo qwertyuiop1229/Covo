@@ -544,13 +544,26 @@ async function handleJoinServer(request, env) {
          return new Response(JSON.stringify({ success: false, error: "Server password not set" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
       }
 
-      // 🔒 サーバー側でパスワードをハッシュ化してから比較（パス・ザ・ハッシュ対策）
-      // クライアントから平文パスワードを受け取り、サーバー側でSHA-256を計算する
-      const enc = new TextEncoder();
-      const pwBuf = await crypto.subtle.digest('SHA-256', enc.encode(password));
-      const computedPwHash = Array.from(new Uint8Array(pwBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      // クライアントが送信したPBKDF2ハッシュとの照合、および平文送信時のPBKDF2計算フォールバック
+      let passwordMatched = (password === hash);
+      if (!passwordMatched) {
+        try {
+          const enc = new TextEncoder();
+          const keyMaterial = await crypto.subtle.importKey(
+            'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']
+          );
+          const bits = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt: enc.encode(serverId), iterations: 100000, hash: 'SHA-256' },
+            keyMaterial, 256
+          );
+          const computedHash = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+          if (computedHash === hash) {
+            passwordMatched = true;
+          }
+        } catch (_) {}
+      }
 
-      if (computedPwHash !== hash) {
+      if (!passwordMatched) {
          return new Response(JSON.stringify({ success: false, error: "Incorrect password" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
       }
       valid = true;
