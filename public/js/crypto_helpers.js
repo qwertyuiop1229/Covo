@@ -746,23 +746,48 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         ciphertext = data.subarray(21);
       }
       if (ciphertext.length < 16) throw new Error("Invalid ciphertext: missing authentication tag");
-      let keyToUse = roomKeyObj[version];
-      
+
+      // 1. 直接 CryptoKey が渡された場合の復号試行
+      if (roomKeyObj && (roomKeyObj instanceof CryptoKey || roomKeyObj.type === "secret" || roomKeyObj.algorithm)) {
+        try {
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, roomKeyObj, ciphertext);
+          return new Blob([plaintext]);
+        } catch (_) {}
+      }
+
+      // 2. バージョン指定キーの復号試行
+      let keyToUse = roomKeyObj ? roomKeyObj[version] : null;
       if (keyToUse) {
         try {
           const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, keyToUse, ciphertext);
           return new Blob([plaintext]);
-        } catch(e){}
+        } catch (_) {}
       }
-      for (const ver in roomKeyObj) {
-        if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+
+      // 3. latest キーの復号試行
+      if (roomKeyObj && roomKeyObj.latest) {
         try {
-          const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, roomKeyObj[ver], ciphertext);
-          return new Blob([pt]);
-        } catch(e){}
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, roomKeyObj.latest, ciphertext);
+          return new Blob([plaintext]);
+        } catch (_) {}
       }
+
+      // 4. roomKeyObj に含まれる全キーの総当たり復号試行
+      if (roomKeyObj && typeof roomKeyObj === 'object') {
+        for (const ver in roomKeyObj) {
+          if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          const candidateKey = roomKeyObj[ver];
+          if (!candidateKey || candidateKey === keyToUse) continue;
+          try {
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, candidateKey, ciphertext);
+            return new Blob([pt]);
+          } catch (_) {}
+        }
+      }
+
+      // 5. 鍵が見つからない場合はエスクロー救済リクエストを発行
       if (serverId && roomId) {
-        await _requestEscrowRescue(serverId, roomId);
+        await _requestEscrowRescue(serverId, roomId).catch(() => {});
       }
       throw new Error(`Missing or mismatched key for version ${version}`);
     }

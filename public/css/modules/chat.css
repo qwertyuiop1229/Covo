@@ -1244,3 +1244,210 @@
       color: #949ba4;
     }
 
+    /* 長文メッセージの「もっと見る / 折りたたむ」 (#73) */
+    .message-collapsible-wrapper {
+      position: relative;
+      max-height: 280px;
+      overflow: hidden;
+      transition: max-height 0.25s ease-out;
+    }
+    .message-collapsible-wrapper.expanded {
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .message-collapsible-wrapper .collapse-fade {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 52px;
+      background: linear-gradient(to top, rgba(255, 255, 255, 0.95), transparent);
+      pointer-events: none;
+    }
+    body.dark-theme .message-collapsible-wrapper .collapse-fade,
+    body.dark-server-theme .message-collapsible-wrapper .collapse-fade,
+    .dark .message-collapsible-wrapper .collapse-fade,
+    .discord-dark-theme .message-collapsible-wrapper .collapse-fade {
+      background: linear-gradient(to top, rgba(43, 45, 49, 0.98), transparent);
+    }
+    .expand-msg-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #3b82f6;
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .expand-msg-btn:hover {
+      background: rgba(59, 130, 246, 0.18);
+      color: #2563eb;
+    }
+    .dark .expand-msg-btn,
+    body.dark-server-theme .expand-msg-btn,
+    .discord-dark-theme .expand-msg-btn {
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .dark .expand-msg-btn:hover,
+    body.dark-server-theme .expand-msg-btn:hover,
+    .discord-dark-theme .expand-msg-btn:hover {
+      background: rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+    }
+
+    /* 通話中ピクチャーインピクチャー (PiP) ミニバー (#71) */
+    #callPipBar {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99990;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      border-radius: 9999px;
+      padding: 6px 14px 6px 6px;
+      color: #f8fafc;
+      animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+    }
+    #callPipBar.active {
+      display: flex;
+    }
+    .pip-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
+      object-fit: cover;
+      background: #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      border: 2px solid #22c55e;
+    }
+    .pip-info {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .pip-name {
+      font-size: 12px;
+      font-weight: 700;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .pip-timer {
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+      color: #94a3b8;
+    }
+    .pip-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f8fafc;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 13px;
+    }
+    .pip-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .pip-btn.mute.active {
+      background: #ef4444;
+      color: #ffffff;
+    }
+    .pip-btn.hangup {
+      background: #ef4444;
+      color: #ffffff;
+    }
+    .pip-btn.hangup:hover {
+      background: #dc2626;
+    }
+    .pip-btn.expand {
+      background: #3b82f6;
+      color: #ffffff;
+    }
+    .pip-btn.expand:hover {
+      background: #2563eb;
+    }
+
+    /* 画面PINロックオーバーレイ (#105) */
+    #appPinLockOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 120000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: #ffffff;
+      user-select: none;
+    }
+    #appPinLockOverlay.active {
+      display: flex;
+    }
+    .pin-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 9999px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      background: transparent;
+      transition: all 0.15s ease;
+    }
+    .pin-dot.filled {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    }
+    .pin-keypad-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      color: #ffffff;
+    }
+    .pin-keypad-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: scale(1.04);
+    }
+    .pin-keypad-btn:active {
+      background: rgba(59, 130, 246, 0.3);
+      transform: scale(0.96);
+    }
+
+
+

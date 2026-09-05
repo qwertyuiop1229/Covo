@@ -683,6 +683,7 @@ const roomList = document.getElementById("roomList");
 
 let currentRoomId = null;
 let unsubscribeMessages = null;
+let currentServerDocUnsubscribe = null;
 let unsubscribeUserStatus = null;
 
 let isAuthReady = false;
@@ -691,6 +692,7 @@ let pendingRoomDelete = null;
 
 let lastMessagesData = [];
 let attachedFile = null;
+let attachedFiles = [];
 let attachedKvFile = null;
 let replyingToMessage = null;
 let currentPdfUrl = "";
@@ -781,6 +783,31 @@ let currentPinnedMessages = [];
 let _authHandlerBusy = false;
 let _lastAuthUserId = null;
 let _cachedIdToken = null;
+
+// ===== 統一権限判定ヘルパー (Discord準拠: #53) =====
+function isCurrentUserServerOwner(serverData = currentServerData) {
+  if (!serverData || !userId) return false;
+  return isAdmin || serverData.createdBy === userId;
+}
+
+function isCurrentUserServerAdmin(serverData = currentServerData) {
+  if (!serverData || !userId) return false;
+  if (isAdmin || serverData.createdBy === userId) return true;
+  return Array.isArray(serverData.serverAdmins) && serverData.serverAdmins.includes(userId);
+}
+
+function hasServerPermission(serverData, targetUid, permission = 'admin') {
+  if (!serverData || !targetUid) return false;
+  if (targetUid === userId && isAdmin) return true;
+  if (serverData.createdBy === targetUid) return true;
+  if (permission === 'admin' || permission === 'moderator') {
+    return Array.isArray(serverData.serverAdmins) && serverData.serverAdmins.includes(targetUid);
+  }
+  if (permission === 'member') {
+    return Array.isArray(serverData.joinedUsers) && serverData.joinedUsers.includes(targetUid);
+  }
+  return false;
+}
 
 // DOM クリーンアップ関数
 function clearMessagesDOM() {
@@ -1482,6 +1509,26 @@ function _generateRandomRecoveryKey() {
   return `COVO-${parts.join('-')}`;
 }
 
+// リカバリーキーの形式検証と正規化 (#96)
+export function normalizeAndValidateRecoveryKey(rawKey) {
+  if (!rawKey || typeof rawKey !== 'string') {
+    return { valid: false, key: '', error: 'リカバリーキーを入力してください。' };
+  }
+  const cleaned = rawKey
+    .replace(/[ー－―–—]/g, '-')
+    .replace(/\s+/g, '')
+    .toUpperCase();
+  const regex = /^COVO-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/;
+  if (!regex.test(cleaned)) {
+    return {
+      valid: false,
+      key: cleaned,
+      error: 'キー形式が正しくありません。「COVO-XXXX-XXXX-XXXX-XXXX」の形式（英大文字・数字16文字）で入力してください。'
+    };
+  }
+  return { valid: true, key: cleaned, error: null };
+}
+
 // パスワード再設定モーダルの開閉とタブ切り替え
 window.openPasswordResetModal = function () {
   const modal = document.getElementById('passwordResetModal');
@@ -1770,10 +1817,12 @@ window.submitEmergencyKeyReset = async function () {
     if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
-  if (!key) {
-    if (msg) { msg.textContent = '24文字の緊急リカバリーキーを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+  const keyValidation = normalizeAndValidateRecoveryKey(key);
+  if (!keyValidation.valid) {
+    if (msg) { msg.textContent = keyValidation.error; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
   }
+  key = keyValidation.key;
   if (!newPwd || newPwd.length < 6) {
     if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
     return;
@@ -2004,6 +2053,56 @@ window.generateNewRecoveryKey = async function (showPrompt = false) {
   } catch (err) {
     console.error('[Recovery] Reissue key error:', err);
     alertMessage(`キー更新エラー: ${err.message}`, 'error');
+  }
+};
+
+window.importRecoveryKey = async function () {
+  const inputKey = prompt('インポートする緊急リカバリーキーを入力してください（例: COVO-ABCD-EFGH-JKLM-NPQR）:');
+  if (!inputKey) return;
+  const val = normalizeAndValidateRecoveryKey(inputKey);
+  if (!val.valid) {
+    alertMessage(val.error, 'error');
+    return;
+  }
+  const user = auth.currentUser;
+  if (!user || !user.uid || !user.email) {
+    alertMessage('ユーザー情報が取得できません。ログイン状態を確認してください。', 'error');
+    return;
+  }
+  try {
+    const storageKey = `covo_rec_key_${user.uid}`;
+    localStorage.setItem(storageKey, val.key);
+    _currentUserRecoveryKey = val.key;
+
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const keyHash = await _sha256Hash(salt + ':' + val.key);
+    const emailHash = await _sha256Hash(user.email.toLowerCase().trim());
+
+    const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, user.uid);
+    await setDoc(vaultRef, {
+      userId: user.uid,
+      email: user.email,
+      salt: salt,
+      keyHash: keyHash,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
+    await setDoc(indexRef, {
+      userId: user.uid,
+      salt: salt,
+      keyHash: keyHash,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    const modalKeyDisplay = document.getElementById('modalRecoveryKeyDisplay');
+    if (modalKeyDisplay) {
+      modalKeyDisplay.textContent = _isModalRecoveryKeyVisible ? val.key : 'COVO-••••-••••-••••-••••';
+    }
+    alertMessage('緊急リカバリーキーの整合性を確認し、正常にインポートしました。', 'success');
+  } catch (err) {
+    console.error('[Recovery] Import error:', err);
+    alertMessage(`インポートに失敗しました: ${err.message}`, 'error');
   }
 };
 
@@ -5196,7 +5295,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
 
   const safeName = targetNickname || targetUid.substring(0, 8);
   if (nameEl) nameEl.textContent = safeName;
-  if (tagEl) tagEl.textContent = `#${targetUid.substring(0, 4)}`;
+  if (tagEl) tagEl.textContent = `#${targetUid.slice(-4).toLowerCase()}`;
   if (avatarEl) {
     if (isUsableAvatarUrl(targetAvatarUrl)) {
       __setAvatarImg(avatarEl, targetAvatarUrl, safeName, { className: 'w-full h-full rounded-full object-cover' });
@@ -5764,8 +5863,21 @@ const handlePageShow = (e) => {
   if (e.persisted) handleWindowFocus();
 };
 
-// タブ閉じ・ページ離脱時の確実なオフライン化
+// Tauri ネイティブウィンドウフォーカス & 多重起動復帰イベントの連動
+if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
+  window.__TAURI__.event.listen('window-focused', () => {
+    try { handleWindowFocus(); } catch (_) {}
+  }).catch(() => {});
+  window.__TAURI__.event.listen('single-instance-opened', () => {
+    try { handleWindowFocus(); } catch (_) {}
+  }).catch(() => {});
+}
+
+// タブ閉じ・ページ離脱時の確実なオフライン化 & 通話クリーンアップ (#57)
 const handlePageClose = (e) => {
+  if (typeof _callId !== 'undefined' && _callId) {
+    try { endCall(false); } catch (_) {}
+  }
   // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
   if (e && e.type === 'pagehide' && e.persisted === false) {
     _beaconSent = false; // 強制リセット
@@ -6132,8 +6244,16 @@ function renderMembersList(users) {
       info.className = "member-info";
 
       const name = document.createElement("div");
-      name.className = "member-name";
-      name.textContent = member.nickname || "不明なユーザー";
+      name.className = "member-name flex items-center gap-1";
+      const nameText = document.createElement("span");
+      nameText.textContent = member.nickname || "不明なユーザー";
+      name.appendChild(nameText);
+
+      const userTag = document.createElement("span");
+      userTag.className = "text-[10px] text-gray-400 font-mono select-none opacity-60";
+      userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
+      name.appendChild(userTag);
+
       info.appendChild(name);
 
       if (member.computedState === 'away' || member.computedState === 'offline') {
@@ -6228,13 +6348,22 @@ function isUsableAvatarUrl(url) {
   return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
 }
 
-// 過去に誤登録された欠落ファイルキャッシュを安全にクリア
-try { localStorage.removeItem('covo_missing_files'); } catch (_) {}
+// 欠落（404）ファイルURLの永続キャッシュ管理（リロード後も無駄な404通信を完全抑制）
 const _missingFilesSet = new Set();
+try {
+  const savedMissing = safeJsonParse(localStorage.getItem('covo_missing_files_v2'), []);
+  if (Array.isArray(savedMissing)) {
+    savedMissing.forEach(u => { if (typeof u === 'string') _missingFilesSet.add(u); });
+  }
+} catch (_) {}
 
 function markFileAsMissing(url) {
-  if (!url) return;
+  if (!url || typeof url !== 'string') return;
   _missingFilesSet.add(url);
+  try {
+    const list = Array.from(_missingFilesSet).slice(-500);
+    localStorage.setItem('covo_missing_files_v2', JSON.stringify(list));
+  } catch (_) {}
 }
 
 function isFileMissing(url) {
@@ -6289,6 +6418,7 @@ async function showServerList() {
   const empty = document.getElementById("serverListEmpty");
 
   updateServerListUserBtn();
+  if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
   if (serverListUnsubscribe) { serverListUnsubscribe(); serverListUnsubscribe = null; }
 
   function appendServerCard(server, idx) {
@@ -6301,7 +6431,7 @@ async function showServerList() {
     let hasUnread = false;
     try { const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); hasUnread = items.some(it => it.serverId === server.id); } catch (e) { }
     const serverName = escapeHtml(server.name || server.id);
-    const initial = (server.name || server.id).charAt(0).toUpperCase();
+    const initial = escapeHtml(((server.name || server.id).charAt(0) || '?').toUpperCase());
     // デフォルトアイコンの背景色を上品なCovoグレーに完全統一
     const bgColor = '#374151';
     const iconHtml = server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />` : initial;
@@ -6432,6 +6562,7 @@ async function enterServer(serverId, serverData) {
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
   if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+  if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
   
   currentServerId = serverId;
   currentServerData = serverData;
@@ -6532,6 +6663,26 @@ async function enterServer(serverId, serverData) {
 
   // サーバーに入室したタイミングで、対象メンバーを絞り込んでステータス監視を再設定
   subscribeToUserStatus();
+
+  // サーバーのメンバーシップ状態をリアルタイム監視 (キック・BAN・削除の即時検知 #39, #40)
+  currentServerDocUnsubscribe = onSnapshot(doc(db, `artifacts/${appId}/servers`, serverId), (snap) => {
+    if (!snap.exists()) {
+      if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
+      alertMessage("このサーバーは削除されました", "info");
+      if (typeof openDmHomeView === 'function') openDmHomeView();
+      return;
+    }
+    const data = snap.data();
+    currentServerData = { id: snap.id, ...data };
+    // 自身がキックまたはBANされた場合、即座に画面を閉じて切断
+    if (!isAdmin && data.joinedUsers && !data.joinedUsers.includes(userId)) {
+      if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
+      alertMessage("サーバーから退出またはキックされました", "warning");
+      if (typeof openDmHomeView === 'function') openDmHomeView();
+    }
+  }, (err) => {
+    console.warn("[currentServerDocUnsubscribe] error:", err?.message || err);
+  });
 }
 
 // DM / フレンド画面を開く
@@ -6546,6 +6697,7 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   currentHomeViewMode = 'dm';
   try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
 
+  if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   currentPinnedMessages = [];
@@ -9120,35 +9272,58 @@ setTimeout(() => {
   });
 }, 1000);
 
-document.getElementById("createInviteCodeBtn")?.addEventListener("click", async () => {
-  const expiryDays = parseInt(document.getElementById("inviteExpiry")?.value || "0");
-  const maxUses = parseInt(document.getElementById("inviteMaxUses")?.value || "0");
-  const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const _codeBytes = new Uint8Array(8);
-  crypto.getRandomValues(_codeBytes);
-  const code = Array.from(_codeBytes).map(b => _codeChars[b % 36]).join('');
-  const inviteData = {
-    createdBy: userId,
-    createdAt: serverTimestamp(),
-    uses: 0,
-    maxUses,
-    disabled: false
-  };
-  if (expiryDays > 0) {
-    const exp = new Date();
-    exp.setDate(exp.getDate() + expiryDays);
-    inviteData.expiresAt = exp;
-  } else {
-    inviteData.expiresAt = null;
+let _inviteCodeCreateHistory = [];
+
+document.getElementById("createInviteCodeBtn")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+
+  const now = Date.now();
+  _inviteCodeCreateHistory = _inviteCodeCreateHistory.filter(t => now - t < 60000);
+  if (_inviteCodeCreateHistory.length >= 5) {
+    alertMessage("招待コードの作成頻度が高すぎます。しばらく待ってから作成してください", "error");
+    return;
   }
+  _inviteCodeCreateHistory.push(now);
+
+  btn.disabled = true;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 作成中...';
+
   try {
+    const expiryDays = parseInt(document.getElementById("inviteExpiry")?.value || "0");
+    const maxUses = parseInt(document.getElementById("inviteMaxUses")?.value || "0");
+    const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const _codeBytes = new Uint8Array(8);
+    crypto.getRandomValues(_codeBytes);
+    const code = Array.from(_codeBytes).map(b => _codeChars[b % 36]).join('');
+    const inviteData = {
+      createdBy: userId,
+      createdAt: serverTimestamp(),
+      uses: 0,
+      maxUses,
+      disabled: false
+    };
+    if (expiryDays > 0) {
+      const exp = new Date();
+      exp.setDate(exp.getDate() + expiryDays);
+      inviteData.expiresAt = exp;
+    } else {
+      inviteData.expiresAt = null;
+    }
     await Promise.all([
       setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`, code), inviteData),
       setDoc(doc(db, `artifacts/${appId}/inviteIndex`, code), { serverId: currentServerId }),
     ]);
     await loadInviteCodes();
     alertMessage(`招待コード ${code} を作成しました`, "success");
-  } catch (e) { alertMessage("作成に失敗しました", "error"); }
+  } catch (e) {
+    console.error("Invite code creation failed:", e);
+    alertMessage("作成に失敗しました", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
 });
 
 // その他タブ
@@ -11915,7 +12090,22 @@ function updateFilePreview() {
     filePreviewImage.src = "";
   }
 
-  if (attachedFile) {
+  if (attachedFiles && attachedFiles.length > 1) {
+    const totalSize = attachedFiles.reduce((acc, cur) => acc + (cur.size || 0), 0);
+    const sizeStr = totalSize >= 1024 * 1024
+      ? `${(totalSize / (1024 * 1024)).toFixed(1)} MB`
+      : `${(totalSize / 1024).toFixed(1)} KB`;
+    if (filePreviewName) {
+      filePreviewName.innerHTML = `<span class="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-xs mr-1">${attachedFiles.length}件</span> ${escapeHtml(attachedFiles[0].name)} 他${attachedFiles.length - 1}件 (${sizeStr})`;
+    }
+    if (filePreviewImage && attachedFiles[0].type && attachedFiles[0].type.startsWith("image/")) {
+      filePreviewImage.src = URL.createObjectURL(attachedFiles[0].file);
+      filePreviewImage.classList.remove("hidden");
+    }
+    if (filePreviewContainer) filePreviewContainer.classList.remove("hidden");
+    if (progressBar) progressBar.classList.add("hidden");
+    if (progressFill) progressFill.style.width = "0%";
+  } else if (attachedFile) {
     const sizeStr = attachedFile.size >= 1024 * 1024
       ? `${(attachedFile.size / (1024 * 1024)).toFixed(1)} MB`
       : `${(attachedFile.size / 1024).toFixed(1)} KB`;
@@ -12167,6 +12357,10 @@ async function sendMessage() {
             if (enc) {
               textToStore = enc;
               wasEncrypted = true;
+            } else {
+              messageInput.value = previousInputText;
+              alertMessage("🔒 暗号化保護エラー: DMメッセージの暗号化に失敗したため、平文送信を強制遮断しました", "error");
+              return;
             }
           } else {
             const members = (currentServerData && currentServerData.joinedUsers) || [];
@@ -12368,8 +12562,22 @@ async function sendMessage() {
       }
     }
 
+    const remainingFiles = (attachedFiles && attachedFiles.length > 1) ? attachedFiles.slice(1) : [];
     clearAttachedFile(); cancelReply();
     resetAwayTimer();
+
+    // 複数ファイル添付時の順次バックグラウンドアップロード＆送信 (#70)
+    if (remainingFiles.length > 0) {
+      (async () => {
+        for (const nextF of remainingFiles) {
+          try {
+            await sendSingleAttachmentMessage(nextF);
+          } catch (err) {
+            console.error('[MultiFile] send error:', err);
+          }
+        }
+      })();
+    }
 
   } catch (e) {
     console.error(e);
@@ -12392,8 +12600,114 @@ const clearFileBtn = document.getElementById("clearFileButton");
 if (clearFileBtn) {
   clearFileBtn.addEventListener("click", clearAttachedFile);
 }
-function clearAttachedFile() { attachedFile = null; attachedKvFile = null; updateFilePreview(); }
+function clearAttachedFile() {
+  attachedFile = null;
+  attachedFiles = [];
+  attachedKvFile = null;
+  updateFilePreview();
+}
 
+async function sendSingleAttachmentMessage(fileObj) {
+  if (!fileObj || (!currentRoomId && !currentDmId)) return;
+
+  // Snapshot room-state before any await — prevents race condition where the
+  // user navigates to another room while a background upload is in progress.
+  const snapDmId = currentDmId;
+  const snapRoomId = currentRoomId;
+  const snapServerId = currentServerId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+
+  const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  const rtdb = await _getOrInitRTDB();
+
+  let fileToUpload = fileObj.file;
+  let isFileEncrypted = false;
+  if (_subtleOK) {
+    if (snapDmId) {
+      const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+      if (dmKey) {
+        const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
+        fileToUpload = new File([encBlob], fileObj.name, { type: 'application/octet-stream' });
+        isFileEncrypted = true;
+      }
+    } else {
+      const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, snapMembers, 2000);
+      if (roomKey) {
+        const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
+        fileToUpload = new File([encBlob], fileObj.name, { type: 'application/octet-stream' });
+        isFileEncrypted = true;
+      }
+    }
+  }
+
+  const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+  const data = {
+    userId: userId,
+    senderId: userId,
+    userNickname: userNickname,
+    senderNickname: userNickname,
+    userAvatar: userAvatar,
+    timestamp: Date.now(),
+    createdAt: Date.now(),
+    fileData: fileUrl,
+    fileName: fileObj.name,
+    fileType: fileObj.type,
+    fileSize: fileObj.size,
+    isFileEncrypted: isFileEncrypted
+  };
+
+  if (snapDmId) {
+    const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
+    const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
+    const rtdbData = { ...data, id: newMessageId };
+    await set(rtdbMsgRef, rtdbData);
+    if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+      LocalStore.putMessage({ ...rtdbData, channelId: snapDmId }).catch(() => {});
+    }
+  } else if (snapServerId && snapRoomId) {
+    let msgRefId;
+    try {
+      const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages`), data);
+      msgRefId = msgRef.id;
+    } catch (_) {
+      msgRefId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
+    }
+    const rtdbData = { ...data, id: msgRefId };
+    await set(ref(rtdb, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages/${msgRefId}`), rtdbData);
+    if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+      LocalStore.putMessage({ ...rtdbData, channelId: snapRoomId }).catch(() => {});
+    }
+    try {
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
+        lastMessageAt: data.timestamp,
+        lastMessageSender: userId,
+        lastMessageText: '（ファイル）'
+      });
+    } catch (_) {}
+  }
+}
+
+async function handleFilesSelected(filesList) {
+  if (!filesList || filesList.length === 0) return;
+  const processed = [];
+  for (let rawFile of Array.from(filesList)) {
+    let f = await processHeicFile(rawFile);
+    if (!checkFileAllowed(f)) continue;
+    const MAX = f.type && f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (f.size > MAX) {
+      alertMessage(`${f.name}: ` + (f.type && f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです"), "error");
+      continue;
+    }
+    processed.push({ file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size });
+  }
+  if (processed.length === 0) return;
+  attachedFiles = processed;
+  attachedFile = attachedFiles[0];
+  updateFilePreview();
+  const mi = document.getElementById("messageInput");
+  if (mi) mi.focus();
+}
 
 // --- 送信ボタン ---
 const sendMessageBtn = document.getElementById("sendMessageButton");
@@ -12413,23 +12727,14 @@ if (fileAttachBtn && fileAttachInp) {
 }
 
 fileAttachInput.addEventListener("change", async (e) => {
-  let f = e.target.files[0];
-  if (!f) return;
-  fileAttachInput.value = "";
-
-  const btnIcon = fileAttachButton.querySelector("i");
+  const btnIcon = fileAttachButton?.querySelector("i");
   if (btnIcon) btnIcon.className = "fas fa-spinner fa-spin";
-  f = await processHeicFile(f);
-  if (btnIcon) btnIcon.className = "fas fa-plus";
-
-  if (!checkFileAllowed(f)) return;
-  // 画像・その他ファイルとも共通: ここではアップロードせず添付予約だけ。
-  // 実際のCloudflare(KV)へのアップロードは「送信ボタンを押した時」に行う。
-  const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-  if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
-  attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
-  updateFilePreview();
-  messageInput.focus();
+  try {
+    await handleFilesSelected(e.target.files);
+  } finally {
+    fileAttachInput.value = "";
+    if (btnIcon) btnIcon.className = "fas fa-plus";
+  }
 });
 
 // --- ドラッグ＆ドロップ ---
@@ -12448,14 +12753,7 @@ window.addEventListener("drop", async (e) => {
   e.preventDefault(); dragCounter = 0;
   dropOverlay.classList.remove("active");
   if (!currentRoomId && !currentDmId) return;
-  let f = e.dataTransfer.files[0];
-  if (!f) return;
-  f = await processHeicFile(f);
-  if (!checkFileAllowed(f)) return;
-  const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-  if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
-  attachedFile = { file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size };
-  updateFilePreview();
+  await handleFilesSelected(e.dataTransfer.files);
 });
 
 // --- 拡張メニューとメンション機能 ---
@@ -12939,24 +13237,61 @@ function createMessageElement(message, messageId, readByCount = 0) {
     if (message.senderId !== userId && (message.text.includes(`@${userNickname}`) || message.text.includes('@all'))) {
       messageElement.classList.add("mention-highlight");
     }
-    messageElement.appendChild(messageTextSpan);
-  }
-  if (message.fileData && message.fileName) {
-    const createExpiredFileCard = (name, customMsg) => {
-      const card = document.createElement("div");
-      card.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
-      card.innerHTML = `
-        <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
-          <i class="fas fa-clock-rotate-left"></i>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(name || 'ファイル')}</div>
-          <div class="text-[10px] text-gray-400">${escapeHtml(customMsg || '保存期間（100件制限）が終了したため削除されました')}</div>
-        </div>
-      `;
-      return card;
-    };
 
+    // 長文メッセージの「もっと見る」展開 (#73)
+    const lineCount = (textToDisplay.match(/\n/g) || []).length;
+    if (textToDisplay.length > 380 || lineCount >= 8) {
+      const collWrapper = document.createElement("div");
+      collWrapper.className = "message-collapsible-wrapper";
+      collWrapper.appendChild(messageTextSpan);
+
+      const fadeDiv = document.createElement("div");
+      fadeDiv.className = "collapse-fade";
+      collWrapper.appendChild(fadeDiv);
+
+      const toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "expand-msg-btn";
+      toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
+      toggleBtn.onclick = (e) => {
+        e.stopPropagation();
+        const isExp = collWrapper.classList.contains("expanded");
+        if (isExp) {
+          collWrapper.classList.remove("expanded");
+          fadeDiv.style.display = "block";
+          toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
+        } else {
+          collWrapper.classList.add("expanded");
+          fadeDiv.style.display = "none";
+          toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i> 折りたたむ';
+        }
+      };
+
+      messageElement.appendChild(collWrapper);
+      messageElement.appendChild(toggleBtn);
+    } else {
+      messageElement.appendChild(messageTextSpan);
+    }
+  }
+
+
+  // 期限切れ・欠落ファイル共通カード生成関数
+  const createExpiredFileCard = (name, customMsg) => {
+    const card = document.createElement("div");
+    card.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400/60 bg-gray-300/80 dark:bg-gray-700/80" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"} flex items-center gap-2.5 text-xs text-gray-500 dark:text-gray-400 select-none`;
+    card.innerHTML = `
+      <div class="w-8 h-8 rounded-lg bg-gray-200/80 dark:bg-gray-700 flex items-center justify-center text-gray-400 flex-shrink-0">
+        <i class="fas fa-clock-rotate-left"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(name || 'ファイル')}</div>
+        <div class="text-[10px] text-gray-400">${escapeHtml(customMsg || '保存期間（100件制限）が終了したため削除されました')}</div>
+      </div>
+    `;
+    return card;
+  };
+
+  if (message.fileData && message.fileName) {
     // 既に欠落（404）と分かっているURLは、fetch通信を一切行わずに直ちに期限切れカードを表示（404エラー完全防止）
     const targetFileDataUrl = message.fileData;
     if (message._fileExpired || isFileMissing(targetFileDataUrl)) {
@@ -12979,6 +13314,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
             if (element.tagName === 'IMG') element.style.opacity = '0.3';
             (async () => {
               try {
+                if (message._decryptionFailed) {
+                  const card = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                  element.replaceWith(card);
+                  return;
+                }
                 let key;
                 if (currentDmId) {
                   key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
@@ -12999,12 +13339,14 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   return;
                 }
                 if (!res.ok) {
-                  console.warn("[Media] Fetch non-OK status:", res.status);
                   return;
                 }
                 const buf = await res.arrayBuffer();
                 if (!buf || buf.byteLength < 29) {
-                  console.warn("[Media] Encrypted buffer too small:", buf ? buf.byteLength : 0);
+                  markFileAsMissing(message.fileData);
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  element.replaceWith(expiredCard);
                   return;
                 }
                 const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
@@ -13013,8 +13355,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 if (propName) element[propName] = message._decryptedFileUrl;
                 if (element.tagName === 'IMG') element.style.opacity = '1';
                 if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
-              } catch (e) {
-                console.warn("[Media] Decryption / fetch error for file:", message.fileName, e);
+              } catch (_) {
+                message._decryptionFailed = true;
+                const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                try { element.replaceWith(errCard); } catch (_) {}
               }
             })();
           }
@@ -15725,16 +16069,49 @@ function showCallOverlay(mode, opts) {
 
 function hideCallOverlay() {
   const overlay = document.getElementById('callOverlay');
+  if (overlay) {
+    overlay.classList.add('hide');
+    setTimeout(() => {
+      overlay.classList.remove('show', 'hide');
+    }, 300);
+  }
+  const pipBar = document.getElementById('callPipBar');
+  if (pipBar) pipBar.classList.remove('active');
+}
+
+window.minimizeCallOverlay = function () {
+  const overlay = document.getElementById('callOverlay');
+  const pipBar = document.getElementById('callPipBar');
+  if (!overlay || !pipBar) return;
   overlay.classList.add('hide');
   setTimeout(() => {
     overlay.classList.remove('show', 'hide');
-  }, 300);
-}
+  }, 250);
+  // PiPにアバターと名前を反映
+  const activeAvatar = document.getElementById('callActiveAvatar');
+  const activeName = document.getElementById('callActiveName');
+  const pipAvatar = document.getElementById('callPipAvatar');
+  const pipName = document.getElementById('callPipName');
+  if (pipAvatar && activeAvatar) pipAvatar.innerHTML = activeAvatar.innerHTML;
+  if (pipName && activeName) pipName.textContent = activeName.textContent || '通話中';
+  pipBar.classList.add('active');
+};
+
+window.restoreCallOverlay = function () {
+  const overlay = document.getElementById('callOverlay');
+  const pipBar = document.getElementById('callPipBar');
+  if (pipBar) pipBar.classList.remove('active');
+  if (overlay) {
+    overlay.classList.remove('hide');
+    overlay.classList.add('show');
+  }
+};
 
 function startCallTimer() {
   let elapsed = 0;
   const display = document.getElementById('callTimerDisplay');
   const timeoutDisplay = document.getElementById('callTimeoutDisplay');
+  const pipTimer = document.getElementById('callPipTimer');
   display.style.display = 'block';
   timeoutDisplay.style.display = 'none';
   document.getElementById('callStatusLabel').textContent = '通話中';
@@ -15742,7 +16119,9 @@ function startCallTimer() {
     elapsed++;
     const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
     const s = String(elapsed % 60).padStart(2, '0');
-    display.textContent = `${m}:${s}`;
+    const timeStr = `${m}:${s}`;
+    display.textContent = timeStr;
+    if (pipTimer) pipTimer.textContent = timeStr;
   }, 1000);
 }
 
@@ -17435,14 +17814,27 @@ function toggleMute() {
   _localStream.getAudioTracks().forEach(t => { t.enabled = !_isMuted; });
   const btn = document.getElementById('muteButton');
   const label = document.getElementById('muteLabel');
+  const pipMuteBtn = document.getElementById('callPipMuteBtn');
   if (_isMuted) {
-    btn.classList.add('active');
-    btn.querySelector('i').className = 'fas fa-microphone-slash';
-    label.textContent = 'ミュート解除';
+    if (btn) {
+      btn.classList.add('active');
+      btn.querySelector('i').className = 'fas fa-microphone-slash';
+    }
+    if (label) label.textContent = 'ミュート解除';
+    if (pipMuteBtn) {
+      pipMuteBtn.classList.add('active');
+      pipMuteBtn.querySelector('i').className = 'fas fa-microphone-slash';
+    }
   } else {
-    btn.classList.remove('active');
-    btn.querySelector('i').className = 'fas fa-microphone';
-    label.textContent = 'ミュート';
+    if (btn) {
+      btn.classList.remove('active');
+      btn.querySelector('i').className = 'fas fa-microphone';
+    }
+    if (label) label.textContent = 'ミュート';
+    if (pipMuteBtn) {
+      pipMuteBtn.classList.remove('active');
+      pipMuteBtn.querySelector('i').className = 'fas fa-microphone';
+    }
   }
 }
 
@@ -19287,14 +19679,12 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera
 
 window.addEventListener('beforeinstallprompt', (e) => {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  // スマホ端末またはインストール可能な環境のみキャプチャ
-  if (!isStandalone && !isTauri) {
+  // PWAインストールバナーを実際に提示するモバイルWeb環境のみキャプチャ（PCブラウザ等での不要なpreventDefault警告を抑制）
+  if (!isStandalone && !isTauri && isMobileDevice && pwaBanner) {
     e.preventDefault();
     deferredPwaPrompt = e;
     window.__deferredPwaPrompt = e;
-    if (isMobileDevice && pwaBanner) {
-      pwaBanner.classList.add('show');
-    }
+    pwaBanner.classList.add('show');
   }
 });
 
@@ -19405,11 +19795,21 @@ function initSettings() {
       }
     })();
 
-    if (window.__TAURI__?.autostart) {
-      window.__TAURI__.autostart.isEnabled().then(enabled => {
-        if (toggleAutoStart) toggleAutoStart.checked = enabled;
-      }).catch(console.error);
-    }
+    // 自動起動設定の取得 (Tauri 2 プラグイン互換)
+    const checkAutostart = async () => {
+      try {
+        if (window.__TAURI__?.autostart?.isEnabled) {
+          const enabled = await window.__TAURI__.autostart.isEnabled();
+          if (toggleAutoStart) toggleAutoStart.checked = !!enabled;
+        } else if (window.__TAURI__?.core?.invoke) {
+          const enabled = await window.__TAURI__.core.invoke('plugin:autostart|is_enabled');
+          if (toggleAutoStart) toggleAutoStart.checked = !!enabled;
+        }
+      } catch (err) {
+        console.warn("Autostart check failed:", err);
+      }
+    };
+    checkAutostart();
 
     // ショートカットキー入力欄の初期化
     const shortcutInput = document.getElementById('shortcutKeyInput');
@@ -19426,7 +19826,12 @@ function initSettings() {
           localStorage.setItem('simplechat_shortcut_key', val);
           if (shortcutDisplay) shortcutDisplay.textContent = val;
           if (window.__TAURI__?.core?.invoke) {
-            window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(console.error);
+            window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(err => {
+              console.error("ショートカット登録失敗:", err);
+              if (typeof showCustomAlert === 'function') {
+                showCustomAlert(typeof err === 'string' ? err : 'ショートカットキーの登録に失敗しました。他のアプリと衝突していないか確認してください。');
+              }
+            });
           }
         }
       });
@@ -19439,16 +19844,24 @@ function initSettings() {
 
   if (toggleAutoStart) {
     toggleAutoStart.addEventListener('change', async (e) => {
-      if (!window.__TAURI__?.autostart) return;
+      const targetChecked = e.target.checked;
       try {
-        if (e.target.checked) {
-          await window.__TAURI__.autostart.enable();
+        if (targetChecked) {
+          if (window.__TAURI__?.autostart?.enable) {
+            await window.__TAURI__.autostart.enable();
+          } else if (window.__TAURI__?.core?.invoke) {
+            await window.__TAURI__.core.invoke('plugin:autostart|enable');
+          }
         } else {
-          await window.__TAURI__.autostart.disable();
+          if (window.__TAURI__?.autostart?.disable) {
+            await window.__TAURI__.autostart.disable();
+          } else if (window.__TAURI__?.core?.invoke) {
+            await window.__TAURI__.core.invoke('plugin:autostart|disable');
+          }
         }
       } catch (err) {
         console.error("Autostart toggle failed", err);
-        e.target.checked = !e.target.checked;
+        e.target.checked = !targetChecked;
       }
     });
   }
@@ -19660,6 +20073,392 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ==========================================
+// 画面PINロック機能 (#105)
+// ==========================================
+let _currentPinInput = '';
+let _lastUserInteractionTime = Date.now();
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById(`pdot-${i}`);
+    if (dot) {
+      if (i < _currentPinInput.length) {
+        dot.classList.add('filled');
+      } else {
+        dot.classList.remove('filled');
+      }
+    }
+  }
+}
+
+window.promptSetupAppPin = async function () {
+  const currentHash = localStorage.getItem('covo_pin_hash');
+  if (currentHash) {
+    const choice = confirm('PINコードが既に設定されています。\n[OK] 新しいPINに変更する\n[キャンセル] PIN設定を解除（無効化）する');
+    if (!choice) {
+      // 解除処理
+      const currentSalt = localStorage.getItem('covo_pin_salt');
+      const verifyInput = prompt('PIN設定を解除するには、現在の4桁PINコードを入力してください:');
+      if (!verifyInput) return;
+      const verifyHash = await _sha256Hash(currentSalt + ':' + verifyInput);
+      if (verifyHash !== currentHash) {
+        alertMessage('PINコードが一致しません。解除できませんでした。', 'error');
+        return;
+      }
+      localStorage.removeItem('covo_pin_hash');
+      localStorage.removeItem('covo_pin_salt');
+      updatePinSettingsUI();
+      alertMessage('画面PINロックを解除しました。', 'success');
+      return;
+    }
+  }
+
+  const newPin = prompt('設定する4桁のPINコード（数字4文字）を入力してください:');
+  if (!newPin) return;
+  if (!/^\d{4}$/.test(newPin)) {
+    alertMessage('PINコードは半角数字4桁で入力してください。', 'error');
+    return;
+  }
+  const confirmPin = prompt('確認のため、もう一度同じ4桁PINコードを入力してください:');
+  if (newPin !== confirmPin) {
+    alertMessage('入力されたPINコードが一致しませんでした。', 'error');
+    return;
+  }
+
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hash = await _sha256Hash(salt + ':' + newPin);
+  localStorage.setItem('covo_pin_salt', salt);
+  localStorage.setItem('covo_pin_hash', hash);
+  updatePinSettingsUI();
+  alertMessage('画面PINコードを設定しました！離席時に安全に画面をロックできます。', 'success');
+};
+
+function updatePinSettingsUI() {
+  const hasPin = !!localStorage.getItem('covo_pin_hash');
+  const badge = document.getElementById('pinLockStatusBadge');
+  const btnSetup = document.getElementById('btnSetupPinLock');
+  const btnLockNow = document.getElementById('btnLockScreenNow');
+  const timeoutSelect = document.getElementById('autoLockTimeoutSelect');
+  if (badge) {
+    if (hasPin) {
+      badge.textContent = '設定済み (有効)';
+      badge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
+    } else {
+      badge.textContent = '未設定';
+      badge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300';
+    }
+  }
+  if (btnSetup) {
+    btnSetup.textContent = hasPin ? 'PINを変更' : 'PINを設定';
+  }
+  if (btnLockNow) {
+    if (hasPin) {
+      btnLockNow.classList.remove('hidden');
+    } else {
+      btnLockNow.classList.add('hidden');
+    }
+  }
+  if (timeoutSelect) {
+    timeoutSelect.value = localStorage.getItem('covo_auto_lock_mins') || '15';
+  }
+}
+
+window.changeAutoLockTimeout = function (mins) {
+  localStorage.setItem('covo_auto_lock_mins', String(mins));
+  alertMessage(mins === '0' ? '自動画面ロックを無効化しました。' : `無操作${mins}分後に自動画面ロックを設定しました。`, 'success');
+};
+
+window.lockAppScreen = function () {
+  const hasPin = !!localStorage.getItem('covo_pin_hash');
+  if (!hasPin) {
+    alertMessage('画面ロックを使用するには、まず設定画面でPINコードを登録してください。', 'warning');
+    return;
+  }
+  _currentPinInput = '';
+  updatePinDots();
+  const errMsg = document.getElementById('appPinErrorMessage');
+  if (errMsg) errMsg.textContent = '';
+
+  const avatarEl = document.getElementById('appPinLockAvatar');
+  const nameEl = document.getElementById('appPinLockName');
+  if (avatarEl && userAvatar) {
+    avatarEl.innerHTML = `<img src="${userAvatar}" class="w-full h-full object-cover rounded-full" />`;
+  }
+  if (nameEl) {
+    nameEl.textContent = userNickname ? `${userNickname} (ロック中)` : '画面がロックされています';
+  }
+
+  const overlay = document.getElementById('appPinLockOverlay');
+  if (overlay) overlay.classList.add('active');
+};
+
+window.inputAppPinDigit = async function (digit) {
+  if (_currentPinInput.length >= 4) return;
+  _currentPinInput += digit;
+  updatePinDots();
+  const errMsg = document.getElementById('appPinErrorMessage');
+  if (errMsg) errMsg.textContent = '';
+
+  if (_currentPinInput.length === 4) {
+    const salt = localStorage.getItem('covo_pin_salt');
+    const expectedHash = localStorage.getItem('covo_pin_hash');
+    if (!salt || !expectedHash) {
+      document.getElementById('appPinLockOverlay')?.classList.remove('active');
+      return;
+    }
+    const computedHash = await _sha256Hash(salt + ':' + _currentPinInput);
+    if (computedHash === expectedHash) {
+      // 解除成功
+      document.getElementById('appPinLockOverlay')?.classList.remove('active');
+      _currentPinInput = '';
+      updatePinDots();
+      _lastUserInteractionTime = Date.now();
+    } else {
+      // 不一致
+      if (errMsg) errMsg.textContent = 'PINコードが違います';
+      const container = document.getElementById('appPinDotsContainer');
+      if (container) {
+        container.classList.add('animate-shake');
+        setTimeout(() => container.classList.remove('animate-shake'), 400);
+      }
+      setTimeout(() => {
+        _currentPinInput = '';
+        updatePinDots();
+      }, 450);
+    }
+  }
+};
+
+window.backspaceAppPinDigit = function () {
+  if (_currentPinInput.length > 0) {
+    _currentPinInput = _currentPinInput.slice(0, -1);
+    updatePinDots();
+    const errMsg = document.getElementById('appPinErrorMessage');
+    if (errMsg) errMsg.textContent = '';
+  }
+};
+
+window.clearAppPinInput = function () {
+  _currentPinInput = '';
+  updatePinDots();
+  const errMsg = document.getElementById('appPinErrorMessage');
+  if (errMsg) errMsg.textContent = '';
+};
+
+window.emergencyLogoutFromPinLock = function () {
+  if (confirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？')) {
+    document.getElementById('appPinLockOverlay')?.classList.remove('active');
+    const logoutBtn = document.getElementById('logoutButtonInModal');
+    if (logoutBtn) logoutBtn.click();
+    else if (typeof logout === 'function') logout();
+  }
+};
+
+// キーボードからのPIN入力サポート & 無操作タイマー
+function initPinLockSystem() {
+  window.addEventListener('keydown', (e) => {
+    const overlay = document.getElementById('appPinLockOverlay');
+    if (overlay && overlay.classList.contains('active')) {
+      if (/^[0-9]$/.test(e.key)) {
+        inputAppPinDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        backspaceAppPinDigit();
+      } else if (e.key === 'Escape') {
+        clearAppPinInput();
+      }
+    }
+  });
+
+  const onUserActivity = () => { _lastUserInteractionTime = Date.now(); };
+  window.addEventListener('mousemove', onUserActivity, { passive: true });
+  window.addEventListener('keydown', onUserActivity, { passive: true });
+  window.addEventListener('touchstart', onUserActivity, { passive: true });
+
+  setInterval(() => {
+    const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
+    if (timeoutMins > 0 && localStorage.getItem('covo_pin_hash')) {
+      const overlay = document.getElementById('appPinLockOverlay');
+      if (overlay && !overlay.classList.contains('active')) {
+        const elapsed = Date.now() - _lastUserInteractionTime;
+        if (elapsed >= timeoutMins * 60 * 1000) {
+          lockAppScreen();
+        }
+      }
+    }
+  }, 15000);
+
+  updatePinSettingsUI();
+}
+
+// ==========================================
+// チャット履歴の安全な暗号化エクスポート (#101)
+// ==========================================
+async function _derivePassphraseKey(passphrase, salt) {
+  const pwUtf8 = new TextEncoder().encode(passphrase);
+  const baseKey = await crypto.subtle.importKey('raw', pwUtf8, 'PBKDF2', false, ['deriveKey']);
+  return await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+window.promptExportCurrentChatEncrypted = async function () {
+  if (!currentRoomId && !currentDmId) {
+    alertMessage('エクスポートするチャット（ルームまたはDM）を開いてください。', 'warning');
+    return;
+  }
+  const passphrase = prompt('チャットバックアップを保護するための暗号化パスフレーズを入力してください:');
+  if (!passphrase || passphrase.trim().length === 0) return;
+  if (passphrase.length < 4) {
+    alertMessage('パスフレーズは4文字以上で設定してください。', 'error');
+    return;
+  }
+
+  try {
+    alertMessage('チャット履歴を取得して暗号化しています...', 'info');
+    const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const basePath = currentServerId
+      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
+      : `artifacts/${appId}/dm_messages/${currentDmId}`;
+
+    const snap = await get(ref(rtdb, basePath));
+    let msgs = [];
+    if (snap.exists()) {
+      const val = snap.val();
+      msgs = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+      msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+
+    const currentName = (document.getElementById('channelNameDisplay')?.textContent || 'covo-chat').trim();
+    const payload = {
+      format: 'covo-backup',
+      version: 1,
+      exportedAt: Date.now(),
+      roomName: currentName,
+      messageCount: msgs.length,
+      messages: msgs
+    };
+
+    const payloadJson = JSON.stringify(payload);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const aesKey = await _derivePassphraseKey(passphrase, salt);
+
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      aesKey,
+      new TextEncoder().encode(payloadJson)
+    );
+
+    const backupContainer = {
+      covoBackup: true,
+      version: 1,
+      salt: _abToB64(salt.buffer),
+      iv: _abToB64(iv.buffer),
+      data: _abToB64(ciphertext),
+      exportedAt: Date.now(),
+      roomName: currentName
+    };
+
+    const blob = new Blob([JSON.stringify(backupContainer, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `covo-backup-${currentName.replace(/[\/\\?%*:|"<>]/g, '_')}-${dateStr}.covo-backup`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+
+    alertMessage(`暗号化バックアップ（${msgs.length}件のメッセージ）を出力しました！`, 'success');
+  } catch (err) {
+    console.error('[Backup] Export error:', err);
+    alertMessage(`エクスポートに失敗しました: ${err.message}`, 'error');
+  }
+};
+
+window.promptImportAndInspectBackup = function () {
+  const fileInp = document.createElement('input');
+  fileInp.type = 'file';
+  fileInp.accept = '.covo-backup,.json';
+  fileInp.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const backupData = JSON.parse(text);
+      if (!backupData.covoBackup || !backupData.salt || !backupData.iv || !backupData.data) {
+        alertMessage('無効なCovoバックアップファイル形式です。', 'error');
+        return;
+      }
+      const passphrase = prompt(`暗号化バックアップ「${backupData.roomName || file.name}」のパスフレーズを入力してください:`);
+      if (!passphrase) return;
+
+      const salt = new Uint8Array(_b64ToAb(backupData.salt));
+      const iv = new Uint8Array(_b64ToAb(backupData.iv));
+      const cipherBytes = _b64ToAb(backupData.data);
+      const aesKey = await _derivePassphraseKey(passphrase, salt);
+
+      let decryptedBuf;
+      try {
+        decryptedBuf = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv },
+          aesKey,
+          cipherBytes
+        );
+      } catch (_) {
+        alertMessage('パスフレーズが一致しないか、バックアップファイルが破損しています。', 'error');
+        return;
+      }
+
+      const decryptedJson = new TextDecoder().decode(decryptedBuf);
+      const payload = JSON.parse(decryptedJson);
+      const dateStr = new Date(payload.exportedAt || Date.now()).toLocaleString('ja-JP');
+
+      const shouldSaveTxt = confirm(
+        `【復号成功！】\n` +
+        `対象: ${payload.roomName || 'チャット'}\n` +
+        `メッセージ数: ${payload.messages?.length || 0} 件\n` +
+        `バックアップ作成日時: ${dateStr}\n\n` +
+        `このチャット履歴を閲覧用の平文テキストファイル (.txt) として保存しますか？`
+      );
+
+      if (shouldSaveTxt) {
+        let txtContent = `=== COVO チャット履歴バックアップ ===\n対象: ${payload.roomName}\n日時: ${dateStr}\n件数: ${payload.messages?.length || 0}\n====================================\n\n`;
+        (payload.messages || []).forEach(m => {
+          const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
+          const sender = m.senderNickname || m.userNickname || 'ユーザー';
+          const body = m.text || (m.fileName ? `[ファイル: ${m.fileName}]` : '(スタンプ)');
+          txtContent += `[${time}] ${sender}: ${body}\n`;
+        });
+        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `covo-chat-decrypted-${(payload.roomName || 'chat').replace(/[\/\\?%*:|"<>]/g, '_')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+      }
+    } catch (err) {
+      console.error('[Backup] Decrypt error:', err);
+      alertMessage(`復号処理エラー: ${err.message}`, 'error');
+    }
+  };
+  fileInp.click();
+};
+
 // =========================================================================
 // アプリ起動エントリーポイント (Boot Sequence)
 // =========================================================================
@@ -19668,6 +20467,9 @@ document.addEventListener("keydown", (e) => {
     // 0. 設定の初期化 (通知設定などの状態復元)
     if (typeof initSettings === 'function') {
       initSettings();
+    }
+    if (typeof initPinLockSystem === 'function') {
+      initPinLockSystem();
     }
 
     // 1. Tauri環境の場合: アップデートチェック

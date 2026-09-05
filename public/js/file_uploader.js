@@ -9,16 +9,42 @@ const BLOCKED_EXTENSIONS = new Set([
 ]);
 
 /**
- * 送信が禁止されている拡張子かどうかをチェックし、ダメならアラートを出します。
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
  */
 export function checkFileAllowed(file) {
   if (!file || !file.name) return false;
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    alertMessage(`この形式のファイル(.${ext})は送信できません`, "error");
+
+  // 1. ファイルサイズ上限チェック (50MB) (#60)
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限50MB)`, "error");
     return false;
   }
+
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+
   return true;
 }
 
