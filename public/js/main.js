@@ -442,6 +442,16 @@ const firebaseConfig = {
 
 const appId = "simplechat-65a0d";
 window._devConsoleLog = [];
+// 🔒 安全なJSONパース（破損データや空文字列によるSyntaxErrorクラッシュを防止）
+function safeJsonParse(str, fallback = null) {
+  if (typeof str !== 'string' || !str.trim()) return fallback;
+  try {
+    return JSON.parse(str);
+  } catch (_) {
+    return fallback;
+  }
+}
+window.safeJsonParse = safeJsonParse;
 
 initCryptoContext({
   getDb: () => (typeof db !== 'undefined' ? db : null),
@@ -1286,21 +1296,57 @@ window.handleUnifiedAuthSubmit = async function () {
         try {
           console.log("[Auth] 既存アカウントが見つからないため、Worker API経由で新規作成を試行します...");
           // 🔒 セキュリティ: Worker API経由でアカウント作成（招待許可リスト検証を実施）
-          const signupRes = await fetch(`${WORKER_BASE_URL}/api/signup`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
-          });
-          const signupData = await signupRes.json();
-          if (!signupRes.ok || signupData.error) {
-            const errMsg = signupData.error || "アカウント作成に失敗しました";
-            throw new Error(errMsg);
+          let signupSucceeded = false;
+          try {
+            const signupRes = await fetch(`${WORKER_BASE_URL}/api/signup`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password })
+            });
+            const signupData = await signupRes.json().catch(() => ({}));
+            if (signupRes.ok && !signupData.error) {
+              signupSucceeded = true;
+            } else {
+              const errMsg = signupData.error || `HTTP ${signupRes.status}`;
+              // 既存ユーザーでパスワード違いの場合（EMAIL_EXISTS）
+              if (errMsg.includes("EMAIL_EXISTS") || errMsg.includes("email-already-in-use")) {
+                throw new Error("auth/wrong-password");
+              }
+              // 招待制による拒否（403）
+              if (signupRes.status === 403) {
+                const err = new Error(errMsg);
+                err.code = "auth/forbidden";
+                throw err;
+              }
+              // サーバー未構成またはWorker障害（500/404）
+              console.warn("[Auth] Worker signup returned error, attempting direct fallback:", errMsg);
+            }
+          } catch (fetchErr) {
+            if (fetchErr.message === "auth/wrong-password" || fetchErr.code === "auth/forbidden") {
+              throw fetchErr;
+            }
+            console.warn("[Auth] Worker API unreachable, checking direct registration fallback:", fetchErr);
           }
-          // Worker API でアカウント作成成功 → クライアント側でログイン
-          await signInWithEmailAndPassword(auth, email, password);
-          return;
+
+          if (signupSucceeded) {
+            // Worker API でアカウント作成成功 → クライアント側でログイン
+            await signInWithEmailAndPassword(auth, email, password);
+            return;
+          } else {
+            // Worker未構成・オフライン時の安全なフォールバック
+            try {
+              const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+              await createUserWithEmailAndPassword(auth, email, password);
+              return;
+            } catch (fbCreateErr) {
+              if (fbCreateErr.code === "auth/email-already-in-use") {
+                throw new Error("auth/wrong-password");
+              }
+              throw fbCreateErr;
+            }
+          }
         } catch (signUpErr) {
-          if (signUpErr.code === "auth/email-already-in-use") {
+          if (signUpErr.message === "auth/wrong-password" || signUpErr.code === "auth/email-already-in-use" || signUpErr.message?.includes("EMAIL_EXISTS")) {
             // アカウントは存在するが、先ほど入力したパスワードが間違っていた
             throw new Error("auth/wrong-password");
           }
@@ -4009,7 +4055,7 @@ window.toggleNotifModal = function (triggerEl, e) {
 
 window.clearAllNotifications = function () {
   localStorage.setItem('covo_global_items', '[]');
-  const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+  const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
   Object.keys(unreadCounts).forEach(rid => {
     unreadCounts[rid] = 0;
     rm[rid] = Date.now() + 60000;
@@ -4024,7 +4070,7 @@ window.__globalRoomsCache = window.__globalRoomsCache || {};
 
 function updateGlobalNotifUI() {
   try {
-    let items = JSON.parse(localStorage.getItem('covo_global_items') || '[]');
+    let items = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
     items = items.filter(it => it.serverId !== currentServerId);
     Object.keys(unreadCounts).forEach(rid => {
       if (rid === currentRoomId) {
@@ -4078,7 +4124,7 @@ async function scanAllUnreadAndRender() {
   if (_scanUnreadBusy || !userId) return;
   _scanUnreadBusy = true;
   try {
-    const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
+    const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
     let servers = (allServersCache && allServersCache.length)
       ? allServersCache.filter(s => (s.joinedUsers || []).includes(userId))
       : null;
@@ -4086,7 +4132,7 @@ async function scanAllUnreadAndRender() {
       const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId)));
       servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
-    const items = JSON.parse(localStorage.getItem('covo_global_items') || '[]').filter(it => it.serverId === currentServerId);
+    const items = (safeJsonParse(localStorage.getItem('covo_global_items'), []) || []).filter(it => it.serverId === currentServerId);
 
     // 1. サーバーのルーム未読スキャン
     for (const sv of servers) {
@@ -4844,7 +4890,7 @@ function updateServerListUserBtn() {
   btn.title = `${userNickname} — プロフィール・設定`;
   __setAvatarImg(btn, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: 'border-radius:50%' });
 }
-document.getElementById("serverListUserBtn").addEventListener("click", () => {
+document.getElementById("serverListUserBtn")?.addEventListener("click", () => {
   openSettingsModal("profile");
 });
 
@@ -6791,7 +6837,7 @@ function renderFriendTabs() {
         <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
-              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
+              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${escapeHtml(r.targetAvatarUrl)}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
             </div>
             <div class="min-w-0">
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(r.targetNickname || 'ユーザー')}</div>
@@ -6799,10 +6845,10 @@ function renderFriendTabs() {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="acceptFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95">
+            <button onclick="acceptFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95">
               <i class="fas fa-check text-xs"></i> 承認
             </button>
-            <button onclick="rejectFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition active:scale-95">
+            <button onclick="rejectFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition active:scale-95">
               拒否
             </button>
           </div>
@@ -6822,14 +6868,14 @@ function renderFriendTabs() {
         <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
-              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${r.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
+              ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${escapeHtml(r.targetAvatarUrl)}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
             </div>
             <div class="min-w-0">
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(r.targetNickname || 'ユーザー')}</div>
               <div class="text-xs text-gray-400 dark:text-gray-500 truncate">送信済み申請</div>
             </div>
           </div>
-          <button onclick="cancelFriendRequest('${r.targetUid}')" class="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition active:scale-95">
+          <button onclick="cancelFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition active:scale-95">
             キャンセル
           </button>
         </div>
@@ -6855,7 +6901,7 @@ function renderFriendTabs() {
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(b.targetNickname || 'ブロックされたユーザー')}</div>
             </div>
           </div>
-          <button onclick="unblockUser('${b.targetUid}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition active:scale-95">
+          <button onclick="unblockUser('${escapeHtml(b.targetUid)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition active:scale-95">
             ブロック解除
           </button>
         </div>
@@ -7200,16 +7246,16 @@ function renderDmConversationsList() {
     }
 
     return `
-      <div class="dm-sidebar-item ${isActive ? 'active' : ''}" onclick="openDm('${otherUid}', '${escapeHtml(nickname)}', '${escapeHtml(avatarUrl)}')">
+      <div class="dm-sidebar-item ${isActive ? 'active' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
         <div class="relative w-8 h-8 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs flex-shrink-0">
-          ${avatarUrl ? `<img src="${avatarUrl}" class="w-full h-full rounded-full object-cover">` : escapeHtml(nickname.charAt(0))}
+          ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full rounded-full object-cover">` : escapeHtml(nickname.charAt(0))}
           <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
         </div>
         <div class="flex-1 min-w-0">
           <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(nickname)}</div>
           <div class="text-[11px] text-gray-400 truncate" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
         </div>
-        <button class="dm-close-btn p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${dm.id}')">
+        <button class="dm-close-btn p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
           <i class="fas fa-times"></i>
         </button>
       </div>
@@ -9879,7 +9925,7 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
       const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
       if (previewContent && previewWrapper) {
         const tempUrl = URL.createObjectURL(blob);
-        previewContent.innerHTML = `<img src="${tempUrl}" class="w-full h-full object-cover" />`;
+        previewContent.innerHTML = `<img src="${escapeHtml(tempUrl)}" class="w-full h-full object-cover" />`;
         previewWrapper.className = previewWrapper.className.replace("rounded-full", "rounded-2xl");
       }
       serverIconCropModal.classList.add('hidden');
@@ -9966,7 +10012,7 @@ function loadServerRooms(serverId, _retry = 0) {
       nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
       nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
 
-      const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+      const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
       const lastRead = rm[docSnap.id] || 0;
       const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
       const isNotCurrentOrHidden = (docSnap.id !== currentRoomId) || !document.hasFocus();
@@ -10067,7 +10113,7 @@ function loadServerRooms(serverId, _retry = 0) {
         if (change.type === "modified") {
           const room = change.doc.data();
           const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
-          const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
+          const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
           const lastRead = rm[change.doc.id] || 0;
           // 現在開いているルームで新しいメッセージが更新された場合、リアルタイムメッセージの同期を即座にキック（受信漏れ防止）
           if (change.doc.id === currentRoomId && room.lastMessageSender !== userId) {
@@ -11413,8 +11459,140 @@ window.toggleStickerPicker = function () {
   p.style.visibility = '';
 };
 
+// === Covo Smart Anti-Spam & Rate Limiter (Discord / LINE 準拠) ===
+// 人間の自然なチャット（ポンポンと送る数通の発言）は快適に即時送信しつつ、
+// スクリプト・マクロ・高速連打による荒らし行為のみを確実にスロットリング・遮断する
+class MessageRateLimiter {
+  constructor() {
+    this.maxTokens = 4.0; // 瞬間バースト許容数（4通まで待ち時間ゼロで即時送信）
+    this.tokens = 4.0;
+    this.refillRate = 1.0; // 1秒につき1トークン回復
+    this.lastRefill = Date.now();
+    this.lastSentText = '';
+    this.lastSentTextAt = 0;
+    this.lastSticker = '';
+    this.lastStickerAt = 0;
+    this.lastSentAt = 0;
+    this.burstSpamCount = 0;
+    this.lastBurstCheckAt = Date.now();
+    this.isMutedTemporarily = false;
+    this.muteUntil = 0;
+  }
+
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;
+    this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
+    this.lastRefill = now;
+  }
+
+  canSendMessage(text, isPrivileged = false) {
+    const now = Date.now();
+
+    // 異常連投による一時的ローカルミュート判定
+    if (this.isMutedTemporarily && now < this.muteUntil) {
+      const remainingSec = Math.ceil((this.muteUntil - now) / 1000);
+      return { allowed: false, reason: `連投が制限されています。あと ${remainingSec} 秒お待ちください`, remainingMs: this.muteUntil - now };
+    }
+    if (now >= this.muteUntil) {
+      this.isMutedTemporarily = false;
+    }
+
+    // 異常高頻度送信（1秒間に8回以上のトリガー試行）を検知してペナルティ
+    if (now - this.lastBurstCheckAt < 1000) {
+      this.burstSpamCount++;
+      if (this.burstSpamCount > 7 && !isPrivileged) {
+        this.triggerSpamPenalty(20);
+        return { allowed: false, reason: '短時間の過剰送信が検知されたため、20秒間送信を一時制限しました', remainingMs: 20000 };
+      }
+    } else {
+      this.burstSpamCount = 1;
+      this.lastBurstCheckAt = now;
+    }
+
+    // サーバー管理者・モデレーターはレートリミット免除
+    if (isPrivileged) return { allowed: true };
+
+    // 同一テキストの超短時間連投ガード（1000ms以内の同一メッセージ二重送信防止）
+    if (text && text === this.lastSentText && (now - this.lastSentTextAt) < 1000) {
+      return { allowed: false, reason: '同じメッセージが連続して送信されました', remainingMs: 1000 - (now - this.lastSentTextAt) };
+    }
+
+    // トークンバケット判定
+    this.refill();
+    if (this.tokens < 1.0) {
+      const waitMs = Math.ceil((1.0 - this.tokens) / this.refillRate * 1000);
+      return { allowed: false, reason: `メッセージ送信が早すぎます。少しお待ちください (${Math.ceil(waitMs / 1000)}秒)`, remainingMs: waitMs };
+    }
+
+    this.tokens -= 1.0;
+    this.lastSentText = text || '';
+    this.lastSentTextAt = now;
+    this.lastSentAt = now;
+    return { allowed: true };
+  }
+
+  canSendSticker(emoji, isPrivileged = false) {
+    const now = Date.now();
+    if (this.isMutedTemporarily && now < this.muteUntil) {
+      const remainingSec = Math.ceil((this.muteUntil - now) / 1000);
+      return { allowed: false, reason: `スタンプ連投が制限されています。あと ${remainingSec} 秒お待ちください` };
+    }
+
+    if (isPrivileged) return { allowed: true };
+
+    // 同一スタンプの連打ガード（800ms以内の同一スタンプ）
+    if (emoji && emoji === this.lastSticker && (now - this.lastStickerAt) < 800) {
+      return { allowed: false, reason: 'スタンプの連打はできません' };
+    }
+
+    // スタンプ全体の最低インターバル（350ms：日常の軽快さを損なわずマクロのみ防ぐ）
+    if ((now - this.lastStickerAt) < 350) {
+      return { allowed: false, reason: '少し待ってから送信してください' };
+    }
+
+    this.lastSticker = emoji || '';
+    this.lastStickerAt = now;
+    this.lastSentAt = now;
+    return { allowed: true };
+  }
+
+  triggerSpamPenalty(durationSec = 15) {
+    this.isMutedTemporarily = true;
+    this.muteUntil = Date.now() + durationSec * 1000;
+  }
+}
+
+const _covoRateLimiter = new MessageRateLimiter();
+
 async function sendSticker(emoji) {
   if (!currentRoomId && !currentDmId) return;
+
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
+
+  // 1. スローモード（Slowmode）検証
+  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
+    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
+    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+    if (slowmodeSec > 0) {
+      const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
+      if (elapsedSec < slowmodeSec) {
+        const remaining = Math.ceil(slowmodeSec - elapsedSec);
+        alertMessage(`⏳ このチャンネルはスローモードが有効です。あと ${remaining} 秒お待ちください`, "warning");
+        return;
+      }
+    }
+  }
+
+  // 2. スタンプ連打・レートリミット検証
+  const stickerCheck = _covoRateLimiter.canSendSticker(emoji, isPrivileged);
+  if (!stickerCheck.allowed) {
+    alertMessage(stickerCheck.reason || "少し待ってから送信してください", "warning");
+    return;
+  }
+
   _skPushRecent(emoji);
   document.getElementById('stickerPicker').classList.remove('show');
   if (window._reactionTargetMessageId) {
@@ -11898,9 +12076,6 @@ document.addEventListener('click', (e) => {
 
 // RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
-  // クライアント側からの自動削除処理は、親ノード権限や他者メッセージ削除制限に抵触して
-  // permission_denied 警告を引き起こし、かつ過去ログを虫食い状態にしてしまうため実行しない。
-  // 100件制限は取得クエリの limitToLast(100) による表示件数制御で安全かつ完全に担保される。
   return;
 }
 
@@ -11908,6 +12083,37 @@ async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
   if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
+
+  // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
+  if (text && text.length > 10000) {
+    alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
+    return;
+  }
+
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
+
+  // 1. スローモード（Slowmode）検証
+  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
+    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
+    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+    if (slowmodeSec > 0) {
+      const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
+      if (elapsedSec < slowmodeSec) {
+        const remaining = Math.ceil(slowmodeSec - elapsedSec);
+        alertMessage(`⏳ このチャンネルはスローモードが有効です。あと ${remaining} 秒お待ちください`, "warning");
+        return;
+      }
+    }
+  }
+
+  // 2. レートリミット（Token Bucket & 連投荒らし防止）検証
+  const rateCheck = _covoRateLimiter.canSendMessage(text, isPrivileged);
+  if (!rateCheck.allowed) {
+    alertMessage(rateCheck.reason || "少し待ってから送信してください", "warning");
+    return;
+  }
 
   // Optimistic input clearing (LINE style)
   const previousInputText = text;
@@ -12429,9 +12635,16 @@ document.addEventListener("click", (e) => {
 
 
 
+const _reactionCooldownMap = new Map();
+
 window.toggleReaction = async function (messageId, emoji) {
   if ((!currentServerId || !currentRoomId) && !currentDmId) return;
-  if (!userId) return;
+  if (!userId || !messageId) return;
+
+  const now = Date.now();
+  const lastTime = _reactionCooldownMap.get(messageId) || 0;
+  if (now - lastTime < 250) return; // 250ms 連打防止
+  _reactionCooldownMap.set(messageId, now);
 
   try {
     if (currentDmId) {
@@ -12738,7 +12951,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
         </div>
         <div class="min-w-0 flex-1">
           <div class="font-bold text-gray-700 dark:text-gray-300 truncate">${escapeHtml(name || 'ファイル')}</div>
-          <div class="text-[10px] text-gray-400">${customMsg || '保存期間（100件制限）が終了したため削除されました'}</div>
+          <div class="text-[10px] text-gray-400">${escapeHtml(customMsg || '保存期間（100件制限）が終了したため削除されました')}</div>
         </div>
       `;
       return card;
@@ -13415,8 +13628,8 @@ function renderMessagesWithReadReceipts() {
       hero.className = 'dm-welcome-banner flipped';
     }
     const safeNick = escapeHtml(currentDmParticipant.nickname || 'ユーザー');
-    const safeAv = currentDmParticipant.avatarUrl 
-      ? `<img src="${currentDmParticipant.avatarUrl}" class="w-16 h-16 rounded-full object-cover shadow-md border-2 border-indigo-500/20">`
+    const safeAv = isUsableAvatarUrl(currentDmParticipant.avatarUrl) 
+      ? `<img src="${escapeHtml(currentDmParticipant.avatarUrl)}" class="w-16 h-16 rounded-full object-cover shadow-md border-2 border-indigo-500/20">`
       : `<div class="w-16 h-16 rounded-full bg-slate-700 text-white font-bold text-xl flex items-center justify-center shadow-md">${safeNick.charAt(0)}</div>`;
     
     hero.innerHTML = `
@@ -13424,13 +13637,13 @@ function renderMessagesWithReadReceipts() {
       <h2 class="text-2xl font-black text-gray-900 dark:text-gray-100 mb-1 tracking-tight">${safeNick}</h2>
       <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-4">これは @${safeNick} さんとのダイレクトメッセージの始まりです。</p>
       <div class="flex items-center gap-2 flex-wrap">
-        <button onclick="window.openCallPickerWithTarget('${currentDmParticipant.uid}')" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition flex items-center gap-1.5">
+        <button onclick="window.openCallPickerWithTarget('${escapeHtml(currentDmParticipant.uid)}')" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition flex items-center gap-1.5">
           <i class="fas fa-phone text-xs"></i> <span>通話を開始</span>
         </button>
-        <button onclick="window.openFileShareWithTarget('${currentDmParticipant.uid}')" class="px-3.5 py-1.5 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-800 dark:text-white font-bold text-xs transition flex items-center gap-1.5">
+        <button onclick="window.openFileShareWithTarget('${escapeHtml(currentDmParticipant.uid)}')" class="px-3.5 py-1.5 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-800 dark:text-white font-bold text-xs transition flex items-center gap-1.5">
           <i class="fas fa-share-from-square text-xs"></i> <span>ファイルを送る</span>
         </button>
-        <button onclick="window.blockUser('${currentDmParticipant.uid}')" class="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 font-bold text-xs transition">
+        <button onclick="window.blockUser('${escapeHtml(currentDmParticipant.uid)}')" class="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 font-bold text-xs transition">
           ブロック
         </button>
       </div>
@@ -13924,176 +14137,173 @@ if (copyMsgBtn) {
 
 if (deleteMsgBtn) {
   deleteMsgBtn.addEventListener("click", async (e) => {
-  if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
-  messageContextMenu.classList.add("hidden");
-  if (!selectedMessageForContext) return;
+    if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
+    messageContextMenu.classList.add("hidden");
+    if (!selectedMessageForContext) return;
 
-  const msgToDelete = selectedMessageForContext;
-  const isMsgSender = msgToDelete.senderId === userId;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDelete = currentDmId ? isMsgSender : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
+    const msgToDelete = selectedMessageForContext;
+    const isMsgSender = msgToDelete.senderId === userId;
+    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+    const canDelete = currentDmId ? isMsgSender : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
 
-  if (!canDelete) {
-    alertMessage("メッセージを削除する権限がありません", "warning");
-    return;
-  }
-
-  const isPrivilegedDelete = !currentDmId && (isAdmin || isSvAdmin || isSvOwner) && msgToDelete.senderId !== userId;
-  const forceDelete = isPrivilegedDelete;
-
-  // 1. KV ファイル削除（先行・失敗でメッセージ削除中止）
-  const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
-
-  // 1a. kvFileUrl フィールド（新形式）
-  if (msgToDelete.kvFileUrl) {
-    const m = msgToDelete.kvFileUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
-    if (m) {
-      const fileKey = m[1];
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
-      try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[deleteMessage] KV file delete failed (kvFileUrl):', fileKey, err);
-          alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-          return;
-        }
-      } catch (e) {
-        console.error('[deleteMessage] KV file delete error (kvFileUrl):', fileKey, e);
-        alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-        return;
-      }
+    if (!canDelete) {
+      alertMessage("メッセージを削除する権限がありません", "warning");
+      return;
     }
-  }
 
-  // 1b. テキスト内の旧形式KV URL
-  if (msgToDelete.text) {
-    const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
-    const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
-    for (const match of kvMatches) {
-      const fileKey = match[1];
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
-      try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
-        if (!res.ok) {
-          alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-          return;
-        }
-      } catch (e) {
-        alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-        return;
-      }
+    const isPrivilegedDelete = !currentDmId && (isAdmin || isSvAdmin || isSvOwner) && msgToDelete.senderId !== userId;
+    const forceDelete = isPrivilegedDelete;
+
+    // モデレーターによる他者メッセージ削除時は確認モーダルを表示（誤操作防止）
+    if (isPrivilegedDelete) {
+      const ok = await showCustomConfirm(
+        "このメッセージを管理者権限で削除しますか？\n（この操作は元に戻せません）",
+        "削除する",
+        "キャンセル",
+        "メッセージのモデレーション削除"
+      );
+      if (!ok) return;
     }
-  }
 
-  // 1c. fileData が Cloudflare(KV) URL の場合
-  if (msgToDelete.fileData && msgToDelete.fileData.indexOf('/api/file/') >= 0) {
-    const m = msgToDelete.fileData.match(/\/api\/file\/([A-Za-z0-9_]+)/);
-    if (m) {
-      const fileKey = m[1];
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
-      try {
-        const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
-        if (!res.ok) {
-          alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-          return;
-        }
-      } catch (e) {
-        alertMessage('添付ファイルの削除に失敗しました。メッセージは削除されませんでした。', 'error');
-        return;
+    // 1. 添付ファイルの削除（非同期試行・ファイル削除エラーでもメッセージ削除は妨げない）
+    const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
+    const cleanupFile = async (url) => {
+      if (!url) return;
+      const m = url.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      if (m) {
+        const fileKey = m[1];
+        try {
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
+          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(err => {
+            console.warn('[deleteMessage] KV cleanup warn:', fileKey, err);
+          });
+        } catch (_) {}
       }
+    };
+
+    if (msgToDelete.kvFileUrl) cleanupFile(msgToDelete.kvFileUrl);
+    if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) cleanupFile(msgToDelete.fileData);
+    if (msgToDelete.text) {
+      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
+      const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
+      kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
     }
-  }
 
-  // 2. メッセージの削除実行
-  try {
-    if (currentDmId) {
-      // DMメッセージ削除（本人のみ）
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
-      LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
-
-      // DMチャンネルの最新メッセージサマリーを更新
-      allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
-      const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
-      
-      const newLastText = remainingLatest
-        ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
-        : null;
-      const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
-      const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
-
-      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
-        participants: currentDmParticipants || currentDmId.split('_'),
-        lastMessageText: newLastText,
-        lastMessageAt: newLastAt,
-        lastMessageSender: newLastSender
-      }, { merge: true }).catch(() => {});
-
-      if (dmConversations[currentDmId]) {
-        dmConversations[currentDmId].lastMessageText = newLastText;
-        dmConversations[currentDmId].lastMessageAt = newLastAt;
-        dmConversations[currentDmId].lastMessageSender = newLastSender;
-        dmConversations[currentDmId]._decryptedPreview = null;
-        renderDmConversationsList();
-      }
-    } else {
-      // サーバーメッセージ削除
-      if (isPrivilegedDelete) {
-        // サーバー管理者/モデレーター/全体管理者による他者メッセージのモデレーション削除: 特権Worker API経由でFirestoreとRTDBを一元削除
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const res = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
-          method: 'DELETE',
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-          body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
-        });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || "管理者権限でのメッセージ削除に失敗しました");
-        }
-      } else {
-        // 本人によるメッセージ削除: Firestore + RTDB
-        await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+    // 2. メッセージの削除実行（ハイブリッド型アトミック削除）
+    try {
+      if (currentDmId) {
+        // DMメッセージ削除
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
+        await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
+        await LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
+
+        // DMチャンネルの最新メッセージサマリーを更新
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+        const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
+        const newLastText = remainingLatest
+          ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+          : null;
+        const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
+        const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
+
+        await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
+          participants: currentDmParticipants || currentDmId.split('_'),
+          lastMessageText: newLastText,
+          lastMessageAt: newLastAt,
+          lastMessageSender: newLastSender
+        }, { merge: true }).catch(() => {});
+
+        if (dmConversations[currentDmId]) {
+          dmConversations[currentDmId].lastMessageText = newLastText;
+          dmConversations[currentDmId].lastMessageAt = newLastAt;
+          dmConversations[currentDmId].lastMessageSender = newLastSender;
+          dmConversations[currentDmId]._decryptedPreview = null;
+          renderDmConversationsList();
+        }
+      } else {
+        // サーバーメッセージ削除:
+        // クライアント側から直接 Firestore & RTDB を即時削除し、他クライアントへのリアルタイム通知と即時消滅を保証
+        const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+
+        // RTDB削除とFirestore削除を並行実行
+        const rtdbDeletePromise = remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
+        const fsDeletePromise = deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+
+        // 特権削除の場合は Worker API (D1・サーバー監査ログ・バックエンド整合性) も非同期呼び出し
+        if (isPrivilegedDelete) {
+          (async () => {
+            try {
+              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+              await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
+                method: 'DELETE',
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+                body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
+              });
+            } catch (wErr) {
+              console.warn('[deleteMessage] Worker API sync warning:', wErr);
+            }
+          })();
+
+          // Firestore 監査ログにも記録
+          addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
+            action: 'delete_message',
+            operatorUid: userId,
+            operatorNickname: currentServerNickname || userNickname || 'Admin',
+            serverId: currentServerId,
+            roomId: currentRoomId,
+            messageId: msgToDelete.id,
+            targetSenderId: msgToDelete.senderId || null,
+            timestamp: serverTimestamp()
+          }).catch(() => {});
+        }
+
+        await Promise.allSettled([rtdbDeletePromise, fsDeletePromise]);
+        await LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
+
+        // ルームの最新メッセージサマリーを更新
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
+        const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
+        const newLastText = remainingLatest
+          ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+          : null;
+        const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
+        const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
+
+        updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+          lastMessageText: newLastText,
+          lastMessageAt: newLastAt,
+          lastMessageSender: newLastSender
+        }).catch(() => {});
       }
-      LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
-      // ルームの最新メッセージサマリーを更新
-      allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
-      const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
-      const newLastText = remainingLatest
-        ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
-        : null;
-      const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
-      const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
+      // ピン留めメッセージ一覧からも連動解除
+      currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
+      lastMessagesData = [...allLoadedMessages];
+      messagesIndexMap = {};
+      lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
 
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
-        lastMessageText: newLastText,
-        lastMessageAt: newLastAt,
-        lastMessageSender: newLastSender
-      }).catch(() => {});
+      // DOM 要素のアニメーション付き即時消去
+      const bubbleEl = messagesDisplay.querySelector(`.message-bubble[data-message-id="${msgToDelete.id}"]`);
+      if (bubbleEl) {
+        const rowEl = bubbleEl.closest('.message-row') || bubbleEl;
+        rowEl.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        rowEl.style.opacity = '0';
+        rowEl.style.transform = 'scale(0.95)';
+        setTimeout(() => rowEl.remove(), 200);
+      }
+
+      renderMessagesWithReadReceipts();
+      renderPinnedMessages();
+      alertMessage("メッセージを削除しました", "success");
+    } catch (e) {
+      console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
+      alertMessage("削除に失敗しました: " + (e.message || "権限がありません"), "error");
     }
-
-    // 削除が成功した場合のみローカル状態を更新して完了トーストを表示
-    currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgToDelete.id);
-    lastMessagesData = [...allLoadedMessages];
-    messagesIndexMap = {};
-    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-    renderMessagesWithReadReceipts();
-    renderPinnedMessages();
-    alertMessage("削除しました", "success");
-  } catch (e) {
-    console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
-    alertMessage("削除に失敗しました: " + (e.message || "権限がありません"), "error");
-  }
-});
+  });
 }
 
 messagesDisplay.addEventListener("dblclick", (e) => {
@@ -16805,11 +17015,13 @@ function _fsShowReceivedPreview(url, name, type, size, alreadySaved) {
     ov.style.display = 'flex';
     return;
   }
+  const isSafeUrl = typeof url === 'string' && (/^(?:https?:|blob:)/i.test(url) || url.startsWith('/')) && !url.includes('\\');
+  const safeUrl = isSafeUrl ? escapeHtml(url) : '';
   let inner = '';
-  if (type && type.startsWith('image/')) {
-    inner = `<img src="${url}" class="fs-prev-media" alt="">`;
-  } else if (type && type.startsWith('video/')) {
-    inner = `<video src="${url}" class="fs-prev-media" controls></video>`;
+  if (type && type.startsWith('image/') && safeUrl) {
+    inner = `<img src="${safeUrl}" class="fs-prev-media" alt="">`;
+  } else if (type && type.startsWith('video/') && safeUrl) {
+    inner = `<video src="${safeUrl}" class="fs-prev-media" controls></video>`;
   } else {
     inner = `<div class="fs-prev-file"><i class="fas fa-file"></i></div>`;
   }
@@ -16820,7 +17032,7 @@ function _fsShowReceivedPreview(url, name, type, size, alreadySaved) {
           <div class="fs-prev-name">${escapeHtml(name || '')}</div>
           <div class="fs-prev-size">${_fsHumanSize(size || 0)}</div>
           <div class="fs-prev-actions">
-            <a class="fs-prev-save" href="${url}" download="${encodeURIComponent(name || 'file').replace(/"/g, '')}">保存</a>
+            ${safeUrl ? `<a class="fs-prev-save" href="${safeUrl}" download="${encodeURIComponent(name || 'file').replace(/"/g, '')}">保存</a>` : ''}
             <button class="fs-prev-close" onclick="document.getElementById('fsPreviewOverlay').style.display='none'">閉じる</button>
           </div>
         </div>`;
@@ -17613,20 +17825,32 @@ window.loadPastVersionsPage = async function (page) {
       const dateStr = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
       const bodyStr = (rel.body || '説明なし').substring(0, 100) + (rel.body?.length > 100 ? '...' : '');
 
+      const rawUrl = exeAsset ? exeAsset.browser_download_url : rel.html_url;
+      const isSafeUrl = typeof rawUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(rawUrl);
+      const safeUrl = isSafeUrl ? rawUrl : '';
+
       const card = document.createElement('div');
       card.className = 'p-4 bg-gray-800/60 border border-gray-700/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow transition text-white';
       card.innerHTML = `
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-bold font-mono text-gray-100">${tag}</span>
-                <span class="text-xs text-gray-400">(${dateStr})</span>
+                <span class="text-sm font-bold font-mono text-gray-100">${escapeHtml(tag)}</span>
+                <span class="text-xs text-gray-400">(${escapeHtml(dateStr)})</span>
               </div>
-              <p class="text-xs text-gray-300 mt-1 line-clamp-2">${bodyStr}</p>
+              <p class="text-xs text-gray-300 mt-1 line-clamp-2">${escapeHtml(bodyStr)}</p>
             </div>
-            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm" onclick="installPastRelease('${exeAsset ? exeAsset.browser_download_url : rel.html_url}', '${tag}', this)">
+            ${safeUrl ? `
+            <button class="past-rel-btn px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition flex-shrink-0 flex items-center gap-1.5 shadow-sm">
               <i class="fas fa-download"></i>${typeof window.__TAURI__ !== "undefined" ? "このバージョンをインストール" : "インストーラーをダウンロード"}
             </button>
+            ` : ''}
           `;
+      const dlBtn = card.querySelector('.past-rel-btn');
+      if (dlBtn && safeUrl) {
+        dlBtn.addEventListener('click', function() {
+          installPastRelease(safeUrl, tag, this);
+        });
+      }
       listEl.appendChild(card);
     });
     window.__pastVersionsPage = page;
@@ -17774,7 +17998,7 @@ window.selectAnnouncementCategory = function (val, label, iconClass) {
 
   if (hiddenInput) hiddenInput.value = val;
   if (labelEl) {
-    labelEl.innerHTML = `<i class="${iconClass} text-xs opacity-70"></i>${label}`;
+    labelEl.innerHTML = `<i class="${escapeHtml(iconClass)} text-xs opacity-70"></i>${escapeHtml(label)}`;
   }
 
   document.querySelectorAll('#announcementCategorySelectContainer .covo-select-option').forEach(opt => {
@@ -19091,14 +19315,17 @@ if (pwaInstallBtn) {
   });
 }
 
-pwaCloseBtn.addEventListener('click', () => {
-  pwaBanner.classList.remove('show');
-});
+if (pwaCloseBtn) {
+  pwaCloseBtn.addEventListener('click', () => {
+    pwaBanner?.classList.remove('show');
+  });
+}
 
 // iOS向けヒント表示（スマホのみ）
 if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !window.navigator.standalone && !isTauri) {
-  document.getElementById('pwaInstallHint').textContent = "共有ボタンから「ホーム画面に追加」してください";
-  pwaBanner.classList.add('show');
+  const pwaHintEl = document.getElementById('pwaInstallHint');
+  if (pwaHintEl) pwaHintEl.textContent = "共有ボタンから「ホーム画面に追加」してください";
+  pwaBanner?.classList.add('show');
 }
 
 

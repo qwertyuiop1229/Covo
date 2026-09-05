@@ -349,6 +349,7 @@ fn open_position_picker(
 
 #[tauri::command]
 fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
     if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
         win.open_devtools();
     }
@@ -356,6 +357,7 @@ fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
 
 #[tauri::command]
 fn open_devtools_for_container(app_handle: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
     if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
         win.open_devtools();
     }
@@ -817,8 +819,8 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
              Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
              Start-Sleep -Seconds 1; \
              Start-Process -FilePath '{covo}'",
-            installer = installer_path.replace('\'', "''"),
-            covo = covo_exe.replace('\'', "''"),
+            installer = installer_path.replace('\'', "''").replace('`', "``").replace('$', "`$"),
+            covo = covo_exe.replace('\'', "''").replace('`', "``").replace('$', "`$"),
         );
 
         std::process::Command::new("powershell")
@@ -913,7 +915,7 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
 
                         // favicon.ico などのブラウザ副次リクエストは 204 で即応答してコールバック待機を継続
                         if path_query.starts_with("/favicon.ico") {
-                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
                             let _ = stream.write_all(resp.as_bytes());
                             let _ = stream.flush();
                             continue;
@@ -944,7 +946,7 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
                                 if state.trim() == expected_state.trim() && !id_token.is_empty() {
                                     let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
                                     let response = format!(
-                                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                                         html_body.len(),
                                         html_body
                                     );
@@ -958,14 +960,14 @@ async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<Deskt
                                 }
                             }
 
-                            let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nInvalid authentication request";
+                            let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\nInvalid authentication request";
                             let _ = stream.write_all(err_body.as_bytes());
                             let _ = stream.flush();
                             continue;
                         }
 
                         // /callback 以外の通常リクエストは 404 を返してループを継続
-                        let not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+                        let not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
                         let _ = stream.write_all(not_found.as_bytes());
                         let _ = stream.flush();
                         continue;

@@ -78,6 +78,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       return _e2ee._initPromise;
     }
     export async function __ensureE2EEKeysImpl() {
+      if (!_getUserId() || !_getDb() || !_getAppId()) return false;
       try {
         // 1) ローカル(JWK)から復元
         const privStr = __lsGet(E2EE_LS_PRIV);
@@ -561,7 +562,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion') continue;
           const rawKey = await window.crypto.subtle.exportKey("raw", roomKeyObj[ver]);
-          const ids = Array.from(new Set(memberIds || []));
+          const ids = Array.from(new Set(memberIds || [])).filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id));
           const writePromises = [];
           for (const uid of ids) {
             try {
@@ -801,7 +802,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      * @returns {Promise<Object|null>} keysObj { latest, latestVersion, "1": CryptoKey, ... }
      */
     export async function _backfillDmKeysForParticipant(dmId, targetUid) {
-      if (!_subtleOK || !dmId || !targetUid || targetUid === _getUserId()) return;
+      if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
       const cached = _e2ee.dmKeyCache[dmId];
       if (!cached) return;
 
@@ -866,7 +867,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const ok = await _ensureE2EEKeys();
         if (!ok) return null;
 
-        const memberUids = Array.from(new Set(participants && participants.length ? participants : dmId.split('_'))).filter(Boolean);
+        const rawMembers = participants && participants.length ? participants : dmId.split('_');
+        const memberUids = Array.from(new Set(rawMembers.filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
         const otherUid = memberUids.find(uid => uid !== currentUid) || null;
 
         const keysObj = {};

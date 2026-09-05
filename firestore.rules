@@ -34,25 +34,44 @@ service cloud.firestore {
     function isServerOwner(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-          || isGlobalAdmin(appId));
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          )
+        );
     }
 
     // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
     function isServerAdmin(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          || isServerOwner(appId, serverId)
-          || isGlobalAdmin(appId));
+        (
+          isGlobalAdmin(appId) ||
+          isServerOwner(appId, serverId) ||
+          (
+            'serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          )
+        );
     }
 
     // サーバー参加メンバー (Server Member)
     function isJoinedServer(appId, serverId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          || isGlobalAdmin(appId));
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          ) ||
+          (
+            'joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          )
+        );
     }
 
     // ========================================================================
@@ -75,11 +94,11 @@ service cloud.firestore {
       match /allowedEmails/{emailId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
         allow create: if isGlobalAdmin(appId) ||
                       (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
         allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && resource.data.addedBy == request.auth.uid);
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
       }
 
       // 全体サーバーカスタムスタンプ
@@ -126,7 +145,7 @@ service cloud.firestore {
       match /recovery_index/{emailHash} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
       }
 
       // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
@@ -137,6 +156,13 @@ service cloud.firestore {
       match /admin_recovery_index/{emailHash} {
         allow read: if isGlobalAdmin(appId);
         allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false; // 監査ログは改ざん・削除不可
       }
 
       // 招待コードインデックス (逆引き)
@@ -181,8 +207,8 @@ service cloud.firestore {
           isGlobalAdmin(appId) ||
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && resource.data.status == 'pending_sent')
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
           ))
         );
         allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
@@ -200,12 +226,13 @@ service cloud.firestore {
             (isGlobalAdmin(appId) ||
              request.auth.uid == keyUserId ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('.*' + request.auth.uid + '.*'));
           allow write: if isAuthenticated() &&
             (isGlobalAdmin(appId) ||
-             (request.auth.uid == keyUserId &&
-              exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('.*' + request.auth.uid + '.*'));
         }
       }
 
@@ -216,14 +243,23 @@ service cloud.firestore {
         allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
         match /{subcollection}/{docId} {
           allow get, list, write: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid || isGlobalAdmin(appId));
+            exists(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('uid' in get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid)
+            );
         }
       }
 
       // P2P 過去ログ分散補完 (P2P Log Sync)
       match /p2p_log_sync/{syncId} {
         allow get, list, delete: if isAuthenticated() &&
-          (resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid || isGlobalAdmin(appId));
+          (
+            isGlobalAdmin(appId) ||
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
            (request.resource.data.requesterUid == request.auth.uid &&
@@ -232,13 +268,19 @@ service cloud.firestore {
              isJoinedServer(appId, request.resource.data.serverId))));
         allow update: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
-           ((resource.data.targetUid == request.auth.uid || resource.data.requesterUid == request.auth.uid) &&
+           ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+             ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)) &&
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
         match /{subcollection}/{docId} {
           allow get, list, create, delete: if isAuthenticated() &&
-            (get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid ||
-             get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid ||
-             isGlobalAdmin(appId));
+            exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid) ||
+              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid)
+            );
         }
       }
 
@@ -253,16 +295,16 @@ service cloud.firestore {
         allow get, list, delete: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            resource.data.calleeUid == request.auth.uid ||
-            ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            ((resource.data.calleeUid == request.auth.uid ||
-              ('caller' in resource.data && resource.data.caller.uid == request.auth.uid) ||
-              ('callee' in resource.data && resource.data.callee.uid == request.auth.uid)) &&
+            ((('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+              ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+              ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)) &&
              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
           );
         allow create: if isAuthenticated() &&
@@ -272,11 +314,17 @@ service cloud.firestore {
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) &&
             (
               isGlobalAdmin(appId) ||
-              get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
+              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid) ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
             );
         }
       }
@@ -286,14 +334,14 @@ service cloud.firestore {
         allow get, list, delete: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            resource.data.receiverUid == request.auth.uid ||
-            ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
           );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            ((resource.data.receiverUid == request.auth.uid ||
-              ('sender' in resource.data && resource.data.sender.uid == request.auth.uid)) &&
+            ((('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+              ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)) &&
              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
           );
         allow create: if isAuthenticated() &&
@@ -303,10 +351,14 @@ service cloud.firestore {
 
         match /{subcollection}/{candId} {
           allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) &&
             (
               isGlobalAdmin(appId) ||
-              get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data && get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
+              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid) ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
             );
         }
       }
@@ -318,7 +370,10 @@ service cloud.firestore {
       match /servers/{serverId} {
         allow get: if isAuthenticated();
         allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid in resource.data.joinedUsers);
+          (isAuthenticated() && (
+            ('joinedUsers' in resource.data && request.auth.uid in resource.data.joinedUsers) ||
+            ('createdBy' in resource.data && request.auth.uid == resource.data.createdBy)
+          ));
 
         // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
         allow create: if isAuthenticated() &&
@@ -336,7 +391,7 @@ service cloud.firestore {
 
         allow update: if isServerAdmin(appId, serverId) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || resource.data.createdBy in request.resource.data.serverAdmins);
+          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
 
         allow update: if isAuthenticated() &&
           request.resource.data.diff(resource.data).affectedKeys()
@@ -360,10 +415,10 @@ service cloud.firestore {
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
-          // ルーム更新: 管理者/モデレーターは設定変更、一般メンバーはメッセージ投稿に伴う最終メッセージ情報のみ更新可能
+          // ルーム更新: 管理者/モデレーターは設定変更、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
           allow update: if isServerAdmin(appId, serverId) || (
             isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText'])
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
           );
           allow delete: if isServerAdmin(appId, serverId);
 
@@ -392,9 +447,9 @@ service cloud.firestore {
             );
 
             // メッセージ削除: 送信者本人 または サーバー管理者 (モデレーター) または 全体管理者
-            // 一般メンバーやリスト管理者が他人のメッセージを削除することは不可！
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+            // 全体管理者はサーバー未参加であってもモデレーション削除可能！
+            allow delete: if (isJoinedServer(appId, serverId) &&
+              (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId))) || isGlobalAdmin(appId);
           }
 
           // 既読レシート (Read Receipts)
@@ -406,11 +461,11 @@ service cloud.firestore {
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム暗号鍵 (Room Keys) — 🔒 新規作成のみ許可、既存キーの上書き禁止
+          // E2EE ルーム暗号鍵 (Room Keys)
           match /roomKeys/{keyId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) && resource == null;
-            allow update, delete: if isServerAdmin(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId);
+            allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
           }
 
           // E2EE 救済リクエスト (Rescue Requests)

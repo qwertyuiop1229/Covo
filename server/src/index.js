@@ -1862,6 +1862,15 @@ async function handleAdminDeleteMessage(request, env) {
       return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
+    // 0. Cloudflare D1 から削除
+    if (env.DB) {
+      try {
+        await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).run();
+      } catch (d1Err) {
+        console.warn("handleAdminDeleteMessage D1 delete error:", d1Err);
+      }
+    }
+
     const [adminToken, rtdbToken] = await Promise.all([
       getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
       getRTDBToken(env.SERVICE_ACCOUNT_JSON)
@@ -1876,10 +1885,33 @@ async function handleAdminDeleteMessage(request, env) {
     });
 
     // 2. RTDB から特権削除
-    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+    const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+    const rtdbUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
     await fetch(rtdbUrl, {
       method: "DELETE"
     });
+
+    // 3. 監査ログ (Audit Log) の記録
+    try {
+      const auditUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/audit_logs`;
+      await fetch(auditUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            action: { stringValue: "delete_message" },
+            operatorUid: { stringValue: verifiedUser.uid },
+            operatorEmail: { stringValue: verifiedUser.email || "" },
+            serverId: { stringValue: serverId },
+            roomId: { stringValue: roomId },
+            messageId: { stringValue: messageId },
+            timestamp: { integerValue: String(Date.now()) }
+          }
+        })
+      });
+    } catch (auditErr) {
+      console.warn("Audit log creation error:", auditErr);
+    }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {

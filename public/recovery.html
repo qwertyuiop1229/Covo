@@ -307,25 +307,37 @@
 
         if (releases.length < 10) releasesHasMore = false;
 
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
         releases.forEach((rel) => {
-          const exeAsset = rel.assets.find(a => a.name.endsWith(".exe"));
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
           const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = new Date(rel.published_at).toLocaleDateString("ja-JP");
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
 
           const div = document.createElement("div");
           div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
           div.innerHTML = `
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${rel.tag_name}</span>
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
                 ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
               </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${pubDate} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
             </div>
-            <button onclick="installPastVersion('${downloadUrl}', '${rel.tag_name}')" ${!downloadUrl ? 'disabled' : ''} id="btn-install-${rel.tag_name}" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
               インストール
             </button>
           `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
           container.appendChild(div);
         });
       } catch (e) {

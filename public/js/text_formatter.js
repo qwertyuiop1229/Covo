@@ -40,8 +40,9 @@ export function getEmojiHtml(emoji, spanClass = 'sk-em') {
   }
   if (emoji.startsWith('serverstamp:')) {
     const url = emoji.substring(12).trim();
-    const isSafe = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    if (!isSafe) return '';
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
     return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
   }
   return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
@@ -69,15 +70,31 @@ export function _twemojiParse(el) {
 export function escapeHtmlAndLinkUrls(text) {
   if (!text) return "";
 
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+
   // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
   const tokenNonce = Math.random().toString(36).substring(2, 8);
   
-  // 1. コードブロック退避
+  // 1. コードブロック退避（コピーボタン付き）
   const codeBlocks = [];
-  let processedText = text.replace(/```([\s\S]*?)```/g, (match, p1) => {
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
     const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 p-2 rounded-md overflow-x-auto my-1 text-sm font-mono text-left"><code>${escapedCode}</code></pre>`);
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
     return id;
   });
 
@@ -86,7 +103,7 @@ export function escapeHtmlAndLinkUrls(text) {
   processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
     const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
     const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 rounded text-sm font-mono">${escapedCode}</code>`);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
     return id;
   });
 
@@ -182,14 +199,19 @@ export function escapeHtmlAndLinkUrls(text) {
   let escapedText = escapeHtml(processedText);
   
   // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
   escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
   escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
   escapedText = escapedText.replace(/\n/g, '<br>');
 
-  // 6. メンション検出（単語の先頭または空白直後のみマッチさせ、emailやURL内を破壊しない）
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
   const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
   escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
     return `${prefix}<span class="mention-text">@${username}</span>`;
   });
 
