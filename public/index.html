@@ -808,22 +808,40 @@
                 <div class="settings-sidebar-avatar" id="sidebarAvatar"></div>
                 <span class="settings-sidebar-name" id="sidebarName"></span>
               </div>
-              <!-- ナビ -->
-              <div class="settings-nav-label">アカウント</div>
+              <!-- ユーザー設定 -->
+              <div class="settings-nav-label">ユーザー設定</div>
               <button class="settings-nav-item active" id="snav-profile" onclick="switchDiscordSettingsTab('profile')">
                 <i class="fas fa-user-circle fa-fw"></i>プロフィール
               </button>
-              <button class="settings-nav-item" id="snav-settings" onclick="switchDiscordSettingsTab('settings')">
-                <i class="fas fa-bell fa-fw"></i>設定
+              <button class="settings-nav-item" id="snav-privacy" onclick="switchDiscordSettingsTab('privacy')">
+                <i class="fas fa-lock fa-fw"></i>プライバシー & ロック
               </button>
+              <button class="settings-nav-item" id="snav-chatbackup" onclick="switchDiscordSettingsTab('chatbackup')">
+                <i class="fas fa-file-shield fa-fw"></i>チャット履歴 & 保存
+              </button>
+
+              <!-- アプリ設定 -->
+              <div class="settings-nav-label">アプリ設定</div>
+              <button class="settings-nav-item" id="snav-notif" onclick="switchDiscordSettingsTab('notif')">
+                <i class="fas fa-bell fa-fw"></i>通知設定
+              </button>
+              <button class="settings-nav-item" id="snav-appearance" onclick="switchDiscordSettingsTab('appearance')">
+                <i class="fas fa-palette fa-fw"></i>外観テーマ
+              </button>
+              <button class="settings-nav-item" id="snav-desktop" onclick="switchDiscordSettingsTab('desktop')">
+                <i class="fas fa-desktop fa-fw"></i>アプリ動作 & キー
+              </button>
+              <button class="settings-nav-item" id="snav-migration" onclick="switchDiscordSettingsTab('migration')">
+                <i class="fas fa-mobile-screen-button fa-fw"></i>端末データ移行
+              </button>
+
+              <!-- その他 -->
+              <div class="settings-nav-label">その他</div>
               <button class="settings-nav-item" id="snav-appinfo" onclick="switchDiscordSettingsTab('appinfo')">
                 <i class="fas fa-info-circle fa-fw"></i>アプリ情報
               </button>
               <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
                 <i class="fas fa-screwdriver-wrench fa-fw"></i>ツール
-              </button>
-              <button class="settings-nav-item" id="snav-migration" onclick="switchDiscordSettingsTab('migration')">
-                <i class="fas fa-mobile-screen-button fa-fw"></i>端末データ移行
               </button>
               <div class="settings-nav-divider"></div>
               <div id="adminPanelContainer" class="hidden">
@@ -1122,47 +1140,138 @@
                 </div>
               </div>
 
-              <div id="settingsSection" class="settings-content-section space-y-6">
-                <div class="settings-section-title">設定</div>
-                <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">通知</h3>
-                  <div class="bg-gray-50 dark:bg-[#1e1f22] rounded-2xl p-4 space-y-1">
-                    <div class="setting-row">
-                      <div class="setting-label"><i class="fas fa-volume-up"></i> 通知音</div>
-                      <label class="toggle-switch"><input type="checkbox" id="toggleNotifSound" checked><span class="toggle-slider"></span></label>
-                    </div>
-                    <div class="setting-row" id="browserNotifRow">
-                      <div class="setting-label"><i class="fas fa-bell"></i> 通知</div>
-                      <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">外観テーマ</h3>
-                  <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
+              <!-- 1. プライバシー & 画面ロックセクション (privacySection) -->
+              <div id="privacySection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">プライバシー & 画面ロック</div>
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-5 border border-gray-200/80 dark:border-slate-700/60">
+                  <div class="flex items-center justify-between flex-wrap gap-3">
                     <div>
-                      <div class="text-xs font-bold text-gray-500 mb-2">テーマを選択</div>
-                      <div class="grid grid-cols-2 gap-2">
-                        <button type="button" id="themeBtnLight" onclick="setAppTheme('light')" class="px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all bg-white text-gray-800 border-gray-300 shadow-sm">
-                          <i class="fas fa-sun text-yellow-500"></i> ライト
-                        </button>
-                        <button type="button" id="themeBtnDarkNavy" onclick="setAppTheme('dark-navy')" class="px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all bg-[#0f172a] text-gray-200 border-transparent">
-                          <i class="fas fa-moon text-blue-400"></i> ネイビー
-                        </button>
+                      <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                        <i class="fas fa-lock text-indigo-500"></i>
+                        <span>画面PINロック</span>
+                        <span id="pinLockStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">未設定</span>
                       </div>
+                      <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">4桁の暗証番号で第三者からのチャット閲覧をブロックします</div>
                     </div>
-                    <div class="setting-row pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <div>
-                        <div class="setting-label"><i class="fas fa-history"></i> 旧UI（レガシー）</div>
-                        <div class="text-[11px] text-gray-400 mt-0.5">※旧デザインへ戻します（サポート対象外）</div>
+                    <div class="flex items-center gap-2">
+                      <button type="button" id="btnSetupPinLock" onclick="promptSetupAppPin()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer active:scale-95">
+                        PINを設定
+                      </button>
+                      <button type="button" id="btnLockScreenNow" onclick="lockAppScreen()" class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer hidden active:scale-95">
+                        <i class="fas fa-lock mr-1"></i>今すぐロック
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 離脱時猶予時間 (LINE準拠) -->
+                  <div class="setting-row pt-3 border-t border-gray-200 dark:border-slate-700/80 flex items-center justify-between">
+                    <div>
+                      <div class="text-xs font-bold text-gray-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <i class="fas fa-hourglass-half text-amber-500"></i>
+                        <span>アプリ離脱時のロック猶予時間</span>
                       </div>
-                      <label class="toggle-switch"><input type="checkbox" id="toggleLegacyUI" onchange="handleLegacyUIToggle(this.checked)"><span class="toggle-slider"></span></label>
+                      <div class="text-[11px] text-gray-400 mt-0.5">他のタブやアプリに切り替わった後、ロックされるまでの時間</div>
+                    </div>
+                    <select id="lockGraceTimeoutSelect" onchange="changeLockGraceTimeout(this.value)" class="text-xs bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-slate-200 font-bold focus:outline-none">
+                      <option value="0">即時 (離れたら即ロック)</option>
+                      <option value="10">10秒後</option>
+                      <option value="30">30秒後</option>
+                      <option value="60">1分後</option>
+                      <option value="300">5分後</option>
+                      <option value="900">15分後</option>
+                      <option value="-1">無効 (離脱時はロックしない)</option>
+                    </select>
+                  </div>
+
+                  <!-- 無操作ロック時間 -->
+                  <div class="setting-row pt-2 border-t border-gray-200 dark:border-slate-700/80 flex items-center justify-between">
+                    <div>
+                      <div class="text-xs font-bold text-gray-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <i class="fas fa-clock text-blue-500"></i>
+                        <span>無操作時の自動ロック時間</span>
+                      </div>
+                      <div class="text-[11px] text-gray-400 mt-0.5">画面を操作しない状態が続いた場合に自動でロックします</div>
+                    </div>
+                    <select id="autoLockTimeoutSelect" onchange="changeAutoLockTimeout(this.value)" class="text-xs bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-slate-200 font-bold focus:outline-none">
+                      <option value="0">無効 (自動ロックしない)</option>
+                      <option value="5">5分後</option>
+                      <option value="15">15分後</option>
+                      <option value="30">30分後</option>
+                      <option value="60">60分後</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. チャット履歴 & 保存セクション (chatbackupSection) -->
+              <div id="chatbackupSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">チャット履歴 & 保存</div>
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-4 border border-gray-200/80 dark:border-slate-700/60">
+                  <div class="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                        <i class="fas fa-file-shield text-emerald-500"></i>
+                        <span>チャット履歴エクスポート & 復号ビューア</span>
+                      </div>
+                      <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">チャットログを完全復号した状態で平文保存、または暗号化バックアップとして保存・閲覧します</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button type="button" onclick="openChatExportModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                        <i class="fas fa-download text-xs"></i>エクスポート
+                      </button>
+                      <button type="button" onclick="openChatBackupViewerFilePicker()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                        <i class="fas fa-folder-open text-xs"></i>復号ビューア
+                      </button>
                     </div>
                   </div>
                 </div>
-                <div id="desktopSettingsContainer" class="hidden">
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">アプリ動作</h3>
-                  <div class="bg-gray-50 rounded-2xl p-4 space-y-1">
+              </div>
+
+              <!-- 3. 通知セクション (notifSection) -->
+              <div id="notifSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">通知設定</div>
+                <div class="bg-gray-50 dark:bg-[#1e1f22] rounded-2xl p-5 space-y-2 border border-gray-200/80 dark:border-slate-700/60">
+                  <div class="setting-row">
+                    <div class="setting-label"><i class="fas fa-volume-up"></i> 通知音</div>
+                    <label class="toggle-switch"><input type="checkbox" id="toggleNotifSound" checked><span class="toggle-slider"></span></label>
+                  </div>
+                  <div class="setting-row" id="browserNotifRow">
+                    <div class="setting-label"><i class="fas fa-bell"></i> プッシュ通知 / デスクトップ通知</div>
+                    <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. 外観テーマセクション (appearanceSection) -->
+              <div id="appearanceSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">外観テーマ</div>
+                <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-4 border border-gray-200/80 dark:border-slate-700/60">
+                  <div>
+                    <div class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">カラーテーマを選択</div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <button type="button" id="themeBtnLight" onclick="setAppTheme('light')" class="px-4 py-3 rounded-2xl text-xs font-bold border flex items-center justify-center gap-2 transition-all bg-white text-gray-800 border-gray-300 shadow-sm active:scale-95">
+                        <i class="fas fa-sun text-yellow-500"></i> ライト
+                      </button>
+                      <button type="button" id="themeBtnDarkNavy" onclick="setAppTheme('dark-navy')" class="px-4 py-3 rounded-2xl text-xs font-bold border flex items-center justify-center gap-2 transition-all bg-[#0f172a] text-gray-200 border-transparent shadow-sm active:scale-95">
+                        <i class="fas fa-moon text-blue-400"></i> ネイビー
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row pt-3 border-t border-gray-200 dark:border-slate-700">
+                    <div>
+                      <div class="setting-label"><i class="fas fa-history"></i> 旧UI（レガシー）</div>
+                      <div class="text-[11px] text-gray-400 mt-0.5">※旧デザインへ戻します（サポート対象外）</div>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="toggleLegacyUI" onchange="handleLegacyUIToggle(this.checked)"><span class="toggle-slider"></span></label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 5. アプリ動作 & キー (desktopSection) -->
+              <div id="desktopSection" class="settings-content-section space-y-6">
+                <div class="settings-section-title">アプリ動作 & キー</div>
+                <div id="desktopSettingsContainer" class="hidden space-y-4">
+                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-2 border border-gray-200/80 dark:border-slate-700/60">
                     <div class="setting-row">
                       <div class="setting-label"><i class="fas fa-rocket"></i> PC起動時に自動実行</div>
                       <label class="toggle-switch"><input type="checkbox" id="toggleAutoStart"><span class="toggle-slider"></span></label>
@@ -1183,84 +1292,21 @@
                       </div>
                     </div>
                   </div>
-                  <div class="mt-3 text-center text-xs text-gray-400" style="font-family:ui-monospace,Consolas,monospace;">インストール済み: <span id="installedVersion">読み込み中...</span></div>
+                  <div class="text-center text-xs text-gray-400 font-mono">インストール済み: <span id="installedVersion">読み込み中...</span></div>
                 </div>
                 <div id="shortcutInfoContainer" class="hidden">
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">ショートカット</h3>
-                  <div class="bg-blue-50 text-blue-700 p-4 rounded-xl text-sm">
+                  <div class="bg-blue-50 dark:bg-indigo-950/40 text-blue-700 dark:text-blue-300 p-5 rounded-2xl border border-blue-200 dark:border-indigo-900/50 text-sm space-y-2">
                     <div class="flex items-start gap-3">
-                      <i class="fas fa-keyboard mt-1 flex-shrink-0"></i>
+                      <i class="fas fa-keyboard mt-1 text-lg flex-shrink-0"></i>
                       <div class="flex-1">
-                        <p class="font-bold mb-2">クイックアクセス</p>
-                        <p class="text-xs opacity-80 mb-3"><kbd class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd> + <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd> + <kbd id="shortcutKeyDisplay" class="bg-blue-200 px-1.5 rounded border border-blue-300 font-bold">S</kbd></p>
+                        <p class="font-bold mb-1">クイックアクセス</p>
+                        <p class="text-xs opacity-80 mb-3"><kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> + <kbd id="shortcutKeyDisplay" class="bg-blue-200 dark:bg-slate-700 px-2 py-0.5 rounded border border-blue-300 dark:border-slate-600 font-bold">S</kbd></p>
                         <p class="text-xs opacity-70 mb-3">アプリを最前面に表示し、メッセージ入力欄にフォーカスします。</p>
                         <div class="flex items-center gap-2">
                           <span class="text-xs opacity-70">キーを変更:</span>
-                          <span class="text-xs opacity-70"><kbd class="bg-blue-100 px-1 rounded border border-blue-200">Ctrl</kbd> + <kbd class="bg-blue-100 px-1 rounded border border-blue-200">Shift</kbd> +</span>
-                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white text-blue-800 font-bold text-sm rounded border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 py-0.5 uppercase" placeholder="S" />
+                          <span class="text-xs opacity-70"><kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> +</span>
+                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold text-sm rounded-lg border border-blue-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 py-1 uppercase" placeholder="S" />
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- プライバシー & 画面ロック (#105) -->
-                <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">プライバシー & 画面ロック</h3>
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 space-y-4 border border-gray-200/80 dark:border-slate-700/60">
-                    <div class="flex items-center justify-between flex-wrap gap-2">
-                      <div>
-                        <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                          <i class="fas fa-lock text-indigo-500"></i>
-                          <span>画面PINロック</span>
-                          <span id="pinLockStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">未設定</span>
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">離席時や一定時間無操作の際に画面をロックします</div>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <button type="button" id="btnSetupPinLock" onclick="promptSetupAppPin()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer">
-                          PINを設定
-                        </button>
-                        <button type="button" id="btnLockScreenNow" onclick="lockAppScreen()" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer hidden">
-                          <i class="fas fa-lock mr-1"></i>今すぐロック
-                        </button>
-                      </div>
-                    </div>
-                    <div class="setting-row pt-2 border-t border-gray-200 dark:border-slate-700/80 flex items-center justify-between">
-                      <div>
-                        <div class="text-xs font-bold text-gray-700 dark:text-slate-300">自動ロック時間</div>
-                        <div class="text-[11px] text-gray-400 mt-0.5">無操作が続いた場合に自動でロックします</div>
-                      </div>
-                      <select id="autoLockTimeoutSelect" onchange="changeAutoLockTimeout(this.value)" class="text-xs bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-slate-200 font-bold focus:outline-none">
-                        <option value="0">無効 (自動ロックしない)</option>
-                        <option value="5">5分後</option>
-                        <option value="15">15分後</option>
-                        <option value="30">30分後</option>
-                        <option value="60">60分後</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- チャット履歴のエクスポート & バックアップ復号閲覧 (#101) -->
-                <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">チャット履歴の保存・閲覧</h3>
-                  <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 space-y-3 border border-gray-200/80 dark:border-slate-700/60">
-                    <div class="flex items-center justify-between flex-wrap gap-2">
-                      <div>
-                        <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                          <i class="fas fa-file-shield text-emerald-500"></i>
-                          <span>チャット履歴エクスポート (.txt / .md / .covo-backup)</span>
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">チャットログを平文テキストや暗号化形式で保存・アプリ内で復号閲覧します</div>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <button type="button" onclick="openChatExportModal()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
-                          <i class="fas fa-download text-xs"></i>エクスポート
-                        </button>
-                        <button type="button" onclick="openChatBackupViewerFilePicker()" class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95">
-                          <i class="fas fa-folder-open text-xs"></i>復号ビューア
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -3432,13 +3478,28 @@
       </div>
     </div>
     <div class="mobile-settings-section">
-      <div class="mobile-settings-label">アカウント</div>
+      <div class="mobile-settings-label">ユーザー設定</div>
       <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="openMobileDetail('profile')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-user-circle"></i></div>
           <span class="mobile-settings-row-text">プロフィール編集</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('privacy')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-lock"></i></div>
+          <span class="mobile-settings-row-text">プライバシー & ロック</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('chatbackup')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-file-shield"></i></div>
+          <span class="mobile-settings-row-text">チャット履歴 & 保存</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
+      </div>
+    </div>
+    <div class="mobile-settings-section">
+      <div class="mobile-settings-label">アプリ設定</div>
+      <div class="mobile-settings-group">
         <div class="mobile-settings-row" onclick="openMobileDetail('notif')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bell"></i></div>
           <span class="mobile-settings-row-text">通知設定</span>
@@ -3604,6 +3665,100 @@
             </div>
             <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: Privacy & PIN Lock -->
+  <div class="mobile-settings-detail" id="mobileDetailPrivacy">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailPrivacy')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">プライバシー & ロック</span>
+    </div>
+    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))" class="space-y-4">
+      <div class="mobile-settings-group p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <i class="fas fa-lock text-indigo-500"></i>
+              <span>画面PINロック</span>
+              <span id="mobilePinLockStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">未設定</span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">4桁の暗証番号で画面を保護します</div>
+          </div>
+          <button type="button" id="mobileBtnSetupPinLock" onclick="promptSetupAppPin()" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95">
+            設定
+          </button>
+        </div>
+        <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex justify-end">
+          <button type="button" id="mobileBtnLockScreenNow" onclick="lockAppScreen()" class="w-full py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition hidden active:scale-95">
+            <i class="fas fa-lock mr-1"></i>今すぐロック
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-settings-group p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+              <i class="fas fa-hourglass-half text-amber-500"></i>
+              <span>離脱時のロック猶予時間</span>
+            </div>
+            <div class="text-[10px] text-gray-400 mt-0.5">アプリを離れてからロックされるまでの時間</div>
+          </div>
+          <select id="mobileLockGraceTimeoutSelect" onchange="changeLockGraceTimeout(this.value)" class="text-xs bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-slate-200 font-bold focus:outline-none">
+            <option value="0">即時 (離れたら即ロック)</option>
+            <option value="10">10秒後</option>
+            <option value="30">30秒後</option>
+            <option value="60">1分後</option>
+            <option value="300">5分後</option>
+            <option value="900">15分後</option>
+            <option value="-1">無効 (離脱時はロックしない)</option>
+          </select>
+        </div>
+        <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+              <i class="fas fa-clock text-blue-500"></i>
+              <span>無操作自動ロック</span>
+            </div>
+            <div class="text-[10px] text-gray-400 mt-0.5">操作がない時間が続いた場合</div>
+          </div>
+          <select id="mobileAutoLockTimeoutSelect" onchange="changeAutoLockTimeout(this.value)" class="text-xs bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-slate-200 font-bold focus:outline-none">
+            <option value="0">無効</option>
+            <option value="5">5分後</option>
+            <option value="15">15分後</option>
+            <option value="30">30分後</option>
+            <option value="60">60分後</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Detail: Chat Backup & Export -->
+  <div class="mobile-settings-detail" id="mobileDetailChatBackup">
+    <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailChatBackup')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">チャット履歴 & 保存</span>
+    </div>
+    <div style="padding:1rem;padding-bottom:max(24px, calc(1rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))" class="space-y-4">
+      <div class="mobile-settings-group p-4 space-y-3">
+        <div class="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-2">
+          <i class="fas fa-file-shield text-emerald-500"></i>
+          <span>履歴エクスポート & ビューア</span>
+        </div>
+        <p class="text-[11px] text-gray-500 dark:text-slate-400 leading-relaxed">
+          チャットログを完全復号した平文テキストや暗号化バックアップとして保存・閲覧できます。
+        </p>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="openChatExportModal()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 text-center">
+            <i class="fas fa-download mr-1"></i>エクスポート
+          </button>
+          <button type="button" onclick="openChatBackupViewerFilePicker()" class="flex-1 py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition active:scale-95 text-center">
+            <i class="fas fa-folder-open mr-1"></i>復号ビューア
+          </button>
         </div>
       </div>
     </div>

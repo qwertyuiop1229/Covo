@@ -20708,40 +20708,7 @@ function openTextFileAsViewer(filename, text) {
   }));
   openChatBackupViewerModal(filename, fakeMsgs, Date.now());
 }
-        (payload.messages || []).forEach(m => {
-          const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
-          const sender = m.senderNickname || m.userNickname || 'ユーザー';
-          const body = m.text || (m.fileName ? `[ファイル: ${m.fileName}]` : '(スタンプ)');
-          txtContent += `[${time}] ${sender}: ${body}\n`;
-        });
-        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `covo-chat-decrypted-${(payload.roomName || 'chat').replace(/[\/\\?%*:|"<>]/g, '_')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-      }
-    } catch (err) {
-      console.error('[Backup] Decrypt error:', err);
-      alertMessage(`復号処理エラー: ${err.message}`, 'error');
-    }
-  };
-  fileInp.click();
-};
-// =========================================================================
-// アプリ起動エントリーポイント (Boot Sequence)
-// =========================================================================
-(async function bootstrapApp() {
-  try {
-    // 0. 設定の初期化 (通知設定などの状態復元)
-    if (typeof initSettings === 'function') {
-      initSettings();
-    }
+
 window.filterViewerMessages = function (query) {
   const q = (query || '').toLowerCase().trim();
   if (!q) {
@@ -20751,6 +20718,7 @@ window.filterViewerMessages = function (query) {
   const filtered = _cachedViewerMessages.filter(m => (m.text && m.text.toLowerCase().includes(q)) || (m.senderNickname && m.senderNickname.toLowerCase().includes(q)));
   renderViewerTimeline(filtered);
 };
+
 window.saveViewerMessagesAsTxt = function () {
   if (!_cachedViewerMessages || _cachedViewerMessages.length === 0) return;
   const title = document.getElementById('viewerHeaderTitle')?.textContent || 'chat';
@@ -20764,41 +20732,6 @@ window.saveViewerMessagesAsTxt = function () {
   const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
   _triggerBlobDownload(blob, `${title.replace(/[\/\\?%*:|"<>]/g, '_')}-export.txt`);
   alertMessage('テキストファイルとして保存しました！', 'success');
-};
-// =========================================================================
-// アプリ起動エントリーポイント (Boot Sequence)
-// =========================================================================
-(async function bootstrapApp() {
-  try {
-    // 0. 設定の初期化 (通知設定などの状態復元)
-    if (typeof initSettings === 'function') {
-      initSettings();
-    }
-        let txtContent = `=== COVO チャット履歴バックアップ ===\n対象: ${payload.roomName}\n日時: ${dateStr}\n件数: ${payload.messages?.length || 0}\n====================================\n\n`;
-        (payload.messages || []).forEach(m => {
-          const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
-          const sender = m.senderNickname || m.userNickname || 'ユーザー';
-          const body = m.text || (m.fileName ? `[ファイル: ${m.fileName}]` : '(スタンプ)');
-          txtContent += `[${time}] ${sender}: ${body}\n`;
-        });
-        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `covo-chat-decrypted-${(payload.roomName || 'chat').replace(/[\/\\?%*:|"<>]/g, '_')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-      }
-    } catch (err) {
-      console.error('[Backup] Decrypt error:', err);
-      alertMessage(`復号処理エラー: ${err.message}`, 'error');
-    }
-  };
-  fileInp.click();
 };
 
 // =========================================================================

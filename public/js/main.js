@@ -3890,7 +3890,20 @@ window.switchDiscordSettingsTab = function (tab) {
   const nb = document.getElementById(navBtnId);
   if (nb) nb.classList.add('active');
 
-  const smap = { profile: 'profileSection', settings: 'settingsSection', migration: 'migrationSection', admin: 'adminNavSection', storage: 'storageSection', reports: 'reportsSection', appinfo: 'appinfoSection', admintools: 'admintoolsSection' };
+  const smap = {
+    profile: 'profileSection',
+    privacy: 'privacySection',
+    chatbackup: 'chatbackupSection',
+    notif: 'notifSection',
+    appearance: 'appearanceSection',
+    desktop: 'desktopSection',
+    migration: 'migrationSection',
+    admin: 'adminNavSection',
+    storage: 'storageSection',
+    reports: 'reportsSection',
+    appinfo: 'appinfoSection',
+    admintools: 'admintoolsSection'
+  };
   if (tab === 'appinfo') {
     const verEl = document.getElementById('appInfoVersion');
     if (verEl) {
@@ -4442,7 +4455,17 @@ window.goToServerRoom = async function (serverId, roomId) {
 };
 
 window.openMobileDetail = function (type) {
-  const m = { profile: 'mobileDetailProfile', notif: 'mobileDetailNotif', admin: 'mobileDetailAdmin', storage: 'mobileDetailStorage', reports: 'mobileDetailReports', appinfo: 'mobileDetailAppInfo', admintools: 'mobileDetailAdminTools' };
+  const m = {
+    profile: 'mobileDetailProfile',
+    privacy: 'mobileDetailPrivacy',
+    chatbackup: 'mobileDetailChatBackup',
+    notif: 'mobileDetailNotif',
+    admin: 'mobileDetailAdmin',
+    storage: 'mobileDetailStorage',
+    reports: 'mobileDetailReports',
+    appinfo: 'mobileDetailAppInfo',
+    admintools: 'mobileDetailAdminTools'
+  };
   const el = document.getElementById(m[type]);
   if (el) {
     if (type === 'admin') {
@@ -20274,13 +20297,18 @@ window.executeRemoveCurrentPin = function () {
   if (desc) desc.textContent = '解除を確認するため、現在のPINを入力してください';
   if (actionOpts) actionOpts.classList.add('hidden');
 };
+let _isAppScreenLocked = false;
+let _pinObserver = null;
+
 function updatePinSettingsUI() {
   const hasPin = !!localStorage.getItem('covo_pin_hash');
-  const badge = document.getElementById('pinLockStatusBadge');
-  const btnSetup = document.getElementById('btnSetupPinLock');
-  const btnLockNow = document.getElementById('btnLockScreenNow');
-  const timeoutSelect = document.getElementById('autoLockTimeoutSelect');
-  if (badge) {
+  const badges = [document.getElementById('pinLockStatusBadge'), document.getElementById('mobilePinLockStatusBadge')].filter(Boolean);
+  const btnsSetup = [document.getElementById('btnSetupPinLock'), document.getElementById('mobileBtnSetupPinLock')].filter(Boolean);
+  const btnsLockNow = [document.getElementById('btnLockScreenNow'), document.getElementById('mobileBtnLockScreenNow')].filter(Boolean);
+  const timeoutSelects = [document.getElementById('autoLockTimeoutSelect'), document.getElementById('mobileAutoLockTimeoutSelect')].filter(Boolean);
+  const graceSelects = [document.getElementById('lockGraceTimeoutSelect'), document.getElementById('mobileLockGraceTimeoutSelect')].filter(Boolean);
+
+  badges.forEach(badge => {
     if (hasPin) {
       badge.textContent = '設定済み (有効)';
       badge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
@@ -20288,36 +20316,58 @@ function updatePinSettingsUI() {
       badge.textContent = '未設定';
       badge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300';
     }
-  }
-  if (btnSetup) {
-    btnSetup.textContent = hasPin ? 'PINを変更 / 解除' : 'PINを設定';
-  }
-  if (btnLockNow) {
-    if (hasPin) {
-      btnLockNow.classList.remove('hidden');
-    } else {
-      btnLockNow.classList.add('hidden');
-    }
-  }
-  if (timeoutSelect) {
-    timeoutSelect.value = localStorage.getItem('covo_auto_lock_mins') || '15';
-  }
+  });
+
+  btnsSetup.forEach(btn => {
+    btn.textContent = hasPin ? 'PINを変更 / 解除' : 'PINを設定';
+  });
+
+  btnsLockNow.forEach(btn => {
+    if (hasPin) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+  });
+
+  const savedTimeout = localStorage.getItem('covo_auto_lock_mins') || '15';
+  timeoutSelects.forEach(sel => { sel.value = savedTimeout; });
+
+  const savedGrace = localStorage.getItem('covo_lock_grace_sec') ?? '0';
+  graceSelects.forEach(sel => { sel.value = String(savedGrace); });
 }
+
 window.changeAutoLockTimeout = function (mins) {
   localStorage.setItem('covo_auto_lock_mins', String(mins));
-  alertMessage(mins === '0' ? '自動画面ロックを無効化しました。' : `無操作${mins}分後に自動画面ロックを設定しました。`, 'success');
+  const selects = [document.getElementById('autoLockTimeoutSelect'), document.getElementById('mobileAutoLockTimeoutSelect')].filter(Boolean);
+  selects.forEach(s => { s.value = String(mins); });
+  alertMessage(mins === '0' ? '無操作時の自動画面ロックを無効化しました。' : `無操作 ${mins} 分後に自動画面ロックを設定しました。`, 'success');
 };
+
+window.changeLockGraceTimeout = function (sec) {
+  localStorage.setItem('covo_lock_grace_sec', String(sec));
+  const selects = [document.getElementById('lockGraceTimeoutSelect'), document.getElementById('mobileLockGraceTimeoutSelect')].filter(Boolean);
+  selects.forEach(s => { s.value = String(sec); });
+  let label = '即時 (離れたら即ロック)';
+  if (sec === '10') label = '10秒後';
+  else if (sec === '30') label = '30秒後';
+  else if (sec === '60') label = '1分後';
+  else if (sec === '300') label = '5分後';
+  else if (sec === '900') label = '15分後';
+  else if (sec === '-1') label = '無効 (離脱時はロックしない)';
+  alertMessage(`離脱時のロック猶予時間を「${label}」に設定しました。`, 'success');
+};
+
+// 画面PINロックの実行（多層防御 & アンチチート監視）
 window.lockAppScreen = function () {
   const hasPin = !!localStorage.getItem('covo_pin_hash');
-  if (!hasPin) {
-    alertMessage('画面ロックを使用するには、まず設定画面でPINコードを登録してください。', 'warning');
-    return;
-  }
+  if (!hasPin) return;
+
+  _isAppScreenLocked = true;
   _currentPinInput = '';
   updatePinDots();
   const errMsg = document.getElementById('appPinErrorMessage');
   if (errMsg) errMsg.textContent = '';
   sessionStorage.setItem('covo_is_screen_locked', '1');
+  document.body.classList.add('screen-locked');
+
   const avatarEl = document.getElementById('appPinLockAvatar');
   const nameEl = document.getElementById('appPinLockName');
   if (avatarEl) {
@@ -20331,8 +20381,52 @@ window.lockAppScreen = function () {
     nameEl.textContent = userNickname ? `${userNickname} (ロック中)` : '画面がロックされています';
   }
   const overlay = document.getElementById('appPinLockOverlay');
-  if (overlay) overlay.classList.add('active');
+  if (overlay) {
+    overlay.classList.add('active');
+    overlay.style.display = 'flex';
+  }
+
+  // アンチチート監視の開始 (DevToolsでの要素削除やdisplay改ざん防御)
+  _startPinAntiCheatObserver();
 };
+
+function unlockAppScreen() {
+  _isAppScreenLocked = false;
+  document.body.classList.remove('screen-locked');
+  sessionStorage.removeItem('covo_is_screen_locked');
+  _currentPinInput = '';
+  _pinFailedAttempts = 0;
+  updatePinDots();
+  _lastUserInteractionTime = Date.now();
+  const overlay = document.getElementById('appPinLockOverlay');
+  if (overlay) {
+    overlay.classList.remove('active');
+    overlay.style.display = 'none';
+  }
+  if (_pinObserver) {
+    _pinObserver.disconnect();
+    _pinObserver = null;
+  }
+}
+
+// DevTools / F12によるDOM改ざん・要素削除・クラス削除を検知して即時復元
+function _startPinAntiCheatObserver() {
+  if (_pinObserver) return;
+  _pinObserver = new MutationObserver(() => {
+    if (_isAppScreenLocked) {
+      if (!document.body.classList.contains('screen-locked')) {
+        document.body.classList.add('screen-locked');
+      }
+      const overlay = document.getElementById('appPinLockOverlay');
+      if (overlay) {
+        if (!overlay.classList.contains('active')) overlay.classList.add('active');
+        if (overlay.style.display !== 'flex') overlay.style.display = 'flex';
+      }
+    }
+  });
+  _pinObserver.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden'] });
+}
+
 window.inputAppPinDigit = async function (digit) {
   const now = Date.now();
   if (now < _pinLockoutUntil) {
@@ -20350,19 +20444,13 @@ window.inputAppPinDigit = async function (digit) {
     const salt = localStorage.getItem('covo_pin_salt');
     const expectedHash = localStorage.getItem('covo_pin_hash');
     if (!salt || !expectedHash) {
-      document.getElementById('appPinLockOverlay')?.classList.remove('active');
-      sessionStorage.removeItem('covo_is_screen_locked');
+      unlockAppScreen();
       return;
     }
     const computedHash = await _sha256Hash(salt + ':' + _currentPinInput);
     if (computedHash === expectedHash) {
       // 解除成功
-      document.getElementById('appPinLockOverlay')?.classList.remove('active');
-      sessionStorage.removeItem('covo_is_screen_locked');
-      _currentPinInput = '';
-      _pinFailedAttempts = 0;
-      updatePinDots();
-      _lastUserInteractionTime = Date.now();
+      unlockAppScreen();
     } else {
       // 不一致 (ブルートフォース攻撃対策)
       _pinFailedAttempts++;
@@ -20384,6 +20472,7 @@ window.inputAppPinDigit = async function (digit) {
     }
   }
 };
+
 window.backspaceAppPinDigit = function () {
   if (_currentPinInput.length > 0) {
     _currentPinInput = _currentPinInput.slice(0, -1);
@@ -20392,22 +20481,24 @@ window.backspaceAppPinDigit = function () {
     if (errMsg) errMsg.textContent = '';
   }
 };
+
 window.clearAppPinInput = function () {
   _currentPinInput = '';
   updatePinDots();
   const errMsg = document.getElementById('appPinErrorMessage');
   if (errMsg) errMsg.textContent = '';
 };
+
 window.emergencyLogoutFromPinLock = async function () {
   if (await showCustomConfirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？', 'ログアウト', 'キャンセル')) {
-    document.getElementById('appPinLockOverlay')?.classList.remove('active');
-    sessionStorage.removeItem('covo_is_screen_locked');
+    unlockAppScreen();
     const logoutBtn = document.getElementById('logoutButtonInModal');
     if (logoutBtn) logoutBtn.click();
     else if (typeof logout === 'function') logout();
   }
 };
-// キーボードからのPIN入力サポート & 無操作タイマー & 復帰時ロック維持
+
+// キーボード入力・無操作タイマー・アプリ離脱（バックグラウンド移行）検知
 function initPinLockSystem() {
   window.addEventListener('keydown', (e) => {
     const overlay = document.getElementById('appPinLockOverlay');
@@ -20421,11 +20512,24 @@ function initPinLockSystem() {
       }
     }
   });
+
   const onUserActivity = () => { _lastUserInteractionTime = Date.now(); };
   window.addEventListener('mousemove', onUserActivity, { passive: true });
   window.addEventListener('keydown', onUserActivity, { passive: true });
   window.addEventListener('touchstart', onUserActivity, { passive: true });
-  // 画面復帰時にロック状態をチェック・維持
+
+  // アプリ離脱（バックグラウンド移行）時の記録
+  const onAppBlur = () => {
+    const hasPin = !!localStorage.getItem('covo_pin_hash');
+    if (!hasPin) return;
+    localStorage.setItem('covo_app_blur_time', Date.now().toString());
+    const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
+    if (graceSec === 0) {
+      sessionStorage.setItem('covo_is_screen_locked', '1');
+    }
+  };
+
+  // アプリ復帰時の判定
   const checkScreenLockPersistence = () => {
     const hasPin = !!localStorage.getItem('covo_pin_hash');
     if (hasPin) {
@@ -20433,22 +20537,43 @@ function initPinLockSystem() {
         lockAppScreen();
         return;
       }
+      // 1. アプリ離脱猶予時間 (Grace Period) の判定
+      const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
+      if (graceSec >= 0) {
+        const blurTime = parseInt(localStorage.getItem('covo_app_blur_time') || '0', 10);
+        if (blurTime > 0 && (Date.now() - blurTime >= graceSec * 1000)) {
+          lockAppScreen();
+          return;
+        }
+      }
+      // 2. 無操作タイマー (Auto Lock Timeout) の判定
       const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
       if (timeoutMins > 0) {
         const elapsed = Date.now() - _lastUserInteractionTime;
         if (elapsed >= timeoutMins * 60 * 1000) {
           lockAppScreen();
+          return;
         }
       }
     }
   };
+
+  window.addEventListener('blur', onAppBlur);
   window.addEventListener('focus', checkScreenLockPersistence);
   window.addEventListener('pageshow', checkScreenLockPersistence);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) checkScreenLockPersistence();
+    if (document.hidden) {
+      onAppBlur();
+    } else {
+      checkScreenLockPersistence();
+    }
   });
-  setInterval(checkScreenLockPersistence, 15000);
+
+  setInterval(checkScreenLockPersistence, 10000);
   updatePinSettingsUI();
+
+  // 起動時の初期ロック確認
+  checkScreenLockPersistence();
 }
 // ==========================================
 // チャット履歴のエクスポート & バックアップ復号ビューア (#101 - 実用化完了)
@@ -20479,19 +20604,52 @@ async function _fetchCurrentChannelDecryptedMessages() {
     const val = snap.val();
     msgs = Object.keys(val).map(k => ({ id: k, ...val[k] }));
     msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  } else if (allLoadedMessages && allLoadedMessages.length > 0) {
+    msgs = JSON.parse(JSON.stringify(allLoadedMessages));
   }
-  // 暗号化メッセージの事前完全復号
+
+  // 暗号化メッセージの確実な復号処理
   if (currentServerId) {
     const members = (currentServerData && currentServerData.joinedUsers) || [];
-    await decryptMessagesInPlace(msgs, currentServerId, currentRoomId, members).catch(() => {});
+    await getOrCreateRoomKey(currentServerId, currentRoomId, members).catch(() => null);
+    for (const m of msgs) {
+      if (m.text && typeof m.text === 'string' && isEncrypted(m.text)) {
+        try {
+          const dec = await decryptText(m.text, currentServerId, currentRoomId, members);
+          if (dec && !dec.startsWith('（復号化エラー')) m.text = dec;
+        } catch (_) {}
+      }
+      if (m.replyTo && m.replyTo.text && isEncrypted(m.replyTo.text)) {
+        try {
+          const dec = await decryptText(m.replyTo.text, currentServerId, currentRoomId, members);
+          if (dec && !dec.startsWith('（復号化エラー')) m.replyTo.text = dec;
+        } catch (_) {}
+      }
+    }
   } else if (currentDmId) {
-    await _decryptDmMessagesInPlace(msgs, currentDmId, currentDmParticipants).catch(() => {});
+    const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000).catch(() => null);
+    for (const m of msgs) {
+      if (m.text && typeof m.text === 'string' && isEncrypted(m.text)) {
+        try {
+          const dec = await _decryptDmText(m.text, dmKey);
+          if (dec && !dec.startsWith('（復号化エラー')) m.text = dec;
+        } catch (_) {}
+      }
+      if (m.replyTo && m.replyTo.text && isEncrypted(m.replyTo.text)) {
+        try {
+          const dec = await _decryptDmText(m.replyTo.text, dmKey);
+          if (dec && !dec.startsWith('（復号化エラー')) m.replyTo.text = dec;
+        } catch (_) {}
+      }
+    }
   }
+
   const currentName = currentServerId
     ? `${currentServerData?.name || 'server'}_#${roomNames[currentRoomId] || currentRoomId}`
     : `DM_@${currentDmParticipant?.nickname || 'user'}`;
   return { msgs, currentName };
 }
+
 window.openChatExportModal = function () {
   if (!currentRoomId && !currentDmId) {
     alertMessage('エクスポートするチャット（ルームまたはDM）を開いてください。', 'warning');
@@ -20505,10 +20663,12 @@ window.openChatExportModal = function () {
   }
   if (modal) modal.classList.remove('hidden');
 };
+
 window.closeChatExportModal = function () {
   const modal = document.getElementById('chatExportModal');
   if (modal) modal.classList.add('hidden');
 };
+
 window.executeExportChatFormat = async function (format) {
   closeChatExportModal();
   alertMessage('チャット履歴を抽出・処理しています...', 'info');
@@ -20518,6 +20678,7 @@ window.executeExportChatFormat = async function (format) {
     const { msgs, currentName } = data;
     const dateStr = new Date().toISOString().slice(0, 10);
     const safeName = currentName.replace(/[\/\\?%*:|"<>]/g, '_');
+
     if (format === 'txt') {
       msgs.forEach(m => {
         const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
@@ -20593,6 +20754,7 @@ window.executeExportChatFormat = async function (format) {
     alertMessage(`エクスポートに失敗しました: ${err.message}`, 'error');
   }
 };
+
 function _triggerBlobDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -20605,6 +20767,27 @@ function _triggerBlobDownload(blob, filename) {
     URL.revokeObjectURL(url);
   }, 100);
 }
+
+// インポートしたメッセージ内の暗号文を自端末で復号試行するリカバリー関数
+async function _tryDecryptImportedMessages(msgs) {
+  if (!msgs || !Array.isArray(msgs)) return;
+  for (const m of msgs) {
+    if (m.text && typeof m.text === 'string' && isEncrypted(m.text)) {
+      try {
+        if (currentServerId && currentRoomId) {
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          const dec = await decryptText(m.text, currentServerId, currentRoomId, members);
+          if (dec && !dec.startsWith('（復号化エラー')) m.text = dec;
+        } else if (currentDmId) {
+          const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 1500);
+          const dec = await _decryptDmText(m.text, dmKey);
+          if (dec && !dec.startsWith('（復号化エラー')) m.text = dec;
+        }
+      } catch (_) {}
+    }
+  }
+}
+
 // バックアップインポート & ビューア展開
 window.openChatBackupViewerFilePicker = function () {
   const fileInp = document.createElement('input');
@@ -20647,7 +20830,6 @@ window.openChatBackupViewerFilePicker = function () {
         const msgs = Array.isArray(payload) ? payload : (payload.messages || []);
         openChatBackupViewerModal(payload.channel || payload.roomName || file.name, msgs, payload.exportedAt);
       } else {
-        // .txt / .md の直接テキストプレビュー
         const text = await file.text();
         openTextFileAsViewer(file.name, text);
       }
@@ -20658,7 +20840,8 @@ window.openChatBackupViewerFilePicker = function () {
   };
   fileInp.click();
 };
-window.openChatBackupViewerModal = function (title, messages, exportedAt) {
+
+window.openChatBackupViewerModal = async function (title, messages, exportedAt) {
   _cachedViewerMessages = messages || [];
   const modal = document.getElementById('chatBackupViewerModal');
   const titleEl = document.getElementById('viewerHeaderTitle');
@@ -20666,38 +20849,136 @@ window.openChatBackupViewerModal = function (title, messages, exportedAt) {
   const dateStr = exportedAt ? new Date(exportedAt).toLocaleDateString('ja-JP') : '';
   if (titleEl) titleEl.textContent = title || 'チャットバックアップ';
   if (metaEl) metaEl.textContent = `${_cachedViewerMessages.length} 件のメッセージ ${dateStr ? `• ${dateStr}` : ''}`;
-  renderViewerTimeline(_cachedViewerMessages);
   if (modal) modal.classList.remove('hidden');
+  await renderViewerTimeline(_cachedViewerMessages);
 };
+
 window.closeChatBackupViewerModal = function () {
   const modal = document.getElementById('chatBackupViewerModal');
   if (modal) modal.classList.add('hidden');
   _cachedViewerMessages = [];
 };
-function renderViewerTimeline(msgs) {
+
+// 復号化ビューアのタイムライン描画 (いつものチャット画面と同じリッチスタイル)
+async function renderViewerTimeline(msgs) {
   const container = document.getElementById('viewerTimelineContainer');
   if (!container) return;
   container.innerHTML = '';
   if (!msgs || msgs.length === 0) {
-    container.innerHTML = '<div class="text-center py-12 text-xs text-gray-400">表示できるメッセージがありません</div>';
+    container.innerHTML = '<div class="text-center py-12 text-xs text-gray-400 dark:text-gray-500">表示できるメッセージがありません</div>';
     return;
   }
-  msgs.forEach(m => {
-    const item = document.createElement('div');
-    item.className = 'p-3 rounded-2xl bg-gray-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-800 space-y-1 text-xs';
-    const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    const sender = escapeHtml(m.senderNickname || m.userNickname || 'ユーザー');
-    const textContent = m.text ? escapeHtmlAndLinkUrls(m.text) : (m.sticker ? `🌟 スタンプ: ${escapeHtml(m.sticker)}` : m.fileName ? `📁 添付ファイル: ${escapeHtml(m.fileName)}` : '');
-    item.innerHTML = `
-      <div class="flex items-center justify-between text-[11px] text-gray-400 mb-0.5">
-        <span class="font-bold text-gray-700 dark:text-gray-300">${sender}</span>
-        <span class="font-mono text-[10px]">${time}</span>
-      </div>
-      <div class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-relaxed">${textContent}</div>
-    `;
-    container.appendChild(item);
+
+  // 暗号文が残っていれば復号を試みる
+  await _tryDecryptImportedMessages(msgs);
+
+  let lastDateStr = '';
+  msgs.forEach((m) => {
+    const isMe = m.senderId === userId || m.userId === userId;
+    const ts = m.timestamp || m.createdAt || Date.now();
+    const d = new Date(ts);
+    const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+
+    if (dateStr !== lastDateStr) {
+      lastDateStr = dateStr;
+      const div = document.createElement('div');
+      div.className = 'date-divider my-4 text-center';
+      div.innerHTML = `<span class="date-divider-inner px-3 py-1 rounded-full text-[11px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 select-none">${d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' })}</span>`;
+      container.appendChild(div);
+    }
+
+    const row = document.createElement('div');
+    row.className = `w-full flex ${isMe ? 'justify-end' : 'justify-start items-start gap-2'} mb-3 select-text`;
+
+    const nick = escapeHtml(m.senderNickname || m.userNickname || 'ユーザー');
+    const timeStr = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+    if (!isMe) {
+      const avatar = document.createElement('div');
+      avatar.className = 'w-8 h-8 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs flex-shrink-0 overflow-hidden mt-0.5';
+      if (m.senderAvatarUrl && isUsableAvatarUrl(m.senderAvatarUrl)) {
+        __setAvatarImg(avatar, m.senderAvatarUrl, nick, { style: 'width:100%;height:100%;object-fit:cover;' });
+      } else {
+        avatar.textContent = nick.charAt(0).toUpperCase();
+      }
+      row.appendChild(avatar);
+    }
+
+    const bubbleCol = document.createElement('div');
+    bubbleCol.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[80%]`;
+
+    if (!isMe) {
+      const nameEl = document.createElement('div');
+      nameEl.className = 'text-[11px] font-bold text-gray-500 dark:text-slate-400 mb-1';
+      nameEl.textContent = nick;
+      bubbleCol.appendChild(nameEl);
+    }
+
+    // リプライ引用
+    if (m.replyTo) {
+      const replyDiv = document.createElement('div');
+      replyDiv.className = `reply-quote text-xs text-gray-500 mb-1 ${isMe ? 'my-reply' : ''}`;
+      replyDiv.innerHTML = `<span class="font-bold mr-1">${escapeHtml(m.replyTo.senderNickname || 'ユーザー')}:</span><span class="truncate">${escapeHtml(m.replyTo.text || '...')}</span>`;
+      bubbleCol.appendChild(replyDiv);
+    }
+
+    const bubble = document.createElement('div');
+    const isSticker = !!m.sticker;
+    bubble.className = isSticker
+      ? 'message-bubble sticker-bubble'
+      : `message-bubble ${isMe ? 'my-message bg-gray-200 dark:bg-[#2a3a52] text-gray-900 dark:text-gray-100' : 'other-message bg-gray-100 dark:bg-[#243040] text-gray-900 dark:text-gray-100'} px-3.5 py-2 rounded-2xl text-xs leading-relaxed break-words shadow-xs`;
+
+    if (m.sticker) {
+      const stDiv = document.createElement('div');
+      stDiv.className = 'sticker-content text-4xl';
+      stDiv.innerHTML = getEmojiHtml(m.sticker, 'sk-em');
+      bubble.appendChild(stDiv);
+      _twemojiParse(stDiv);
+    } else if (m.text) {
+      const txtSpan = document.createElement('span');
+      txtSpan.className = 'message-content';
+      txtSpan.innerHTML = escapeHtmlAndLinkUrls(m.text);
+      bubble.appendChild(txtSpan);
+    }
+
+    // 画像・動画・添付ファイル
+    if (m.fileData || m.kvFileUrl) {
+      const fUrl = m._decryptedFileUrl || m.fileData || m.kvFileUrl;
+      if (m.fileType && m.fileType.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = fUrl;
+        img.className = 'mt-2 rounded-xl max-w-full max-h-48 object-contain cursor-pointer shadow-sm';
+        img.onclick = () => openPhotoSwipeModal(fUrl, m.fileName);
+        bubble.appendChild(img);
+      } else if (m.fileType && m.fileType.startsWith('video/')) {
+        const vid = document.createElement('video');
+        vid.src = fUrl;
+        vid.controls = true;
+        vid.className = 'mt-2 rounded-xl max-w-full max-h-48 shadow-sm';
+        bubble.appendChild(vid);
+      } else {
+        const fileCard = document.createElement('div');
+        fileCard.className = 'mt-2 p-2 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center gap-2 text-[11px] font-medium';
+        fileCard.innerHTML = `<i class="fas fa-file text-indigo-500"></i><span class="truncate flex-1">${escapeHtml(m.fileName || '添付ファイル')}</span><a href="${escapeHtml(fUrl)}" download="${escapeHtml(m.fileName || 'file')}" class="text-indigo-500 hover:underline"><i class="fas fa-download"></i></a>`;
+        bubble.appendChild(fileCard);
+      }
+    }
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'text-[9px] text-gray-400 font-mono mt-1 px-1';
+    timeEl.textContent = timeStr;
+
+    const rowWrapper = document.createElement('div');
+    rowWrapper.className = `flex items-end gap-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`;
+    rowWrapper.appendChild(bubble);
+    rowWrapper.appendChild(timeEl);
+
+    bubbleCol.appendChild(rowWrapper);
+    row.appendChild(bubbleCol);
+    container.appendChild(row);
   });
 }
+
 function openTextFileAsViewer(filename, text) {
   const lines = text.split('\n').filter(l => l.trim().length > 0);
   const fakeMsgs = lines.map((l, i) => ({
@@ -20722,7 +21003,6 @@ window.filterViewerMessages = function (query) {
 window.saveViewerMessagesAsTxt = function () {
   if (!_cachedViewerMessages || _cachedViewerMessages.length === 0) return;
   const title = document.getElementById('viewerHeaderTitle')?.textContent || 'chat';
-  let txt = '';
   _cachedViewerMessages.forEach(m => {
     const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
     const sender = m.senderNickname || m.userNickname || 'ユーザー';

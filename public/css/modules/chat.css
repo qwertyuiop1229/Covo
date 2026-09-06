@@ -1450,5 +1450,22 @@
       transform: scale(0.96);
     }
 
+    /* 画面PINロック中の機密コンテンツ完全隠蔽・アンチチート保護 */
+    body.screen-locked #appContainer,
+    body.screen-locked #mainContent,
+    body.screen-locked #serverListScreen,
+    body.screen-locked .container > *:not(#appPinLockOverlay):not(#appLoadingSplash),
+    body.screen-locked .modal-overlay:not(#appPinLockOverlay),
+    body.screen-locked .modal-box:not(#appPinLockOverlay .modal-box),
+    body.screen-locked #mobileProfileScreen,
+    body.screen-locked #mobileNotifScreen,
+    body.screen-locked .mobile-settings-detail {
+      display: none !important;
+      visibility: hidden !important;
+      filter: blur(50px) !important;
+      pointer-events: none !important;
+      user-select: none !important;
+    }
+
 
 
