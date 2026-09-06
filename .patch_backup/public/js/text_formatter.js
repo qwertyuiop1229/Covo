@@ -186,10 +186,7 @@ export function escapeHtmlAndLinkUrls(text) {
     if (!/^https?:\/\//i.test(href)) {
       href = 'https://' + href;
     }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
-    }
+
     const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
     const escapedHref = escapeHtml(href);
     const escapedText = escapeHtml(cleanUrl);

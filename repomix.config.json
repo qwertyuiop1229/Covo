@@ -1,0 +1,62 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "showLineNumbers": false,
+    "copyToClipboard": false
+  },
+  "include": [],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "repomix-output.xml",
+      "repomix.config.json",
+
+      "package-lock.json",
+      "yarn.lock",
+
+      ".patch_backup/",
+      "scratch/",
+      "tools/backups/",
+      "tools/logs/",
+      "tools/snippets/",
+
+      "node_modules/",
+
+      "public/assets/",
+      "public/covo-stamps/",
+      "public/webfonts/",
+      "public/icons/",
+      "public/img/",
+
+      "public/js/geoguessr_locations.js",
+
+      "public/css/font-awesome.min.css",
+
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.ico",
+      "*.woff2",
+      "*.ttf",
+      "*.svg",
+      "*.gif",
+      "*.webp",
+
+      "dist/",
+      "build/",
+      ".wrangler/",
+      ".firebase/",
+
+      "src-tauri/",
+      "server/",
+      "tests/"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}

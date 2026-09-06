@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * patch.js - Robust AI Patch Engine (Non-Empty Sequence Matching)
- * 依存関係ゼロ・空行/不揃いインデント完全吸収
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
  */
 
 const fs = require('fs');
@@ -48,7 +48,7 @@ if (process.argv.includes('--undo')) {
 }
 
 // =========================================================================
-// 1. 入力テキスト取得
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
 // =========================================================================
 function getSourceText() {
   console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
@@ -61,7 +61,7 @@ function getSourceText() {
 
   if (process.platform === 'win32') {
     try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"';
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
       const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
       if (text && text.trim().length > 0) {
         const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
@@ -98,7 +98,7 @@ function getSourceText() {
 }
 
 // =========================================================================
-// 2. パッチ構文解析
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
 // =========================================================================
 function parseBlocks(rawText) {
   console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
@@ -111,23 +111,17 @@ function parseBlocks(rawText) {
   let state = 'OUTSIDE';
   let searchLines = [];
   let replaceLines = [];
+  let inFence = false;
 
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\]?$/i;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
   const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
   const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
   const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
 
   function saveBlock() {
     if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      let sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      let rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-
-      if (sClean.startsWith('```')) {
-        sClean = sClean.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
-      }
-      if (rClean.startsWith('```')) {
-        rClean = rClean.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
-      }
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
 
       blocks.push({
         file: currentFile,
@@ -138,44 +132,54 @@ function parseBlocks(rawText) {
     searchLines = [];
     replaceLines = [];
     state = 'OUTSIDE';
+    inFence = false;
   }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    if (!trimmed) continue;
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
 
-    if (sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-      saveBlock();
-      currentFile = null;
-      continue;
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
     }
 
-    const fileMatch = trimmed.match(fileRegex);
-    if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-      saveBlock();
-      currentFile = fileMatch[1].replace(/\\/g, '/').trim();
-      continue;
-    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
 
-    if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-      saveBlock();
-      state = 'SEARCH';
-      continue;
-    }
-
-    if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-      state = 'REPLACE';
-      continue;
-    }
-
-    if (state === 'SEARCH') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) continue;
-      searchLines.push(line);
-    } else if (state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) continue;
-      replaceLines.push(line);
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
     }
   }
 
@@ -192,7 +196,7 @@ function normalizeLine(line) {
 }
 
 // =========================================================================
-// 3. 非空行シーケンス照合エンジン (空行・不揃いインデント完全対応)
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
 // =========================================================================
 function applyReplacement(originalContent, searchText, replaceText) {
   if (!searchText.trim()) {
@@ -200,58 +204,61 @@ function applyReplacement(originalContent, searchText, replaceText) {
     return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
   }
 
-  // Level 1: 完全一致
-  const exactIndex = originalContent.indexOf(searchText);
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
   if (exactIndex !== -1) {
-    const secondIndex = originalContent.indexOf(searchText, exactIndex + 1);
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
     if (secondIndex !== -1) {
       return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
     }
-    const lineNo = originalContent.substring(0, exactIndex).split('\n').length;
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
     return {
       success: true,
-      content: originalContent.replace(searchText, () => replaceText),
+      content: finalContent,
       mode: 'Level 1 完全一致 (Exact)',
       lineNo
     };
   }
 
-  const origLines = originalContent.split('\n');
-  const searchLines = searchText.split('\n');
-  const replaceLines = replaceText.split('\n');
+  // Level 2: 行シーケンス照合（インデント・クォート・末尾セミコロン柔軟吸収）
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
 
-  // 非空行の抽出（正規化付き・行番号インデックス保持）
-  const origNonEmpty = [];
-  for (let i = 0; i < origLines.length; i++) {
-    const norm = normalizeLine(origLines[i]);
-    if (norm.length > 0) origNonEmpty.push({ lineIndex: i, norm });
-  }
-
-  const searchNonEmpty = [];
-  for (let j = 0; j < searchLines.length; j++) {
-    const norm = normalizeLine(searchLines[j]);
-    if (norm.length > 0) searchNonEmpty.push({ lineIndex: j, norm });
-  }
-
-  if (searchNonEmpty.length === 0) {
+  const sCount = searchLines.length;
+  if (sCount === 0) {
     return { success: false, reason: '検索コードが空です。' };
   }
 
-  const sCount = searchNonEmpty.length;
+  const searchNorm = searchLines.map(l => normalizeLine(l));
   const matchedRanges = [];
 
-  for (let startK = 0; startK <= origNonEmpty.length - sCount; startK++) {
+  for (let startI = 0; startI <= origLines.length - sCount; startI++) {
     let match = true;
     for (let offset = 0; offset < sCount; offset++) {
-      if (origNonEmpty[startK + offset].norm !== searchNonEmpty[offset].norm) {
+      const oLine = origLines[startI + offset];
+      const sLine = searchLines[offset];
+
+      if (!oLine.trim() && !sLine.trim()) continue;
+      if (!oLine.trim() || !sLine.trim()) {
+        match = false;
+        break;
+      }
+
+      if (normalizeLine(oLine) !== searchNorm[offset]) {
         match = false;
         break;
       }
     }
     if (match) {
-      const startOrigLine = origNonEmpty[startK].lineIndex;
-      const endOrigLine = origNonEmpty[startK + sCount - 1].lineIndex;
-      matchedRanges.push({ startOrigLine, endOrigLine });
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: startI + sCount - 1 });
     }
   }
 
@@ -273,10 +280,13 @@ function applyReplacement(originalContent, searchText, replaceText) {
       ...origLines.slice(endOrigLine + 1)
     ];
 
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+
     return {
       success: true,
-      content: newLines.join('\n'),
-      mode: 'Level 2 非空行精密照合 (空行・不揃いインデント完全吸収)',
+      content: finalContent,
+      mode: 'Level 2 行シーケンス照合 (改行・インデント完全吸収)',
       lineNo: startOrigLine + 1
     };
   } else if (matchedRanges.length > 1) {
@@ -291,7 +301,7 @@ function applyReplacement(originalContent, searchText, replaceText) {
 // =========================================================================
 function run() {
   console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
   console.log('============================================================\n');
 
   const { text: rawText, source } = getSourceText();
@@ -341,13 +351,10 @@ function run() {
     console.log(`\n📁 対象ファイル: ${relPath}`);
 
     let fileContent = '';
-    let isCRLF = false;
     const exists = fs.existsSync(fullPath);
 
     if (exists) {
-      const raw = fs.readFileSync(fullPath, 'utf-8');
-      isCRLF = raw.includes('\r\n');
-      fileContent = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      fileContent = fs.readFileSync(fullPath, 'utf-8');
     } else {
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       console.log(`   📁 新規ファイルを作成します`);
@@ -378,8 +385,7 @@ function run() {
     }
 
     if (fileSuccessCount > 0) {
-      const finalSave = isCRLF ? modified.replace(/\n/g, '\r\n') : modified;
-      fs.writeFileSync(fullPath, finalSave, 'utf-8');
+      fs.writeFileSync(fullPath, modified, 'utf-8');
       console.log(`   💾 変更をファイルに保存しました (${relPath})`);
     } else {
       console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);

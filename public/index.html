@@ -1242,24 +1242,24 @@
                   </div>
                 </div>
 
-                <!-- チャット履歴の暗号化エクスポート (#101) -->
+                <!-- チャット履歴のエクスポート & バックアップ復号閲覧 (#101) -->
                 <div>
-                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">チャット履歴の安全なエクスポート</h3>
+                  <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">チャット履歴の保存・閲覧</h3>
                   <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-4 space-y-3 border border-gray-200/80 dark:border-slate-700/60">
                     <div class="flex items-center justify-between flex-wrap gap-2">
                       <div>
                         <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
                           <i class="fas fa-file-shield text-emerald-500"></i>
-                          <span>暗号化バックアップ (.covo-backup)</span>
+                          <span>チャット履歴エクスポート (.txt / .md / .covo-backup)</span>
                         </div>
-                        <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">パスフレーズでAES-GCM暗号化されたチャット履歴を出力・復号閲覧します</div>
+                        <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">チャットログを平文テキストや暗号化形式で保存・アプリ内で復号閲覧します</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <button type="button" onclick="promptExportCurrentChatEncrypted()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onclick="openChatExportModal()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
                           <i class="fas fa-download text-xs"></i>エクスポート
                         </button>
-                        <button type="button" onclick="promptImportAndInspectBackup()" class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer">
-                          <i class="fas fa-folder-open text-xs"></i>復号閲覧
+                        <button type="button" onclick="openChatBackupViewerFilePicker()" class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                          <i class="fas fa-folder-open text-xs"></i>復号ビューア
                         </button>
                       </div>
                     </div>
@@ -3126,14 +3126,13 @@
   <!-- 離席時の画面PINロックオーバーレイ (#105) -->
   <div id="appPinLockOverlay">
     <div class="flex flex-col items-center max-w-xs w-full p-6 text-center space-y-4">
-      <div class="w-16 h-16 rounded-full bg-slate-800 border-2 border-indigo-500/50 flex items-center justify-center text-2xl font-bold shadow-lg" id="appPinLockAvatar">
-        <i class="fas fa-lock text-indigo-400"></i>
+      <div class="w-16 h-16 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-2xl font-bold shadow-lg" id="appPinLockAvatar">
+        <i class="fas fa-lock text-slate-300"></i>
       </div>
       <div>
         <h3 class="text-lg font-bold text-white" id="appPinLockName">画面がロックされています</h3>
         <p class="text-xs text-slate-400 mt-1">設定したPINコードを入力してください</p>
       </div>
-
       <!-- PINインジケーター -->
       <div class="flex items-center justify-center gap-3 my-2" id="appPinDotsContainer">
         <div class="pin-dot" id="pdot-0"></div>
@@ -3142,7 +3141,6 @@
         <div class="pin-dot" id="pdot-3"></div>
       </div>
       <div id="appPinErrorMessage" class="text-xs text-rose-400 h-4 font-semibold"></div>
-
       <!-- 数字キーパッド -->
       <div class="grid grid-cols-3 gap-3 pt-2">
         <button type="button" class="pin-keypad-btn" onclick="inputAppPinDigit('1')">1</button>
@@ -3154,15 +3152,164 @@
         <button type="button" class="pin-keypad-btn" onclick="inputAppPinDigit('7')">7</button>
         <button type="button" class="pin-keypad-btn" onclick="inputAppPinDigit('8')">8</button>
         <button type="button" class="pin-keypad-btn" onclick="inputAppPinDigit('9')">9</button>
-        <button type="button" class="pin-keypad-btn text-xs text-slate-400" onclick="clearAppPinInput()">クリア</button>
+        <button type="button" class="pin-keypad-btn text-base" onclick="clearAppPinInput()" title="クリア"><i class="fas fa-rotate-left"></i></button>
         <button type="button" class="pin-keypad-btn" onclick="inputAppPinDigit('0')">0</button>
-        <button type="button" class="pin-keypad-btn text-base" onclick="backspaceAppPinDigit()"><i class="fas fa-delete-left"></i></button>
+        <button type="button" class="pin-keypad-btn text-base" onclick="backspaceAppPinDigit()" title="1文字削除"><i class="fas fa-delete-left"></i></button>
       </div>
-
       <div class="pt-4 flex items-center justify-center">
         <button type="button" class="text-xs text-slate-400 hover:text-rose-400 transition underline cursor-pointer" onclick="emergencyLogoutFromPinLock()">
           PINを忘れた場合（ログアウト）
         </button>
+      </div>
+    </div>
+  </div>
+  <!-- 画面PINロック設定・変更・解除モーダル -->
+  <div id="pinSetupModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closePinSetupModal()">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 flex flex-col items-center text-center space-y-4 relative" onclick="event.stopPropagation()">
+      <button onclick="closePinSetupModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
+        <i class="fas fa-times text-sm"></i>
+      </button>
+      <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-center text-xl flex-shrink-0 shadow-xs">
+        <i class="fas fa-lock"></i>
+      </div>
+      <div>
+        <h3 id="pinSetupModalTitle" class="text-base font-bold text-gray-900 dark:text-white">画面PINコードの設定</h3>
+        <p id="pinSetupModalDesc" class="text-xs text-gray-500 dark:text-slate-400 mt-1">4桁の数字を入力してください</p>
+      </div>
+      <!-- PINインジケーター -->
+      <div class="flex items-center justify-center gap-3 my-2" id="pinSetupDotsContainer">
+        <div class="pin-dot !border-gray-300 dark:!border-slate-700" id="sdot-0"></div>
+        <div class="pin-dot !border-gray-300 dark:!border-slate-700" id="sdot-1"></div>
+        <div class="pin-dot !border-gray-300 dark:!border-slate-700" id="sdot-2"></div>
+        <div class="pin-dot !border-gray-300 dark:!border-slate-700" id="sdot-3"></div>
+      </div>
+      <div id="pinSetupErrorMessage" class="text-xs text-rose-500 min-h-[1.25rem] font-semibold"></div>
+      <!-- 数字キーパッド -->
+      <div class="grid grid-cols-3 gap-2.5 pt-1 w-full max-w-[220px]">
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('1')">1</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('2')">2</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('3')">3</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('4')">4</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('5')">5</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('6')">6</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('7')">7</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('8')">8</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('9')">9</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-sm !bg-transparent !text-gray-400 dark:!text-slate-500 hover:!text-gray-700 dark:hover:!text-gray-300 border-none" onclick="clearSetupPinInput()" title="クリア"><i class="fas fa-rotate-left"></i></button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-lg !bg-gray-100 dark:!bg-slate-800 !text-gray-900 dark:!text-white hover:!bg-gray-200 dark:hover:!bg-slate-700" onclick="inputSetupPinDigit('0')">0</button>
+        <button type="button" class="pin-keypad-btn !w-14 !h-14 !text-sm !bg-transparent !text-gray-400 dark:!text-slate-500 hover:!text-gray-700 dark:hover:!text-gray-300 border-none" onclick="backspaceSetupPinDigit()" title="1文字削除"><i class="fas fa-delete-left"></i></button>
+      </div>
+      <div id="pinSetupActionOptions" class="w-full pt-2 flex items-center justify-center gap-2 hidden">
+        <button type="button" id="btnRemoveCurrentPin" onclick="executeRemoveCurrentPin()" class="text-xs text-rose-500 hover:text-rose-600 font-bold transition">
+          PIN設定を解除する
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- チャット履歴エクスポートモーダル -->
+  <div id="chatExportModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeChatExportModal()">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 relative" onclick="event.stopPropagation()">
+      <button onclick="closeChatExportModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
+        <i class="fas fa-times text-sm"></i>
+      </button>
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-center text-lg flex-shrink-0">
+          <i class="fas fa-file-export"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-gray-900 dark:text-white">チャット履歴のエクスポート</h3>
+          <p class="text-xs text-gray-500 dark:text-slate-400" id="chatExportChannelTitle">現在のチャット履歴を保存します</p>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <!-- 形式選択カード 1: テキストファイル -->
+        <div onclick="executeExportChatFormat('txt')" class="p-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800/40 dark:hover:bg-slate-800 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl cursor-pointer transition flex items-center justify-between gap-3 group active:scale-98">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-file-lines"></i>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-900 dark:text-white">テキストファイル (.txt)</div>
+              <div class="text-[11px] text-gray-500 dark:text-slate-400">メモ帳やスマホでそのまま読める形式</div>
+            </div>
+          </div>
+          <i class="fas fa-download text-gray-400 group-hover:text-blue-500 text-xs transition-colors"></i>
+        </div>
+        <!-- 形式選択カード 2: Markdown -->
+        <div onclick="executeExportChatFormat('md')" class="p-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800/40 dark:hover:bg-slate-800 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl cursor-pointer transition flex items-center justify-between gap-3 group active:scale-98">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center text-sm font-bold">
+              <i class="fab fa-markdown"></i>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-900 dark:text-white">Markdown (.md)</div>
+              <div class="text-[11px] text-gray-500 dark:text-slate-400">見出し・リンク・引用を美しく保つ形式</div>
+            </div>
+          </div>
+          <i class="fas fa-download text-gray-400 group-hover:text-purple-500 text-xs transition-colors"></i>
+        </div>
+        <!-- 形式選択カード 3: JSON -->
+        <div onclick="executeExportChatFormat('json')" class="p-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800/40 dark:hover:bg-slate-800 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl cursor-pointer transition flex items-center justify-between gap-3 group active:scale-98">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-code"></i>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-900 dark:text-white">JSON データ (.json)</div>
+              <div class="text-[11px] text-gray-500 dark:text-slate-400">完全なタイムスタンプと構造化データ</div>
+            </div>
+          </div>
+          <i class="fas fa-download text-gray-400 group-hover:text-amber-500 text-xs transition-colors"></i>
+        </div>
+        <!-- 形式選択カード 4: 暗号化バックアップ -->
+        <div onclick="executeExportChatFormat('encrypted')" class="p-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800/40 dark:hover:bg-slate-800 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl cursor-pointer transition flex items-center justify-between gap-3 group active:scale-98">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-sm font-bold">
+              <i class="fas fa-shield-halved"></i>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-900 dark:text-white">暗号化バックアップ (.covo-backup)</div>
+              <div class="text-[11px] text-gray-500 dark:text-slate-400">パスフレーズでAES-GCM暗号化保護</div>
+            </div>
+          </div>
+          <i class="fas fa-lock text-gray-400 group-hover:text-emerald-500 text-xs transition-colors"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- チャット履歴ビューアモーダル (インポート閲覧専用) -->
+  <div id="chatBackupViewerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-2 sm:p-4 select-none" onclick="if(event.target===this) closeChatBackupViewerModal()">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl h-[88vh] flex flex-col overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200" onclick="event.stopPropagation()">
+      <!-- ヘッダー -->
+      <div class="px-5 py-3.5 bg-gray-50 dark:bg-slate-950 border-b border-gray-200/80 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm flex-shrink-0">
+            <i class="fas fa-comments"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-sm font-bold text-gray-900 dark:text-white truncate" id="viewerHeaderTitle">バックアップ閲覧</div>
+            <div class="text-[11px] text-gray-500 dark:text-slate-400 font-mono truncate" id="viewerHeaderMeta">0件のメッセージ</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="saveViewerMessagesAsTxt()" class="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 text-xs font-bold rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs transition flex items-center gap-1.5" title="テキスト形式で保存">
+            <i class="fas fa-download"></i> <span class="hidden sm:inline">.txt 保存</span>
+          </button>
+          <button onclick="closeChatBackupViewerModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition">
+            <i class="fas fa-times text-sm"></i>
+          </button>
+        </div>
+      </div>
+      <!-- 検索バー -->
+      <div class="p-3 bg-gray-50/60 dark:bg-slate-950/40 border-b border-gray-200/60 dark:border-slate-800 flex-shrink-0">
+        <div class="relative">
+          <input type="text" id="viewerSearchInput" oninput="filterViewerMessages(this.value)" placeholder="メッセージを検索..." class="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+        </div>
+      </div>
+      <!-- メッセージタイムライン表示エリア -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-white dark:bg-slate-900 select-text" id="viewerTimelineContainer">
+        <!-- JSでメッセージを描画 -->
       </div>
     </div>
   </div>

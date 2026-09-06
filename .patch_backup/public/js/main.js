@@ -90,37 +90,17 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-
     // Firebase App Check / reCAPTCHA の一時的スロットリング・503 エラー
     if (
       str.includes('appcheck') ||
       str.includes('app-check') ||
       str.includes('initial-throttle') ||
-      str.includes('throttled') ||
       str.includes('fetch-throttle') ||
       str.includes('fetch-status-error') ||
-      str.includes('recaptcha') ||
-      str.includes('503 error')
+      str.includes('recaptcha')
     ) {
       return true;
     }
-
-    // ネットワーク瞬断・QUIC・HTTP2・接続一時エラー
-    if (
-      str.includes('quic_protocol_error') ||
-      str.includes('quic_public_reset') ||
-      str.includes('err_http2_protocol_error') ||
-      str.includes('webchannel') ||
-      str.includes('fetchstream') ||
-      str.includes('failed to fetch') ||
-      str.includes('networkerror') ||
-      str.includes('err_connection_refused') ||
-      str.includes('err_connection_reset') ||
-      str.includes('err_internet_disconnected')
-    ) {
-      return true;
-    }
-
     // ブラウザ環境非対応（FCM/WebPush）
     if (
       str.includes('unsupported-browser') ||
@@ -129,88 +109,47 @@ function isTransientTelemetryError(args) {
     ) {
       return true;
     }
-
-    // ブラウザ拡張機能・広告ブロッカー・パスワードマネージャー・外部注入スクリプト・WebView2内部警告
+    // ブラウザ拡張機能・広告ブロッカー・外部注入スクリプト・WebView2内部ノイズ
     if (
       str.includes('tracking prevention') ||
       str.includes('blocked access to storage') ||
-      str.includes('content security policy') ||
-      str.includes('ipc custom protocol failed') ||
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
       str.includes('safari-extension://') ||
       str.includes('safari-web-extension://') ||
-      str.includes('usecache') ||
-      str.includes("reading 'usecache'") ||
       str.includes('a listener indicated an asynchronous response') ||
       str.includes('could not establish connection') ||
       str.includes('receiving end does not exist') ||
       str.includes('disconnected port') ||
-      str.includes('secretsession') ||
-      str.includes('getloginnames4url') ||
-      str.includes('called encrypt()') ||
-      str.includes('message port closed') ||
       str.includes('extension context invalidated') ||
       str.includes('webext-ad-filtering') ||
       str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
-      str.includes('scanelementforqrcode') ||
       str.includes('content_script.js') ||
-      str.includes('access to image at') ||
-      str.includes('blocked by cors policy') ||
       str.includes('beforeinstallprompt') ||
       str.includes('beforeinstallpromptevent') ||
-      str.includes('banner not shown') ||
-      str.includes('resizeobserver loop') ||
-      str.includes('escape its sandboxing') ||
-      str.includes('sandboxing') ||
-      str.includes('script error.')
+      str.includes('resizeobserver loop')
     ) {
       return true;
     }
-
-    // Firebase RTDB 内部警告・権限一時判定
-    if (
-      str.includes('permission_denied') ||
-      str.includes('firebase warning: set at') ||
-      str.includes('rtdb dual write failed')
-    ) {
-      return true;
-    }
-
-    // E2EE暗号化ファイルの期限切れ・短小・破損正常系フォールバック
-    if (
-      str.includes('payload too short') ||
-      str.includes('invalid encrypted file') ||
-      str.includes('missing or mismatched key')
-    ) {
-      return true;
-    }
-
-    // Auth ポップアップの正常なユーザーキャンセル動作 & COOP警告
+    // Auth ポップアップの正常なユーザーキャンセル動作
     if (
       str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request') ||
-      str.includes('cross-origin-opener-policy') ||
-      str.includes('window.closed call') ||
-      str.includes('window.close call')
+      str.includes('auth/cancelled-popup-request')
     ) {
       return true;
     }
-
     return false;
   } catch (_) {
     return false;
   }
 }
-
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
 const _dismissedErrorSignatures = new Set();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
-
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
   const normMsg = String(message || '').substring(0, 250).replace(/\s+/g, ' ').trim();
@@ -224,26 +163,21 @@ function _createErrorSignature(type, message, stack) {
   }
   return 'err_' + Math.abs(hash).toString(36);
 }
-
 function _reportTelemetryError(type, message, stack) {
   if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
   if (isTransientTelemetryError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
-
   _isReportingTelemetry = true;
   try {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]') return;
-
     const signature = _createErrorSignature(type, msgStr, stack);
     if (_dismissedErrorSignatures.has(signature)) return; // 削除済みエラーの再報告を抑止
-
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 2500) return; // 2.5秒間ローカル重複排除
+    if (now - lastReported < 2000) return; // 2秒間ローカル重複排除
     _reportedSignaturesRecently.set(signature, now);
-
-    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (auth?.currentUser?.uid ? `uid:${auth.currentUser.uid}` : '未ログイン');
-
+    const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
+    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
     // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
@@ -277,23 +211,19 @@ function _reportTelemetryError(type, message, stack) {
         renderTelemetryErrorsList();
       }
     }
-
     if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
       if (_pendingTelemetryErrors.length < 100) {
         _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
       }
       return;
     }
-
     const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
-
     const envInfo = {
       userAgent: navigator.userAgent || 'unknown',
       appVersion: _appVersion || 'web',
       screenSize: `${window.innerWidth}x${window.innerHeight}`,
       isElectron: Boolean(window.electronAPI)
     };
-
     setDoc(errorDocRef, {
       signature: signature,
       type: type || 'error',
@@ -301,6 +231,7 @@ function _reportTelemetryError(type, message, stack) {
       stack: String(stack || '').substring(0, 6000),
       firstOccurredAt: serverTimestamp(),
       lastOccurredAt: serverTimestamp(),
+      createdBy: currentUid,
       count: increment(1),
       affectedEmails: arrayUnion(email),
       environment: envInfo
@@ -2839,60 +2770,62 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-
-  // 1. リモートFirestoreからエラーコレクションを取得（Firestore を Source of Truth とする）
+  // まず現在のローカルキャッシュを表示（画面のちらつき防止）
+  renderTelemetryErrorsList();
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
     const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
-
-    // getDocs で即時同期
-    const snap = await getDocs(q);
-    const remoteErrors = [];
-    snap.forEach(d => {
-      if (!_dismissedErrorSignatures.has(d.id)) {
-        remoteErrors.push({ id: d.id, ...d.data() });
-      }
-    });
-    window._cachedTelemetryErrors = remoteErrors;
-    window._cachedTelemetryErrors.sort((a, b) => {
-      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-      return timeB - timeA;
-    });
-    if (badgeEl) {
-      badgeEl.textContent = window._cachedTelemetryErrors.length;
-      badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
-    }
-    renderTelemetryErrorsList();
-
-    // リアルタイムリスナーを継続
-    _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
-      const liveErrors = [];
-      liveSnap.forEach(d => {
-        if (!_dismissedErrorSignatures.has(d.id)) {
-          liveErrors.push({ id: d.id, ...d.data() });
+    const mergeErrors = (remoteList) => {
+      const mergedMap = new Map();
+      // リモートエラーを追加
+      remoteList.forEach(item => {
+        if (!_dismissedErrorSignatures.has(item.id)) {
+          mergedMap.set(item.id, item);
         }
       });
-      window._cachedTelemetryErrors = liveErrors;
-      window._cachedTelemetryErrors.sort((a, b) => {
+      // 未同期のローカルエラーをマージ（消滅防止）
+      (window._cachedTelemetryErrors || []).forEach(localItem => {
+        if (!_dismissedErrorSignatures.has(localItem.id) && !mergedMap.has(localItem.id)) {
+          mergedMap.set(localItem.id, localItem);
+        }
+      });
+      const result = Array.from(mergedMap.values());
+      result.sort((a, b) => {
         const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
         const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
         return timeB - timeA;
       });
+      window._cachedTelemetryErrors = result;
       if (badgeEl) {
         badgeEl.textContent = window._cachedTelemetryErrors.length;
         badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
       renderTelemetryErrorsList();
+    };
+    // getDocs で同期
+    const snap = await getDocs(q);
+    const remoteErrors = [];
+    snap.forEach(d => {
+      remoteErrors.push({ id: d.id, ...d.data() });
+    });
+    mergeErrors(remoteErrors);
+    // リアルタイムリスナーを継続
+    _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
+      const liveErrors = [];
+      liveSnap.forEach(d => {
+        liveErrors.push({ id: d.id, ...d.data() });
+      });
+      mergeErrors(liveErrors);
     }, (err) => {
-      console.error("[Telemetry onSnapshot Error]", err);
+      console.warn("[Telemetry onSnapshot notice]", err?.message || err);
       renderTelemetryErrorsList();
     });
   } catch (err) {
-    console.error("[Telemetry loadErrorTelemetry Error]", err);
+    console.warn("[Telemetry loadErrorTelemetry notice]", err?.message || err);
+    // エラー時もローカルキャッシュをそのまま維持して描画
     renderTelemetryErrorsList();
   }
 };
@@ -12626,7 +12559,6 @@ function clearAttachedFile() {
 
 async function sendSingleAttachmentMessage(fileObj) {
   if (!fileObj || (!currentRoomId && !currentDmId)) return;
-
   // Snapshot room-state before any await — prevents race condition where the
   // user navigates to another room while a background upload is in progress.
   const snapDmId = currentDmId;
@@ -12634,10 +12566,8 @@ async function sendSingleAttachmentMessage(fileObj) {
   const snapServerId = currentServerId;
   const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
   const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
-
   const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   const rtdb = await _getOrInitRTDB();
-
   let fileToUpload = fileObj.file;
   let isFileEncrypted = false;
   if (_subtleOK) {
@@ -12657,7 +12587,6 @@ async function sendSingleAttachmentMessage(fileObj) {
       }
     }
   }
-
   const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
   const data = {
     userId: userId,
@@ -12673,14 +12602,41 @@ async function sendSingleAttachmentMessage(fileObj) {
     fileSize: fileObj.size,
     isFileEncrypted: isFileEncrypted
   };
-
   if (snapDmId) {
     const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
     const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
     const rtdbData = { ...data, id: newMessageId };
     await set(rtdbMsgRef, rtdbData);
     if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
-      LocalStore.putMessage({ ...rtdbData, channelId: snapDmId }).catch(() => {});
+      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${snapDmId}` }).catch(() => {});
+    }
+    await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
+      participants: snapDmParticipants,
+      lastMessageAt: data.timestamp,
+      lastMessageSender: userId,
+      lastMessageText: '（ファイル）'
+    }, { merge: true }).catch(() => {});
+    const otherUid = snapDmParticipants.find(id => id !== userId);
+    if (otherUid) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+        const notifPayload = JSON.stringify({
+          receiverIds: [otherUid],
+          title: `ダイレクトメッセージ › @${userNickname}`,
+          body: `${userNickname}: （ファイル）`,
+          roomId: snapDmId,
+          messageId: newMessageId,
+          appId: appId,
+          senderId: userId,
+          idToken
+        });
+        const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
+        } else {
+          fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
+        }
+      } catch (e) { }
     }
   } else if (snapServerId && snapRoomId) {
     let msgRefId;
@@ -12693,7 +12649,7 @@ async function sendSingleAttachmentMessage(fileObj) {
     const rtdbData = { ...data, id: msgRefId };
     await set(ref(rtdb, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages/${msgRefId}`), rtdbData);
     if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
-      LocalStore.putMessage({ ...rtdbData, channelId: snapRoomId }).catch(() => {});
+      LocalStore.putMessage({ ...rtdbData, channelId: `${snapServerId}_${snapRoomId}` }).catch(() => {});
     }
     try {
       await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
@@ -12701,10 +12657,33 @@ async function sendSingleAttachmentMessage(fileObj) {
         lastMessageSender: userId,
         lastMessageText: '（ファイル）'
       });
+      if (snapMembers.length > 0) {
+        const receiverIds = snapMembers.filter(id => id !== userId);
+        if (receiverIds.length > 0) {
+          const serverName = currentServerData?.name || 'Covo';
+          const roomName = roomNames[snapRoomId] || 'room';
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          const notifPayload = JSON.stringify({
+            receiverIds,
+            title: `${serverName} › #${roomName}`,
+            body: `${userNickname}: （ファイル）`,
+            roomId: snapRoomId,
+            messageId: msgRefId,
+            appId: appId,
+            senderId: userId,
+            idToken
+          });
+          const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
+          } else {
+            fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
+          }
+        }
+      }
     } catch (_) {}
   }
 }
-
 async function handleFilesSelected(filesList) {
   if (!filesList || filesList.length === 0) return;
   const processed = [];
@@ -15688,7 +15667,9 @@ window.unpinMessage = async function(msgId) {
   if ((!currentServerId || !currentRoomId) && !currentDmId) return;
   if (!msgId) return;
   const msgObj = currentPinnedMessages.find(m => m.id === msgId) || allLoadedMessages.find(m => m.id === msgId);
-  const canUnpin = isAdmin || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || (msgObj && msgObj.senderId === userId) || Boolean(currentDmId);
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const canUnpin = isAdmin || isSvAdmin || isSvOwner || (msgObj && msgObj.senderId === userId) || Boolean(currentDmId);
   if (!canUnpin) {
     alertMessage("ピン留めを解除する権限がありません", "warning");
     return;
@@ -15747,6 +15728,15 @@ if (pinMessageBtn) {
   pinMessageBtn.addEventListener("click", async (e) => {
     if (ignoreNextContextMenuClick) { e.preventDefault(); e.stopPropagation(); return; }
     if (selectedMessageForContext && ((currentServerId && currentRoomId) || currentDmId)) {
+      const isMsgSender = selectedMessageForContext.senderId === userId;
+      const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+      const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+      const canPin = currentDmId ? true : (isSvAdmin || isSvOwner || isAdmin || isMsgSender);
+      if (!canPin) {
+        alertMessage("ピン留め（アナウンス）の権限がありません", "warning");
+        if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
+        return;
+      }
       const targetId = selectedMessageForContext.id;
       const isPinned = !selectedMessageForContext.isPinned;
       selectedMessageForContext.isPinned = isPinned;
@@ -20091,16 +20081,21 @@ document.addEventListener("keydown", (e) => {
       }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
-    }
-  }
-});
-
-// ==========================================
-// 画面PINロック機能 (#105)
-// ==========================================
+      }
+      }
+      });
+      // ==========================================
+      // 画面PINロック機能 (#105 - セキュリティ完全化 & UI独自実装)
+      // ==========================================
 let _currentPinInput = '';
 let _lastUserInteractionTime = Date.now();
-
+let _pinFailedAttempts = 0;
+let _pinLockoutUntil = 0;
+// PIN設定モーダル専用状態
+let _pinSetupMode = 'new_first'; // 'new_first' | 'new_confirm' | 'change_current' | 'change_new_first' | 'change_new_confirm' | 'remove_current'
+let _tempCurrentPin = '';
+let _tempNewPin = '';
+let _currentSetupInput = '';
 function updatePinDots() {
   for (let i = 0; i < 4; i++) {
     const dot = document.getElementById(`pdot-${i}`);
@@ -20113,49 +20108,172 @@ function updatePinDots() {
     }
   }
 }
-
-window.promptSetupAppPin = async function () {
-  const currentHash = localStorage.getItem('covo_pin_hash');
-  if (currentHash) {
-    const choice = confirm('PINコードが既に設定されています。\n[OK] 新しいPINに変更する\n[キャンセル] PIN設定を解除（無効化）する');
-    if (!choice) {
-      // 解除処理
-      const currentSalt = localStorage.getItem('covo_pin_salt');
-      const verifyInput = prompt('PIN設定を解除するには、現在の4桁PINコードを入力してください:');
-      if (!verifyInput) return;
-      const verifyHash = await _sha256Hash(currentSalt + ':' + verifyInput);
-      if (verifyHash !== currentHash) {
-        alertMessage('PINコードが一致しません。解除できませんでした。', 'error');
-        return;
+function updateSetupPinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById(`sdot-${i}`);
+    if (dot) {
+      if (i < _currentSetupInput.length) {
+        dot.classList.add('filled');
+      } else {
+        dot.classList.remove('filled');
       }
-      localStorage.removeItem('covo_pin_hash');
-      localStorage.removeItem('covo_pin_salt');
-      updatePinSettingsUI();
-      alertMessage('画面PINロックを解除しました。', 'success');
-      return;
     }
   }
-
-  const newPin = prompt('設定する4桁のPINコード（数字4文字）を入力してください:');
-  if (!newPin) return;
-  if (!/^\d{4}$/.test(newPin)) {
-    alertMessage('PINコードは半角数字4桁で入力してください。', 'error');
-    return;
+}
+window.openPinSetupModal = function () {
+  const modal = document.getElementById('pinSetupModal');
+  if (!modal) return;
+  const hasPin = !!localStorage.getItem('covo_pin_hash');
+  _currentSetupInput = '';
+  _tempCurrentPin = '';
+  _tempNewPin = '';
+  const title = document.getElementById('pinSetupModalTitle');
+  const desc = document.getElementById('pinSetupModalDesc');
+  const errMsg = document.getElementById('pinSetupErrorMessage');
+  const actionOpts = document.getElementById('pinSetupActionOptions');
+  if (errMsg) errMsg.textContent = '';
+  updateSetupPinDots();
+  if (hasPin) {
+    _pinSetupMode = 'change_current';
+    if (title) title.textContent = 'PINコードの認証';
+    if (desc) desc.textContent = '現在の4桁PINコードを入力してください';
+    if (actionOpts) actionOpts.classList.remove('hidden');
+  } else {
+    _pinSetupMode = 'new_first';
+    if (title) title.textContent = '新しいPINコードの設定';
+    if (desc) desc.textContent = '4桁の数字を入力してください';
+    if (actionOpts) actionOpts.classList.add('hidden');
   }
-  const confirmPin = prompt('確認のため、もう一度同じ4桁PINコードを入力してください:');
-  if (newPin !== confirmPin) {
-    alertMessage('入力されたPINコードが一致しませんでした。', 'error');
-    return;
-  }
-
-  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
-  const hash = await _sha256Hash(salt + ':' + newPin);
-  localStorage.setItem('covo_pin_salt', salt);
-  localStorage.setItem('covo_pin_hash', hash);
-  updatePinSettingsUI();
-  alertMessage('画面PINコードを設定しました！離席時に安全に画面をロックできます。', 'success');
+  modal.classList.remove('hidden');
 };
-
+window.closePinSetupModal = function () {
+  const modal = document.getElementById('pinSetupModal');
+  if (modal) modal.classList.add('hidden');
+  _currentSetupInput = '';
+  _tempCurrentPin = '';
+  _tempNewPin = '';
+  updateSetupPinDots();
+};
+window.promptSetupAppPin = function () {
+  window.openPinSetupModal();
+};
+window.inputSetupPinDigit = async function (digit) {
+  if (_currentSetupInput.length >= 4) return;
+  _currentSetupInput += digit;
+  updateSetupPinDots();
+  const errMsg = document.getElementById('pinSetupErrorMessage');
+  if (errMsg) errMsg.textContent = '';
+  if (_currentSetupInput.length === 4) {
+    const entered = _currentSetupInput;
+    _currentSetupInput = '';
+    setTimeout(async () => {
+      updateSetupPinDots();
+      await handleSetupPinCompleted(entered);
+    }, 120);
+  }
+};
+window.backspaceSetupPinDigit = function () {
+  if (_currentSetupInput.length > 0) {
+    _currentSetupInput = _currentSetupInput.slice(0, -1);
+    updateSetupPinDots();
+    const errMsg = document.getElementById('pinSetupErrorMessage');
+    if (errMsg) errMsg.textContent = '';
+  }
+};
+window.clearSetupPinInput = function () {
+  _currentSetupInput = '';
+  updateSetupPinDots();
+  const errMsg = document.getElementById('pinSetupErrorMessage');
+  if (errMsg) errMsg.textContent = '';
+};
+async function handleSetupPinCompleted(entered) {
+  const title = document.getElementById('pinSetupModalTitle');
+  const desc = document.getElementById('pinSetupModalDesc');
+  const errMsg = document.getElementById('pinSetupErrorMessage');
+  const actionOpts = document.getElementById('pinSetupActionOptions');
+  if (_pinSetupMode === 'new_first') {
+    _tempNewPin = entered;
+    _pinSetupMode = 'new_confirm';
+    if (title) title.textContent = 'PINコードの確認';
+    if (desc) desc.textContent = '確認のため、もう一度同じ4桁PINを入力してください';
+  } else if (_pinSetupMode === 'new_confirm') {
+    if (entered === _tempNewPin) {
+      // PIN保存
+      const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const hash = await _sha256Hash(salt + ':' + entered);
+      localStorage.setItem('covo_pin_salt', salt);
+      localStorage.setItem('covo_pin_hash', hash);
+      updatePinSettingsUI();
+      closePinSetupModal();
+      alertMessage('画面PINコードを設定しました！', 'success');
+    } else {
+      if (errMsg) errMsg.textContent = '入力されたPINコードが一致しません';
+      _pinSetupMode = 'new_first';
+      _tempNewPin = '';
+      if (title) title.textContent = '新しいPINコードの設定';
+      if (desc) desc.textContent = 'もう一度最初から4桁の数字を入力してください';
+    }
+  } else if (_pinSetupMode === 'change_current') {
+    const salt = localStorage.getItem('covo_pin_salt');
+    const expectedHash = localStorage.getItem('covo_pin_hash');
+    const computedHash = await _sha256Hash(salt + ':' + entered);
+    if (computedHash === expectedHash) {
+      _tempCurrentPin = entered;
+      _pinSetupMode = 'change_new_first';
+      if (title) title.textContent = '新しいPINコードの設定';
+      if (desc) desc.textContent = '新しく設定する4桁の数字を入力してください';
+      if (actionOpts) actionOpts.classList.add('hidden');
+    } else {
+      if (errMsg) errMsg.textContent = '現在のPINコードが正しくありません';
+    }
+  } else if (_pinSetupMode === 'change_new_first') {
+    _tempNewPin = entered;
+    _pinSetupMode = 'change_new_confirm';
+    if (title) title.textContent = '新しいPINコードの確認';
+    if (desc) desc.textContent = '確認のため、もう一度同じ4桁PINを入力してください';
+  } else if (_pinSetupMode === 'change_new_confirm') {
+    if (entered === _tempNewPin) {
+      const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const hash = await _sha256Hash(salt + ':' + entered);
+      localStorage.setItem('covo_pin_salt', salt);
+      localStorage.setItem('covo_pin_hash', hash);
+      updatePinSettingsUI();
+      closePinSetupModal();
+      alertMessage('PINコードを変更しました！', 'success');
+    } else {
+      if (errMsg) errMsg.textContent = '新しいPINコードが一致しません';
+      _pinSetupMode = 'change_new_first';
+      _tempNewPin = '';
+      if (title) title.textContent = '新しいPINコードの設定';
+      if (desc) desc.textContent = '新しく設定する4桁の数字を入力してください';
+    }
+  } else if (_pinSetupMode === 'remove_current') {
+    const salt = localStorage.getItem('covo_pin_salt');
+    const expectedHash = localStorage.getItem('covo_pin_hash');
+    const computedHash = await _sha256Hash(salt + ':' + entered);
+    if (computedHash === expectedHash) {
+      localStorage.removeItem('covo_pin_hash');
+      localStorage.removeItem('covo_pin_salt');
+      sessionStorage.removeItem('covo_is_screen_locked');
+      updatePinSettingsUI();
+      closePinSetupModal();
+      alertMessage('画面PINロックを解除しました。', 'success');
+    } else {
+      if (errMsg) errMsg.textContent = 'PINコードが違います。解除できませんでした。';
+    }
+  }
+}
+window.executeRemoveCurrentPin = function () {
+  _pinSetupMode = 'remove_current';
+  _currentSetupInput = '';
+  updateSetupPinDots();
+  const title = document.getElementById('pinSetupModalTitle');
+  const desc = document.getElementById('pinSetupModalDesc');
+  const actionOpts = document.getElementById('pinSetupActionOptions');
+  if (title) title.textContent = 'PINコードの解除';
+  if (desc) desc.textContent = '解除を確認するため、現在のPINを入力してください';
+  if (actionOpts) actionOpts.classList.add('hidden');
+};
 function updatePinSettingsUI() {
   const hasPin = !!localStorage.getItem('covo_pin_hash');
   const badge = document.getElementById('pinLockStatusBadge');
@@ -20172,7 +20290,7 @@ function updatePinSettingsUI() {
     }
   }
   if (btnSetup) {
-    btnSetup.textContent = hasPin ? 'PINを変更' : 'PINを設定';
+    btnSetup.textContent = hasPin ? 'PINを変更 / 解除' : 'PINを設定';
   }
   if (btnLockNow) {
     if (hasPin) {
@@ -20185,12 +20303,10 @@ function updatePinSettingsUI() {
     timeoutSelect.value = localStorage.getItem('covo_auto_lock_mins') || '15';
   }
 }
-
 window.changeAutoLockTimeout = function (mins) {
   localStorage.setItem('covo_auto_lock_mins', String(mins));
   alertMessage(mins === '0' ? '自動画面ロックを無効化しました。' : `無操作${mins}分後に自動画面ロックを設定しました。`, 'success');
 };
-
 window.lockAppScreen = function () {
   const hasPin = !!localStorage.getItem('covo_pin_hash');
   if (!hasPin) {
@@ -20201,48 +20317,61 @@ window.lockAppScreen = function () {
   updatePinDots();
   const errMsg = document.getElementById('appPinErrorMessage');
   if (errMsg) errMsg.textContent = '';
-
+  sessionStorage.setItem('covo_is_screen_locked', '1');
   const avatarEl = document.getElementById('appPinLockAvatar');
   const nameEl = document.getElementById('appPinLockName');
   if (avatarEl) {
     if (isUsableAvatarUrl(userAvatarUrl)) {
       __setAvatarImg(avatarEl, userAvatarUrl, userNickname || 'ユーザー', { className: 'w-full h-full object-cover rounded-full' });
     } else {
-      avatarEl.innerHTML = '<i class="fas fa-lock text-indigo-400"></i>';
+      avatarEl.innerHTML = '<i class="fas fa-lock text-slate-300"></i>';
     }
   }
   if (nameEl) {
     nameEl.textContent = userNickname ? `${userNickname} (ロック中)` : '画面がロックされています';
   }
-
   const overlay = document.getElementById('appPinLockOverlay');
   if (overlay) overlay.classList.add('active');
 };
-
 window.inputAppPinDigit = async function (digit) {
+  const now = Date.now();
+  if (now < _pinLockoutUntil) {
+    const remain = Math.ceil((_pinLockoutUntil - now) / 1000);
+    const errMsg = document.getElementById('appPinErrorMessage');
+    if (errMsg) errMsg.textContent = `連続で失敗したため ${remain} 秒間ロックされています`;
+    return;
+  }
   if (_currentPinInput.length >= 4) return;
   _currentPinInput += digit;
   updatePinDots();
   const errMsg = document.getElementById('appPinErrorMessage');
   if (errMsg) errMsg.textContent = '';
-
   if (_currentPinInput.length === 4) {
     const salt = localStorage.getItem('covo_pin_salt');
     const expectedHash = localStorage.getItem('covo_pin_hash');
     if (!salt || !expectedHash) {
       document.getElementById('appPinLockOverlay')?.classList.remove('active');
+      sessionStorage.removeItem('covo_is_screen_locked');
       return;
     }
     const computedHash = await _sha256Hash(salt + ':' + _currentPinInput);
     if (computedHash === expectedHash) {
       // 解除成功
       document.getElementById('appPinLockOverlay')?.classList.remove('active');
+      sessionStorage.removeItem('covo_is_screen_locked');
       _currentPinInput = '';
+      _pinFailedAttempts = 0;
       updatePinDots();
       _lastUserInteractionTime = Date.now();
     } else {
-      // 不一致
-      if (errMsg) errMsg.textContent = 'PINコードが違います';
+      // 不一致 (ブルートフォース攻撃対策)
+      _pinFailedAttempts++;
+      if (_pinFailedAttempts >= 5) {
+        _pinLockoutUntil = Date.now() + 30000;
+        if (errMsg) errMsg.textContent = '連続で5回失敗したため 30 秒間ロックされます';
+      } else {
+        if (errMsg) errMsg.textContent = `PINコードが違います (残り ${5 - _pinFailedAttempts} 回)`;
+      }
       const container = document.getElementById('appPinDotsContainer');
       if (container) {
         container.classList.add('animate-shake');
@@ -20255,7 +20384,6 @@ window.inputAppPinDigit = async function (digit) {
     }
   }
 };
-
 window.backspaceAppPinDigit = function () {
   if (_currentPinInput.length > 0) {
     _currentPinInput = _currentPinInput.slice(0, -1);
@@ -20264,24 +20392,22 @@ window.backspaceAppPinDigit = function () {
     if (errMsg) errMsg.textContent = '';
   }
 };
-
 window.clearAppPinInput = function () {
   _currentPinInput = '';
   updatePinDots();
   const errMsg = document.getElementById('appPinErrorMessage');
   if (errMsg) errMsg.textContent = '';
 };
-
-window.emergencyLogoutFromPinLock = function () {
-  if (confirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？')) {
+window.emergencyLogoutFromPinLock = async function () {
+  if (await showCustomConfirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？', 'ログアウト', 'キャンセル')) {
     document.getElementById('appPinLockOverlay')?.classList.remove('active');
+    sessionStorage.removeItem('covo_is_screen_locked');
     const logoutBtn = document.getElementById('logoutButtonInModal');
     if (logoutBtn) logoutBtn.click();
     else if (typeof logout === 'function') logout();
   }
 };
-
-// キーボードからのPIN入力サポート & 無操作タイマー
+// キーボードからのPIN入力サポート & 無操作タイマー & 復帰時ロック維持
 function initPinLockSystem() {
   window.addEventListener('keydown', (e) => {
     const overlay = document.getElementById('appPinLockOverlay');
@@ -20295,31 +20421,39 @@ function initPinLockSystem() {
       }
     }
   });
-
   const onUserActivity = () => { _lastUserInteractionTime = Date.now(); };
   window.addEventListener('mousemove', onUserActivity, { passive: true });
   window.addEventListener('keydown', onUserActivity, { passive: true });
   window.addEventListener('touchstart', onUserActivity, { passive: true });
-
-  setInterval(() => {
-    const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
-    if (timeoutMins > 0 && localStorage.getItem('covo_pin_hash')) {
-      const overlay = document.getElementById('appPinLockOverlay');
-      if (overlay && !overlay.classList.contains('active')) {
+  // 画面復帰時にロック状態をチェック・維持
+  const checkScreenLockPersistence = () => {
+    const hasPin = !!localStorage.getItem('covo_pin_hash');
+    if (hasPin) {
+      if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
+        lockAppScreen();
+        return;
+      }
+      const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
+      if (timeoutMins > 0) {
         const elapsed = Date.now() - _lastUserInteractionTime;
         if (elapsed >= timeoutMins * 60 * 1000) {
           lockAppScreen();
         }
       }
     }
-  }, 15000);
-
+  };
+  window.addEventListener('focus', checkScreenLockPersistence);
+  window.addEventListener('pageshow', checkScreenLockPersistence);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkScreenLockPersistence();
+  });
+  setInterval(checkScreenLockPersistence, 15000);
   updatePinSettingsUI();
 }
-
 // ==========================================
-// チャット履歴の安全な暗号化エクスポート (#101)
+// チャット履歴のエクスポート & バックアップ復号ビューア (#101 - 実用化完了)
 // ==========================================
+let _cachedViewerMessages = [];
 async function _derivePassphraseKey(passphrase, salt) {
   const pwUtf8 = new TextEncoder().encode(passphrase);
   const baseKey = await crypto.subtle.importKey('raw', pwUtf8, 'PBKDF2', false, ['deriveKey']);
@@ -20331,133 +20465,315 @@ async function _derivePassphraseKey(passphrase, salt) {
     ['encrypt', 'decrypt']
   );
 }
-
-window.promptExportCurrentChatEncrypted = async function () {
+// 現在のチャットから全メッセージを取得して完全復号するヘルパー
+async function _fetchCurrentChannelDecryptedMessages() {
+  if (!currentRoomId && !currentDmId) return null;
+  const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  const rtdb = await _getOrInitRTDB();
+  const basePath = currentServerId
+    ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
+    : `artifacts/${appId}/dm_messages/${currentDmId}`;
+  const snap = await get(ref(rtdb, basePath));
+  let msgs = [];
+  if (snap.exists()) {
+    const val = snap.val();
+    msgs = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+    msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  }
+  // 暗号化メッセージの事前完全復号
+  if (currentServerId) {
+    const members = (currentServerData && currentServerData.joinedUsers) || [];
+    await decryptMessagesInPlace(msgs, currentServerId, currentRoomId, members).catch(() => {});
+  } else if (currentDmId) {
+    await _decryptDmMessagesInPlace(msgs, currentDmId, currentDmParticipants).catch(() => {});
+  }
+  const currentName = currentServerId
+    ? `${currentServerData?.name || 'server'}_#${roomNames[currentRoomId] || currentRoomId}`
+    : `DM_@${currentDmParticipant?.nickname || 'user'}`;
+  return { msgs, currentName };
+}
+window.openChatExportModal = function () {
   if (!currentRoomId && !currentDmId) {
     alertMessage('エクスポートするチャット（ルームまたはDM）を開いてください。', 'warning');
     return;
   }
-  const passphrase = prompt('チャットバックアップを保護するための暗号化パスフレーズを入力してください:');
-  if (!passphrase || passphrase.trim().length === 0) return;
-  if (passphrase.length < 4) {
-    alertMessage('パスフレーズは4文字以上で設定してください。', 'error');
-    return;
+  const modal = document.getElementById('chatExportModal');
+  const titleEl = document.getElementById('chatExportChannelTitle');
+  if (titleEl) {
+    const name = currentServerId ? `#${roomNames[currentRoomId] || currentRoomId}` : `@${currentDmParticipant?.nickname || 'ユーザー'}`;
+    titleEl.textContent = `対象: ${name} のチャット履歴`;
   }
-
+  if (modal) modal.classList.remove('hidden');
+};
+window.closeChatExportModal = function () {
+  const modal = document.getElementById('chatExportModal');
+  if (modal) modal.classList.add('hidden');
+};
+window.executeExportChatFormat = async function (format) {
+  closeChatExportModal();
+  alertMessage('チャット履歴を抽出・処理しています...', 'info');
   try {
-    alertMessage('チャット履歴を取得して暗号化しています...', 'info');
-    const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    const basePath = currentServerId
-      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
-      : `artifacts/${appId}/dm_messages/${currentDmId}`;
-
-    const snap = await get(ref(rtdb, basePath));
-    let msgs = [];
-    if (snap.exists()) {
-      const val = snap.val();
-      msgs = Object.keys(val).map(k => ({ id: k, ...val[k] }));
-      msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    }
-
-    const currentName = (document.getElementById('channelNameDisplay')?.textContent || 'covo-chat').trim();
-    const payload = {
-      format: 'covo-backup',
-      version: 1,
-      exportedAt: Date.now(),
-      roomName: currentName,
-      messageCount: msgs.length,
-      messages: msgs
-    };
-
-    const payloadJson = JSON.stringify(payload);
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const aesKey = await _derivePassphraseKey(passphrase, salt);
-
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
-      aesKey,
-      new TextEncoder().encode(payloadJson)
-    );
-
-    const backupContainer = {
-      covoBackup: true,
-      version: 1,
-      salt: _abToB64(salt.buffer),
-      iv: _abToB64(iv.buffer),
-      data: _abToB64(ciphertext),
-      exportedAt: Date.now(),
-      roomName: currentName
-    };
-
-    const blob = new Blob([JSON.stringify(backupContainer, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const data = await _fetchCurrentChannelDecryptedMessages();
+    if (!data) return;
+    const { msgs, currentName } = data;
     const dateStr = new Date().toISOString().slice(0, 10);
-    a.download = `covo-backup-${currentName.replace(/[\/\\?%*:|"<>]/g, '_')}-${dateStr}.covo-backup`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
-
-    alertMessage(`暗号化バックアップ（${msgs.length}件のメッセージ）を出力しました！`, 'success');
+    const safeName = currentName.replace(/[\/\\?%*:|"<>]/g, '_');
+    if (format === 'txt') {
+      msgs.forEach(m => {
+        const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
+        const sender = m.senderNickname || m.userNickname || 'ユーザー';
+        const body = m.text || (m.sticker ? `[スタンプ: ${m.sticker}]` : m.fileName ? `[ファイル: ${m.fileName}]` : '');
+        txt += `[${time}] ${sender}: ${body}\n`;
+      });
+      const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+      _triggerBlobDownload(blob, `covo-${safeName}-${dateStr}.txt`);
+      alertMessage(`テキストファイル (.txt) を保存しました！`, 'success');
+    } else if (format === 'md') {
+      let md = `# Covo チャット履歴: ${currentName}\n\n- **エクスポート日時**: ${new Date().toLocaleString('ja-JP')}\n- **メッセージ数**: ${msgs.length} 件\n\n---\n\n`;
+      msgs.forEach(m => {
+        const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
+        const sender = m.senderNickname || m.userNickname || 'ユーザー';
+        const body = m.text || (m.sticker ? `**[スタンプ]** ${m.sticker}` : m.fileName ? `📁 [${m.fileName}](${m.fileData || m.kvFileUrl || '#'})` : '');
+        md += `### ${sender}  <small>(${time})</small>\n${body}\n\n`;
+      });
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      _triggerBlobDownload(blob, `covo-${safeName}-${dateStr}.md`);
+      alertMessage(`Markdownファイル (.md) を保存しました！`, 'success');
+    } else if (format === 'json') {
+      const payload = {
+        app: 'Covo',
+        version: 1,
+        exportedAt: Date.now(),
+        channel: currentName,
+        messageCount: msgs.length,
+        messages: msgs
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      _triggerBlobDownload(blob, `covo-${safeName}-${dateStr}.json`);
+      alertMessage(`JSONデータ (.json) を保存しました！`, 'success');
+    } else if (format === 'encrypted') {
+      const passphrase = await window.showCustomPrompt('バックアップを保護するためのパスフレーズを入力してください:', '', '暗号化して保存', 'キャンセル');
+      if (!passphrase) return;
+      if (passphrase.length < 4) {
+        alertMessage('パスフレーズは4文字以上で設定してください。', 'error');
+        return;
+      }
+      const payload = {
+        format: 'covo-backup',
+        version: 1,
+        exportedAt: Date.now(),
+        roomName: currentName,
+        messageCount: msgs.length,
+        messages: msgs
+      };
+      const payloadJson = JSON.stringify(payload);
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const aesKey = await _derivePassphraseKey(passphrase, salt);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv },
+        aesKey,
+        new TextEncoder().encode(payloadJson)
+      );
+      const backupContainer = {
+        covoBackup: true,
+        version: 1,
+        salt: _abToB64(salt.buffer),
+        iv: _abToB64(iv.buffer),
+        data: _abToB64(ciphertext),
+        exportedAt: Date.now(),
+        roomName: currentName
+      };
+      const blob = new Blob([JSON.stringify(backupContainer, null, 2)], { type: 'application/json' });
+      _triggerBlobDownload(blob, `covo-backup-${safeName}-${dateStr}.covo-backup`);
+      alertMessage(`暗号化バックアップ (.covo-backup) を保存しました！`, 'success');
+    }
   } catch (err) {
-    console.error('[Backup] Export error:', err);
+    console.error('[Export Error]', err);
     alertMessage(`エクスポートに失敗しました: ${err.message}`, 'error');
   }
 };
-
-window.promptImportAndInspectBackup = function () {
+function _triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+// バックアップインポート & ビューア展開
+window.openChatBackupViewerFilePicker = function () {
   const fileInp = document.createElement('input');
   fileInp.type = 'file';
-  fileInp.accept = '.covo-backup,.json';
+  fileInp.accept = '.covo-backup,.json,.txt,.md';
   fileInp.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      const backupData = JSON.parse(text);
-      if (!backupData.covoBackup || !backupData.salt || !backupData.iv || !backupData.data) {
-        alertMessage('無効なCovoバックアップファイル形式です。', 'error');
-        return;
+      if (file.name.endsWith('.covo-backup')) {
+        const text = await file.text();
+        const backupData = JSON.parse(text);
+        if (!backupData.covoBackup || !backupData.salt || !backupData.iv || !backupData.data) {
+          alertMessage('無効なCovoバックアップファイル形式です。', 'error');
+          return;
+        }
+        const passphrase = await window.showCustomPrompt(`「${backupData.roomName || file.name}」の復号パスフレーズ:`, '', '復号して開く', 'キャンセル');
+        if (!passphrase) return;
+        const salt = new Uint8Array(_b64ToAb(backupData.salt));
+        const iv = new Uint8Array(_b64ToAb(backupData.iv));
+        const cipherBytes = _b64ToAb(backupData.data);
+        const aesKey = await _derivePassphraseKey(passphrase, salt);
+        let decryptedBuf;
+        try {
+          decryptedBuf = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: iv },
+            aesKey,
+            cipherBytes
+          );
+        } catch (_) {
+          alertMessage('パスフレーズが一致しないか、バックアップファイルが破損しています。', 'error');
+          return;
+        }
+        const decryptedJson = new TextDecoder().decode(decryptedBuf);
+        const payload = JSON.parse(decryptedJson);
+        openChatBackupViewerModal(payload.roomName || file.name, payload.messages || [], payload.exportedAt);
+      } else if (file.name.endsWith('.json')) {
+        const text = await file.text();
+        const payload = JSON.parse(text);
+        const msgs = Array.isArray(payload) ? payload : (payload.messages || []);
+        openChatBackupViewerModal(payload.channel || payload.roomName || file.name, msgs, payload.exportedAt);
+      } else {
+        // .txt / .md の直接テキストプレビュー
+        const text = await file.text();
+        openTextFileAsViewer(file.name, text);
       }
-      const passphrase = prompt(`暗号化バックアップ「${backupData.roomName || file.name}」のパスフレーズを入力してください:`);
-      if (!passphrase) return;
-
-      const salt = new Uint8Array(_b64ToAb(backupData.salt));
-      const iv = new Uint8Array(_b64ToAb(backupData.iv));
-      const cipherBytes = _b64ToAb(backupData.data);
-      const aesKey = await _derivePassphraseKey(passphrase, salt);
-
-      let decryptedBuf;
-      try {
-        decryptedBuf = await crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: iv },
-          aesKey,
-          cipherBytes
-        );
-      } catch (_) {
-        alertMessage('パスフレーズが一致しないか、バックアップファイルが破損しています。', 'error');
-        return;
+    } catch (err) {
+      console.error('[Backup View Error]', err);
+      alertMessage(`ファイル読み込みエラー: ${err.message}`, 'error');
+    }
+  };
+  fileInp.click();
+};
+window.openChatBackupViewerModal = function (title, messages, exportedAt) {
+  _cachedViewerMessages = messages || [];
+  const modal = document.getElementById('chatBackupViewerModal');
+  const titleEl = document.getElementById('viewerHeaderTitle');
+  const metaEl = document.getElementById('viewerHeaderMeta');
+  const dateStr = exportedAt ? new Date(exportedAt).toLocaleDateString('ja-JP') : '';
+  if (titleEl) titleEl.textContent = title || 'チャットバックアップ';
+  if (metaEl) metaEl.textContent = `${_cachedViewerMessages.length} 件のメッセージ ${dateStr ? `• ${dateStr}` : ''}`;
+  renderViewerTimeline(_cachedViewerMessages);
+  if (modal) modal.classList.remove('hidden');
+};
+window.closeChatBackupViewerModal = function () {
+  const modal = document.getElementById('chatBackupViewerModal');
+  if (modal) modal.classList.add('hidden');
+  _cachedViewerMessages = [];
+};
+function renderViewerTimeline(msgs) {
+  const container = document.getElementById('viewerTimelineContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!msgs || msgs.length === 0) {
+    container.innerHTML = '<div class="text-center py-12 text-xs text-gray-400">表示できるメッセージがありません</div>';
+    return;
+  }
+  msgs.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'p-3 rounded-2xl bg-gray-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-800 space-y-1 text-xs';
+    const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const sender = escapeHtml(m.senderNickname || m.userNickname || 'ユーザー');
+    const textContent = m.text ? escapeHtmlAndLinkUrls(m.text) : (m.sticker ? `🌟 スタンプ: ${escapeHtml(m.sticker)}` : m.fileName ? `📁 添付ファイル: ${escapeHtml(m.fileName)}` : '');
+    item.innerHTML = `
+      <div class="flex items-center justify-between text-[11px] text-gray-400 mb-0.5">
+        <span class="font-bold text-gray-700 dark:text-gray-300">${sender}</span>
+        <span class="font-mono text-[10px]">${time}</span>
+      </div>
+      <div class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-relaxed">${textContent}</div>
+    `;
+    container.appendChild(item);
+  });
+}
+function openTextFileAsViewer(filename, text) {
+  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  const fakeMsgs = lines.map((l, i) => ({
+    id: `txt_${i}`,
+    senderNickname: 'ログ',
+    text: l,
+    timestamp: Date.now()
+  }));
+  openChatBackupViewerModal(filename, fakeMsgs, Date.now());
+}
+        (payload.messages || []).forEach(m => {
+          const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
+          const sender = m.senderNickname || m.userNickname || 'ユーザー';
+          const body = m.text || (m.fileName ? `[ファイル: ${m.fileName}]` : '(スタンプ)');
+          txtContent += `[${time}] ${sender}: ${body}\n`;
+        });
+        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `covo-chat-decrypted-${(payload.roomName || 'chat').replace(/[\/\\?%*:|"<>]/g, '_')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
       }
-
-      const decryptedJson = new TextDecoder().decode(decryptedBuf);
-      const payload = JSON.parse(decryptedJson);
-      const dateStr = new Date(payload.exportedAt || Date.now()).toLocaleString('ja-JP');
-
-      const shouldSaveTxt = confirm(
-        `【復号成功！】\n` +
-        `対象: ${payload.roomName || 'チャット'}\n` +
-        `メッセージ数: ${payload.messages?.length || 0} 件\n` +
-        `バックアップ作成日時: ${dateStr}\n\n` +
-        `このチャット履歴を閲覧用の平文テキストファイル (.txt) として保存しますか？`
-      );
-
-      if (shouldSaveTxt) {
+    } catch (err) {
+      console.error('[Backup] Decrypt error:', err);
+      alertMessage(`復号処理エラー: ${err.message}`, 'error');
+    }
+  };
+  fileInp.click();
+};
+// =========================================================================
+// アプリ起動エントリーポイント (Boot Sequence)
+// =========================================================================
+(async function bootstrapApp() {
+  try {
+    // 0. 設定の初期化 (通知設定などの状態復元)
+    if (typeof initSettings === 'function') {
+      initSettings();
+    }
+window.filterViewerMessages = function (query) {
+  const q = (query || '').toLowerCase().trim();
+  if (!q) {
+    renderViewerTimeline(_cachedViewerMessages);
+    return;
+  }
+  const filtered = _cachedViewerMessages.filter(m => (m.text && m.text.toLowerCase().includes(q)) || (m.senderNickname && m.senderNickname.toLowerCase().includes(q)));
+  renderViewerTimeline(filtered);
+};
+window.saveViewerMessagesAsTxt = function () {
+  if (!_cachedViewerMessages || _cachedViewerMessages.length === 0) return;
+  const title = document.getElementById('viewerHeaderTitle')?.textContent || 'chat';
+  let txt = '';
+  _cachedViewerMessages.forEach(m => {
+    const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
+    const sender = m.senderNickname || m.userNickname || 'ユーザー';
+    const body = m.text || (m.sticker ? `[スタンプ: ${m.sticker}]` : m.fileName ? `[ファイル: ${m.fileName}]` : '');
+    txt += `[${time}] ${sender}: ${body}\n`;
+  });
+  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+  _triggerBlobDownload(blob, `${title.replace(/[\/\\?%*:|"<>]/g, '_')}-export.txt`);
+  alertMessage('テキストファイルとして保存しました！', 'success');
+};
+// =========================================================================
+// アプリ起動エントリーポイント (Boot Sequence)
+// =========================================================================
+(async function bootstrapApp() {
+  try {
+    // 0. 設定の初期化 (通知設定などの状態復元)
+    if (typeof initSettings === 'function') {
+      initSettings();
+    }
         let txtContent = `=== COVO チャット履歴バックアップ ===\n対象: ${payload.roomName}\n日時: ${dateStr}\n件数: ${payload.messages?.length || 0}\n====================================\n\n`;
         (payload.messages || []).forEach(m => {
           const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');

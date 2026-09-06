@@ -1,3 +1,6 @@
+# このファイルは後方互換のために残しています。
+# 主な設定は プロジェクトルートの repomix.config.json を参照してください。
+
 # 1. 特定のファイルをピンポイントで除外
 **/geoguessr_locations.js
 
@@ -5,6 +8,8 @@
 assets/
 covo-stamps/
 webfonts/
+icons/
+img/
 tests/
 server/
 src-tauri/
@@ -16,8 +21,14 @@ src-tauri/
 *.ico
 *.woff2
 *.ttf
+*.svg
+*.gif
+*.webp
 
 # 4. ビルドファイルや一時ファイル
 dist/
 build/
 .wrangler/
+
+# 5. minifiedライブラリ
+css/font-awesome.min.css

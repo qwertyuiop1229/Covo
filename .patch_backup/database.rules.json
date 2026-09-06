@@ -74,8 +74,8 @@
         },
         "error_reports": {
           "$docId": {
-            ".read": "auth != null",
-            ".write": "auth != null"
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
           }
         },
         "recovery_vault": {
