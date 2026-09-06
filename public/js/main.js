@@ -97,6 +97,8 @@ function isTransientTelemetryError(args) {
       str.includes('initial-throttle') ||
       str.includes('fetch-throttle') ||
       str.includes('fetch-status-error') ||
+      str.includes('exchangerecaptchaprovider') ||
+      str.includes('exchangerecaptchaenterprisetoken') ||
       str.includes('recaptcha')
     ) {
       return true;
@@ -339,16 +341,19 @@ const _pushLog = (type, args) => {
   } catch (e) { }
 };
 
-// コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に100%出力）
+// コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に出力）
 console.log = function (...args) {
+  if (isTransientTelemetryError(args)) return;
   _pushLog('INFO', args);
   _orgLog.apply(console, args);
 };
 console.warn = function (...args) {
+  if (isTransientTelemetryError(args)) return;
   _pushLog('WARN', args);
   _orgWarn.apply(console, args);
 };
 console.error = function (...args) {
+  if (isTransientTelemetryError(args)) return;
   _pushLog('ERR', args);
   _orgErr.apply(console, args);
 };
@@ -762,14 +767,15 @@ function initializeFirebase() {
       app = initializeApp(firebaseConfig);
       if (!isTauri) {
         try {
-          // Safari / iPad のプライベートブラウズやスロットリング時にアプリ全体が停止しないよう耐障害性を確保
-          initializeAppCheck(app, {
-            provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-            isTokenAutoRefreshEnabled: true
-          });
-          console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
+          if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+            initializeAppCheck(app, {
+              provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
+              isTokenAutoRefreshEnabled: false
+            });
+            console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
+          }
         } catch (e) {
-          console.warn("AppCheckの起動が制限されています(VPN/広告ブロッカー/プライベートリレーの可能性)。通常認証フォールバックで継続します:", e);
+          // 未構成またはスロットリング時は静かにフォールバック
         }
       }
       try {
@@ -5353,9 +5359,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         upActionFriendBtn.onclick = async () => {
           closeUserProfileModal();
-          const targetInput = document.getElementById("dmAddFriendInput");
-          if (targetInput) targetInput.value = safeName;
-          switchDmTab("add");
+          await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
         };
       }
     }
@@ -7067,6 +7071,48 @@ window.openCallPickerWithTarget = function(targetUid) {
 window.openFileShareWithTarget = function(targetUid) {
   const targetUser = cachedUsers.find(u => u.id === targetUid) || { id: targetUid, nickname: friendRelationships[targetUid]?.targetNickname || 'ユーザー' };
   _fsPickFileAndSend(targetUser.id, targetUser.nickname || 'ユーザー');
+};
+
+window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', targetAvatarUrl = '', targetEmail = '') {
+  if (!targetUid || targetUid === userId) return;
+  try {
+    const existing = friendRelationships[targetUid];
+    if (existing && existing.status === 'friends') {
+      alertMessage('すでにフレンドです！', 'info');
+      return;
+    }
+    if (existing && existing.status === 'pending_sent') {
+      alertMessage('すでにフレンド申請を送信済みです。', 'info');
+      return;
+    }
+
+    const myRef = doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUid}`);
+    const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
+
+    const batch = writeBatch(db);
+    batch.set(myRef, {
+      targetUid: targetUid,
+      targetNickname: targetNickname || 'ユーザー',
+      targetAvatarUrl: targetAvatarUrl || '',
+      targetEmail: targetEmail || '',
+      status: 'pending_sent',
+      updatedAt: serverTimestamp()
+    });
+    batch.set(targetRef, {
+      targetUid: userId,
+      targetNickname: currentServerNickname || userNickname || 'ユーザー',
+      targetAvatarUrl: userAvatarUrl || '',
+      targetEmail: auth.currentUser?.email || '',
+      status: 'pending_received',
+      updatedAt: serverTimestamp()
+    });
+
+    await batch.commit();
+    alertMessage(`@${targetNickname || 'ユーザー'} にフレンド申請を送信しました！`, 'success');
+  } catch (err) {
+    console.error('Failed to send direct friend request:', err);
+    alertMessage('フレンド申請の送信に失敗しました', 'error');
+  }
 };
 
 window.submitFriendRequest = async function() {
@@ -19800,6 +19846,9 @@ function initSettings() {
   if (toggleBrowserNotif) toggleBrowserNotif.addEventListener('change', (e) => handleNotifChange(e.target.checked));
   if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.addEventListener('change', (e) => handleNotifChange(e.target.checked));
 
+  const snavDesktop = document.getElementById('snav-desktop');
+  if (snavDesktop) snavDesktop.style.display = isTauri ? 'flex' : 'none';
+
   if (isTauri) {
     // Windows版: 自動起動・ショートカットを表示
     document.getElementById('desktopSettingsContainer')?.classList.remove('hidden');
@@ -20300,13 +20349,21 @@ window.executeRemoveCurrentPin = function () {
 let _isAppScreenLocked = false;
 let _pinObserver = null;
 
+window.selectLockGraceTimeoutOption = function (val, label) {
+  changeLockGraceTimeout(val);
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+};
+
+window.selectAutoLockTimeoutOption = function (val, label) {
+  changeAutoLockTimeout(val);
+  document.querySelectorAll('.covo-custom-select').forEach(s => s.classList.remove('open'));
+};
+
 function updatePinSettingsUI() {
   const hasPin = !!localStorage.getItem('covo_pin_hash');
   const badges = [document.getElementById('pinLockStatusBadge'), document.getElementById('mobilePinLockStatusBadge')].filter(Boolean);
   const btnsSetup = [document.getElementById('btnSetupPinLock'), document.getElementById('mobileBtnSetupPinLock')].filter(Boolean);
   const btnsLockNow = [document.getElementById('btnLockScreenNow'), document.getElementById('mobileBtnLockScreenNow')].filter(Boolean);
-  const timeoutSelects = [document.getElementById('autoLockTimeoutSelect'), document.getElementById('mobileAutoLockTimeoutSelect')].filter(Boolean);
-  const graceSelects = [document.getElementById('lockGraceTimeoutSelect'), document.getElementById('mobileLockGraceTimeoutSelect')].filter(Boolean);
 
   badges.forEach(badge => {
     if (hasPin) {
@@ -20327,24 +20384,66 @@ function updatePinSettingsUI() {
     else btn.classList.add('hidden');
   });
 
-  const savedTimeout = localStorage.getItem('covo_auto_lock_mins') || '15';
-  timeoutSelects.forEach(sel => { sel.value = savedTimeout; });
-
+  // 猶予時間ドロップダウンの同期 (PC & Mobile)
   const savedGrace = localStorage.getItem('covo_lock_grace_sec') ?? '0';
-  graceSelects.forEach(sel => { sel.value = String(savedGrace); });
+  const graceLabelMap = {
+    '0': '即時 (離れたら即ロック)',
+    '10': '10秒後',
+    '30': '30秒後',
+    '60': '1分後',
+    '300': '5分後',
+    '900': '15分後',
+    '-1': '無効 (離脱時はロックしない)'
+  };
+  const graceLabel = graceLabelMap[savedGrace] || '即時 (離れたら即ロック)';
+  
+  ['lockGraceTimeoutDropdown', 'mobileLockGraceTimeoutDropdown'].forEach(id => {
+    const dd = document.getElementById(id);
+    if (dd) {
+      const lbl = dd.querySelector('.covo-select-trigger span');
+      if (lbl) lbl.textContent = graceLabel;
+      dd.querySelectorAll('.covo-select-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.getAttribute('data-value') === String(savedGrace));
+      });
+      const hiddenInp = dd.querySelector('input[type="hidden"]');
+      if (hiddenInp) hiddenInp.value = String(savedGrace);
+    }
+  });
+
+  // 自動ロック時間ドロップダウンの同期 (PC & Mobile)
+  const savedTimeout = localStorage.getItem('covo_auto_lock_mins') || '15';
+  const timeoutLabelMap = {
+    '0': '無効 (自動ロックしない)',
+    '5': '5分後',
+    '15': '15分後',
+    '30': '30分後',
+    '60': '60分後'
+  };
+  const timeoutLabel = timeoutLabelMap[savedTimeout] || `${savedTimeout}分後`;
+
+  ['autoLockTimeoutDropdown', 'mobileAutoLockTimeoutDropdown'].forEach(id => {
+    const dd = document.getElementById(id);
+    if (dd) {
+      const lbl = dd.querySelector('.covo-select-trigger span');
+      if (lbl) lbl.textContent = timeoutLabel;
+      dd.querySelectorAll('.covo-select-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.getAttribute('data-value') === String(savedTimeout));
+      });
+      const hiddenInp = dd.querySelector('input[type="hidden"]');
+      if (hiddenInp) hiddenInp.value = String(savedTimeout);
+    }
+  });
 }
 
 window.changeAutoLockTimeout = function (mins) {
   localStorage.setItem('covo_auto_lock_mins', String(mins));
-  const selects = [document.getElementById('autoLockTimeoutSelect'), document.getElementById('mobileAutoLockTimeoutSelect')].filter(Boolean);
-  selects.forEach(s => { s.value = String(mins); });
+  updatePinSettingsUI();
   alertMessage(mins === '0' ? '無操作時の自動画面ロックを無効化しました。' : `無操作 ${mins} 分後に自動画面ロックを設定しました。`, 'success');
 };
 
 window.changeLockGraceTimeout = function (sec) {
   localStorage.setItem('covo_lock_grace_sec', String(sec));
-  const selects = [document.getElementById('lockGraceTimeoutSelect'), document.getElementById('mobileLockGraceTimeoutSelect')].filter(Boolean);
-  selects.forEach(s => { s.value = String(sec); });
+  updatePinSettingsUI();
   let label = '即時 (離れたら即ロック)';
   if (sec === '10') label = '10秒後';
   else if (sec === '30') label = '30秒後';
@@ -20394,6 +20493,7 @@ function unlockAppScreen() {
   _isAppScreenLocked = false;
   document.body.classList.remove('screen-locked');
   sessionStorage.removeItem('covo_is_screen_locked');
+  localStorage.removeItem('covo_app_blur_time');
   _currentPinInput = '';
   _pinFailedAttempts = 0;
   updatePinDots();
@@ -20517,11 +20617,12 @@ function initPinLockSystem() {
   window.addEventListener('mousemove', onUserActivity, { passive: true });
   window.addEventListener('keydown', onUserActivity, { passive: true });
   window.addEventListener('touchstart', onUserActivity, { passive: true });
+  window.addEventListener('click', onUserActivity, { passive: true });
 
   // アプリ離脱（バックグラウンド移行）時の記録
   const onAppBlur = () => {
     const hasPin = !!localStorage.getItem('covo_pin_hash');
-    if (!hasPin) return;
+    if (!hasPin || _isAppScreenLocked) return;
     localStorage.setItem('covo_app_blur_time', Date.now().toString());
     const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
     if (graceSec === 0) {
@@ -20529,51 +20630,69 @@ function initPinLockSystem() {
     }
   };
 
-  // アプリ復帰時の判定
-  const checkScreenLockPersistence = () => {
+  // アプリ復帰時の判定 (focus / pageshow / visibilitychange)
+  const onAppResume = () => {
     const hasPin = !!localStorage.getItem('covo_pin_hash');
-    if (hasPin) {
-      if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
+    if (!hasPin || _isAppScreenLocked) return;
+
+    if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
+      lockAppScreen();
+      return;
+    }
+
+    // 離脱猶予時間 (Grace Period) の判定
+    const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
+    if (graceSec >= 0) {
+      const blurTime = parseInt(localStorage.getItem('covo_app_blur_time') || '0', 10);
+      if (blurTime > 0 && (Date.now() - blurTime >= graceSec * 1000)) {
         lockAppScreen();
         return;
       }
-      // 1. アプリ離脱猶予時間 (Grace Period) の判定
-      const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
-      if (graceSec >= 0) {
-        const blurTime = parseInt(localStorage.getItem('covo_app_blur_time') || '0', 10);
-        if (blurTime > 0 && (Date.now() - blurTime >= graceSec * 1000)) {
-          lockAppScreen();
-          return;
-        }
-      }
-      // 2. 無操作タイマー (Auto Lock Timeout) の判定
-      const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
-      if (timeoutMins > 0) {
-        const elapsed = Date.now() - _lastUserInteractionTime;
-        if (elapsed >= timeoutMins * 60 * 1000) {
-          lockAppScreen();
-          return;
-        }
+    }
+
+    // 猶予時間内に復帰した場合は離脱タイムスタンプをクリアして操作時間をリセット
+    localStorage.removeItem('covo_app_blur_time');
+    _lastUserInteractionTime = Date.now();
+  };
+
+  // 定期的な無操作タイマーチェック (10秒ごと)
+  const checkIdleTimeout = () => {
+    const hasPin = !!localStorage.getItem('covo_pin_hash');
+    if (!hasPin || _isAppScreenLocked) return;
+
+    if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
+      lockAppScreen();
+      return;
+    }
+
+    // 無操作タイマー (Auto Lock Timeout) の判定
+    const timeoutMins = parseInt(localStorage.getItem('covo_auto_lock_mins') || '15', 10);
+    if (timeoutMins > 0 && document.visibilityState === 'visible') {
+      const elapsed = Date.now() - _lastUserInteractionTime;
+      if (elapsed >= timeoutMins * 60 * 1000) {
+        lockAppScreen();
       }
     }
   };
 
   window.addEventListener('blur', onAppBlur);
-  window.addEventListener('focus', checkScreenLockPersistence);
-  window.addEventListener('pageshow', checkScreenLockPersistence);
+  window.addEventListener('focus', onAppResume);
+  window.addEventListener('pageshow', onAppResume);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       onAppBlur();
     } else {
-      checkScreenLockPersistence();
+      onAppResume();
     }
   });
 
-  setInterval(checkScreenLockPersistence, 10000);
+  setInterval(checkIdleTimeout, 10000);
   updatePinSettingsUI();
 
   // 起動時の初期ロック確認
-  checkScreenLockPersistence();
+  if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
+    lockAppScreen();
+  }
 }
 // ==========================================
 // チャット履歴のエクスポート & バックアップ復号ビューア (#101 - 実用化完了)
@@ -20680,6 +20799,7 @@ window.executeExportChatFormat = async function (format) {
     const safeName = currentName.replace(/[\/\\?%*:|"<>]/g, '_');
 
     if (format === 'txt') {
+      let txt = `=== Covo チャットログ: ${currentName} ===\nエクスポート日時: ${new Date().toLocaleString('ja-JP')}\nメッセージ件数: ${msgs.length} 件\n\n`;
       msgs.forEach(m => {
         const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
         const sender = m.senderNickname || m.userNickname || 'ユーザー';
@@ -21003,6 +21123,7 @@ window.filterViewerMessages = function (query) {
 window.saveViewerMessagesAsTxt = function () {
   if (!_cachedViewerMessages || _cachedViewerMessages.length === 0) return;
   const title = document.getElementById('viewerHeaderTitle')?.textContent || 'chat';
+  let txt = `=== Covo チャットログ: ${title} ===\nエクスポート日時: ${new Date().toLocaleString('ja-JP')}\nメッセージ件数: ${_cachedViewerMessages.length} 件\n\n`;
   _cachedViewerMessages.forEach(m => {
     const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
     const sender = m.senderNickname || m.userNickname || 'ユーザー';
