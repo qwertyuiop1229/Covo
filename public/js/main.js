@@ -130,8 +130,12 @@ function isTransientTelemetryError(args) {
       return true;
     }
 
-    // ブラウザ拡張機能・広告ブロッカー・パスワードマネージャー・外部注入スクリプト
+    // ブラウザ拡張機能・広告ブロッカー・パスワードマネージャー・外部注入スクリプト・WebView2内部警告
     if (
+      str.includes('tracking prevention') ||
+      str.includes('blocked access to storage') ||
+      str.includes('content security policy') ||
+      str.includes('ipc custom protocol failed') ||
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
       str.includes('safari-extension://') ||
@@ -17935,8 +17939,10 @@ window.performBackgroundUpdateRestart = async function () {
     }
   } catch (e) { console.warn(e); }
   try {
-    await invoke('plugin:process|restart');
-  } catch (e) { window.location.reload(); }
+    await invoke('restart_app');
+  } catch (e) {
+    try { await invoke('plugin:process|restart'); } catch (_) { window.location.reload(); }
+  }
 };
 
 async function blockingUpdateCheck() {
@@ -18915,9 +18921,10 @@ window.forceRestartNow = function () {
   const invoke = window.__TAURI__?.core?.invoke;
   if (invoke) {
     // Tauri環境では app.restart() 相当のコマンドを呼ぶ
-    invoke('plugin:process|restart').catch(() => {
-      // フォールバック: reload
-      window.location.reload();
+    invoke('restart_app').catch(() => {
+      invoke('plugin:process|restart').catch(() => {
+        window.location.reload();
+      });
     });
   } else {
     window.location.reload();
@@ -18942,8 +18949,10 @@ window.performUpdate = async function () {
     updateProgressUI({ progress: 100, text: '完了。covoセットアップを起動します...' });
     stopSpinner('✔');
     if (invoke) {
-      invoke('plugin:process|exit', { code: 0 }).catch(() => {
-        invoke('tauri', { __tauriModule: 'Process', message: { cmd: 'exit', exitCode: 0 } }).catch(() => { });
+      invoke('exit_app').catch(() => {
+        invoke('plugin:process|exit', { code: 0 }).catch(() => {
+          invoke('tauri', { __tauriModule: 'Process', message: { cmd: 'exit', exitCode: 0 } }).catch(() => { });
+        });
       });
     }
   } catch (error) {

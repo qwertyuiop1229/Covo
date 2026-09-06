@@ -45,15 +45,20 @@
   <!-- Panzoom (画像拡大用) -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG"></script>
+  <!-- Google tag (gtag.js) - Web版のみ読み込み（Tauriデスクトップ版でのTracking Prevention警告とストレージブロックを防止） -->
   <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() {
-      dataLayer.push(arguments);
+    if (!window.__TAURI__) {
+      const gtagScript = document.createElement('script');
+      gtagScript.async = true;
+      gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG';
+      document.head.appendChild(gtagScript);
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { window.dataLayer.push(arguments); }
+      gtag("js", new Date());
+      gtag("config", "G-RY7DKH85XG");
+    } else {
+      window.gtag = function() {};
     }
-    gtag("js", new Date());
-    gtag("config", "G-RY7DKH85XG");
   </script>
 </head>
 

@@ -3,10 +3,18 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "*"
   ],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
     "core:window:default",
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",

@@ -330,6 +330,16 @@ fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, Notificati
 }
 
 #[tauri::command]
+fn restart_app(app_handle: tauri::AppHandle) {
+    app_handle.restart();
+}
+
+#[tauri::command]
+fn exit_app(app_handle: tauri::AppHandle) {
+    cleanup_and_quit(&app_handle);
+}
+
+#[tauri::command]
 fn set_close_behavior(
     behavior: String,
     state: tauri::State<'_, NotificationState>,
@@ -1152,6 +1162,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
+            restart_app,
+            exit_app,
             show_main_window,
             minimize_window,
             toggle_maximize_window,
