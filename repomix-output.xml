@@ -958,422 +958,6 @@ scratch/
 }
 </file>
 
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
-</file>
-
 <file path="package.json">
 {
   "name": "simplechat",
@@ -2706,6 +2290,430 @@ build/
 css/font-awesome.min.css
 </file>
 
+<file path="deploy.ps1">
+# Covo Deploy Script
+# Usage: .\deploy.ps1       (interactive confirm)
+#        .\deploy.ps1 -y    (skip confirm)
+#        npm run deploy      (deploy update)
+
+param(
+    [switch]$y
+)
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+
+$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
+if (-not (Test-Path $versionJsonPath)) {
+    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
+    exit 1
+}
+
+$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$currentVersion = $versionData.version
+Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
+
+$versionParts = $currentVersion.Split('.')
+if ($versionParts.Length -ne 3) {
+    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
+    exit 1
+}
+
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+$patch = [int]$versionParts[2] + 1
+$newVersion = "$major.$minor.$patch"
+$tagName    = "v$newVersion"
+
+Write-Host "New version : $newVersion" -ForegroundColor Green
+Write-Host "Tag name    : $tagName"    -ForegroundColor Green
+Write-Host ''
+
+if (-not $y) {
+    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
+    try {
+        $confirm = [Console]::ReadLine()
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
+            exit 0
+        }
+    } catch {
+        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
+Write-Host ''
+
+# [0/5] Tailwind CSS
+Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
+
+# [1/5] version.json + tauri.conf.json + index.html
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
+
+$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
+if (Test-Path $indexHtmlPath) {
+    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
+    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
+
+$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
+if (Test-Path $tauriConfPath) {
+    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
+    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
+        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
+} else {
+    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
+}
+
+# [2/5] git commit
+Write-Host '[2/5] Committing changes...' -ForegroundColor Green
+git add -A
+git commit -m "Release v$newVersion"
+
+# [3/5] git tag
+Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
+git tag $tagName
+
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+firebase deploy --only "hosting,firestore:rules,database"
+
+# [5/5] git push
+Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
+git push origin HEAD --tags
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# ===========================================================================
+# GitHub Actions real-time build monitor
+# ===========================================================================
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
+Write-Host ''
+
+$REPO = 'qwertyuiop1229/Covo'
+
+# Retrieve GITHUB_TOKEN directly from environment or registry
+$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+
+# Move cursor up N lines (ANSI)
+function Move-CursorUp {
+    param([int]$Lines)
+    if ($Lines -gt 0) {
+        $esc = [char]27
+        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
+        [Console]::Write($seq)
+    }
+}
+
+# ASCII progress bar  [####....] 64%
+function Draw-Bar {
+    param([int]$Pct, [int]$W = 24)
+    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
+    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
+    $empty  = $W - $filled
+    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
+}
+
+# GitHub REST API helper
+function Invoke-GHApi {
+    param([string]$Path)
+    $url     = 'https://api.github.com' + $Path
+    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
+    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
+}
+
+function Get-LatestRun {
+    param([string]$Tag)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    if (-not $res) { return $null }
+    $run = $res.workflow_runs | Where-Object {
+        ($_.head_branch -eq $Tag) -or
+        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
+        ($_.display_title -like ('*' + $Tag + '*'))
+    } | Select-Object -First 1
+    return $run
+}
+
+function Get-RunJobs {
+    param([string]$RunId)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
+    if ($res -and $res.jobs) { return @($res.jobs) }
+    return @()
+}
+
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
+$run = $null
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 3
+    $run = Get-LatestRun -Tag $tagName
+    if ($run) { break }
+    if ($global:RateLimitHit) { break }
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
+}
+
+if (-not $run) {
+    Write-Host ''
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    exit 0
+}
+
+$runId  = $run.id
+$runUrl = $run.html_url
+Write-Host ''
+Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ''
+
+
+$StepDefs = @(
+    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
+    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
+    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
+    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
+    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
+)
+$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
+
+$Spinners   = @('-', '\', '|', '/')
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
+
+Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
+Write-Host ''
+
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
+
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
+
+    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+    $firstDraw = $false
+
+    if ($job) {
+        $steps = @($job.steps)
+        $completedWeight    = 0
+        $completedStepCount = 0
+        $currentLabel       = ''
+        $currentStep        = $null
+        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
+
+        if ($steps) {
+            foreach ($step in $steps) {
+                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
+                $w   = if ($def) { $def.Weight } else { 2 }
+                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
+                    $completedWeight    += $w
+                    $completedStepCount++
+                } elseif ($step.status -eq 'in_progress') {
+                    $completedWeight += [int]($w * 0.5)
+                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
+                }
+            }
+        }
+
+        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
+        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
+        $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'Preparing logs...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
+            } catch {}
+        }
+
+        if ($jobStatus -eq 'completed') {
+            if ($jobConclusion -eq 'success') {
+                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
+            } else {
+                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
+            }
+        } elseif ($jobStatus -eq 'queued') {
+            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
+        } else {
+            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
+        }
+
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
+
+        Write-Host $l1 -ForegroundColor $col
+        Write-Host $l2 -ForegroundColor White
+        Write-Host $l3 -ForegroundColor DarkCyan
+        Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
+
+        if ($jobStatus -eq 'completed') {
+            Write-Host ''
+            if ($jobConclusion -eq 'success') {
+                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
+                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
+            } else {
+                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
+            }
+            Write-Host ''
+            break
+        }
+
+    } else {
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+    }
+
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
+}
+</file>
+
 <file path="patch.bat">
 @echo off
 chcp 65001 >nul
@@ -2967,73 +2975,6 @@ async function runMigration() {
 }
 
 runMigration();
-</file>
-
-<file path="firebase.json">
-{
-  "database": {
-    "rules": "database.rules.json"
-  },
-  "firestore": {
-    "rules": "firestore.rules"
-  },
-  "hosting": {
-    "public": "public",
-    "predeploy": [
-      "node scripts/bump-version.js",
-      "node_modules/.bin/tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify",
-      "npm --prefix server run deploy"
-    ],
-    "postdeploy": [
-      "node scripts/print-deployed-version.js"
-    ],
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "headers": [
-      {
-        "source": "/**",
-        "headers": [
-          {
-            "key": "Cross-Origin-Opener-Policy",
-            "value": "same-origin-allow-popups"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          },
-          {
-            "key": "X-Frame-Options",
-            "value": "SAMEORIGIN"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "strict-origin-when-cross-origin"
-          },
-          {
-            "key": "Permissions-Policy",
-            "value": "camera=(self), microphone=(self), geolocation=()"
-          },
-          {
-            "key": "Strict-Transport-Security",
-            "value": "max-age=31536000; includeSubDomains; preload"
-          }
-        ]
-      },
-      {
-        "source": "/version.json",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          }
-        ]
-      }
-    ]
-  }
-}
 </file>
 
 <file path="public/js/local_store.js">
@@ -4007,6 +3948,82 @@ if (typeof window !== 'undefined') {
   window._execCopyFallback = _execCopyFallback;
   window.emailInitial = emailInitial;
   window.processHeicFile = processHeicFile;
+}
+</file>
+
+<file path="firebase.json">
+{
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "public",
+    "predeploy": [
+      "node scripts/bump-version.js",
+      "node_modules/.bin/tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify",
+      "npm --prefix server run deploy"
+    ],
+    "postdeploy": [
+      "node scripts/print-deployed-version.js"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/**",
+        "headers": [
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "SAMEORIGIN"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), microphone=(self), geolocation=()"
+          },
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains; preload"
+          }
+        ]
+      },
+      {
+        "source": "/version.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ]
+  }
 }
 </file>
 
@@ -5049,547 +5066,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/geo_study.js">
-// geo_study.js - 隠し機能の制御スクリプト
-
-document.addEventListener('DOMContentLoaded', () => {
-  setupHiddenTrigger();
-});
-
-function setupHiddenTrigger() {
-  const pcTarget = document.getElementById('appInfoVersion');
-  const mobileTarget = document.getElementById('mobileAppInfoVersion');
-  const targets = [];
-  if (pcTarget) targets.push(pcTarget);
-  if (mobileTarget) targets.push(mobileTarget);
-
-  if (targets.length === 0) return;
-
-  let pressTimer = null;
-  const triggerDuration = 3000; // 3 seconds
-  let startX = 0;
-  let startY = 0;
-
-  const startPress = (e) => {
-    if (e.type === 'mousedown' && e.button !== 0) return;
-    if (e.touches && e.touches.length > 0) {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-    }
-    if (pressTimer) clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => {
-      openGeoStudy();
-    }, triggerDuration);
-  };
-
-  const cancelPress = () => {
-    if (pressTimer) {
-      clearTimeout(pressTimer);
-      pressTimer = null;
-    }
-  };
-
-  const movePress = (e) => {
-    if (!pressTimer) return;
-    if (e.touches && e.touches.length > 0) {
-      const dx = Math.abs(e.touches[0].clientX - startX);
-      const dy = Math.abs(e.touches[0].clientY - startY);
-      if (dx > 10 || dy > 10) cancelPress();
-    }
-  };
-
-  targets.forEach(target => {
-    target.addEventListener('mousedown', startPress);
-    target.addEventListener('touchstart', startPress, {passive: true});
-    
-    target.addEventListener('mouseup', cancelPress);
-    target.addEventListener('mouseleave', cancelPress);
-    target.addEventListener('touchend', cancelPress);
-    target.addEventListener('touchcancel', cancelPress);
-    target.addEventListener('touchmove', movePress, {passive: true});
-    
-    // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
-    target.style.webkitUserSelect = 'none';
-    target.style.userSelect = 'none';
-    target.style.webkitTouchCallout = 'none';
-    target.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-    });
-  });
-}
-
-let isGeoStudyInitialized = false;
-let leafletMap = null;
-let leafletMarker = null;
-let currentAnswerLatLng = null;
-let currentRoundId = 0;
-
-function openGeoStudy() {
-  const container = document.getElementById('geoStudyContainer');
-  if (!container) return;
-  
-  // モーダル等が重ならないように最高前面へ
-  container.classList.remove('hidden');
-  container.style.display = 'flex';
-  
-  // 起動時アニメーション
-  container.classList.add('gs-fade-in');
-  setTimeout(() => container.classList.remove('gs-fade-in'), 500);
-  
-  if (!isGeoStudyInitialized) {
-    buildGeoStudyUI(container);
-    loadDependencies().then(() => {
-      startNewLocation();
-    });
-    isGeoStudyInitialized = true;
-  } else {
-    // 既に初期化されている場合、再表示時にマップのサイズを再計算する（バグ防止）
-    if (leafletMap) {
-      setTimeout(() => {
-        leafletMap.invalidateSize();
-      }, 100);
-    }
-  }
-}
-
-function closeGeoStudy() {
-  const container = document.getElementById('geoStudyContainer');
-  if (container) {
-    container.classList.add('hidden');
-    container.style.display = 'none';
-    
-    // ウィンドウを閉じたときにリセットしておく
-    closeResultOverlay();
-  }
-}
-
-function buildGeoStudyUI(container) {
-  container.innerHTML = `
-    <div class="flex justify-between items-center p-4 bg-gray-900 border-b border-gray-800 shrink-0">
-      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>げっさー</div>
-      <button onclick="closeGeoStudy()" class="text-gray-400 hover:text-white p-2 transition"><i class="fas fa-times text-xl"></i></button>
-    </div>
-    
-    <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-      <!-- 写真表示エリア -->
-      <div id="gs-photo-container" class="absolute inset-0 z-0 gs-swap-transition" onclick="if(isMapFullscreen) toggleMapSwap()">
-        <!-- Panzoom適用要素 -->
-        <div id="gs-photo-panzoom" class="w-full h-full bg-cover bg-center bg-no-repeat" style="transition: opacity 0.3s ease;"></div>
-        
-        <div id="gs-photo-overlay-icon" class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40 hidden cursor-pointer rounded-xl">
-           <i class="fas fa-expand text-white text-3xl"></i>
-        </div>
-      </div>
-      
-      <!-- ローディング -->
-      <div id="gs-loading" class="absolute inset-0 z-[10] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm hidden">
-         <div class="gs-spinner"></div>
-      </div>
-
-      <!-- コントロールパネル -->
-      <div class="absolute top-4 right-4 z-[999] bg-gray-900/90 backdrop-blur rounded-xl p-3 border border-gray-700 shadow-xl w-48 flex flex-col gap-2">
-        <div class="text-xs text-gray-400 font-bold">モード</div>
-        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
-          <option value="photo">写真から推測</option>
-        </select>
-        <div class="text-xs text-gray-400 font-bold mt-1">難易度</div>
-        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
-          <option value="easy">かんたん（首都など）</option>
-          <option value="normal" selected>ふつう（主要都市）</option>
-          <option value="hard">むずかしい（全地域）</option>
-        </select>
-        <div class="text-xs text-gray-400 mt-1">ヒント</div>
-        <div id="gs-hint-text" class="text-xs text-gray-200 bg-gray-800 p-2 rounded border border-gray-700 max-h-20 overflow-y-auto break-words">読込中...</div>
-        <button onclick="closeResultOverlay(); startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
-      </div>
-
-      <!-- ミニマップ -->
-      <div id="gs-minimap-container" class="absolute bottom-4 right-4 z-[999] w-48 h-32 md:w-80 md:h-64 rounded-xl border-2 border-gray-600 shadow-2xl overflow-hidden bg-gray-800 flex flex-col group cursor-crosshair gs-swap-transition"
-           onmouseenter="if(!isMapFullscreen) this.classList.add('active-map')" 
-           onmouseleave="this.classList.remove('active-map')">
-        <div id="gs-map" class="flex-1 w-full bg-gray-200" style="min-height: 100px;"></div>
-        <div class="bg-gray-900/95 text-white text-xs p-1.5 flex justify-center items-center shrink-0">
-          <span id="gs-status-text" class="text-gray-300 font-bold text-[10px] md:text-xs text-center w-full">地図をクリックして拡大</span>
-        </div>
-      </div>
-      
-      <!-- 独立した決定ボタン -->
-      <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex justify-center w-full pointer-events-none">
-         <button id="gs-guess-btn" onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] disabled:opacity-0 disabled:translate-y-4 disabled:scale-95 text-lg pointer-events-auto" disabled>決定</button>
-      </div>
-      
-      <!-- 結果表示オーバーレイ -->
-      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[500] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
-         <div class="bg-gray-800 p-8 rounded-3xl border border-gray-700 text-center shadow-2xl max-w-sm w-full">
-            <div class="w-16 h-16 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-400 text-3xl mb-4 border border-blue-500/30">
-                <i class="fas fa-map-marker-alt"></i>
-            </div>
-            <h2 class="text-xl font-bold text-white mb-2">推測結果</h2>
-            <div class="text-5xl font-bold text-blue-400 mb-1"><span id="gs-distance-text">--</span> <span class="text-xl">km</span></div>
-            <div class="text-sm text-gray-400 mb-2">実際の場所との誤差距離</div>
-            
-            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700">正解: 読込中...</div>
-            
-            <div class="flex gap-3">
-              <button onclick="closeResultOverlay()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm">地図を見る</button>
-              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm"><i class="fas fa-play mr-1"></i>次へ</button>
-            </div>
-         </div>
-      </div>
-    </div>
-  `;
-  
-  // スマホでマップ外をタッチしたらマップを縮小する
-  /*
-  container.addEventListener('touchstart', (e) => {
-      const minimap = document.getElementById('gs-minimap-container');
-      if (minimap && !minimap.contains(e.target)) {
-          minimap.classList.remove('active-map');
-      }
-  });
-  */
-}
-
-let isMapFullscreen = false;
-function toggleMapSwap() {
-  const mapContainer = document.getElementById('gs-minimap-container');
-  const photoContainer = document.getElementById('gs-photo-container');
-  const photoOverlayIcon = document.getElementById('gs-photo-overlay-icon');
-  
-  isMapFullscreen = !isMapFullscreen;
-  
-  if (isMapFullscreen) {
-    mapContainer.classList.add('is-fullscreen');
-    photoContainer.classList.add('is-minimap');
-    photoOverlayIcon.classList.remove('hidden');
-    mapContainer.classList.remove('active-map');
-    document.getElementById('gs-status-text').textContent = "地図をタップしてピンを刺す";
-  } else {
-    mapContainer.classList.remove('is-fullscreen');
-    photoContainer.classList.remove('is-minimap');
-    photoOverlayIcon.classList.add('hidden');
-    document.getElementById('gs-status-text').textContent = "地図をクリックして拡大";
-  }
-  
-  setTimeout(() => {
-    if (leafletMap) leafletMap.invalidateSize();
-  }, 500);
-}
-
-function loadDependencies() {
-  return new Promise((resolve) => {
-    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
-    if (window.L) {
-      if (!leafletMap) initMap();
-      resolve();
-      return;
-    }
-
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-    css.crossOrigin = '';
-    document.head.appendChild(css);
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-    script.crossOrigin = '';
-    script.onload = () => {
-      initMap();
-      resolve();
-    };
-    document.head.appendChild(script);
-  });
-}
-
-let resultLine = null;
-let resultMarker = null;
-
-function initMap() {
-  // Leafletの初期化
-  leafletMap = L.map('gs-map', {
-    center: [20, 0],
-    zoom: 2,
-    zoomControl: false, // UIが狭いので非表示
-    attributionControl: false // UIが狭いので非表示
-  });
-  
-  // 右下に小さく帰属表示
-  L.control.attribution({position: 'bottomleft', prefix: false}).addAttribution('&copy; OSM').addTo(leafletMap);
-
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(leafletMap);
-
-  leafletMap.on('click', (e) => {
-    // 結果表示中は操作不可
-    if (!document.getElementById('gs-result-overlay').classList.contains('hidden')) return;
-    
-    // 全画面でない場合は、マップを拡大するだけ（ピンは刺さない）
-    if (!isMapFullscreen) {
-        toggleMapSwap();
-        return;
-    }
-    
-    if (leafletMarker) {
-      leafletMap.removeLayer(leafletMarker);
-    }
-    const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
-    leafletMarker = L.marker(wrappedLatLng).addTo(leafletMap);
-    
-    const guessBtn = document.getElementById('gs-guess-btn');
-    guessBtn.disabled = false;
-    guessBtn.classList.add('animate-pulse');
-    setTimeout(()=>guessBtn.classList.remove('animate-pulse'), 1000);
-    
-    document.getElementById('gs-status-text').textContent = "ピンを変更できます";
-    document.getElementById('gs-status-text').classList.add('text-indigo-400');
-  });
-}
-
-async function startNewLocation() {
-  currentRoundId++;
-  const thisRound = currentRoundId;
-  showLoading(true);
-  
-  // マップのリセット
-  if (leafletMarker) {
-    leafletMap.removeLayer(leafletMarker);
-    leafletMarker = null;
-  }
-  if (resultLine) {
-    leafletMap.removeLayer(resultLine);
-    resultLine = null;
-  }
-  if (resultMarker) {
-    leafletMap.removeLayer(resultMarker);
-    resultMarker = null;
-  }
-  
-  if (isMapFullscreen) {
-      toggleMapSwap();
-  }
-  
-  leafletMap.setView([20, 0], 2);
-  document.getElementById('gs-guess-btn').disabled = true;
-  document.getElementById('gs-status-text').textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
-  document.getElementById('gs-status-text').classList.remove('text-indigo-400');
-  
-  const mode = document.getElementById('gs-mode-select').value;
-  
-  if (mode === 'photo') {
-    document.getElementById('gs-photo-container').classList.add('loading');
-    await loadNewPhoto(thisRound);
-  }
-  
-  if (thisRound === currentRoundId) {
-      showLoading(false);
-  }
-}
-
-async function loadNewPhoto(roundId) {
-  try {
-    const difficulty = document.getElementById('gs-difficulty-select') ? document.getElementById('gs-difficulty-select').value : 'easy';
-    let loc = null;
-    let imgUrl = "";
-    
-    // Auto-generated JS からデータを取得
-    let pool = window.EASY_LOCATIONS || [];
-    if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
-    if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
-    
-    // フォールバック（スクリプトがロードされていない場合）
-    if (!pool || pool.length === 0) {
-        pool = [
-            { name: "エッフェル塔, パリ", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
-            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" }
-        ];
-    }
-    
-    loc = pool[Math.floor(Math.random() * pool.length)];
-    currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
-    imgUrl = loc.imgUrl;
-    
-    if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
-    
-    document.getElementById('gs-result-answer').textContent = `正解: ${loc.name}`;
-    
-    if (imgUrl && typeof imgUrl === 'string') {
-      const photoEl = document.getElementById('gs-photo-container');
-      const panzoomEl = document.getElementById('gs-photo-panzoom');
-      photoEl.style.opacity = 0;
-      let safeImgUrl = imgUrl.replace(/'/g, "%27").replace(/"/g, "%22");
-      if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
-      if (!safeImgUrl.startsWith("https://") && !safeImgUrl.startsWith("http://")) return;
-      // ユーザーの要望により、軽量化パラメータを削除してWikipediaオリジナル高画質画像を使用する
-      safeImgUrl = safeImgUrl.split("?")[0];
-      
-      if (!window.geoStudyPanzoom && window.Panzoom) {
-          
-          window.geoStudyPanzoom = Panzoom(panzoomEl, {
-              maxScale: 20,       // 拡大限界を大幅に引き上げ
-              minScale: 1,
-              step: 0.2,          // マウスホイールの刻み
-              contain: 'outside'
-          });
-          
-          const panzoomContainer = panzoomEl.parentElement;
-          panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
-          
-          // ホイールイベントの追加
-          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel, { passive: false });
-          
-          // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
-          let lastTap = 0;
-          const handleDoubleTap = (e) => {
-              const currentTime = new Date().getTime();
-              const tapLength = currentTime - lastTap;
-              if (tapLength < 350 && tapLength > 0) {
-                  e.preventDefault();
-                  const currentScale = window.geoStudyPanzoom.getScale();
-                  if (currentScale > 1.2) {
-                      window.geoStudyPanzoom.reset();
-                  } else {
-                      window.geoStudyPanzoom.zoom(2.5);
-                  }
-              }
-              lastTap = currentTime;
-          };
-          
-          panzoomEl.addEventListener('touchend', (e) => {
-              // ピンチズームなど複数の指の場合は無視
-              if (e.touches && e.touches.length > 0) return;
-              handleDoubleTap(e);
-          });
-          panzoomEl.addEventListener('click', (e) => {
-              // タッチデバイスでtouchendと重複発火するのを防ぐ簡単な制御を含める（同じ時間判定で吸収される）
-              handleDoubleTap(e);
-          });
-      }
-      
-      setTimeout(() => {
-          if (roundId !== currentRoundId) return;
-          panzoomEl.style.backgroundImage = `url('${safeImgUrl}')`;
-          photoEl.style.opacity = 1;
-          photoEl.classList.remove('loading');
-          
-          if (window.geoStudyPanzoom) {
-              window.geoStudyPanzoom.reset(); // 新しい写真になったらズームをリセット
-          }
-      }, 50);
-      document.getElementById('gs-hint-text').textContent = "この風景・建造物がある場所を地図から推測してください。";
-    } else {
-      document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
-    }
-  } catch (e) {
-    console.error(e);
-    if (roundId === currentRoundId) {
-        document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
-    }
-  }
-}
-
-function submitGuess() {
-  if (!leafletMarker || !currentAnswerLatLng) return;
-  
-  const guessLatLng = leafletMarker.getLatLng().wrap();
-  
-  // 地球一周のバグを防ぐため、経度を補正したコピーを作成する
-  // (例: guessが170度、answerが-170度の場合、最短距離は20度だが、線が340度引かれるのを防ぐ)
-  const drawAnswerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng);
-  let lngDiff = drawAnswerLatLng.lng - guessLatLng.lng;
-  if (lngDiff > 180) {
-      drawAnswerLatLng.lng -= 360;
-  } else if (lngDiff < -180) {
-      drawAnswerLatLng.lng += 360;
-  }
-  
-  // 距離の計算 (haversine)
-  // 地球一周バグ等の影響を受けないように、自前で最短距離を計算
-  const R = 6371; // km
-  const dLat = (drawAnswerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
-  const dLng = (drawAnswerLatLng.lng - guessLatLng.lng) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(drawAnswerLatLng.lat * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distanceKm = Math.round(R * c);
-  
-  // 正解マーカーと線の描画
-  resultMarker = L.marker(drawAnswerLatLng, {
-    icon: L.icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    })
-  }).addTo(leafletMap);
-  
-  resultLine = L.polyline([guessLatLng, drawAnswerLatLng], {
-    color: '#ef4444',
-    weight: 3,
-    opacity: 0.8,
-    dashArray: '8, 8'
-  }).addTo(leafletMap);
-  
-  // 地図のズーム調整
-  leafletMap.fitBounds(L.latLngBounds(guessLatLng, drawAnswerLatLng).pad(0.2));
-  
-  // 結果オーバーレイ表示
-  // 数値のアニメーション
-  animateValue("gs-distance-text", 0, distanceKm, 1000);
-  
-  const overlay = document.getElementById('gs-result-overlay');
-  overlay.classList.remove('hidden');
-  
-  // マップコンテナのホバーを解除
-  document.getElementById('gs-minimap-container').classList.remove('active-map');
-}
-
-function animateValue(id, start, end, duration) {
-    if (start === end) return;
-    const obj = document.getElementById(id);
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        // Easing (easeOutExpo)
-        const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-        obj.innerHTML = Math.floor(easeProgress * (end - start) + start).toLocaleString();
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
-        }
-    };
-    window.requestAnimationFrame(step);
-}
-
-function closeResultOverlay() {
-  document.getElementById('gs-result-overlay').classList.add('hidden');
-}
-
-function showLoading(show) {
-  const el = document.getElementById('gs-loading');
-  if (show) {
-    el.classList.remove('hidden');
-  } else {
-    el.classList.add('hidden');
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.openGeoStudy = openGeoStudy;
-  window.closeGeoStudy = closeGeoStudy;
-  window.toggleMapSwap = toggleMapSwap;
-  window.startNewLocation = startNewLocation;
-  window.submitGuess = submitGuess;
-  window.closeResultOverlay = closeResultOverlay;
-}
-</file>
-
 <file path="public/recovery.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -5988,6 +5464,592 @@ if (typeof window !== 'undefined') {
   </script>
 </body>
 </html>
+</file>
+
+<file path="public/js/geo_study.js">
+// geo_study.js - 隠し機能の制御スクリプト
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupHiddenTrigger();
+});
+
+function setupHiddenTrigger() {
+  const pcTarget = document.getElementById('appInfoVersion');
+  const mobileTarget = document.getElementById('mobileAppInfoVersion');
+  const targets = [];
+  if (pcTarget) targets.push(pcTarget);
+  if (mobileTarget) targets.push(mobileTarget);
+
+  if (targets.length === 0) return;
+
+  let pressTimer = null;
+  const triggerDuration = 3000; // 3 seconds
+  let startX = 0;
+  let startY = 0;
+
+  const startPress = (e) => {
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    if (e.touches && e.touches.length > 0) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      openGeoStudy();
+    }, triggerDuration);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+  };
+
+  const movePress = (e) => {
+    if (!pressTimer) return;
+    if (e.touches && e.touches.length > 0) {
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > 10 || dy > 10) cancelPress();
+    }
+  };
+
+  targets.forEach(target => {
+    target.addEventListener('mousedown', startPress);
+    target.addEventListener('touchstart', startPress, {passive: true});
+    
+    target.addEventListener('mouseup', cancelPress);
+    target.addEventListener('mouseleave', cancelPress);
+    target.addEventListener('touchend', cancelPress);
+    target.addEventListener('touchcancel', cancelPress);
+    target.addEventListener('touchmove', movePress, {passive: true});
+    
+    // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
+    target.style.webkitUserSelect = 'none';
+    target.style.userSelect = 'none';
+    target.style.webkitTouchCallout = 'none';
+    target.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+  });
+}
+
+let isGeoStudyInitialized = false;
+let leafletMap = null;
+let leafletMarker = null;
+let currentAnswerLatLng = null;
+let currentRoundId = 0;
+
+function openGeoStudy() {
+  const container = document.getElementById('geoStudyContainer');
+  if (!container) return;
+  
+  // モーダル等が重ならないように最高前面へ
+  container.classList.remove('hidden');
+  container.style.display = 'flex';
+  
+  // 起動時アニメーション
+  container.classList.add('gs-fade-in');
+  setTimeout(() => container.classList.remove('gs-fade-in'), 500);
+  
+  if (!isGeoStudyInitialized) {
+    buildGeoStudyUI(container);
+    loadDependencies().then(() => {
+      startNewLocation();
+    });
+    isGeoStudyInitialized = true;
+  } else {
+    // 既に初期化されている場合、再表示時にマップのサイズを再計算する（バグ防止）
+    if (leafletMap) {
+      setTimeout(() => {
+        leafletMap.invalidateSize();
+      }, 100);
+    }
+  }
+}
+
+function closeGeoStudy() {
+  const container = document.getElementById('geoStudyContainer');
+  if (container) {
+    container.classList.add('hidden');
+    container.style.display = 'none';
+    
+    // ウィンドウを閉じたときにリセットしておく
+    closeResultOverlay();
+  }
+}
+
+function buildGeoStudyUI(container) {
+  container.innerHTML = `
+    <div class="flex justify-between items-center p-4 bg-gray-900 border-b border-gray-800 shrink-0">
+      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>げっさー</div>
+      <button onclick="closeGeoStudy()" class="text-gray-400 hover:text-white p-2 transition"><i class="fas fa-times text-xl"></i></button>
+    </div>
+    
+    <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+      <!-- 写真表示エリア -->
+      <div id="gs-photo-container" class="absolute inset-0 z-0 gs-swap-transition" onclick="if(isMapFullscreen) toggleMapSwap()">
+        <!-- Panzoom適用要素 -->
+        <div id="gs-photo-panzoom" class="w-full h-full bg-cover bg-center bg-no-repeat" style="transition: opacity 0.3s ease;"></div>
+        
+        <div id="gs-photo-overlay-icon" class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40 hidden cursor-pointer rounded-xl">
+           <i class="fas fa-expand text-white text-3xl"></i>
+        </div>
+      </div>
+      
+      <!-- ローディング -->
+      <div id="gs-loading" class="absolute inset-0 z-[10] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm hidden">
+         <div class="gs-spinner"></div>
+      </div>
+
+      <!-- コントロールパネル -->
+      <div class="absolute top-4 right-4 z-[999] bg-gray-900/90 backdrop-blur rounded-xl p-3 border border-gray-700 shadow-xl w-48 flex flex-col gap-2">
+        <div class="text-xs text-gray-400 font-bold">モード</div>
+        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="photo">写真から推測</option>
+        </select>
+        <div class="text-xs text-gray-400 font-bold mt-1">難易度</div>
+        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="easy">かんたん（首都など）</option>
+          <option value="normal" selected>ふつう（主要都市）</option>
+          <option value="hard">むずかしい（全地域）</option>
+        </select>
+        <div class="text-xs text-gray-400 mt-1">ヒント</div>
+        <div id="gs-hint-text" class="text-xs text-gray-200 bg-gray-800 p-2 rounded border border-gray-700 max-h-20 overflow-y-auto break-words">読込中...</div>
+        <button onclick="closeResultOverlay(); startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
+      </div>
+
+      <!-- ミニマップ -->
+      <div id="gs-minimap-container" class="absolute bottom-4 right-4 z-[999] w-48 h-32 md:w-80 md:h-64 rounded-xl border-2 border-gray-600 shadow-2xl overflow-hidden bg-gray-800 flex flex-col group cursor-crosshair gs-swap-transition"
+           onmouseenter="if(!isMapFullscreen) this.classList.add('active-map')" 
+           onmouseleave="this.classList.remove('active-map')">
+        <div id="gs-map" class="flex-1 w-full bg-gray-200" style="min-height: 100px;"></div>
+        <div class="bg-gray-900/95 text-white text-xs p-1.5 flex justify-center items-center shrink-0">
+          <span id="gs-status-text" class="text-gray-300 font-bold text-[10px] md:text-xs text-center w-full">地図をクリックして拡大</span>
+        </div>
+      </div>
+      
+      <!-- 独立した決定ボタン -->
+      <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex justify-center w-full pointer-events-none">
+         <button id="gs-guess-btn" onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] disabled:opacity-0 disabled:translate-y-4 disabled:scale-95 text-lg pointer-events-auto" disabled>決定</button>
+      </div>
+      
+      <!-- 結果表示オーバーレイ -->
+      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[500] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
+         <div class="bg-gray-800 p-8 rounded-3xl border border-gray-700 text-center shadow-2xl max-w-sm w-full">
+            <div class="w-16 h-16 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-400 text-3xl mb-4 border border-blue-500/30">
+                <i class="fas fa-map-marker-alt"></i>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-2">推測結果</h2>
+            <div class="text-5xl font-bold text-blue-400 mb-1"><span id="gs-distance-text">--</span> <span class="text-xl">km</span></div>
+            <div class="text-sm text-gray-400 mb-2">実際の場所との誤差距離</div>
+            
+            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700">正解: 読込中...</div>
+            
+            <div class="flex gap-3">
+              <button onclick="closeResultOverlay()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm">地図を見る</button>
+              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm"><i class="fas fa-play mr-1"></i>次へ</button>
+            </div>
+         </div>
+      </div>
+    </div>
+  `;
+  
+  // スマホでマップ外をタッチしたらマップを縮小する
+  /*
+  container.addEventListener('touchstart', (e) => {
+      const minimap = document.getElementById('gs-minimap-container');
+      if (minimap && !minimap.contains(e.target)) {
+          minimap.classList.remove('active-map');
+      }
+  });
+  */
+}
+
+let isMapFullscreen = false;
+function toggleMapSwap() {
+  const mapContainer = document.getElementById('gs-minimap-container');
+  const photoContainer = document.getElementById('gs-photo-container');
+  const photoOverlayIcon = document.getElementById('gs-photo-overlay-icon');
+  
+  isMapFullscreen = !isMapFullscreen;
+  
+  if (isMapFullscreen) {
+    mapContainer.classList.add('is-fullscreen');
+    photoContainer.classList.add('is-minimap');
+    photoOverlayIcon.classList.remove('hidden');
+    mapContainer.classList.remove('active-map');
+    document.getElementById('gs-status-text').textContent = "地図をタップしてピンを刺す";
+  } else {
+    mapContainer.classList.remove('is-fullscreen');
+    photoContainer.classList.remove('is-minimap');
+    photoOverlayIcon.classList.add('hidden');
+    document.getElementById('gs-status-text').textContent = "地図をクリックして拡大";
+  }
+  
+  setTimeout(() => {
+    if (leafletMap) leafletMap.invalidateSize();
+  }, 500);
+}
+
+function loadDependencies() {
+  return new Promise((resolve) => {
+    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
+    if (window.L) {
+      if (!leafletMap) initMap();
+      resolve();
+      return;
+    }
+
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+    css.crossOrigin = '';
+    document.head.appendChild(css);
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+    script.crossOrigin = '';
+    script.onload = () => {
+      initMap();
+      resolve();
+    };
+    document.head.appendChild(script);
+  });
+}
+
+let resultLine = null;
+let resultMarker = null;
+
+function initMap() {
+  // Leafletの初期化（世界ループ防止と境界固定）
+  leafletMap = L.map('gs-map', {
+    center: [20, 0],
+    zoom: 2,
+    minZoom: 2,
+    maxZoom: 18,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 1.0,
+    worldCopyJump: false,
+    zoomControl: false, // UIが狭いので非表示
+    attributionControl: false // UIが狭いので非表示
+  });
+  
+  // 右下に小さく帰属表示
+  L.control.attribution({position: 'bottomleft', prefix: false}).addAttribution('&copy; OSM').addTo(leafletMap);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    minZoom: 2,
+    maxZoom: 19,
+    noWrap: true,
+    bounds: [[-85, -180], [85, 180]]
+  }).addTo(leafletMap);
+
+  leafletMap.on('click', (e) => {
+    // 結果表示中は操作不可
+    if (!document.getElementById('gs-result-overlay').classList.contains('hidden')) return;
+    
+    // 全画面でない場合は、マップを拡大するだけ（ピンは刺さない）
+    if (!isMapFullscreen) {
+        toggleMapSwap();
+        return;
+    }
+    
+    if (leafletMarker) {
+      leafletMap.removeLayer(leafletMarker);
+    }
+    const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
+    leafletMarker = L.marker(wrappedLatLng).addTo(leafletMap);
+    
+    const guessBtn = document.getElementById('gs-guess-btn');
+    guessBtn.disabled = false;
+    guessBtn.classList.add('animate-pulse');
+    setTimeout(()=>guessBtn.classList.remove('animate-pulse'), 1000);
+    
+    document.getElementById('gs-status-text').textContent = "ピンを変更できます";
+    document.getElementById('gs-status-text').classList.add('text-indigo-400');
+  });
+}
+
+async function startNewLocation() {
+  currentRoundId++;
+  const thisRound = currentRoundId;
+  showLoading(true);
+  
+  // マップのリセット
+  if (leafletMarker) {
+    leafletMap.removeLayer(leafletMarker);
+    leafletMarker = null;
+  }
+  if (resultLine) {
+    leafletMap.removeLayer(resultLine);
+    resultLine = null;
+  }
+  if (resultMarker) {
+    leafletMap.removeLayer(resultMarker);
+    resultMarker = null;
+  }
+  
+  if (isMapFullscreen) {
+      toggleMapSwap();
+  }
+  
+  leafletMap.setView([20, 0], 2);
+  document.getElementById('gs-guess-btn').disabled = true;
+  document.getElementById('gs-status-text').textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
+  document.getElementById('gs-status-text').classList.remove('text-indigo-400');
+  
+  const mode = document.getElementById('gs-mode-select').value;
+  
+  if (mode === 'photo') {
+    document.getElementById('gs-photo-container').classList.add('loading');
+    await loadNewPhoto(thisRound);
+  }
+  
+  if (thisRound === currentRoundId) {
+      showLoading(false);
+  }
+}
+
+async function loadNewPhoto(roundId) {
+  try {
+    const difficulty = document.getElementById('gs-difficulty-select') ? document.getElementById('gs-difficulty-select').value : 'easy';
+    let loc = null;
+    let imgUrl = "";
+    
+    // Auto-generated JS からデータを取得
+    let pool = window.EASY_LOCATIONS || [];
+    if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
+    if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
+    
+    // フォールバック（スクリプトがロードされていない場合）
+    if (!pool || pool.length === 0) {
+        pool = [
+            { name: "エッフェル塔, パリ", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
+            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" }
+        ];
+    }
+    
+    // 直近に出題された問題を除外して抽選（2問連続同じ問題の出現を完全防止）
+    window._gsRecentLocationHistory = window._gsRecentLocationHistory || [];
+    let candidatePool = pool.filter(p => !window._gsRecentLocationHistory.includes(p.name));
+    if (candidatePool.length === 0) {
+      window._gsRecentLocationHistory = [];
+      candidatePool = pool;
+    }
+
+    loc = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    window._gsRecentLocationHistory.push(loc.name);
+    const maxHistory = Math.max(1, Math.min(30, Math.floor(pool.length / 2)));
+    if (window._gsRecentLocationHistory.length > maxHistory) {
+      window._gsRecentLocationHistory.shift();
+    }
+
+    currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
+    imgUrl = loc.imgUrl;
+    
+    if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
+    
+    document.getElementById('gs-result-answer').textContent = `正解: ${loc.name}`;
+    
+    if (imgUrl && typeof imgUrl === 'string') {
+      const photoEl = document.getElementById('gs-photo-container');
+      const panzoomEl = document.getElementById('gs-photo-panzoom');
+      photoEl.style.opacity = 0;
+      let safeImgUrl = imgUrl.replace(/'/g, "%27").replace(/"/g, "%22");
+      if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
+      if (!safeImgUrl.startsWith("https://") && !safeImgUrl.startsWith("http://")) return;
+      // ユーザーの要望により、軽量化パラメータを削除してWikipediaオリジナル高画質画像を使用する
+      safeImgUrl = safeImgUrl.split("?")[0];
+      
+      if (!window.geoStudyPanzoom && window.Panzoom) {
+          
+          window.geoStudyPanzoom = Panzoom(panzoomEl, {
+              maxScale: 20,       // 拡大限界を大幅に引き上げ
+              minScale: 1,
+              step: 0.2,          // マウスホイールの刻み
+              contain: 'outside'
+          });
+          
+          const panzoomContainer = panzoomEl.parentElement;
+          panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
+          
+          // ホイールイベントの追加
+          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel, { passive: false });
+          
+          // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
+          let lastTap = 0;
+          const handleDoubleTap = (e) => {
+              const currentTime = new Date().getTime();
+              const tapLength = currentTime - lastTap;
+              if (tapLength < 350 && tapLength > 0) {
+                  e.preventDefault();
+                  const currentScale = window.geoStudyPanzoom.getScale();
+                  if (currentScale > 1.2) {
+                      window.geoStudyPanzoom.reset();
+                  } else {
+                      window.geoStudyPanzoom.zoom(2.5);
+                  }
+              }
+              lastTap = currentTime;
+          };
+          
+          panzoomEl.addEventListener('touchend', (e) => {
+              // ピンチズームなど複数の指の場合は無視
+              if (e.touches && e.touches.length > 0) return;
+              handleDoubleTap(e);
+          });
+          panzoomEl.addEventListener('click', (e) => {
+              // タッチデバイスでtouchendと重複発火するのを防ぐ簡単な制御を含める（同じ時間判定で吸収される）
+              handleDoubleTap(e);
+          });
+      }
+      
+      setTimeout(() => {
+          if (roundId !== currentRoundId) return;
+          panzoomEl.style.backgroundImage = `url('${safeImgUrl}')`;
+          photoEl.style.opacity = 1;
+          photoEl.classList.remove('loading');
+          
+          if (window.geoStudyPanzoom) {
+              window.geoStudyPanzoom.reset(); // 新しい写真になったらズームをリセット
+          }
+      }, 50);
+      document.getElementById('gs-hint-text').textContent = "この風景・建造物がある場所を地図から推測してください。";
+    } else {
+      document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+    }
+  } catch (e) {
+    console.error(e);
+    if (roundId === currentRoundId) {
+        document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+    }
+  }
+}
+
+function submitGuess() {
+  if (!leafletMarker || !currentAnswerLatLng) return;
+  
+  const guessLatLng = leafletMarker.getLatLng().wrap();
+  const answerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng).wrap();
+  
+  // 距離の計算 (Haversine法)
+  const R = 6371; // km
+  let dLngRaw = answerLatLng.lng - guessLatLng.lng;
+  if (dLngRaw > 180) dLngRaw -= 360;
+  else if (dLngRaw < -180) dLngRaw += 360;
+
+  const dLat = (answerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
+  const dLng = dLngRaw * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(answerLatLng.lat * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distanceKm = Math.round(R * c);
+  
+  // 正解マーカーの描画（常に正規化された座標に配置）
+  resultMarker = L.marker(answerLatLng, {
+    icon: L.icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    })
+  }).addTo(leafletMap);
+
+  // 日付変更線（経度180度 / -180度）をまたぐ場合の最短ルート分割描画（地球一周横断線の完全防止）
+  const lngDiff = answerLatLng.lng - guessLatLng.lng;
+  const lineCoords = [];
+
+  if (Math.abs(lngDiff) > 180) {
+    if (lngDiff > 180) {
+      // guessが西経、answerが東経 -> -180/180で分割
+      const adjLng2 = answerLatLng.lng - 360;
+      const t = (-180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, -180]]);
+      lineCoords.push([[crossLat, 180], [answerLatLng.lat, answerLatLng.lng]]);
+    } else {
+      // guessが東経、answerが西経 -> 180/-180で分割
+      const adjLng2 = answerLatLng.lng + 360;
+      const t = (180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, 180]]);
+      lineCoords.push([[crossLat, -180], [answerLatLng.lat, answerLatLng.lng]]);
+    }
+  } else {
+    lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [answerLatLng.lat, answerLatLng.lng]]);
+  }
+  
+  resultLine = L.polyline(lineCoords, {
+    color: '#ef4444',
+    weight: 3,
+    opacity: 0.85,
+    dashArray: '8, 8'
+  }).addTo(leafletMap);
+  
+  // 地図のズーム調整（日付変更線をまたぐ際に世界全体へ一周ズームアウトするのを防止）
+  if (Math.abs(lngDiff) <= 180) {
+    leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng).pad(0.25));
+  } else {
+    const autoZoom = Math.max(2, Math.min(6, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
+    leafletMap.setView(answerLatLng, autoZoom);
+  }
+  
+  // 結果オーバーレイ表示
+  // 数値のアニメーション
+  animateValue("gs-distance-text", 0, distanceKm, 1000);
+  
+  const overlay = document.getElementById('gs-result-overlay');
+  overlay.classList.remove('hidden');
+  
+  // マップコンテナのホバーを解除
+  document.getElementById('gs-minimap-container').classList.remove('active-map');
+}
+
+function animateValue(id, start, end, duration) {
+    if (start === end) return;
+    const obj = document.getElementById(id);
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        // Easing (easeOutExpo)
+        const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+        obj.innerHTML = Math.floor(easeProgress * (end - start) + start).toLocaleString();
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
+}
+
+function closeResultOverlay() {
+  document.getElementById('gs-result-overlay').classList.add('hidden');
+}
+
+function showLoading(show) {
+  const el = document.getElementById('gs-loading');
+  if (show) {
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.openGeoStudy = openGeoStudy;
+  window.closeGeoStudy = closeGeoStudy;
+  window.toggleMapSwap = toggleMapSwap;
+  window.startNewLocation = startNewLocation;
+  window.submitGuess = submitGuess;
+  window.closeResultOverlay = closeResultOverlay;
+}
 </file>
 
 <file path="public/css/modules/mobile.css">
@@ -6692,13 +6754,15 @@ if (typeof window !== 'undefined') {
       #recoveryKeyManagerModal:not(.hidden),
       #feedbackModal:not(.hidden),
       #windowsDownloadModal:not(.hidden),
-      #whatsNewModal:not(.hidden) {
+      #whatsNewModal:not(.hidden),
+      #avatarLightbox:not(.hidden) {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         padding: 16px !important;
         position: fixed !important;
         inset: 0 !important;
+        z-index: 99998 !important;
       }
 
       #customConfirmModal:not(.hidden) .modal-box,
@@ -6710,7 +6774,8 @@ if (typeof window !== 'undefined') {
       #recoveryKeyManagerModal:not(.hidden) .modal-box,
       #feedbackModal:not(.hidden) .modal-box,
       #windowsDownloadModal:not(.hidden) .modal-box,
-      #whatsNewModal:not(.hidden) .modal-box {
+      #whatsNewModal:not(.hidden) .modal-box,
+      #avatarLightbox:not(.hidden) .modal-box {
         max-width: 380px !important;
         width: min(92vw, 380px) !important;
         padding: 20px !important;
@@ -13872,7 +13937,7 @@ service cloud.firestore {
           request.auth.uid in resource.data.joinedUsers &&
           request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
           (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          request.resource.data.memberCount == resource.data.memberCount - 1;
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
 
         // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
         allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
@@ -14040,13 +14105,13 @@ service cloud.firestore {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.143" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.143" />
 
   <!-- heic2any -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -16985,7 +17050,7 @@ service cloud.firestore {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=1.1.143"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -17002,7 +17067,7 @@ service cloud.firestore {
   </div>
 
   <!-- Discord風 アバター高解像度拡大モーダル (User Avatar Lightbox) -->
-  <div id="avatarLightbox" class="fixed inset-0 z-[99999] modal-overlay flex items-center justify-center p-4 select-none" style="display:none; background:rgba(0,0,0,0.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);" onclick="if(event.target===this) closeAvatarLightbox()">
+  <div id="avatarLightbox" class="fixed inset-0 z-[99999] modal-overlay flex items-center justify-center p-4 select-none hidden" style="display:none; background:rgba(0,0,0,0.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);" onclick="if(event.target===this) closeAvatarLightbox()">
     <div class="bg-[#1e1f22] dark:bg-[#1e1f22] rounded-3xl shadow-2xl overflow-hidden modal-box animate-pop-in border border-white/10 relative flex flex-col max-w-[360px] w-full" onclick="event.stopPropagation()">
       <!-- 上部ツールバー -->
       <div class="px-5 py-3.5 bg-[#2b2d31] border-b border-white/5 flex items-center justify-between">
@@ -17980,7 +18045,7 @@ service cloud.firestore {
     </div>
   </div>
 
-<div id="feedbackModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+<div id="feedbackModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[99998] hidden p-4">
     <div class="bg-[#313338] rounded-2xl shadow-2xl w-full max-w-sm modal-box confirm-box animate-pop-in overflow-hidden flex flex-col border border-[#1e1f22]" style="max-height: 90vh;">
       <div class="p-5 border-b border-[#1e1f22] flex items-center gap-3 bg-[#2b2d31]">
         <div class="w-10 h-10 rounded-full bg-[#1e1f22] text-indigo-400 flex items-center justify-center flex-shrink-0 shadow-inner">
@@ -18326,6 +18391,27 @@ function isTransientTelemetryError(args) {
       str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request')
+    ) {
+      return true;
+    }
+    // Firebase RTDB の内部パーミッション警告・旧キャッシュ端末からの残骸ログ
+    if (
+      str.includes('permission_denied') ||
+      str.includes('permission-denied') ||
+      str.includes('@firebase/database') ||
+      str.includes('pruneexcessmessages')
+    ) {
+      return true;
+    }
+    // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
+    if (
+      str.includes('load failed') ||
+      str.includes('failed to fetch') ||
+      str.includes('network error') ||
+      str.includes('networkerror') ||
+      str.includes('aborterror') ||
+      str.includes('the user aborted a request') ||
+      str.includes('kv delete failed')
     ) {
       return true;
     }
@@ -27081,6 +27167,17 @@ async function loadServerSettingsMembers() {
         await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
           serverAdmins: wasAdmin ? arrayRemove(targetUid) : arrayUnion(targetUid)
         });
+        // RTDB 側にもモデレーション権限を即時同期（permission_denied を恒久防止）
+        try {
+          const { ref, set, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const adminRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/serverAdmins/${targetUid}`);
+          if (wasAdmin) {
+            await remove(adminRef);
+          } else {
+            await set(adminRef, true);
+          }
+        } catch (rtdbErr) { console.warn("RTDB serverAdmin sync failed:", rtdbErr); }
         await loadServerSettingsMembers();
       } catch (e) { alertMessage("操作に失敗しました", "error"); }
     });
@@ -27934,6 +28031,7 @@ window.showCustomPrompt = function (message, defaultValue = "", okText = "決定
     }
     function onKeyDown(e) {
       if (e.key === "Enter") {
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         onOk();
       } else if (e.key === "Escape") {
@@ -30108,7 +30206,6 @@ async function sendSticker(emoji) {
       }, { merge: true });
 
       LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
-      pruneExcessMessages(null, null, currentDmId);
 
       const otherUid = currentDmParticipants.find(id => id !== userId);
       if (otherUid) {
@@ -30145,7 +30242,6 @@ async function sendSticker(emoji) {
       await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
         lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
       });
-      pruneExcessMessages(currentServerId, currentRoomId, null);
 
       // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
       try {
@@ -30296,6 +30392,7 @@ if (messageInpEl) {
         renderMentionPopup();
         return;
       } else if (e.key === "Enter") {
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         if (mentionUsers.length > 0) {
           selectMention(mentionUsers[mentionSelectedIndex].nickname);
@@ -30362,9 +30459,10 @@ if (messageInpEl) {
         if (!f) return;
         f = await processHeicFile(f);
         if (!checkFileAllowed(f)) return;
-        // 上限を統一（動画100MB / その他ファイル25MB）
-        const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-        if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+        // 上限を統一（動画・音声100MB / その他ファイル50MB: file_uploader.jsと完全整合）
+        const isMedia = f.type.startsWith('video/') || f.type.startsWith('audio/');
+        const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+        if (f.size > MAX) { alertMessage(isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです", "error"); return; }
         attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type || 'application/octet-stream', size: f.size };
         updateFilePreview();
         e.preventDefault();
@@ -30571,7 +30669,7 @@ document.addEventListener('click', (e) => {
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
 
-// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
+// RTDBメッセージローテーション後方互換ダミー関数（クライアント側不正削除完全廃止）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   return;
 }
@@ -30580,6 +30678,16 @@ async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
   if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
+
+  // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
+  const snapDmId = currentDmId;
+  const snapRoomId = currentRoomId;
+  const snapServerId = currentServerId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+  const snapServerData = currentServerData;
+  const snapServerNickname = currentServerNickname;
+  const snapReplyTo = replyingToMessage;
 
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
   if (text && text.length > 10000) {
@@ -30791,7 +30899,6 @@ async function sendMessage() {
       }, { merge: true });
 
       LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
-      pruneExcessMessages(null, null, currentDmId);
 
       const otherUid = currentDmParticipants.find(id => id !== userId);
       if (otherUid) {
@@ -30824,7 +30931,19 @@ async function sendMessage() {
         const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() };
         await set(rtdbMsgRef, rtdbData);
         LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
-      } catch (e) { console.error("RTDB Dual Write Failed in sendMessage", e); }
+      } catch (e) {
+        console.error("RTDB Dual Write Failed in sendMessage", e);
+        // セルフヒーリング: メンバーシップ未同期の疑いがあるため、即座に syncRtdb を要求
+        if (currentServerId && auth.currentUser) {
+          auth.currentUser.getIdToken().then(tok => {
+            fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ serverId: currentServerId, userId, appId, idToken: tok, rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined })
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
       newMessageId = msgRef.id;
 
       try {
@@ -30834,8 +30953,6 @@ async function sendMessage() {
           lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
       } catch (updateErr) { }
-
-      pruneExcessMessages(currentServerId, currentRoomId, null);
 
       try {
         const serverData = currentServerData;
@@ -31052,9 +31169,10 @@ async function handleFilesSelected(filesList) {
   for (let rawFile of Array.from(filesList)) {
     let f = await processHeicFile(rawFile);
     if (!checkFileAllowed(f)) continue;
-    const MAX = f.type && f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+    const isMedia = f.type && (f.type.startsWith('video/') || f.type.startsWith('audio/'));
+    const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
     if (f.size > MAX) {
-      alertMessage(`${f.name}: ` + (f.type && f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです"), "error");
+      alertMessage(`${f.name}: ` + (isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです"), "error");
       continue;
     }
     processed.push({ file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size });
@@ -36261,9 +36379,16 @@ function handleCallDeclinedFromNotification(data) {
 
 // --- 統合通知関数 ---
 async function showNotification(title, body, roomId) {
-  if (typeof isEncrypted === 'function') {
-    if (isEncrypted(body)) body = '新しいメッセージがあります';
-    if (isEncrypted(title)) title = 'Covo';
+  if (typeof body === 'string' && (body.includes('enc::v') || body.startsWith('enc::'))) {
+    if (body.includes(': enc::')) {
+      const senderPart = body.split(': enc::')[0];
+      body = `${senderPart}: 新しいメッセージがあります`;
+    } else {
+      body = '新しいメッセージがあります';
+    }
+  }
+  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
+    title = 'Covo';
   }
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
@@ -38135,9 +38260,24 @@ function initSettings() {
   const toggleBrowserNotifMobile = document.getElementById('toggleBrowserNotifMobile');
   const toggleAutoStart = document.getElementById('toggleAutoStart');
 
-  // 初期値の読み込み (デフォルトは有効: true)
+  // 初期値の読み込み (ブラウザ環境では許可状態と完全に一致させる)
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  let notifEnabled = false;
+  if (isTauri) {
+    notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  } else if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    } else {
+      notifEnabled = false;
+      localStorage.setItem('simplechat_browser_notif', 'false');
+      localStorage.setItem('simplechat_desktop_notif', 'false');
+    }
+  } else {
+    notifEnabled = false;
+    localStorage.setItem('simplechat_browser_notif', 'false');
+    localStorage.setItem('simplechat_desktop_notif', 'false');
+  }
 
   if (toggleNotifSound) toggleNotifSound.checked = soundEnabled;
   if (toggleNotifSoundMobile) toggleNotifSoundMobile.checked = soundEnabled;
@@ -38155,8 +38295,30 @@ function initSettings() {
   if (toggleNotifSound) toggleNotifSound.addEventListener('change', (e) => handleSoundChange(e.target.checked));
   if (toggleNotifSoundMobile) toggleNotifSoundMobile.addEventListener('change', (e) => handleSoundChange(e.target.checked));
 
-  // 通知トグルのリスナー (PC & Mobile 同期)
-  const handleNotifChange = (checked) => {
+  // 通知トグルのリスナー (PC & Mobile 同期 & 権限厳格照合)
+  const handleNotifChange = async (checked) => {
+    if (checked && !isTauri && 'Notification' in window) {
+      if (Notification.permission === 'denied') {
+        alertMessage('通知がブロックされています。ブラウザの設定から通知を許可してください。', 'warning');
+        if (toggleBrowserNotif) toggleBrowserNotif.checked = false;
+        if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.checked = false;
+        localStorage.setItem('simplechat_browser_notif', 'false');
+        localStorage.setItem('simplechat_desktop_notif', 'false');
+        return;
+      }
+      if (Notification.permission === 'default') {
+        const perm = await Notification.requestPermission().catch(() => 'default');
+        if (perm !== 'granted') {
+          alertMessage('通知が許可されなかったため、オフに設定しました。', 'info');
+          if (toggleBrowserNotif) toggleBrowserNotif.checked = false;
+          if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.checked = false;
+          localStorage.setItem('simplechat_browser_notif', 'false');
+          localStorage.setItem('simplechat_desktop_notif', 'false');
+          return;
+        }
+      }
+    }
+
     localStorage.setItem('simplechat_browser_notif', checked ? 'true' : 'false');
     localStorage.setItem('simplechat_desktop_notif', checked ? 'true' : 'false');
     if (toggleBrowserNotif && toggleBrowserNotif.checked !== checked) toggleBrowserNotif.checked = checked;
@@ -39490,9 +39652,36 @@ window.saveViewerMessagesAsTxt = function () {
       initializeFirebase();
     }
 
-    // 3. 通知の許可リクエスト
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+    // 3. 通知の許可リクエスト（新規ユーザー・未許可ユーザーへの明示的申請）
+    if (!isTauri && 'Notification' in window && Notification.permission === 'default') {
+      const applyPermissionResult = (perm) => {
+        const isGranted = perm === 'granted';
+        localStorage.setItem('simplechat_browser_notif', isGranted ? 'true' : 'false');
+        localStorage.setItem('simplechat_desktop_notif', isGranted ? 'true' : 'false');
+        const tb = document.getElementById('toggleBrowserNotif');
+        const tbm = document.getElementById('toggleBrowserNotifMobile');
+        if (tb) tb.checked = isGranted;
+        if (tbm) tbm.checked = isGranted;
+        if (isGranted && typeof setBrowserPushEnabled === 'function') {
+          setBrowserPushEnabled(true).catch(() => {});
+        }
+      };
+
+      Notification.requestPermission().then(applyPermissionResult).catch(() => {});
+
+      // iOS Safari/PWA 等のユーザー操作必須ブラウザ用初回タップフォールバック
+      const requestOnUserAction = async () => {
+        window.removeEventListener('click', requestOnUserAction, true);
+        window.removeEventListener('touchend', requestOnUserAction, true);
+        if (Notification.permission === 'default') {
+          try {
+            const p = await Notification.requestPermission();
+            applyPermissionResult(p);
+          } catch (_) {}
+        }
+      };
+      window.addEventListener('click', requestOnUserAction, true);
+      window.addEventListener('touchend', requestOnUserAction, true);
     }
 
     // 4. リサイザー初期化
@@ -39525,7 +39714,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.141",
+  "version": "1.1.143",
   "force": false
 }
 </file>

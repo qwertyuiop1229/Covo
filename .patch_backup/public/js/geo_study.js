@@ -256,10 +256,15 @@ let resultLine = null;
 let resultMarker = null;
 
 function initMap() {
-  // Leafletの初期化
+  // Leafletの初期化（世界ループ防止と境界固定）
   leafletMap = L.map('gs-map', {
     center: [20, 0],
     zoom: 2,
+    minZoom: 2,
+    maxZoom: 18,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 1.0,
+    worldCopyJump: false,
     zoomControl: false, // UIが狭いので非表示
     attributionControl: false // UIが狭いので非表示
   });
@@ -268,7 +273,10 @@ function initMap() {
   L.control.attribution({position: 'bottomleft', prefix: false}).addAttribution('&copy; OSM').addTo(leafletMap);
 
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
+    minZoom: 2,
+    maxZoom: 19,
+    noWrap: true,
+    bounds: [[-85, -180], [85, 180]]
   }).addTo(leafletMap);
 
   leafletMap.on('click', (e) => {
@@ -356,7 +364,21 @@ async function loadNewPhoto(roundId) {
         ];
     }
     
-    loc = pool[Math.floor(Math.random() * pool.length)];
+    // 直近に出題された問題を除外して抽選（2問連続同じ問題の出現を完全防止）
+    window._gsRecentLocationHistory = window._gsRecentLocationHistory || [];
+    let candidatePool = pool.filter(p => !window._gsRecentLocationHistory.includes(p.name));
+    if (candidatePool.length === 0) {
+      window._gsRecentLocationHistory = [];
+      candidatePool = pool;
+    }
+
+    loc = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    window._gsRecentLocationHistory.push(loc.name);
+    const maxHistory = Math.max(1, Math.min(30, Math.floor(pool.length / 2)));
+    if (window._gsRecentLocationHistory.length > maxHistory) {
+      window._gsRecentLocationHistory.shift();
+    }
+
     currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
     imgUrl = loc.imgUrl;
     
@@ -443,30 +465,24 @@ function submitGuess() {
   if (!leafletMarker || !currentAnswerLatLng) return;
   
   const guessLatLng = leafletMarker.getLatLng().wrap();
+  const answerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng).wrap();
   
-  // 地球一周のバグを防ぐため、経度を補正したコピーを作成する
-  // (例: guessが170度、answerが-170度の場合、最短距離は20度だが、線が340度引かれるのを防ぐ)
-  const drawAnswerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng);
-  let lngDiff = drawAnswerLatLng.lng - guessLatLng.lng;
-  if (lngDiff > 180) {
-      drawAnswerLatLng.lng -= 360;
-  } else if (lngDiff < -180) {
-      drawAnswerLatLng.lng += 360;
-  }
-  
-  // 距離の計算 (haversine)
-  // 地球一周バグ等の影響を受けないように、自前で最短距離を計算
+  // 距離の計算 (Haversine法)
   const R = 6371; // km
-  const dLat = (drawAnswerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
-  const dLng = (drawAnswerLatLng.lng - guessLatLng.lng) * Math.PI / 180;
+  let dLngRaw = answerLatLng.lng - guessLatLng.lng;
+  if (dLngRaw > 180) dLngRaw -= 360;
+  else if (dLngRaw < -180) dLngRaw += 360;
+
+  const dLat = (answerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
+  const dLng = dLngRaw * Math.PI / 180;
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(drawAnswerLatLng.lat * Math.PI / 180) *
+            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(answerLatLng.lat * Math.PI / 180) *
             Math.sin(dLng/2) * Math.sin(dLng/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distanceKm = Math.round(R * c);
   
-  // 正解マーカーと線の描画
-  resultMarker = L.marker(drawAnswerLatLng, {
+  // 正解マーカーの描画（常に正規化された座標に配置）
+  resultMarker = L.marker(answerLatLng, {
     icon: L.icon({
       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -476,16 +492,45 @@ function submitGuess() {
       shadowSize: [41, 41]
     })
   }).addTo(leafletMap);
+
+  // 日付変更線（経度180度 / -180度）をまたぐ場合の最短ルート分割描画（地球一周横断線の完全防止）
+  const lngDiff = answerLatLng.lng - guessLatLng.lng;
+  const lineCoords = [];
+
+  if (Math.abs(lngDiff) > 180) {
+    if (lngDiff > 180) {
+      // guessが西経、answerが東経 -> -180/180で分割
+      const adjLng2 = answerLatLng.lng - 360;
+      const t = (-180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, -180]]);
+      lineCoords.push([[crossLat, 180], [answerLatLng.lat, answerLatLng.lng]]);
+    } else {
+      // guessが東経、answerが西経 -> 180/-180で分割
+      const adjLng2 = answerLatLng.lng + 360;
+      const t = (180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, 180]]);
+      lineCoords.push([[crossLat, -180], [answerLatLng.lat, answerLatLng.lng]]);
+    }
+  } else {
+    lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [answerLatLng.lat, answerLatLng.lng]]);
+  }
   
-  resultLine = L.polyline([guessLatLng, drawAnswerLatLng], {
+  resultLine = L.polyline(lineCoords, {
     color: '#ef4444',
     weight: 3,
-    opacity: 0.8,
+    opacity: 0.85,
     dashArray: '8, 8'
   }).addTo(leafletMap);
   
-  // 地図のズーム調整
-  leafletMap.fitBounds(L.latLngBounds(guessLatLng, drawAnswerLatLng).pad(0.2));
+  // 地図のズーム調整（日付変更線をまたぐ際に世界全体へ一周ズームアウトするのを防止）
+  if (Math.abs(lngDiff) <= 180) {
+    leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng).pad(0.25));
+  } else {
+    const autoZoom = Math.max(2, Math.min(6, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
+    leafletMap.setView(answerLatLng, autoZoom);
+  }
   
   // 結果オーバーレイ表示
   // 数値のアニメーション

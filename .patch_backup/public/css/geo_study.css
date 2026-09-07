@@ -106,9 +106,3 @@
   transform: none !important;
 }
 
-/* Leaflet DivIconのデフォルト枠・白背景の除去 */
-.gs-custom-marker-wrapper {
-  background: transparent !important;
-  border: none !important;
-}
-

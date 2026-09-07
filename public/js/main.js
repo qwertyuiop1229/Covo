@@ -20007,9 +20007,24 @@ function initSettings() {
   const toggleBrowserNotifMobile = document.getElementById('toggleBrowserNotifMobile');
   const toggleAutoStart = document.getElementById('toggleAutoStart');
 
-  // 初期値の読み込み (デフォルトは有効: true)
+  // 初期値の読み込み (ブラウザ環境では許可状態と完全に一致させる)
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  let notifEnabled = false;
+  if (isTauri) {
+    notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  } else if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    } else {
+      notifEnabled = false;
+      localStorage.setItem('simplechat_browser_notif', 'false');
+      localStorage.setItem('simplechat_desktop_notif', 'false');
+    }
+  } else {
+    notifEnabled = false;
+    localStorage.setItem('simplechat_browser_notif', 'false');
+    localStorage.setItem('simplechat_desktop_notif', 'false');
+  }
 
   if (toggleNotifSound) toggleNotifSound.checked = soundEnabled;
   if (toggleNotifSoundMobile) toggleNotifSoundMobile.checked = soundEnabled;
@@ -20027,8 +20042,30 @@ function initSettings() {
   if (toggleNotifSound) toggleNotifSound.addEventListener('change', (e) => handleSoundChange(e.target.checked));
   if (toggleNotifSoundMobile) toggleNotifSoundMobile.addEventListener('change', (e) => handleSoundChange(e.target.checked));
 
-  // 通知トグルのリスナー (PC & Mobile 同期)
-  const handleNotifChange = (checked) => {
+  // 通知トグルのリスナー (PC & Mobile 同期 & 権限厳格照合)
+  const handleNotifChange = async (checked) => {
+    if (checked && !isTauri && 'Notification' in window) {
+      if (Notification.permission === 'denied') {
+        alertMessage('通知がブロックされています。ブラウザの設定から通知を許可してください。', 'warning');
+        if (toggleBrowserNotif) toggleBrowserNotif.checked = false;
+        if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.checked = false;
+        localStorage.setItem('simplechat_browser_notif', 'false');
+        localStorage.setItem('simplechat_desktop_notif', 'false');
+        return;
+      }
+      if (Notification.permission === 'default') {
+        const perm = await Notification.requestPermission().catch(() => 'default');
+        if (perm !== 'granted') {
+          alertMessage('通知が許可されなかったため、オフに設定しました。', 'info');
+          if (toggleBrowserNotif) toggleBrowserNotif.checked = false;
+          if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.checked = false;
+          localStorage.setItem('simplechat_browser_notif', 'false');
+          localStorage.setItem('simplechat_desktop_notif', 'false');
+          return;
+        }
+      }
+    }
+
     localStorage.setItem('simplechat_browser_notif', checked ? 'true' : 'false');
     localStorage.setItem('simplechat_desktop_notif', checked ? 'true' : 'false');
     if (toggleBrowserNotif && toggleBrowserNotif.checked !== checked) toggleBrowserNotif.checked = checked;
@@ -21362,9 +21399,36 @@ window.saveViewerMessagesAsTxt = function () {
       initializeFirebase();
     }
 
-    // 3. 通知の許可リクエスト
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+    // 3. 通知の許可リクエスト（新規ユーザー・未許可ユーザーへの明示的申請）
+    if (!isTauri && 'Notification' in window && Notification.permission === 'default') {
+      const applyPermissionResult = (perm) => {
+        const isGranted = perm === 'granted';
+        localStorage.setItem('simplechat_browser_notif', isGranted ? 'true' : 'false');
+        localStorage.setItem('simplechat_desktop_notif', isGranted ? 'true' : 'false');
+        const tb = document.getElementById('toggleBrowserNotif');
+        const tbm = document.getElementById('toggleBrowserNotifMobile');
+        if (tb) tb.checked = isGranted;
+        if (tbm) tbm.checked = isGranted;
+        if (isGranted && typeof setBrowserPushEnabled === 'function') {
+          setBrowserPushEnabled(true).catch(() => {});
+        }
+      };
+
+      Notification.requestPermission().then(applyPermissionResult).catch(() => {});
+
+      // iOS Safari/PWA 等のユーザー操作必須ブラウザ用初回タップフォールバック
+      const requestOnUserAction = async () => {
+        window.removeEventListener('click', requestOnUserAction, true);
+        window.removeEventListener('touchend', requestOnUserAction, true);
+        if (Notification.permission === 'default') {
+          try {
+            const p = await Notification.requestPermission();
+            applyPermissionResult(p);
+          } catch (_) {}
+        }
+      };
+      window.addEventListener('click', requestOnUserAction, true);
+      window.addEventListener('touchend', requestOnUserAction, true);
     }
 
     // 4. リサイザー初期化
