@@ -86,9 +86,10 @@ async function _sendOfflineIfNoClients() {
   if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
   try {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
-    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
-    if (clientList.length === 0) {
+    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
+    if (activeClients.length === 0) {
+      // 全クライアントが非表示または存在しない → offlineビーコン
+      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
       const data = JSON.stringify({
         userId: self._cachedUserId,
         appId:  self._cachedAppId,
@@ -100,7 +101,7 @@ async function _sendOfflineIfNoClients() {
         body: data,
         keepalive: true
       }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
+      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
     }
   } catch (e) {
     console.warn('[SW] _sendOfflineIfNoClients error:', e);

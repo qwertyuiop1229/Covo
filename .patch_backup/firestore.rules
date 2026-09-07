@@ -127,13 +127,12 @@ service cloud.firestore {
 
       // システムエラー・警告テレメトリ
       match /error_reports/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
+        allow create, update: if isAuthenticated() &&
           request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
-        allow update: if isGlobalAdmin(appId);
-        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+        allow read: if isAuthenticated();
+        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
       }
 
       // 緊急アカウントリカバリー保管庫

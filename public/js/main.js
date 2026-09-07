@@ -562,6 +562,47 @@ window.clearDevConsole = clearDevConsole;
 window.copyDevConsole = copyDevConsole;
 window.copyDebugText = copyDebugText;
 
+// ===== トップレベル前方参照安全ラッパー (ReferenceError防止) =====
+function updateAccountSecurityUI(...args) { return window.updateAccountSecurityUI ? window.updateAccountSecurityUI(...args) : null; }
+function setDiscordUIMode(...args) { return window.setDiscordUIMode ? window.setDiscordUIMode(...args) : null; }
+function checkLatestAnnouncement(...args) { return window.checkLatestAnnouncement ? window.checkLatestAnnouncement(...args) : null; }
+function renderServerList(...args) { return window.renderServerList ? window.renderServerList(...args) : null; }
+function renderDiscordServerNav(...args) { return window.renderDiscordServerNav ? window.renderDiscordServerNav(...args) : null; }
+function openDm(...args) { return window.openDm ? window.openDm(...args) : null; }
+function openDmHomeView(...args) { return window.openDmHomeView ? window.openDmHomeView(...args) : null; }
+function leaveServerView(...args) { return window.leaveServerView ? window.leaveServerView(...args) : null; }
+function openMobileProfileScreen(...args) { return window.openMobileProfileScreen ? window.openMobileProfileScreen(...args) : null; }
+function openNotifModal(...args) { return window.openNotifModal ? window.openNotifModal(...args) : null; }
+function closeNotifModal(...args) { return window.closeNotifModal ? window.closeNotifModal(...args) : null; }
+function switchMobileTab(...args) { return window.switchMobileTab ? window.switchMobileTab(...args) : null; }
+function closeUserProfileModal(...args) { return window.closeUserProfileModal ? window.closeUserProfileModal(...args) : null; }
+function openUserProfileModal(...args) { return window.openUserProfileModal ? window.openUserProfileModal(...args) : null; }
+function openCustomStatusModal(...args) { return window.openCustomStatusModal ? window.openCustomStatusModal(...args) : null; }
+function closeCustomStatusModal(...args) { return window.closeCustomStatusModal ? window.closeCustomStatusModal(...args) : null; }
+function setAppTheme(...args) { return window.setAppTheme ? window.setAppTheme(...args) : null; }
+function switchDmTab(...args) { return window.switchDmTab ? window.switchDmTab(...args) : null; }
+function switchSsTab(...args) { return window.switchSsTab ? window.switchSsTab(...args) : null; }
+function toggleStickerPicker(...args) { return window.toggleStickerPicker ? window.toggleStickerPicker(...args) : null; }
+function goToServerRoom(...args) { return window.goToServerRoom ? window.goToServerRoom(...args) : null; }
+function goToRoom(...args) { return window.goToRoom ? window.goToRoom(...args) : null; }
+function performUpdate(...args) { return window.performUpdate ? window.performUpdate(...args) : null; }
+function loadPastVersionsPage(...args) { return window.loadPastVersionsPage ? window.loadPastVersionsPage(...args) : null; }
+function installPastRelease(...args) { return window.installPastRelease ? window.installPastRelease(...args) : null; }
+function showAnnouncementModal(...args) { return window.showAnnouncementModal ? window.showAnnouncementModal(...args) : null; }
+function forceRestartNow(...args) { return window.forceRestartNow ? window.forceRestartNow(...args) : null; }
+function updateThemeSelectorUI(...args) { return window.updateThemeSelectorUI ? window.updateThemeSelectorUI(...args) : null; }
+function closePinSetupModal(...args) { return window.closePinSetupModal ? window.closePinSetupModal(...args) : null; }
+function changeLockGraceTimeout(...args) { return window.changeLockGraceTimeout ? window.changeLockGraceTimeout(...args) : null; }
+function changeAutoLockTimeout(...args) { return window.changeAutoLockTimeout ? window.changeAutoLockTimeout(...args) : null; }
+function inputAppPinDigit(...args) { return window.inputAppPinDigit ? window.inputAppPinDigit(...args) : null; }
+function backspaceAppPinDigit(...args) { return window.backspaceAppPinDigit ? window.backspaceAppPinDigit(...args) : null; }
+function clearAppPinInput(...args) { return window.clearAppPinInput ? window.clearAppPinInput(...args) : null; }
+function lockAppScreen(...args) { return window.lockAppScreen ? window.lockAppScreen(...args) : null; }
+function closeChatExportModal(...args) { return window.closeChatExportModal ? window.closeChatExportModal(...args) : null; }
+function openChatBackupViewerModal(...args) { return window.openChatBackupViewerModal ? window.openChatBackupViewerModal(...args) : null; }
+function updateForceOverrideUI(...args) { return window.updateForceOverrideUI ? window.updateForceOverrideUI(...args) : null; }
+function updateMetaThemeColor(...args) { return window.updateMetaThemeColor ? window.updateMetaThemeColor(...args) : null; }
+function showEmergencyRecoveryPanel(...args) { return window.showEmergencyRecoveryPanel ? window.showEmergencyRecoveryPanel(...args) : null; }
 
 // ファイルアップローダー
 function checkFileAllowed(file) { return _checkFileAllowed(file); }
@@ -848,16 +889,23 @@ function initializeFirebase() {
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
         if (typeof loadServerRooms === 'function' && loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
-        if (typeof _cleanRoomSnapshot === 'function') _cleanRoomSnapshot();
-        if (typeof _messagesUnsubscribe === 'function') { _messagesUnsubscribe(); _messagesUnsubscribe = null; }
-        if (typeof _readStatesUnsub === 'function') { _readStatesUnsub(); _readStatesUnsub = null; }
+        if (typeof currentServerDocUnsubscribe === 'function') { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
+        if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
+        if (typeof unsubscribePinnedMessages === 'function') { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
+        if (typeof readReceiptsUnsubscribe === 'function') { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
+        if (typeof readStatesUnsub === 'function') { readStatesUnsub(); readStatesUnsub = null; }
+        if (typeof typingUnsubscribe === 'function') { typingUnsubscribe(); typingUnsubscribe = null; }
         if (typeof serverListUnsubscribe === 'function') { serverListUnsubscribe(); serverListUnsubscribe = null; }
         if (typeof _callIncomingUnsub === 'function') { _callIncomingUnsub(); _callIncomingUnsub = null; }
         if (typeof _fsIncomingUnsub === 'function') { _fsIncomingUnsub(); _fsIncomingUnsub = null; }
         if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); _telemetryErrorsUnsub = null; }
         if (typeof window.rtdbMessagesUnsub === 'function') { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
+        if (typeof unsubscribeRelationships === 'function') { unsubscribeRelationships(); unsubscribeRelationships = null; }
+        if (typeof unsubscribeDmChannels === 'function') { unsubscribeDmChannels(); unsubscribeDmChannels = null; }
+        if (typeof unsubscribeFeatureFlags === 'function') { unsubscribeFeatureFlags(); unsubscribeFeatureFlags = null; }
       } catch (_) { }
     }
+    window.cleanupAllActiveFirestoreListeners = cleanupAllActiveFirestoreListeners;
 
     onAuthStateChanged(auth, async (user) => {
       // 再入防止: 前回の処理が終わっていない場合はスキップ
@@ -3926,7 +3974,6 @@ window.switchDiscordSettingsTab = function (tab) {
     updateE2EEStatusUI();
     updateLayoutDebugUI();
     if (typeof updateForceOverrideUI === 'function') updateForceOverrideUI();
-    if (typeof fetchGitHubReleasesHistory === 'function') fetchGitHubReleasesHistory('settingsPastVersionsContainer');
   }
   const sec = document.getElementById(smap[tab] || 'profileSection');
   if (sec) sec.classList.add('active');
@@ -11293,10 +11340,7 @@ window.exitJumpMode = function () {
       lastMessagesData = [];
       messagesIndexMap = {};
       messagesDisplay.innerHTML = '';
-      if (typeof subscribeToMessagesRTDB === 'function') {
-        if (typeof unsubscribeMessages === 'function') { unsubscribeMessages(); unsubscribeMessages = null; }
-        subscribeToMessagesRTDB();
-      }
+      subscribeToMessages();
     } else {
       // Firestoreリード数完全ゼロ！常時稼働のonSnapshotが維持していた最新キャッシュへ一瞬で復帰
       allLoadedMessages = [...realTimeMessagesCache];
@@ -12533,7 +12577,12 @@ async function sendMessage() {
     }
 
     if (replyingToMessage) {
-      data.replyTo = { messageId: replyingToMessage.id, senderNickname: replyingToMessage.senderNickname, text: replyingToMessage.text || "（ファイル）" };
+      const replyText = replyingToMessage._originalText || replyingToMessage.text || (replyingToMessage.fileName ? "（ファイル）" : replyingToMessage.sticker ? "（スタンプ）" : "...");
+      data.replyTo = {
+        messageId: replyingToMessage.id,
+        senderNickname: replyingToMessage.senderNickname,
+        text: replyText
+      };
     }
 
     let newMessageId;
@@ -13257,6 +13306,12 @@ window.renderPdfCanvas = async function (url, canvas, hintW, hintH) {
 };
 
 function createMessageElement(message, messageId, readByCount = 0) {
+  const snapDmId = currentDmId;
+  const snapServerId = currentServerId;
+  const snapRoomId = currentRoomId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+
   if (message.isGap) {
     const gapRow = document.createElement("div");
     gapRow.className = "w-full flex justify-center py-6 opacity-60 select-none flipped";
@@ -13455,11 +13510,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   return;
                 }
                 let key;
-                if (currentDmId) {
-                  key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+                if (snapDmId) {
+                  key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
                 } else {
-                  const members = (currentServerData && currentServerData.joinedUsers) || [];
-                  key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                  key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
                 }
                 if (!key) {
                   // 鍵の取得待機中は削除カードにせず、そのままリトライ待機
@@ -13616,11 +13670,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
               (async () => {
                 try {
                   let key;
-                  if (currentDmId) {
-                    key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+                  if (snapDmId) {
+                    key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
                   } else {
-                    const members = (currentServerData && currentServerData.joinedUsers) || [];
-                    key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                    key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
                   }
                   if (!key) return;
                   const res = await fetch(message.fileData);
@@ -13680,11 +13733,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
           if (message.isFileEncrypted && !message._decryptedFileUrl) {
             try {
               let key;
-              if (currentDmId) {
-                key = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+              if (snapDmId) {
+                key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
               } else {
-                const members = (currentServerData && currentServerData.joinedUsers) || [];
-                key = await getOrCreateRoomKey(currentServerId, currentRoomId, members);
+                key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
               }
               if (!key) throw new Error("鍵が見つかりません");
               const res = await fetch(message.fileData);
@@ -17872,6 +17924,7 @@ async function endCall(skipFirestore, reason) {
 let _voiceAudioContext = null;
 let _voiceAnalyser = null;
 let _voiceAnimFrame = null;
+let _voiceSources = [];
 
 function startVoiceIndicator(remoteStream) {
   const canvas = document.getElementById('voiceWaveform');
@@ -17953,7 +18006,16 @@ function startVoiceIndicator(remoteStream) {
 function stopVoiceIndicator() {
   if (_voiceAnimFrame) cancelAnimationFrame(_voiceAnimFrame);
   _voiceAnimFrame = null;
-  if (_voiceAnalyser) { _voiceAnalyser.disconnect(); _voiceAnalyser = null; }
+  if (_voiceSources && _voiceSources.length > 0) {
+    _voiceSources.forEach(s => {
+      try { s.disconnect(); } catch (_) {}
+    });
+    _voiceSources = [];
+  }
+  if (_voiceAnalyser) {
+    try { _voiceAnalyser.disconnect(); } catch (_) {}
+    _voiceAnalyser = null;
+  }
   const canvas = document.getElementById('voiceWaveform');
   if (canvas) {
     canvas.style.display = 'none';

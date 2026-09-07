@@ -4657,7 +4657,7 @@ async function startPresenceSystem() {
         const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
         await updateUserStatus(currentState);
         if (currentState === 'away') startOfflineTimer();
-        if (currentRoomId) resyncActiveRoomMessages();
+        if (currentRoomId || currentDmId) resyncActiveRoomMessages();
       }
     };
     onValue(connectedRef, onConnected);
@@ -5669,7 +5669,7 @@ function _handleNetworkOnline() {
   updateUserStatus(currentState);
   if (currentState === 'away') startOfflineTimer();
   refreshCachedIdToken();
-  if (currentRoomId) resyncActiveRoomMessages();
+  if (currentRoomId || currentDmId) resyncActiveRoomMessages();
 }
 // ネット切断: 即座にofflineビーコンを送る
 function _handleNetworkOffline() {
@@ -5720,12 +5720,12 @@ function clearAppBadgeFull() {
   }
 }
 
-// アクティブなルームまたはDMの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止）
+// アクティブなルームまたはDMの最新メッセージを差分同期する自己治癒関数（リアルタイム切断を完全防止 ＆ 削除同期）
 let _lastResyncAt = 0;
 async function resyncActiveRoomMessages() {
   if ((!currentRoomId && !currentDmId) || !userId) return;
   const now = Date.now();
-  if (now - _lastResyncAt < 3000) return; // 3秒以内の連続再取得通信をブロック
+  if (now - _lastResyncAt < 2000) return; // 2秒以内の連続再取得通信をブロック
   _lastResyncAt = now;
   try {
     const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -5736,17 +5736,39 @@ async function resyncActiveRoomMessages() {
     const messagesRef = ref(rtdb, basePath);
     const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(25));
     const snapshot = await get(q);
+    const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
     if (snapshot.exists()) {
       const data = snapshot.val();
-      const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
       const docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
+      docs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       if (currentServerId) {
         const _members = (currentServerData && currentServerData.joinedUsers) || [];
         await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
       } else if (currentDmId) {
         await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
       }
+
+      const serverIdSet = new Set(docs.map(d => d.id));
+      const minServerTs = getMsgTimestamp(docs[0]);
+      const isFullChannel = docs.length < 25;
       let changed = false;
+
+      // サーバー上で削除されたメッセージをローカルIndexedDBおよびメモリからパージ
+      const surviving = [];
+      allLoadedMessages.forEach(m => {
+        const mTs = getMsgTimestamp(m);
+        if (serverIdSet.has(m.id) || (!isFullChannel && mTs < minServerTs)) {
+          surviving.push(m);
+        } else {
+          LocalStore.deleteMessage(m.id).catch(() => {});
+          changed = true;
+        }
+      });
+      if (surviving.length !== allLoadedMessages.length) {
+        changed = true;
+      }
+      allLoadedMessages = surviving;
+
       docs.forEach(msg => {
         const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
         if (idx >= 0) {
@@ -5764,6 +5786,13 @@ async function resyncActiveRoomMessages() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
+    } else if (allLoadedMessages.length > 0) {
+      // サーバー上に1件もメッセージが存在しない場合（全件削除された場合）
+      allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
+      allLoadedMessages = [];
+      lastMessagesData = [];
+      messagesIndexMap = {};
+      renderMessagesWithReadReceipts();
     }
   } catch (e) {
     console.warn('[RTDB] resyncActiveRoomMessages failed:', e);
@@ -5775,15 +5804,18 @@ const handleWindowFocus = () => {
   stopOfflineTimer();
   updateUserStatus('online');
   resetAwayTimer();
-  if (typeof currentRoomId !== 'undefined' && currentRoomId) {
+  if ((typeof currentRoomId !== 'undefined' && currentRoomId) || currentDmId) {
+    const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[currentRoomId] = Date.now() + 10000;
+      rm[activeChannelKey] = Date.now() + 10000;
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
-    if (typeof unreadCounts !== 'undefined') unreadCounts[currentRoomId] = 0;
-    const badge = document.getElementById(`unread-badge-${currentRoomId}`);
-    if (badge) badge.style.display = 'none';
+    if (currentRoomId && typeof unreadCounts !== 'undefined') {
+      unreadCounts[currentRoomId] = 0;
+      const badge = document.getElementById(`unread-badge-${currentRoomId}`);
+      if (badge) badge.style.display = 'none';
+    }
     updateGlobalNotifUI();
     resyncActiveRoomMessages();
   }
@@ -5819,7 +5851,7 @@ const handleVisibilityChange = () => {
     clearAppBadgeFull();
     if (typeof updateGlobalNotifUI === 'function') updateGlobalNotifUI();
     if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
-    if (currentRoomId) resyncActiveRoomMessages();
+    if (currentRoomId || currentDmId) resyncActiveRoomMessages();
   }
 };
 
@@ -10591,30 +10623,31 @@ async function subscribeToMessagesRTDB() {
     console.warn('[LocalStore] initial load error:', localErr);
   }
 
-  // STEP 2: 通信量極小化 Delta Sync（ローカルの最新以降のみRTDBから取得）
+  // STEP 2: 通信量極小化 Delta Sync（RTDBとの完全同期 ＆ 削除メッセージの自動検出パージ）
   const performDeltaSync = async () => {
     try {
-      const lastLocalTs = await LocalStore.getLatestMessageTimestamp(chId);
-      let rtdbDocs = [];
+      const snap = await get(q);
+      if (snap.exists()) {
+        const d = snap.val();
+        const rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
+        rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
 
-      if (lastLocalTs > 0) {
-        const deltaQuery = rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(lastLocalTs + 1), limitToLast(50));
-        const deltaSnap = await get(deltaQuery);
-        if (deltaSnap.exists()) {
-          const d = deltaSnap.val();
-          rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
-        }
-      } else {
-        const snap = await get(q);
-        if (snap.exists()) {
-          const d = snap.val();
-          rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
-        }
-      }
-
-      if (rtdbDocs.length > 0) {
         await LocalStore.upsertMessagesBatch(rtdbDocs);
         await decryptInPlace(rtdbDocs);
+
+        const serverIdSet = new Set(rtdbDocs.map(doc => doc.id));
+        const minServerTs = getMsgTimestamp(rtdbDocs[0]);
+        const isFullChannel = rtdbDocs.length < rtdbMessagesLimit;
+
+        // サーバー上で削除されたメッセージを検出し、ローカルIndexedDBおよびメモリからパージ
+        allLoadedMessages = allLoadedMessages.filter(m => {
+          const mTs = getMsgTimestamp(m);
+          if (serverIdSet.has(m.id) || (!isFullChannel && mTs < minServerTs)) {
+            return true;
+          }
+          LocalStore.deleteMessage(m.id).catch(() => {});
+          return false;
+        });
 
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -10630,6 +10663,16 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
+      } else {
+        // サーバー上に1件もメッセージが存在しない場合（全件削除された場合）
+        if (allLoadedMessages.length > 0) {
+          allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
+          allLoadedMessages = [];
+          lastMessagesData = [];
+          messagesIndexMap = {};
+          renderPinnedMessages();
+          renderMessagesWithReadReceipts();
+        }
       }
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
@@ -10648,6 +10691,19 @@ async function subscribeToMessagesRTDB() {
     buffer = [];
 
     await decryptInPlace(docsToProcess);
+
+    const docIdSet = new Set(docsToProcess.map(d => d.id));
+    const minServerTs = docsToProcess.length > 0 ? getMsgTimestamp(docsToProcess[0]) : 0;
+    const isFullChannel = docsToProcess.length < rtdbMessagesLimit;
+
+    // サーバー上で削除されたメッセージをローカルから除外＆IndexedDBからも削除
+    allLoadedMessages = allLoadedMessages.filter(m => {
+      if (docIdSet.has(m.id) || (!isFullChannel && getMsgTimestamp(m) < minServerTs)) {
+        return true;
+      }
+      LocalStore.deleteMessage(m.id).catch(() => {});
+      return false;
+    });
 
     docsToProcess.forEach(msg => {
       const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -13015,7 +13071,14 @@ window.toggleReaction = async function (messageId, emoji) {
       const rtdb = await _getOrInitRTDB();
       const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${messageId}`);
       const snap = await get(rtdbMsgRef);
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        LocalStore.deleteMessage(messageId).catch(() => {});
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== messageId);
+        lastMessagesData = [...allLoadedMessages];
+        renderMessagesWithReadReceipts();
+        alertMessage("このメッセージは既に削除されています", "info");
+        return;
+      }
       const msgData = snap.val();
       const currentReactions = msgData.reactions || {};
       const hasReactedWithSameEmoji = currentReactions[userId] === emoji;
@@ -13032,7 +13095,14 @@ window.toggleReaction = async function (messageId, emoji) {
     } else {
       const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, messageId);
       const msgSnap = await getDoc(msgRef);
-      if (!msgSnap.exists()) return;
+      if (!msgSnap.exists()) {
+        LocalStore.deleteMessage(messageId).catch(() => {});
+        allLoadedMessages = allLoadedMessages.filter(m => m.id !== messageId);
+        lastMessagesData = [...allLoadedMessages];
+        renderMessagesWithReadReceipts();
+        alertMessage("このメッセージは既に削除されています", "info");
+        return;
+      }
       const msgData = msgSnap.data();
       const currentReactions = msgData.reactions || {};
       const hasReactedWithSameEmoji = currentReactions[userId] === emoji;
@@ -14606,14 +14676,18 @@ if (deleteMsgBtn) {
         // DMメッセージ削除
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
+        try {
+          await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
+        } catch (rtdbErr) {
+          console.warn('[deleteMessage] RTDB DM remove notice (already removed or permission):', rtdbErr);
+        }
         await LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
         // DMチャンネルの最新メッセージサマリーを更新
         allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
         const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
         const newLastText = remainingLatest
-          ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+          ? (remainingLatest._originalText || remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
           : null;
         const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
         const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;
@@ -14639,8 +14713,12 @@ if (deleteMsgBtn) {
         const rtdb = await _getOrInitRTDB();
 
         // RTDB削除とFirestore削除を並行実行
-        const rtdbDeletePromise = remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
-        const fsDeletePromise = deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+        const rtdbDeletePromise = remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`)).catch(e => {
+          console.warn('[deleteMessage] RTDB room remove notice:', e);
+        });
+        const fsDeletePromise = deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id)).catch(e => {
+          console.warn('[deleteMessage] Firestore room remove notice:', e);
+        });
 
         // 特権削除の場合は Worker API (D1・サーバー監査ログ・バックエンド整合性) も非同期呼び出し
         if (isPrivilegedDelete) {
@@ -14677,7 +14755,7 @@ if (deleteMsgBtn) {
         allLoadedMessages = allLoadedMessages.filter(m => m.id !== msgToDelete.id);
         const remainingLatest = allLoadedMessages.length > 0 ? allLoadedMessages[allLoadedMessages.length - 1] : null;
         const newLastText = remainingLatest
-          ? (remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
+          ? (remainingLatest._originalText || remainingLatest.text || (remainingLatest.sticker ? 'スタンプ ' + remainingLatest.sticker : remainingLatest.fileName ? '（ファイル）' : ''))
           : null;
         const newLastAt = remainingLatest ? (remainingLatest.timestamp || remainingLatest.createdAt || Date.now()) : null;
         const newLastSender = remainingLatest ? (remainingLatest.senderId || null) : null;

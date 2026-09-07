@@ -829,7 +829,7 @@
                 <i class="fas fa-palette fa-fw"></i>外観テーマ
               </button>
               <button class="settings-nav-item" id="snav-desktop" onclick="switchDiscordSettingsTab('desktop')">
-                <i class="fas fa-desktop fa-fw"></i>アプリ動作 & キー
+                <i class="fas fa-desktop fa-fw"></i>アプリ動作、キー
               </button>
               <button class="settings-nav-item" id="snav-migration" onclick="switchDiscordSettingsTab('migration')">
                 <i class="fas fa-mobile-screen-button fa-fw"></i>端末データ移行
@@ -1172,15 +1172,22 @@
                       </div>
                       <div class="text-[11px] text-gray-400 mt-0.5">他のタブやアプリに切り替わった後、ロックされるまでの時間</div>
                     </div>
-                    <select id="lockGraceTimeoutSelect" onchange="changeLockGraceTimeout(this.value)" class="text-xs bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-slate-200 font-bold focus:outline-none">
-                      <option value="0">即時 (離れたら即ロック)</option>
-                      <option value="10">10秒後</option>
-                      <option value="30">30秒後</option>
-                      <option value="60">1分後</option>
-                      <option value="300">5分後</option>
-                      <option value="900">15分後</option>
-                      <option value="-1">無効 (離脱時はロックしない)</option>
-                    </select>
+                    <div class="covo-custom-select" id="lockGraceTimeoutDropdown">
+                      <div class="covo-select-trigger" onclick="toggleCustomDropdown('lockGraceTimeoutDropdown')">
+                        <span id="lockGraceTimeoutSelectedLabel">即時 (離れたら即ロック)</span>
+                        <i class="fas fa-chevron-down text-xs opacity-60"></i>
+                      </div>
+                      <div class="covo-select-options">
+                        <div class="covo-select-option selected" data-value="0" onclick="selectLockGraceTimeoutOption('0', '即時 (離れたら即ロック)')">即時 (離れたら即ロック)</div>
+                        <div class="covo-select-option" data-value="10" onclick="selectLockGraceTimeoutOption('10', '10秒後')">10秒後</div>
+                        <div class="covo-select-option" data-value="30" onclick="selectLockGraceTimeoutOption('30', '30秒後')">30秒後</div>
+                        <div class="covo-select-option" data-value="60" onclick="selectLockGraceTimeoutOption('60', '1分後')">1分後</div>
+                        <div class="covo-select-option" data-value="300" onclick="selectLockGraceTimeoutOption('300', '5分後')">5分後</div>
+                        <div class="covo-select-option" data-value="900" onclick="selectLockGraceTimeoutOption('900', '15分後')">15分後</div>
+                        <div class="covo-select-option" data-value="-1" onclick="selectLockGraceTimeoutOption('-1', '無効 (離脱時はロックしない)')">無効 (離脱時はロックしない)</div>
+                      </div>
+                      <input type="hidden" id="lockGraceTimeoutSelect" value="0" />
+                    </div>
                   </div>
 
                   <!-- 無操作ロック時間 -->
@@ -1192,13 +1199,20 @@
                       </div>
                       <div class="text-[11px] text-gray-400 mt-0.5">画面を操作しない状態が続いた場合に自動でロックします</div>
                     </div>
-                    <select id="autoLockTimeoutSelect" onchange="changeAutoLockTimeout(this.value)" class="text-xs bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-slate-200 font-bold focus:outline-none">
-                      <option value="0">無効 (自動ロックしない)</option>
-                      <option value="5">5分後</option>
-                      <option value="15">15分後</option>
-                      <option value="30">30分後</option>
-                      <option value="60">60分後</option>
-                    </select>
+                    <div class="covo-custom-select" id="autoLockTimeoutDropdown">
+                      <div class="covo-select-trigger" onclick="toggleCustomDropdown('autoLockTimeoutDropdown')">
+                        <span id="autoLockTimeoutSelectedLabel">15分後</span>
+                        <i class="fas fa-chevron-down text-xs opacity-60"></i>
+                      </div>
+                      <div class="covo-select-options">
+                        <div class="covo-select-option" data-value="0" onclick="selectAutoLockTimeoutOption('0', '無効 (自動ロックしない)')">無効 (自動ロックしない)</div>
+                        <div class="covo-select-option" data-value="5" onclick="selectAutoLockTimeoutOption('5', '5分後')">5分後</div>
+                        <div class="covo-select-option selected" data-value="15" onclick="selectAutoLockTimeoutOption('15', '15分後')">15分後</div>
+                        <div class="covo-select-option" data-value="30" onclick="selectAutoLockTimeoutOption('30', '30分後')">30分後</div>
+                        <div class="covo-select-option" data-value="60" onclick="selectAutoLockTimeoutOption('60', '60分後')">60分後</div>
+                      </div>
+                      <input type="hidden" id="autoLockTimeoutSelect" value="15" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1267,9 +1281,9 @@
                 </div>
               </div>
 
-              <!-- 5. アプリ動作 & キー (desktopSection) -->
+              <!-- 5. アプリ動作、キー (desktopSection) -->
               <div id="desktopSection" class="settings-content-section space-y-6">
-                <div class="settings-section-title">アプリ動作 & キー</div>
+                <div class="settings-section-title">アプリ動作、キー</div>
                 <div id="desktopSettingsContainer" class="hidden space-y-4">
                   <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl p-5 space-y-2 border border-gray-200/80 dark:border-slate-700/60">
                     <div class="setting-row">
@@ -3698,7 +3712,7 @@
         </div>
       </div>
 
-      <div class="mobile-settings-group p-4 space-y-3">
+      <div class="mobile-settings-group p-4 space-y-4">
         <div class="flex items-center justify-between">
           <div>
             <div class="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
@@ -3707,17 +3721,24 @@
             </div>
             <div class="text-[10px] text-gray-400 mt-0.5">アプリを離れてからロックされるまでの時間</div>
           </div>
-          <select id="mobileLockGraceTimeoutSelect" onchange="changeLockGraceTimeout(this.value)" class="text-xs bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-slate-200 font-bold focus:outline-none">
-            <option value="0">即時 (離れたら即ロック)</option>
-            <option value="10">10秒後</option>
-            <option value="30">30秒後</option>
-            <option value="60">1分後</option>
-            <option value="300">5分後</option>
-            <option value="900">15分後</option>
-            <option value="-1">無効 (離脱時はロックしない)</option>
-          </select>
+          <div class="covo-custom-select" id="mobileLockGraceTimeoutDropdown">
+            <div class="covo-select-trigger" onclick="toggleCustomDropdown('mobileLockGraceTimeoutDropdown')">
+              <span id="mobileLockGraceTimeoutSelectedLabel">即時 (離れたら即ロック)</span>
+              <i class="fas fa-chevron-down text-xs opacity-60"></i>
+            </div>
+            <div class="covo-select-options">
+              <div class="covo-select-option selected" data-value="0" onclick="selectLockGraceTimeoutOption('0', '即時 (離れたら即ロック)')">即時 (離れたら即ロック)</div>
+              <div class="covo-select-option" data-value="10" onclick="selectLockGraceTimeoutOption('10', '10秒後')">10秒後</div>
+              <div class="covo-select-option" data-value="30" onclick="selectLockGraceTimeoutOption('30', '30秒後')">30秒後</div>
+              <div class="covo-select-option" data-value="60" onclick="selectLockGraceTimeoutOption('60', '1分後')">1分後</div>
+              <div class="covo-select-option" data-value="300" onclick="selectLockGraceTimeoutOption('300', '5分後')">5分後</div>
+              <div class="covo-select-option" data-value="900" onclick="selectLockGraceTimeoutOption('900', '15分後')">15分後</div>
+              <div class="covo-select-option" data-value="-1" onclick="selectLockGraceTimeoutOption('-1', '無効 (離脱時はロックしない)')">無効 (離脱時はロックしない)</div>
+            </div>
+            <input type="hidden" id="mobileLockGraceTimeoutSelect" value="0" />
+          </div>
         </div>
-        <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between">
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between">
           <div>
             <div class="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
               <i class="fas fa-clock text-blue-500"></i>
@@ -3725,13 +3746,20 @@
             </div>
             <div class="text-[10px] text-gray-400 mt-0.5">操作がない時間が続いた場合</div>
           </div>
-          <select id="mobileAutoLockTimeoutSelect" onchange="changeAutoLockTimeout(this.value)" class="text-xs bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-slate-200 font-bold focus:outline-none">
-            <option value="0">無効</option>
-            <option value="5">5分後</option>
-            <option value="15">15分後</option>
-            <option value="30">30分後</option>
-            <option value="60">60分後</option>
-          </select>
+          <div class="covo-custom-select" id="mobileAutoLockTimeoutDropdown">
+            <div class="covo-select-trigger" onclick="toggleCustomDropdown('mobileAutoLockTimeoutDropdown')">
+              <span id="mobileAutoLockTimeoutSelectedLabel">15分後</span>
+              <i class="fas fa-chevron-down text-xs opacity-60"></i>
+            </div>
+            <div class="covo-select-options">
+              <div class="covo-select-option" data-value="0" onclick="selectAutoLockTimeoutOption('0', '無効 (自動ロックしない)')">無効</div>
+              <div class="covo-select-option" data-value="5" onclick="selectAutoLockTimeoutOption('5', '5分後')">5分後</div>
+              <div class="covo-select-option selected" data-value="15" onclick="selectAutoLockTimeoutOption('15', '15分後')">15分後</div>
+              <div class="covo-select-option" data-value="30" onclick="selectAutoLockTimeoutOption('30', '30分後')">30分後</div>
+              <div class="covo-select-option" data-value="60" onclick="selectAutoLockTimeoutOption('60', '60分後')">60分後</div>
+            </div>
+            <input type="hidden" id="mobileAutoLockTimeoutSelect" value="15" />
+          </div>
         </div>
       </div>
     </div>
@@ -4067,9 +4095,9 @@
         <!-- メッセージ送信クイック入力 (他人の場合のみ) -->
         <div id="userProfileQuickMsgArea" class="pt-0.5">
           <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
-            <div class="p-1.5 pl-3 bg-gray-100 dark:bg-[#1e1f22] rounded-xl border border-gray-200 dark:border-[#1f2023] flex items-center gap-2 focus-within:ring-2 focus-within:ring-indigo-500/30 transition shadow-inner">
-              <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none font-medium" />
-              <button type="submit" class="w-7 h-7 rounded-lg text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#2b2d31] flex items-center justify-center text-xs transition active:scale-95 shadow-xs flex-shrink-0" title="送信">
+            <div class="p-1.5 pl-3 bg-[#ebedef] dark:bg-[#1e1f22] rounded-xl border border-transparent focus-within:border-[#5865f2] dark:focus-within:border-[#5865f2] flex items-center gap-2 transition-all shadow-xs">
+              <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-[#949ba4] focus:outline-none font-medium" />
+              <button type="submit" class="w-7 h-7 rounded-lg text-gray-500 hover:text-[#5865f2] dark:text-[#949ba4] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-xs transition-colors active:scale-95 flex-shrink-0" title="送信">
                 <i class="fas fa-paper-plane text-[11px]"></i>
               </button>
             </div>
