@@ -62,18 +62,10 @@ Write-Host ''
 Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
 node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
 
-# [1/5] version.json + tauri.conf.json + index.html
+# [1/5] version.json + tauri.conf.json
 $vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
 [System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
 Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
 
 $tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
 if (Test-Path $tauriConfPath) {

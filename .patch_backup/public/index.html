@@ -194,9 +194,6 @@
       if (detailArea && errMsg) {
         detailArea.value = `エラー発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
       }
-      if (typeof fetchGitHubReleasesHistory === 'function') {
-        fetchGitHubReleasesHistory('emergencyPastVersions');
-      }
     };
 
     window.addEventListener('error', function(e) {

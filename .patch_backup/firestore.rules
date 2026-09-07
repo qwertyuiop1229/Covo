@@ -226,12 +226,14 @@ service cloud.firestore {
              request.auth.uid == keyUserId ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('.*' + request.auth.uid + '.*'));
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
           allow write: if isAuthenticated() &&
             (isGlobalAdmin(appId) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('.*' + request.auth.uid + '.*'));
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
         }
       }
 

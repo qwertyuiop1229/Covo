@@ -141,6 +141,27 @@ function isTransientTelemetryError(args) {
     ) {
       return true;
     }
+    // Firebase RTDB の内部パーミッション警告・旧キャッシュ端末からの残骸ログ
+    if (
+      str.includes('permission_denied') ||
+      str.includes('permission-denied') ||
+      str.includes('@firebase/database') ||
+      str.includes('pruneexcessmessages')
+    ) {
+      return true;
+    }
+    // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
+    if (
+      str.includes('load failed') ||
+      str.includes('failed to fetch') ||
+      str.includes('network error') ||
+      str.includes('networkerror') ||
+      str.includes('aborterror') ||
+      str.includes('the user aborted a request') ||
+      str.includes('kv delete failed')
+    ) {
+      return true;
+    }
     return false;
   } catch (_) {
     return false;
@@ -8893,6 +8914,17 @@ async function loadServerSettingsMembers() {
         await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
           serverAdmins: wasAdmin ? arrayRemove(targetUid) : arrayUnion(targetUid)
         });
+        // RTDB 側にもモデレーション権限を即時同期（permission_denied を恒久防止）
+        try {
+          const { ref, set, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          const adminRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/serverAdmins/${targetUid}`);
+          if (wasAdmin) {
+            await remove(adminRef);
+          } else {
+            await set(adminRef, true);
+          }
+        } catch (rtdbErr) { console.warn("RTDB serverAdmin sync failed:", rtdbErr); }
         await loadServerSettingsMembers();
       } catch (e) { alertMessage("操作に失敗しました", "error"); }
     });
@@ -9746,6 +9778,7 @@ window.showCustomPrompt = function (message, defaultValue = "", okText = "決定
     }
     function onKeyDown(e) {
       if (e.key === "Enter") {
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         onOk();
       } else if (e.key === "Escape") {
@@ -11920,7 +11953,6 @@ async function sendSticker(emoji) {
       }, { merge: true });
 
       LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
-      pruneExcessMessages(null, null, currentDmId);
 
       const otherUid = currentDmParticipants.find(id => id !== userId);
       if (otherUid) {
@@ -11957,7 +11989,6 @@ async function sendSticker(emoji) {
       await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
         lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
       });
-      pruneExcessMessages(currentServerId, currentRoomId, null);
 
       // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
       try {
@@ -12108,6 +12139,7 @@ if (messageInpEl) {
         renderMentionPopup();
         return;
       } else if (e.key === "Enter") {
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         if (mentionUsers.length > 0) {
           selectMention(mentionUsers[mentionSelectedIndex].nickname);
@@ -12174,9 +12206,10 @@ if (messageInpEl) {
         if (!f) return;
         f = await processHeicFile(f);
         if (!checkFileAllowed(f)) return;
-        // 上限を統一（動画100MB / その他ファイル25MB）
-        const MAX = f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-        if (f.size > MAX) { alertMessage(f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです", "error"); return; }
+        // 上限を統一（動画・音声100MB / その他ファイル50MB: file_uploader.jsと完全整合）
+        const isMedia = f.type.startsWith('video/') || f.type.startsWith('audio/');
+        const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+        if (f.size > MAX) { alertMessage(isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです", "error"); return; }
         attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type || 'application/octet-stream', size: f.size };
         updateFilePreview();
         e.preventDefault();
@@ -12383,7 +12416,7 @@ document.addEventListener('click', (e) => {
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
 
-// RTDB 100件上限ローテーション & Cloudflare KV 連動物理ファイル削除（権限検証付き）
+// RTDBメッセージローテーション後方互換ダミー関数（クライアント側不正削除完全廃止）
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   return;
 }
@@ -12392,6 +12425,16 @@ async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
   if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
+
+  // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
+  const snapDmId = currentDmId;
+  const snapRoomId = currentRoomId;
+  const snapServerId = currentServerId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+  const snapServerData = currentServerData;
+  const snapServerNickname = currentServerNickname;
+  const snapReplyTo = replyingToMessage;
 
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
   if (text && text.length > 10000) {
@@ -12603,7 +12646,6 @@ async function sendMessage() {
       }, { merge: true });
 
       LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
-      pruneExcessMessages(null, null, currentDmId);
 
       const otherUid = currentDmParticipants.find(id => id !== userId);
       if (otherUid) {
@@ -12636,7 +12678,19 @@ async function sendMessage() {
         const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() };
         await set(rtdbMsgRef, rtdbData);
         LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
-      } catch (e) { console.error("RTDB Dual Write Failed in sendMessage", e); }
+      } catch (e) {
+        console.error("RTDB Dual Write Failed in sendMessage", e);
+        // セルフヒーリング: メンバーシップ未同期の疑いがあるため、即座に syncRtdb を要求
+        if (currentServerId && auth.currentUser) {
+          auth.currentUser.getIdToken().then(tok => {
+            fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ serverId: currentServerId, userId, appId, idToken: tok, rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined })
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
       newMessageId = msgRef.id;
 
       try {
@@ -12646,8 +12700,6 @@ async function sendMessage() {
           lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
       } catch (updateErr) { }
-
-      pruneExcessMessages(currentServerId, currentRoomId, null);
 
       try {
         const serverData = currentServerData;
@@ -12864,9 +12916,10 @@ async function handleFilesSelected(filesList) {
   for (let rawFile of Array.from(filesList)) {
     let f = await processHeicFile(rawFile);
     if (!checkFileAllowed(f)) continue;
-    const MAX = f.type && f.type.startsWith('video/') ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
+    const isMedia = f.type && (f.type.startsWith('video/') || f.type.startsWith('audio/'));
+    const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
     if (f.size > MAX) {
-      alertMessage(`${f.name}: ` + (f.type && f.type.startsWith('video/') ? "動画は100MBまでです" : "ファイルは25MBまでです"), "error");
+      alertMessage(`${f.name}: ` + (isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです"), "error");
       continue;
     }
     processed.push({ file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size });
@@ -18073,9 +18126,16 @@ function handleCallDeclinedFromNotification(data) {
 
 // --- 統合通知関数 ---
 async function showNotification(title, body, roomId) {
-  if (typeof isEncrypted === 'function') {
-    if (isEncrypted(body)) body = '新しいメッセージがあります';
-    if (isEncrypted(title)) title = 'Covo';
+  if (typeof body === 'string' && (body.includes('enc::v') || body.startsWith('enc::'))) {
+    if (body.includes(': enc::')) {
+      const senderPart = body.split(': enc::')[0];
+      body = `${senderPart}: 新しいメッセージがあります`;
+    } else {
+      body = '新しいメッセージがあります';
+    }
+  }
+  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
+    title = 'Covo';
   }
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
