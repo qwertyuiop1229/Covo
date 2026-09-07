@@ -19846,21 +19846,17 @@ function initSettings() {
   if (toggleBrowserNotif) toggleBrowserNotif.addEventListener('change', (e) => handleNotifChange(e.target.checked));
   if (toggleBrowserNotifMobile) toggleBrowserNotifMobile.addEventListener('change', (e) => handleNotifChange(e.target.checked));
 
+  const snavDesktop = document.getElementById('snav-desktop');
+  if (snavDesktop) snavDesktop.style.display = isTauri ? 'flex' : 'none';
+
   if (isTauri) {
-    // Windows版: 自動起動・ショートカット・設定項目を表示
-    const snavDesktop = document.getElementById('snav-desktop');
-    if (snavDesktop) snavDesktop.style.display = 'flex';
+    // Windows版: 自動起動・ショートカットを表示
     document.getElementById('desktopSettingsContainer')?.classList.remove('hidden');
     document.getElementById('shortcutInfoContainer')?.classList.remove('hidden');
     const pcRow = document.getElementById('pcCreateShortcutRow');
     if (pcRow) pcRow.style.setProperty('display', 'flex', 'important');
     const mobileRow = document.getElementById('mobileCreateShortcutBtn');
     if (mobileRow) mobileRow.style.display = 'flex';
-  } else {
-    // Web版: Windows専用設定項目を非表示
-    const snavDesktop = document.getElementById('snav-desktop');
-    if (snavDesktop) snavDesktop.style.display = 'none';
-  }
 
     // バージョン表示
     (async () => {
@@ -20803,6 +20799,7 @@ window.executeExportChatFormat = async function (format) {
     const safeName = currentName.replace(/[\/\\?%*:|"<>]/g, '_');
 
     if (format === 'txt') {
+      let txt = `=== Covo チャットログ: ${currentName} ===\nエクスポート日時: ${new Date().toLocaleString('ja-JP')}\nメッセージ件数: ${msgs.length} 件\n\n`;
       msgs.forEach(m => {
         const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
         const sender = m.senderNickname || m.userNickname || 'ユーザー';
@@ -21126,6 +21123,7 @@ window.filterViewerMessages = function (query) {
 window.saveViewerMessagesAsTxt = function () {
   if (!_cachedViewerMessages || _cachedViewerMessages.length === 0) return;
   const title = document.getElementById('viewerHeaderTitle')?.textContent || 'chat';
+  let txt = `=== Covo チャットログ: ${title} ===\nエクスポート日時: ${new Date().toLocaleString('ja-JP')}\nメッセージ件数: ${_cachedViewerMessages.length} 件\n\n`;
   _cachedViewerMessages.forEach(m => {
     const time = new Date(m.timestamp || m.createdAt || Date.now()).toLocaleString('ja-JP');
     const sender = m.senderNickname || m.userNickname || 'ユーザー';
