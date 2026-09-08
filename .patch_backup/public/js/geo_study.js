@@ -71,6 +71,10 @@ let leafletMap = null;
 let leafletMarker = null;
 let currentAnswerLatLng = null;
 let currentRoundId = 0;
+let gameLayers = null;
+let isGuessed = false;
+let currentDistanceKm = 0;
+let currentLocationData = null;
 
 function openGeoStudy() {
   const container = document.getElementById('geoStudyContainer');
@@ -91,10 +95,12 @@ function openGeoStudy() {
     });
     isGeoStudyInitialized = true;
   } else {
-    // 既に初期化されている場合、再表示時にマップのサイズを再計算する（バグ防止）
-    if (leafletMap) {
+    // 既に初期化されている場合、前回回答済み状態なら自動で新規ゲームを開始
+    if (isGuessed || !currentAnswerLatLng) {
+      startNewLocation();
+    } else if (leafletMap) {
       setTimeout(() => {
-        leafletMap.invalidateSize();
+        if (leafletMap) leafletMap.invalidateSize();
       }, 100);
     }
   }
@@ -106,8 +112,16 @@ function closeGeoStudy() {
     container.classList.add('hidden');
     container.style.display = 'none';
     
-    // ウィンドウを閉じたときにリセットしておく
+    // ウィンドウを閉じたときにリセット
     closeResultOverlay();
+    const postBar = document.getElementById('gs-post-guess-bar');
+    if (postBar) postBar.classList.add('hidden');
+    
+    // 回答済みだった場合は、次回開いたときに前の線やピンが残らないようにクリーンアップ
+    if (isGuessed) {
+      clearGameMapLayers();
+      isGuessed = false;
+    }
   }
 }
 
@@ -165,9 +179,19 @@ function buildGeoStudyUI(container) {
       <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex justify-center w-full pointer-events-none">
          <button id="gs-guess-btn" onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] disabled:opacity-0 disabled:translate-y-4 disabled:scale-95 text-lg pointer-events-auto" disabled>決定</button>
       </div>
+
+      <!-- 地図確認中の下部コントロールバー -->
+      <div id="gs-post-guess-bar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center justify-center gap-3 w-full pointer-events-none">
+         <button onclick="reopenResultOverlay()" class="bg-gray-800/95 hover:bg-gray-700 text-gray-200 hover:text-white px-6 py-3 rounded-full font-bold transition-all shadow-xl backdrop-blur-sm border border-gray-600 pointer-events-auto text-sm flex items-center gap-2">
+            <i class="fas fa-chart-bar"></i>結果を見る
+         </button>
+         <button onclick="startNewLocation()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] pointer-events-auto text-sm flex items-center gap-2">
+            <i class="fas fa-forward"></i>次の問題へ
+         </button>
+      </div>
       
-      <!-- 結果表示オーバーレイ -->
-      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[500] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
+      <!-- 結果表示オーバーレイ (z-indexを1200に引き上げ、背後要素の突き抜けを防止) -->
+      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[1200] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
          <div class="bg-gray-800 p-8 rounded-3xl border border-gray-700 text-center shadow-2xl max-w-sm w-full">
             <div class="w-16 h-16 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-400 text-3xl mb-4 border border-blue-500/30">
                 <i class="fas fa-map-marker-alt"></i>
@@ -176,11 +200,11 @@ function buildGeoStudyUI(container) {
             <div class="text-5xl font-bold text-blue-400 mb-1"><span id="gs-distance-text">--</span> <span class="text-xl">km</span></div>
             <div class="text-sm text-gray-400 mb-2">実際の場所との誤差距離</div>
             
-            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700">正解: 読込中...</div>
+            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700 select-text">正解: 判定中...</div>
             
             <div class="flex gap-3">
-              <button onclick="closeResultOverlay()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm">地図を見る</button>
-              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm"><i class="fas fa-play mr-1"></i>次へ</button>
+              <button onclick="viewResultOnMap()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm flex items-center justify-center gap-1.5"><i class="fas fa-map"></i>地図を見る</button>
+              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-1.5"><i class="fas fa-play mr-1"></i>次へ</button>
             </div>
          </div>
       </div>
@@ -248,6 +272,13 @@ function loadDependencies() {
       initMap();
       resolve();
     };
+    script.onerror = (e) => {
+      console.error("Leaflet load error:", e);
+      showLoading(false);
+      const hint = document.getElementById('gs-hint-text');
+      if (hint) hint.textContent = "地図ライブラリの読み込みに失敗しました。";
+      resolve();
+    };
     document.head.appendChild(script);
   });
 }
@@ -255,9 +286,76 @@ function loadDependencies() {
 let resultLine = null;
 let resultMarker = null;
 
+// 自前インラインSVGピンアイコン生成（外部画像URL依存・404破損の完全防止）
+function createGuessIcon() {
+  return L.divIcon({
+    className: 'gs-custom-marker-wrapper',
+    html: `
+      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
+        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#3B82F6"/>
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <circle cx="16" cy="15" r="4" fill="#3B82F6"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38]
+  });
+}
+
+function createAnswerIcon() {
+  return L.divIcon({
+    className: 'gs-custom-marker-wrapper',
+    html: `
+      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
+        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#EF4444"/>
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <circle cx="16" cy="15" r="4" fill="#EF4444"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38]
+  });
+}
+
+// 全ゲームレイヤー（ピン・正解・ライン）の一括完全消去
+function clearGameMapLayers() {
+  if (gameLayers) {
+    try { gameLayers.clearLayers(); } catch (_) {}
+  }
+  if (leafletMap) {
+    if (leafletMarker) {
+      try { leafletMap.removeLayer(leafletMarker); } catch (_) {}
+    }
+    if (resultMarker) {
+      try { leafletMap.removeLayer(resultMarker); } catch (_) {}
+    }
+    if (resultLine) {
+      try { leafletMap.removeLayer(resultLine); } catch (_) {}
+    }
+  }
+  leafletMarker = null;
+  resultMarker = null;
+  resultLine = null;
+}
+
 function initMap() {
+  const mapEl = document.getElementById('gs-map');
+  if (!mapEl) return;
+  
+  if (leafletMap) {
+    try { leafletMap.remove(); } catch (_) {}
+    leafletMap = null;
+    gameLayers = null;
+  }
+
   // Leafletの初期化（世界ループ防止と境界固定）
-  leafletMap = L.map('gs-map', {
+  leafletMap = L.map(mapEl, {
     center: [20, 0],
     zoom: 2,
     minZoom: 2,
@@ -279,9 +377,16 @@ function initMap() {
     bounds: [[-85, -180], [85, 180]]
   }).addTo(leafletMap);
 
+  // ゲーム専用レイヤーグループを初期化してマップに追加
+  gameLayers = L.layerGroup().addTo(leafletMap);
+
   leafletMap.on('click', (e) => {
+    // 回答済み・結果確認中・地図確認中はピン移動・再推測を不可にする
+    if (isGuessed) return;
+    
     // 結果表示中は操作不可
-    if (!document.getElementById('gs-result-overlay').classList.contains('hidden')) return;
+    const resOverlay = document.getElementById('gs-result-overlay');
+    if (resOverlay && !resOverlay.classList.contains('hidden')) return;
     
     // 全画面でない場合は、マップを拡大するだけ（ピンは刺さない）
     if (!isMapFullscreen) {
@@ -289,54 +394,84 @@ function initMap() {
         return;
     }
     
+    // 既存の推測ピンを削除
     if (leafletMarker) {
-      leafletMap.removeLayer(leafletMarker);
+      if (gameLayers) gameLayers.removeLayer(leafletMarker);
+      else leafletMap.removeLayer(leafletMarker);
+      leafletMarker = null;
     }
     const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
-    leafletMarker = L.marker(wrappedLatLng).addTo(leafletMap);
+    leafletMarker = L.marker(wrappedLatLng, {
+      icon: createGuessIcon()
+    }).addTo(gameLayers || leafletMap);
     
     const guessBtn = document.getElementById('gs-guess-btn');
-    guessBtn.disabled = false;
-    guessBtn.classList.add('animate-pulse');
-    setTimeout(()=>guessBtn.classList.remove('animate-pulse'), 1000);
+    if (guessBtn) {
+      guessBtn.disabled = false;
+      guessBtn.classList.remove('hidden');
+      guessBtn.classList.add('animate-pulse');
+      setTimeout(() => guessBtn.classList.remove('animate-pulse'), 1000);
+    }
     
-    document.getElementById('gs-status-text').textContent = "ピンを変更できます";
-    document.getElementById('gs-status-text').classList.add('text-indigo-400');
+    const statusText = document.getElementById('gs-status-text');
+    if (statusText) {
+      statusText.textContent = "ピンを変更できます（決定ボタンを押して確定）";
+      statusText.classList.add('text-indigo-400');
+    }
   });
 }
 
 async function startNewLocation() {
   currentRoundId++;
   const thisRound = currentRoundId;
+  isGuessed = false;
+  currentAnswerLatLng = null;
+  currentLocationData = null;
+  currentDistanceKm = 0;
   showLoading(true);
   
-  // マップのリセット
-  if (leafletMarker) {
-    leafletMap.removeLayer(leafletMarker);
-    leafletMarker = null;
+  // マップのリセット（全レイヤー完全一括消去）
+  clearGameMapLayers();
+  
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.add('hidden');
+
+  const guessBtn = document.getElementById('gs-guess-btn');
+  if (guessBtn) {
+    guessBtn.disabled = true;
+    guessBtn.classList.remove('hidden');
+    guessBtn.classList.remove('animate-pulse');
   }
-  if (resultLine) {
-    leafletMap.removeLayer(resultLine);
-    resultLine = null;
-  }
-  if (resultMarker) {
-    leafletMap.removeLayer(resultMarker);
-    resultMarker = null;
-  }
+
+  const ansEl = document.getElementById('gs-result-answer');
+  if (ansEl) ansEl.textContent = "正解: 判定中...";
+
+  const distText = document.getElementById('gs-distance-text');
+  if (distText) distText.textContent = "--";
   
   if (isMapFullscreen) {
       toggleMapSwap();
   }
   
-  leafletMap.setView([20, 0], 2);
-  document.getElementById('gs-guess-btn').disabled = true;
-  document.getElementById('gs-status-text').textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
-  document.getElementById('gs-status-text').classList.remove('text-indigo-400');
+  if (leafletMap) {
+    leafletMap.setView([20, 0], 2);
+    setTimeout(() => {
+      if (leafletMap) leafletMap.invalidateSize();
+    }, 400);
+  }
+
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
+    statusText.classList.remove('text-indigo-400');
+  }
   
-  const mode = document.getElementById('gs-mode-select').value;
+  const modeSelect = document.getElementById('gs-mode-select');
+  const mode = modeSelect ? modeSelect.value : 'photo';
   
   if (mode === 'photo') {
-    document.getElementById('gs-photo-container').classList.add('loading');
+    const photoContainer = document.getElementById('gs-photo-container');
+    if (photoContainer) photoContainer.classList.add('loading');
     await loadNewPhoto(thisRound);
   }
   
@@ -356,11 +491,17 @@ async function loadNewPhoto(roundId) {
     if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
     if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
     
-    // フォールバック（スクリプトがロードされていない場合）
+    // フォールバック（スクリプト未ロード時でも多様に出題）
     if (!pool || pool.length === 0) {
         pool = [
-            { name: "エッフェル塔, パリ", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
-            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" }
+            { name: "エッフェル塔, パリ (フランス)", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
+            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" },
+            { name: "自由の女神像, ニューヨーク (アメリカ)", lat: 40.6892, lng: -74.0445, q: "Statue of Liberty", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Statue_of_Liberty_7.jpg/800px-Statue_of_Liberty_7.jpg" },
+            { name: "コロッセオ, ローマ (イタリア)", lat: 41.8902, lng: 12.4922, q: "Colosseum", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Colosseum_in_Rome-April_2007-1-_copie_2B.jpg/800px-Colosseum_in_Rome-April_2007-1-_copie_2B.jpg" },
+            { name: "タージ・マハル, アーグラ (インド)", lat: 27.1751, lng: 78.0421, q: "Taj Mahal", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Taj_Mahal_%28Edited%29.jpeg/800px-Taj_Mahal_%28Edited%29.jpeg" },
+            { name: "シドニー・オペラハウス, シドニー (オーストラリア)", lat: -33.8568, lng: 151.2153, q: "Sydney Opera House", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Sydney_Opera_House_-_Dec_2008.jpg/800px-Sydney_Opera_House_-_Dec_2008.jpg" },
+            { name: "ギザの大ピラミッド, カイロ (エジプト)", lat: 29.9792, lng: 31.1342, q: "Great Pyramid of Giza", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Kheops-Pyramid.jpg/800px-Kheops-Pyramid.jpg" },
+            { name: "サグラダ・ファミリア, バルセロナ (スペイン)", lat: 41.4036, lng: 2.1744, q: "Sagrada Familia", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ee/Sagrada_Familia_01.jpg/800px-Sagrada_Familia_01.jpg" }
         ];
     }
     
@@ -373,6 +514,7 @@ async function loadNewPhoto(roundId) {
     }
 
     loc = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    currentLocationData = loc;
     window._gsRecentLocationHistory.push(loc.name);
     const maxHistory = Math.max(1, Math.min(30, Math.floor(pool.length / 2)));
     if (window._gsRecentLocationHistory.length > maxHistory) {
@@ -384,85 +526,130 @@ async function loadNewPhoto(roundId) {
     
     if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
     
-    document.getElementById('gs-result-answer').textContent = `正解: ${loc.name}`;
-    
     if (imgUrl && typeof imgUrl === 'string') {
       const photoEl = document.getElementById('gs-photo-container');
       const panzoomEl = document.getElementById('gs-photo-panzoom');
-      photoEl.style.opacity = 0;
-      let safeImgUrl = imgUrl.replace(/'/g, "%27").replace(/"/g, "%22");
+      if (photoEl) photoEl.style.opacity = 0;
+
+      let safeImgUrl = imgUrl.trim();
       if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
-      if (!safeImgUrl.startsWith("https://") && !safeImgUrl.startsWith("http://")) return;
-      // ユーザーの要望により、軽量化パラメータを削除してWikipediaオリジナル高画質画像を使用する
+      if (!safeImgUrl.startsWith("https://")) {
+        showLoading(false);
+        return;
+      }
       safeImgUrl = safeImgUrl.split("?")[0];
+      // URLサニタイズ（CSSインジェクション防止）
+      safeImgUrl = encodeURI(decodeURI(safeImgUrl)).replace(/['"()]/g, encodeURIComponent);
       
-      if (!window.geoStudyPanzoom && window.Panzoom) {
-          
-          window.geoStudyPanzoom = Panzoom(panzoomEl, {
-              maxScale: 20,       // 拡大限界を大幅に引き上げ
-              minScale: 1,
-              step: 0.2,          // マウスホイールの刻み
-              contain: 'outside'
-          });
-          
-          const panzoomContainer = panzoomEl.parentElement;
-          panzoomContainer.style.touchAction = 'none'; // スマホのスクロール干渉防止
-          
-          // ホイールイベントの追加
-          panzoomContainer.addEventListener('wheel', window.geoStudyPanzoom.zoomWithWheel, { passive: false });
-          
-          // ダブルタップ/ダブルクリックでのズーム切り替え (スマホ・PC対応)
-          let lastTap = 0;
-          const handleDoubleTap = (e) => {
-              const currentTime = new Date().getTime();
-              const tapLength = currentTime - lastTap;
-              if (tapLength < 350 && tapLength > 0) {
-                  e.preventDefault();
-                  const currentScale = window.geoStudyPanzoom.getScale();
-                  if (currentScale > 1.2) {
-                      window.geoStudyPanzoom.reset();
-                  } else {
-                      window.geoStudyPanzoom.zoom(2.5);
-                  }
-              }
-              lastTap = currentTime;
-          };
-          
-          panzoomEl.addEventListener('touchend', (e) => {
-              // ピンチズームなど複数の指の場合は無視
-              if (e.touches && e.touches.length > 0) return;
-              handleDoubleTap(e);
-          });
-          panzoomEl.addEventListener('click', (e) => {
-              // タッチデバイスでtouchendと重複発火するのを防ぐ簡単な制御を含める（同じ時間判定で吸収される）
-              handleDoubleTap(e);
-          });
+      // Panzoom初期化
+      if (window.Panzoom && panzoomEl) {
+        if (window.geoStudyPanzoom) {
+          try { window.geoStudyPanzoom.destroy(); } catch (_) {}
+          window.geoStudyPanzoom = null;
+        }
+
+        window.geoStudyPanzoom = Panzoom(panzoomEl, {
+            maxScale: 20,
+            minScale: 1,
+            step: 0.2,
+            contain: 'outside'
+        });
+        
+        const panzoomContainer = panzoomEl.parentElement;
+        if (panzoomContainer) {
+          panzoomContainer.style.touchAction = 'none';
+          panzoomContainer.onwheel = window.geoStudyPanzoom.zoomWithWheel;
+        }
+        
+        let lastTap = 0;
+        const handleDoubleTap = (e) => {
+            if (isMapFullscreen) return; // ミニマップ時は拡大スワップを優先
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < 350 && tapLength > 0) {
+                e.preventDefault();
+                const currentScale = window.geoStudyPanzoom.getScale();
+                if (currentScale > 1.2) {
+                    window.geoStudyPanzoom.reset();
+                } else {
+                    window.geoStudyPanzoom.zoom(2.5);
+                }
+            }
+            lastTap = currentTime;
+        };
+        
+        panzoomEl.ontouchend = (e) => {
+            if (e.touches && e.touches.length > 0) return;
+            handleDoubleTap(e);
+        };
+        panzoomEl.onclick = (e) => {
+            if (isMapFullscreen) return;
+            handleDoubleTap(e);
+        };
       }
       
-      setTimeout(() => {
-          if (roundId !== currentRoundId) return;
-          panzoomEl.style.backgroundImage = `url('${safeImgUrl}')`;
+      // 画像を完全プリロードしてからフェードイン（黒画面・ちらつき完全防止）
+      const preloader = new Image();
+      preloader.onload = () => {
+        if (roundId !== currentRoundId) return;
+        if (panzoomEl) {
+          panzoomEl.style.backgroundImage = `url("${safeImgUrl}")`;
+        }
+        if (photoEl) {
           photoEl.style.opacity = 1;
           photoEl.classList.remove('loading');
-          
-          if (window.geoStudyPanzoom) {
-              window.geoStudyPanzoom.reset(); // 新しい写真になったらズームをリセット
-          }
-      }, 50);
-      document.getElementById('gs-hint-text').textContent = "この風景・建造物がある場所を地図から推測してください。";
+        }
+        if (window.geoStudyPanzoom) {
+          try { window.geoStudyPanzoom.reset(); } catch (_) {}
+        }
+        const hintEl = document.getElementById('gs-hint-text');
+        if (hintEl) hintEl.textContent = "この風景・建造物がある場所を地図から推測してください。";
+        showLoading(false);
+      };
+
+      preloader.onerror = () => {
+        if (roundId !== currentRoundId) return;
+        if (photoEl) {
+          photoEl.style.opacity = 1;
+          photoEl.classList.remove('loading');
+        }
+        const hintEl = document.getElementById('gs-hint-text');
+        if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
+        showLoading(false);
+      };
+
+      preloader.src = safeImgUrl;
     } else {
-      document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+      const hintEl = document.getElementById('gs-hint-text');
+      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
+      showLoading(false);
     }
   } catch (e) {
-    console.error(e);
+    console.error("loadNewPhoto error:", e);
     if (roundId === currentRoundId) {
-        document.getElementById('gs-hint-text').textContent = "画像の取得に失敗しました。スキップしてください。";
+      const hintEl = document.getElementById('gs-hint-text');
+      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
+      showLoading(false);
     }
   }
 }
 
 function submitGuess() {
+  if (isGuessed) return; // 二重提出ガード
   if (!leafletMarker || !currentAnswerLatLng) return;
+  isGuessed = true;
+
+  // 決定ボタンを無効化＆非表示
+  const guessBtn = document.getElementById('gs-guess-btn');
+  if (guessBtn) {
+    guessBtn.disabled = true;
+    guessBtn.classList.add('hidden');
+  }
+
+  // もしミニマップ状態なら、結果の全貌が見えるように自動全画面化
+  if (!isMapFullscreen) {
+    toggleMapSwap();
+  }
   
   const guessLatLng = leafletMarker.getLatLng().wrap();
   const answerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng).wrap();
@@ -480,18 +667,24 @@ function submitGuess() {
             Math.sin(dLng/2) * Math.sin(dLng/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distanceKm = Math.round(R * c);
+  currentDistanceKm = distanceKm;
   
-  // 正解マーカーの描画（常に正規化された座標に配置）
+  // 古い結果オブジェクトがあれば念のため除去
+  if (resultMarker) {
+    if (gameLayers) gameLayers.removeLayer(resultMarker);
+    else if (leafletMap) leafletMap.removeLayer(resultMarker);
+    resultMarker = null;
+  }
+  if (resultLine) {
+    if (gameLayers) gameLayers.removeLayer(resultLine);
+    else if (leafletMap) leafletMap.removeLayer(resultLine);
+    resultLine = null;
+  }
+
+  // 正解マーカーの描画（自己完結型SVGアイコン）
   resultMarker = L.marker(answerLatLng, {
-    icon: L.icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    })
-  }).addTo(leafletMap);
+    icon: createAnswerIcon()
+  }).addTo(gameLayers || leafletMap);
 
   // 日付変更線（経度180度 / -180度）をまたぐ場合の最短ルート分割描画（地球一周横断線の完全防止）
   const lngDiff = answerLatLng.lng - guessLatLng.lng;
@@ -499,14 +692,12 @@ function submitGuess() {
 
   if (Math.abs(lngDiff) > 180) {
     if (lngDiff > 180) {
-      // guessが西経、answerが東経 -> -180/180で分割
       const adjLng2 = answerLatLng.lng - 360;
       const t = (-180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
       const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
       lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, -180]]);
       lineCoords.push([[crossLat, 180], [answerLatLng.lat, answerLatLng.lng]]);
     } else {
-      // guessが東経、answerが西経 -> 180/-180で分割
       const adjLng2 = answerLatLng.lng + 360;
       const t = (180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
       const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
@@ -522,56 +713,133 @@ function submitGuess() {
     weight: 3,
     opacity: 0.85,
     dashArray: '8, 8'
-  }).addTo(leafletMap);
+  }).addTo(gameLayers || leafletMap);
   
-  // 地図のズーム調整（日付変更線をまたぐ際に世界全体へ一周ズームアウトするのを防止）
-  if (Math.abs(lngDiff) <= 180) {
-    leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng).pad(0.25));
-  } else {
-    const autoZoom = Math.max(2, Math.min(6, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
-    leafletMap.setView(answerLatLng, autoZoom);
+  // 地図のズーム調整
+  if (leafletMap) {
+    if (Math.abs(lngDiff) <= 180) {
+      leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng), {
+        padding: [50, 50],
+        maxZoom: 14
+      });
+    } else {
+      const autoZoom = Math.max(2, Math.min(7, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
+      leafletMap.setView(answerLatLng, autoZoom);
+    }
+  }
+
+  // 正解名の表示
+  const resultAnswerEl = document.getElementById('gs-result-answer');
+  if (resultAnswerEl && currentLocationData) {
+    resultAnswerEl.textContent = `正解: ${currentLocationData.name}`;
   }
   
-  // 結果オーバーレイ表示
-  // 数値のアニメーション
+  // 数値のアニメーション (0km対応済み)
   animateValue("gs-distance-text", 0, distanceKm, 1000);
   
   const overlay = document.getElementById('gs-result-overlay');
-  overlay.classList.remove('hidden');
+  if (overlay) overlay.classList.remove('hidden');
   
   // マップコンテナのホバーを解除
-  document.getElementById('gs-minimap-container').classList.remove('active-map');
+  const minimapContainer = document.getElementById('gs-minimap-container');
+  if (minimapContainer) minimapContainer.classList.remove('active-map');
+
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = `正解との距離: ${distanceKm.toLocaleString()} km`;
+  }
 }
 
 function animateValue(id, start, end, duration) {
-    if (start === end) return;
     const obj = document.getElementById(id);
+    if (!obj) return;
+    if (start === end) {
+      obj.textContent = end.toLocaleString();
+      return;
+    }
     let startTimestamp = null;
     const step = (timestamp) => {
         if (!startTimestamp) startTimestamp = timestamp;
         const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        // Easing (easeOutExpo)
         const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-        obj.innerHTML = Math.floor(easeProgress * (end - start) + start).toLocaleString();
+        obj.textContent = Math.floor(easeProgress * (end - start) + start).toLocaleString();
         if (progress < 1) {
             window.requestAnimationFrame(step);
+        } else {
+            obj.textContent = end.toLocaleString();
         }
     };
     window.requestAnimationFrame(step);
 }
 
 function closeResultOverlay() {
-  document.getElementById('gs-result-overlay').classList.add('hidden');
+  const overlay = document.getElementById('gs-result-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function viewResultOnMap() {
+  closeResultOverlay();
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.remove('hidden');
+  if (!isMapFullscreen) {
+    toggleMapSwap();
+  }
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = `「次の問題へ」または「結果を見る」を押してください`;
+  }
+}
+
+function reopenResultOverlay() {
+  const overlay = document.getElementById('gs-result-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.add('hidden');
 }
 
 function showLoading(show) {
   const el = document.getElementById('gs-loading');
-  if (show) {
-    el.classList.remove('hidden');
-  } else {
-    el.classList.add('hidden');
+  if (el) {
+    if (show) el.classList.remove('hidden');
+    else el.classList.add('hidden');
   }
 }
+
+// キーボード操作サポート (ESC: 閉じる, Enter: 決定/次へ, Space: 地図スワップ)
+document.addEventListener('keydown', (e) => {
+  const container = document.getElementById('geoStudyContainer');
+  if (!container || container.classList.contains('hidden') || container.style.display === 'none') return;
+  
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeGeoStudy();
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.isComposing || e.keyCode === 229) return;
+    const resultOverlay = document.getElementById('gs-result-overlay');
+    if (resultOverlay && !resultOverlay.classList.contains('hidden')) {
+      e.preventDefault();
+      closeResultOverlay();
+      startNewLocation();
+    } else if (!isGuessed) {
+      const guessBtn = document.getElementById('gs-guess-btn');
+      if (guessBtn && !guessBtn.disabled && !guessBtn.classList.contains('hidden')) {
+        e.preventDefault();
+        submitGuess();
+      }
+    } else {
+      const postBar = document.getElementById('gs-post-guess-bar');
+      if (postBar && !postBar.classList.contains('hidden')) {
+        e.preventDefault();
+        startNewLocation();
+      }
+    }
+  } else if (e.key === ' ' || e.code === 'Space') {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'BUTTON')) return;
+    e.preventDefault();
+    toggleMapSwap();
+  }
+});
 
 if (typeof window !== 'undefined') {
   window.openGeoStudy = openGeoStudy;
@@ -580,4 +848,6 @@ if (typeof window !== 'undefined') {
   window.startNewLocation = startNewLocation;
   window.submitGuess = submitGuess;
   window.closeResultOverlay = closeResultOverlay;
+  window.viewResultOnMap = viewResultOnMap;
+  window.reopenResultOverlay = reopenResultOverlay;
 }

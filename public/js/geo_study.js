@@ -430,6 +430,15 @@ async function startNewLocation() {
   currentDistanceKm = 0;
   showLoading(true);
   
+  // 前問の画像を直ちに完全消去し、前回の画像が残る不具合を根本防止
+  const panzoomEl = document.getElementById('gs-photo-panzoom');
+  if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
+  const photoContainer = document.getElementById('gs-photo-container');
+  if (photoContainer) {
+    photoContainer.style.opacity = '0';
+    photoContainer.classList.add('loading');
+  }
+
   // マップのリセット（全レイヤー完全一括消去）
   clearGameMapLayers();
   
@@ -529,7 +538,8 @@ async function loadNewPhoto(roundId) {
     if (imgUrl && typeof imgUrl === 'string') {
       const photoEl = document.getElementById('gs-photo-container');
       const panzoomEl = document.getElementById('gs-photo-panzoom');
-      if (photoEl) photoEl.style.opacity = 0;
+      if (photoEl) photoEl.style.opacity = '0';
+      if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
 
       let safeImgUrl = imgUrl.trim();
       if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
@@ -537,7 +547,13 @@ async function loadNewPhoto(roundId) {
         showLoading(false);
         return;
       }
-      safeImgUrl = safeImgUrl.split("?")[0];
+      
+      // Special:FilePath 画像の場合はサムネイルパラメータ (?width=1000) を確実に付与・維持（数十MBの巨大原寸大取得によるエラーを防止）
+      if (safeImgUrl.includes("Special:FilePath")) {
+        if (!safeImgUrl.includes("?width=") && !safeImgUrl.includes("&width=")) {
+          safeImgUrl += (safeImgUrl.includes("?") ? "&" : "?") + "width=1000";
+        }
+      }
       // URLサニタイズ（CSSインジェクション防止）
       safeImgUrl = encodeURI(decodeURI(safeImgUrl)).replace(/['"()]/g, encodeURIComponent);
       
@@ -609,13 +625,20 @@ async function loadNewPhoto(roundId) {
 
       preloader.onerror = () => {
         if (roundId !== currentRoundId) return;
+        if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
         if (photoEl) {
-          photoEl.style.opacity = 1;
-          photoEl.classList.remove('loading');
+          photoEl.style.opacity = '0';
+          photoEl.classList.add('loading');
         }
+        console.warn("[GeoStudy] Image load failed for:", safeImgUrl, "Auto-skipping to next location...");
         const hintEl = document.getElementById('gs-hint-text');
-        if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
-        showLoading(false);
+        if (hintEl) hintEl.textContent = "画像を再取得中...";
+        // 前の画像が残ったまま正解の場所だけがズレる不具合を防止するため、自動的に次の候補へ安全にスキップ
+        setTimeout(() => {
+          if (roundId === currentRoundId) {
+            loadNewPhoto(roundId);
+          }
+        }, 150);
       };
 
       preloader.src = safeImgUrl;
