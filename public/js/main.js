@@ -14559,11 +14559,11 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
-  // （自分のメッセージは常に削除可能。相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみに限定）
-  const isMsgSender = msgData.senderId === userId;
+  // （自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能）
+  const isMsgSender = msgData.senderId === userId || msgData.userId === userId;
   const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
   const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDeleteMsg = isMsgSender || isAdmin;
+  const canDeleteMsg = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -14746,22 +14746,24 @@ if (deleteMsgBtn) {
     if (!selectedMessageForContext) return;
 
     const msgToDelete = selectedMessageForContext;
-    const isMsgSender = msgToDelete.senderId === userId;
-    // 相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみ！サーバー管理者は削除不可！
-    const canDelete = isMsgSender || isAdmin;
+    const isMsgSender = msgToDelete.senderId === userId || msgToDelete.userId === userId;
+    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+    // 自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能
+    const canDelete = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
 
     if (!canDelete) {
       alertMessage("メッセージを削除する権限がありません", "warning");
       return;
     }
 
-    const isPrivilegedDelete = isAdmin && !isMsgSender;
+    const isPrivilegedDelete = (isAdmin || isSvAdmin || isSvOwner) && !isMsgSender;
     const forceDelete = isPrivilegedDelete;
 
     // モデレーターによる他者メッセージ削除時は確認モーダルを表示（誤操作防止）
     if (isPrivilegedDelete) {
       const ok = await showCustomConfirm(
-        "このメッセージを管理者権限で完全に削除しますか？\n（この操作は元に戻せません）",
+        "このメッセージをモデレーション権限で完全に削除しますか？\n（この操作は元に戻せません）",
         "削除する",
         "キャンセル",
         "メッセージのモデレーション削除"
@@ -14887,8 +14889,8 @@ if (deleteMsgBtn) {
           if (!lastError) lastError = fErr;
         }
 
-        // 特権削除の場合、または直接削除が失敗した場合は Worker API による特権削除を実行
-        if (isPrivilegedDelete || (!rtdbOk && !fsOk)) {
+        // 特権削除、または直接削除でどちらか一方でも失敗した場合は Worker API による完全消去を実行
+        if (isPrivilegedDelete || !rtdbOk || !fsOk) {
           try {
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             const wRes = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
@@ -14900,29 +14902,31 @@ if (deleteMsgBtn) {
             if (wRes.ok && wData.success) {
               rtdbOk = true;
               fsOk = true;
-            } else if (!rtdbOk && !fsOk) {
-              throw new Error(wData.error || "サーバーAPIによる削除に失敗しました");
+            } else if (!rtdbOk) {
+              throw new Error(wData.error || "リアルタイムデータベースからの削除に失敗しました");
             }
           } catch (wErr) {
             console.warn('[deleteMessage] Worker API call failed:', wErr);
-            if (!rtdbOk && !fsOk) throw (lastError || wErr);
+            if (!rtdbOk) throw (lastError || wErr);
           }
 
-          // Firestore 監査ログにも記録
-          addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
-            action: 'delete_message',
-            operatorUid: userId,
-            operatorNickname: currentServerNickname || userNickname || 'Admin',
-            serverId: currentServerId,
-            roomId: currentRoomId,
-            messageId: msgToDelete.id,
-            targetSenderId: msgToDelete.senderId || null,
-            timestamp: serverTimestamp()
-          }).catch(() => {});
+          // モデレーション削除時は Firestore 監査ログにも記録
+          if (isPrivilegedDelete) {
+            addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
+              action: 'delete_message',
+              operatorUid: userId,
+              operatorNickname: currentServerNickname || userNickname || 'Admin',
+              serverId: currentServerId,
+              roomId: currentRoomId,
+              messageId: msgToDelete.id,
+              targetSenderId: msgToDelete.senderId || msgToDelete.userId || null,
+              timestamp: serverTimestamp()
+            }).catch(() => {});
+          }
         }
 
-        // どちらも削除できなかった場合はエラーとして中断（ローカルも画面も消さない！）
-        if (!rtdbOk && !fsOk) {
+        // リアルタイムデータベースから削除できなかった場合は、ローカル消去を行わずエラーとして中断
+        if (!rtdbOk) {
           throw new Error("データベースからのメッセージ削除に失敗しました: " + (lastError?.message || "権限エラー"));
         }
 

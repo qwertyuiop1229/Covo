@@ -447,9 +447,14 @@ service cloud.firestore {
               || isGlobalAdmin(appId)
             );
 
-            // メッセージ削除: 送信者本人 または 全体管理者（アプリ全体管理者）のみ可能
-            // サーバー管理者であっても他人のメッセージは削除不可
-            allow delete: if (isJoinedServer(appId, serverId) && resource.data.senderId == request.auth.uid) || isGlobalAdmin(appId);
+            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
+            allow delete: if isJoinedServer(appId, serverId) && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
           }
 
           // 既読レシート (Read Receipts)

@@ -14561,6 +14561,8 @@ function showContextMenu(bubble, clientX, clientY) {
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
   // （自分のメッセージは常に削除可能。相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみに限定）
   const isMsgSender = msgData.senderId === userId;
+  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = isMsgSender || isAdmin;
 
   const deleteBtn = document.getElementById("deleteMessageButton");

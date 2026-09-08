@@ -1,6 +1,8 @@
 {
-  "date": "2026-09-08T08:41:10.701Z",
+  "date": "2026-09-08T09:04:59.858Z",
   "files": [
+    "database.rules.json",
+    "firestore.rules",
     "public/js/main.js"
   ]
 }
