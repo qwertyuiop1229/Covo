@@ -1,9 +1,6 @@
 {
-  "date": "2026-09-08T08:31:58.956Z",
+  "date": "2026-09-08T08:41:10.701Z",
   "files": [
-    "public/js/main.js",
-    "public/js/geo_study.js",
-    "firestore.rules",
-    "database.rules.json"
+    "public/js/main.js"
   ]
 }

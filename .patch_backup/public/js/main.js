@@ -1027,6 +1027,14 @@ function initializeFirebase() {
             if (isAdmin && !hasUid) {
               updateDoc(adminDocRef, { admins: arrayUnion(user.uid) }).catch(() => {});
             }
+
+            if (isAdmin) {
+              try {
+                const { ref: rRef, set: rSet } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+                const rtdb = await _getOrInitRTDB();
+                rSet(rRef(rtdb, `artifacts/${appId}/settings/adminList/admins/${user.uid}`), true).catch(() => {});
+              } catch (_) {}
+            }
           }
 
           // 非管理者は allowedEmails を確認（連携メールのいずれか1つでも許可されていればOK）
@@ -3743,6 +3751,13 @@ if (addAdminEmailBtn && newAdminEmailInp) {
       }
 
       await setDoc(ref, updatePayload, { merge: true });
+      if (targetUid) {
+        try {
+          const { ref: rRef, set: rSet } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          await rSet(rRef(rtdb, `artifacts/${appId}/settings/adminList/admins/${targetUid}`), true).catch(() => {});
+        } catch (_) {}
+      }
       newAdminEmailInp.value = "";
       renderAdminEmails(emails);
       if (adminMsgEl) adminMsgEl.textContent = "追加しました。";
@@ -3868,6 +3883,13 @@ async function removeAdminEmail(email) {
       updateData.admins = arrayRemove(targetUid);
     }
     await updateDoc(ref, updateData);
+    if (targetUid) {
+      try {
+        const { ref: rRef, remove: rRemove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        await rRemove(rRef(rtdb, `artifacts/${appId}/settings/adminList/admins/${targetUid}`)).catch(() => {});
+      } catch (_) {}
+    }
     const snap = await getDoc(ref);
     renderAdminEmails(snap.exists() ? snap.data().emails || [] : []);
     adminMessage.textContent = "削除しました。";
@@ -13374,7 +13396,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
   const isMyMessage = message.senderId === userId;
   const messageRow = document.createElement("div");
-  messageRow.className = "message-row relative w-full mb-4 group flipped";
+  messageRow.className = "message-row relative w-full group flipped";
 
   const replyIconBg = document.createElement("div");
   replyIconBg.className = "swipe-reply-icon-bg absolute top-1/2 -translate-y-1/2 flex items-center justify-center opacity-0 pointer-events-none z-0";
@@ -14537,13 +14559,9 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
-  // （自分のメッセージは常に削除可能、他人のメッセージはサーバー管理者・サーバーオーナー・全体管理者のみ削除可能）
+  // （自分のメッセージは常に削除可能。相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみに限定）
   const isMsgSender = msgData.senderId === userId;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDeleteMsg = currentDmId
-    ? isMsgSender
-    : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
+  const canDeleteMsg = isMsgSender || isAdmin;
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -14727,22 +14745,21 @@ if (deleteMsgBtn) {
 
     const msgToDelete = selectedMessageForContext;
     const isMsgSender = msgToDelete.senderId === userId;
-    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-    const canDelete = currentDmId ? isMsgSender : (isMsgSender || isSvAdmin || isSvOwner || isAdmin);
+    // 相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみ！サーバー管理者は削除不可！
+    const canDelete = isMsgSender || isAdmin;
 
     if (!canDelete) {
       alertMessage("メッセージを削除する権限がありません", "warning");
       return;
     }
 
-    const isPrivilegedDelete = !currentDmId && (isAdmin || isSvAdmin || isSvOwner) && msgToDelete.senderId !== userId;
+    const isPrivilegedDelete = isAdmin && !isMsgSender;
     const forceDelete = isPrivilegedDelete;
 
     // モデレーターによる他者メッセージ削除時は確認モーダルを表示（誤操作防止）
     if (isPrivilegedDelete) {
       const ok = await showCustomConfirm(
-        "このメッセージを管理者権限で削除しますか？\n（この操作は元に戻せません）",
+        "このメッセージを管理者権限で完全に削除しますか？\n（この操作は元に戻せません）",
         "削除する",
         "キャンセル",
         "メッセージのモデレーション削除"
@@ -14775,17 +14792,49 @@ if (deleteMsgBtn) {
       kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
     }
 
-    // 2. メッセージの削除実行（ハイブリッド型アトミック削除）
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    if (loadingOverlayEl && isPrivilegedDelete) loadingOverlayEl.classList.remove("hidden");
+
+    // 2. メッセージの削除実行（DB削除完了を保証・未削除時のローカル消去＆復活バグを完全防止）
     try {
       if (currentDmId) {
-        // DMメッセージ削除
+        // --- 個チャ (DM) メッセージ削除 ---
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
+        let rtdbDeleted = false;
+        let lastError = null;
+
         try {
           await remove(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgToDelete.id}`));
+          rtdbDeleted = true;
         } catch (rtdbErr) {
-          console.warn('[deleteMessage] RTDB DM remove notice (already removed or permission):', rtdbErr);
+          console.error('[deleteMessage] RTDB DM remove direct failed:', rtdbErr);
+          lastError = rtdbErr;
         }
+
+        // 全体管理者の特権削除または直接削除失敗時、Worker特権APIによるフォールバック削除を実行
+        if (isPrivilegedDelete || !rtdbDeleted) {
+          try {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const wRes = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
+              method: 'DELETE',
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, dmId: currentDmId, messageId: msgToDelete.id })
+            });
+            const wData = await wRes.json().catch(() => ({}));
+            if (wRes.ok && wData.success) {
+              rtdbDeleted = true;
+            }
+          } catch (wErr) {
+            console.warn('[deleteMessage] Worker API DM delete failed:', wErr);
+          }
+        }
+
+        if (!rtdbDeleted) {
+          throw new Error("データベースからのメッセージ削除に失敗しました: " + (lastError?.message || "権限がありません"));
+        }
+
+        // DB削除成功時のみローカルキャッシュから削除
         await LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
         // DMチャンネルの最新メッセージサマリーを更新
@@ -14812,33 +14861,50 @@ if (deleteMsgBtn) {
           renderDmConversationsList();
         }
       } else {
-        // サーバーメッセージ削除:
-        // クライアント側から直接 Firestore & RTDB を即時削除し、他クライアントへのリアルタイム通知と即時消滅を保証
+        // --- サーバーメッセージ削除 ---
         const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
 
-        // RTDB削除とFirestore削除を並行実行
-        const rtdbDeletePromise = remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`)).catch(e => {
-          console.warn('[deleteMessage] RTDB room remove notice:', e);
-        });
-        const fsDeletePromise = deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id)).catch(e => {
-          console.warn('[deleteMessage] Firestore room remove notice:', e);
-        });
+        let rtdbOk = false;
+        let fsOk = false;
+        let lastError = null;
 
-        // 特権削除の場合は Worker API (D1・サーバー監査ログ・バックエンド整合性) も非同期呼び出し
-        if (isPrivilegedDelete) {
-          (async () => {
-            try {
-              const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-              await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
-                method: 'DELETE',
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-                body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
-              });
-            } catch (wErr) {
-              console.warn('[deleteMessage] Worker API sync warning:', wErr);
+        try {
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgToDelete.id}`));
+          rtdbOk = true;
+        } catch (rErr) {
+          console.warn('[deleteMessage] RTDB direct remove failed:', rErr);
+          lastError = rErr;
+        }
+
+        try {
+          await deleteDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgToDelete.id));
+          fsOk = true;
+        } catch (fErr) {
+          console.warn('[deleteMessage] Firestore direct delete failed:', fErr);
+          if (!lastError) lastError = fErr;
+        }
+
+        // 特権削除の場合、または直接削除が失敗した場合は Worker API による特権削除を実行
+        if (isPrivilegedDelete || (!rtdbOk && !fsOk)) {
+          try {
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const wRes = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
+              method: 'DELETE',
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+              body: JSON.stringify({ appId, serverId: currentServerId, roomId: currentRoomId, messageId: msgToDelete.id })
+            });
+            const wData = await wRes.json().catch(() => ({}));
+            if (wRes.ok && wData.success) {
+              rtdbOk = true;
+              fsOk = true;
+            } else if (!rtdbOk && !fsOk) {
+              throw new Error(wData.error || "サーバーAPIによる削除に失敗しました");
             }
-          })();
+          } catch (wErr) {
+            console.warn('[deleteMessage] Worker API call failed:', wErr);
+            if (!rtdbOk && !fsOk) throw (lastError || wErr);
+          }
 
           // Firestore 監査ログにも記録
           addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
@@ -14853,7 +14919,12 @@ if (deleteMsgBtn) {
           }).catch(() => {});
         }
 
-        await Promise.allSettled([rtdbDeletePromise, fsDeletePromise]);
+        // どちらも削除できなかった場合はエラーとして中断（ローカルも画面も消さない！）
+        if (!rtdbOk && !fsOk) {
+          throw new Error("データベースからのメッセージ削除に失敗しました: " + (lastError?.message || "権限エラー"));
+        }
+
+        // DB削除成功時のみローカルキャッシュから削除
         await LocalStore.deleteMessage(msgToDelete.id).catch(() => {});
 
         // ルームの最新メッセージサマリーを更新
@@ -14893,7 +14964,9 @@ if (deleteMsgBtn) {
       alertMessage("メッセージを削除しました", "success");
     } catch (e) {
       console.error('[deleteMessage] delete failed:', msgToDelete.id, e);
-      alertMessage("削除に失敗しました: " + (e.message || "権限がありません"), "error");
+      alertMessage("削除できませんでした: " + (e.message || "権限がありません"), "error");
+    } finally {
+      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
     }
   });
 }
