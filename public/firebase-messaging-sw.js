@@ -140,6 +140,39 @@ messaging.onBackgroundMessage((payload) => {
     title = 'Covo';
   }
 
+  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  if (typeof body === 'string') {
+    function _swIsStamp(s) {
+      if (!s || typeof s !== 'string') return false;
+      return s.includes('[STAMP]') || s.includes('/stamps/') ||
+             s.includes('covo:') || s.includes('covonew:') || s.includes('serverstamp:') ||
+             s.startsWith('スタンプ') || s === '🌟 スタンプ';
+    }
+    function _swIsFile(s) {
+      if (!s || typeof s !== 'string') return false;
+      return s.includes('firebase-storage') || s.includes('cloudinary') ||
+             s.includes('r2.cloudflarestorage') || s.includes('/api/file/') ||
+             /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(s);
+    }
+    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      if (_swIsStamp(rest)) {
+        body = `${senderPart}: スタンプ`;
+      } else if (_swIsFile(rest)) {
+        body = `${senderPart}: 📎 添付ファイル`;
+      }
+    } else {
+      if (_swIsStamp(body)) {
+        body = 'スタンプ';
+      } else if (_swIsFile(body)) {
+        body = '📎 添付ファイル';
+      }
+    }
+  }
+
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
     console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');

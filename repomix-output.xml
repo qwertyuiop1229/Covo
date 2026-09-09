@@ -5856,6 +5856,35 @@ messaging.onBackgroundMessage((payload) => {
     title = 'Covo';
   }
 
+  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  if (typeof body === 'string') {
+    function _swIsStamp(s) {
+      return s.startsWith('[STAMP]') || s.includes('/stamps/') ||
+             s.startsWith('covo:') || s.startsWith('covonew:') || s.startsWith('serverstamp:');
+    }
+    function _swIsFile(s) {
+      return s.includes('firebase-storage') || s.includes('cloudinary') ||
+             s.includes('r2.cloudflarestorage') || /\.(jpg|jpeg|png|gif|webp|mp4|mov)/i.test(s);
+    }
+    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      if (_swIsStamp(rest)) {
+        body = `${senderPart}: 🌟 スタンプ`;
+      } else if (_swIsFile(rest)) {
+        body = `${senderPart}: 📎 添付ファイル`;
+      }
+    } else {
+      if (_swIsStamp(body)) {
+        body = '🌟 スタンプ';
+      } else if (_swIsFile(body)) {
+        body = '📎 添付ファイル';
+      }
+    }
+  }
+
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
     console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
@@ -12557,10 +12586,10 @@ if (typeof window !== 'undefined') {
               "timestamp"
             ],
             "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && data.child('senderId').val() === newData.child('senderId').val() && ((data.child('senderId').val() === auth.uid) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
               "reactions": {
                 "$reactUid": {
-                  ".write": "auth != null && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
+                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                 }
               }
             }
@@ -12691,22 +12720,22 @@ if (typeof window !== 'undefined') {
                     "timestamp"
                   ],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists())))",
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
                     "reactions": {
                       "$reactUid": {
-                        ".write": "auth != null && data.parent().parent().exists() && (auth.uid === $reactUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
                       }
                     }
                   }
                 },
                 "typing": {
                   "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
                 },
                 "readReceipts": {
                   "$uid": {
-                    ".write": "auth != null && auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
                 }
               }
@@ -14291,9 +14320,14 @@ service cloud.firestore {
               || isGlobalAdmin(appId)
             );
 
-            // メッセージ削除: 送信者本人 または 全体管理者（アプリ全体管理者）のみ可能
-            // サーバー管理者であっても他人のメッセージは削除不可
-            allow delete: if (isJoinedServer(appId, serverId) && resource.data.senderId == request.auth.uid) || isGlobalAdmin(appId);
+            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
+            allow delete: if isJoinedServer(appId, serverId) && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
           }
 
           // 既読レシート (Read Receipts)
@@ -14411,13 +14445,13 @@ service cloud.firestore {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.146" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.147" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.146" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.147" />
 
   <!-- heic2any -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -17356,7 +17390,7 @@ service cloud.firestore {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.146"></script>
+  <script type="module" src="js/main.js?v=1.1.147"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -33118,11 +33152,11 @@ function showContextMenu(bubble, clientX, clientY) {
   }
 
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
-  // （自分のメッセージは常に削除可能。相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみに限定）
-  const isMsgSender = msgData.senderId === userId;
+  // （自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能）
+  const isMsgSender = msgData.senderId === userId || msgData.userId === userId;
   const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
   const isSvOwner = Boolean(currentServerData?.createdBy === userId);
-  const canDeleteMsg = isMsgSender || isAdmin;
+  const canDeleteMsg = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
 
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -33305,22 +33339,24 @@ if (deleteMsgBtn) {
     if (!selectedMessageForContext) return;
 
     const msgToDelete = selectedMessageForContext;
-    const isMsgSender = msgToDelete.senderId === userId;
-    // 相手・他者のメッセージを削除できるのは「アプリ全体管理者 (isAdmin)」のみ！サーバー管理者は削除不可！
-    const canDelete = isMsgSender || isAdmin;
+    const isMsgSender = msgToDelete.senderId === userId || msgToDelete.userId === userId;
+    const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+    const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+    // 自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能
+    const canDelete = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
 
     if (!canDelete) {
       alertMessage("メッセージを削除する権限がありません", "warning");
       return;
     }
 
-    const isPrivilegedDelete = isAdmin && !isMsgSender;
+    const isPrivilegedDelete = (isAdmin || isSvAdmin || isSvOwner) && !isMsgSender;
     const forceDelete = isPrivilegedDelete;
 
     // モデレーターによる他者メッセージ削除時は確認モーダルを表示（誤操作防止）
     if (isPrivilegedDelete) {
       const ok = await showCustomConfirm(
-        "このメッセージを管理者権限で完全に削除しますか？\n（この操作は元に戻せません）",
+        "このメッセージをモデレーション権限で完全に削除しますか？\n（この操作は元に戻せません）",
         "削除する",
         "キャンセル",
         "メッセージのモデレーション削除"
@@ -33446,8 +33482,8 @@ if (deleteMsgBtn) {
           if (!lastError) lastError = fErr;
         }
 
-        // 特権削除の場合、または直接削除が失敗した場合は Worker API による特権削除を実行
-        if (isPrivilegedDelete || (!rtdbOk && !fsOk)) {
+        // 特権削除、または直接削除でどちらか一方でも失敗した場合は Worker API による完全消去を実行
+        if (isPrivilegedDelete || !rtdbOk || !fsOk) {
           try {
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             const wRes = await fetch(`${WORKER_BASE_URL}/api/admin/deleteMessage`, {
@@ -33459,29 +33495,31 @@ if (deleteMsgBtn) {
             if (wRes.ok && wData.success) {
               rtdbOk = true;
               fsOk = true;
-            } else if (!rtdbOk && !fsOk) {
-              throw new Error(wData.error || "サーバーAPIによる削除に失敗しました");
+            } else if (!rtdbOk) {
+              throw new Error(wData.error || "リアルタイムデータベースからの削除に失敗しました");
             }
           } catch (wErr) {
             console.warn('[deleteMessage] Worker API call failed:', wErr);
-            if (!rtdbOk && !fsOk) throw (lastError || wErr);
+            if (!rtdbOk) throw (lastError || wErr);
           }
 
-          // Firestore 監査ログにも記録
-          addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
-            action: 'delete_message',
-            operatorUid: userId,
-            operatorNickname: currentServerNickname || userNickname || 'Admin',
-            serverId: currentServerId,
-            roomId: currentRoomId,
-            messageId: msgToDelete.id,
-            targetSenderId: msgToDelete.senderId || null,
-            timestamp: serverTimestamp()
-          }).catch(() => {});
+          // モデレーション削除時は Firestore 監査ログにも記録
+          if (isPrivilegedDelete) {
+            addDoc(collection(db, `artifacts/${appId}/audit_logs`), {
+              action: 'delete_message',
+              operatorUid: userId,
+              operatorNickname: currentServerNickname || userNickname || 'Admin',
+              serverId: currentServerId,
+              roomId: currentRoomId,
+              messageId: msgToDelete.id,
+              targetSenderId: msgToDelete.senderId || msgToDelete.userId || null,
+              timestamp: serverTimestamp()
+            }).catch(() => {});
+          }
         }
 
-        // どちらも削除できなかった場合はエラーとして中断（ローカルも画面も消さない！）
-        if (!rtdbOk && !fsOk) {
+        // リアルタイムデータベースから削除できなかった場合は、ローカル消去を行わずエラーとして中断
+        if (!rtdbOk) {
           throw new Error("データベースからのメッセージ削除に失敗しました: " + (lastError?.message || "権限エラー"));
         }
 
@@ -33993,9 +34031,19 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
 
   const isMention = displayBody && userNickname && (displayBody.includes(`@${userNickname}`) || displayBody.includes('@all'));
 
-  // 通知音の再生
+  // 通知音の再生（showNotification と共有の lastNotificationTime でデバウンスし2重再生を防ぐ）
   if (soundEnabled && notifEnabled) {
-    playNotificationSound();
+    const now = Date.now();
+    const sameContent = displayBody === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
+    const isDuplicate = now - lastNotificationTime < 3000 && sameContent;
+    if (!isDuplicate) {
+      // アプリがフォーカス中（＝OS通知が送られない場合）はここで時刻を更新する
+      // バックグラウンド時は showNotification 側でも更新されるが上書きしても問題ない
+      lastNotificationTime = now;
+      lastNotificationBody = displayBody;
+      lastNotificationRoomId = roomId || '';
+      playNotificationSound();
+    }
   }
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
@@ -36771,10 +36819,12 @@ async function showNotification(title, body, roomId) {
   if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
     title = 'Covo';
   }
-  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
 
   if (!notifEnabled) return;
+
+  // アプリがフォーカスされてオンラインの場合はOS通知不要（アプリ内トーストで十分）
+  if (document.hasFocus() && !document.hidden) return;
 
   const now = Date.now();
   const sameContent = body === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
@@ -36783,13 +36833,11 @@ async function showNotification(title, body, roomId) {
   lastNotificationBody = body;
   lastNotificationRoomId = roomId || '';
 
-  if (soundEnabled) {
-    playNotificationSound();
-  }
+  // 通知音は showInAppNotification 側で一元管理するためここでは再生しない
 
   if (isTauri) {
     if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
+      window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
     }
 
     if (window.__TAURI__?.core?.invoke) {
@@ -40095,7 +40143,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.146",
+  "version": "1.1.147",
   "force": false
 }
 </file>

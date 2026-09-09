@@ -86,10 +86,9 @@ async function _sendOfflineIfNoClients() {
   if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
   try {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const activeClients = clientList.filter(c => c.visibilityState === 'visible');
-    if (activeClients.length === 0) {
-      // 全クライアントが非表示または存在しない → offlineビーコン
-      // SW内はnavigator.sendBeaconが使えないのでfetch+keepaliveを使う
+    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
+    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
+    if (clientList.length === 0) {
       const data = JSON.stringify({
         userId: self._cachedUserId,
         appId:  self._cachedAppId,
@@ -101,7 +100,7 @@ async function _sendOfflineIfNoClients() {
         body: data,
         keepalive: true
       }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリが閉じられたため、オフライン状態をサーバーに送信しました');
+      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
     }
   } catch (e) {
     console.warn('[SW] _sendOfflineIfNoClients error:', e);
@@ -139,6 +138,35 @@ messaging.onBackgroundMessage((payload) => {
   }
   if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
     title = 'Covo';
+  }
+
+  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  if (typeof body === 'string') {
+    function _swIsStamp(s) {
+      return s.startsWith('[STAMP]') || s.includes('/stamps/') ||
+             s.startsWith('covo:') || s.startsWith('covonew:') || s.startsWith('serverstamp:');
+    }
+    function _swIsFile(s) {
+      return s.includes('firebase-storage') || s.includes('cloudinary') ||
+             s.includes('r2.cloudflarestorage') || /\.(jpg|jpeg|png|gif|webp|mp4|mov)/i.test(s);
+    }
+    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      if (_swIsStamp(rest)) {
+        body = `${senderPart}: 🌟 スタンプ`;
+      } else if (_swIsFile(rest)) {
+        body = `${senderPart}: 📎 添付ファイル`;
+      }
+    } else {
+      if (_swIsStamp(body)) {
+        body = '🌟 スタンプ';
+      } else if (_swIsFile(body)) {
+        body = '📎 添付ファイル';
+      }
+    }
   }
 
   // 自分が送ったメッセージへの通知はスキップ

@@ -1,8 +1,7 @@
 {
-  "date": "2026-09-08T09:04:59.858Z",
+  "date": "2026-09-09T00:19:08.949Z",
   "files": [
-    "database.rules.json",
-    "firestore.rules",
+    "public/firebase-messaging-sw.js",
     "public/js/main.js"
   ]
 }

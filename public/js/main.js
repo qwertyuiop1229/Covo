@@ -7428,9 +7428,9 @@ function subscribeToDmChannels() {
             const lastAt = typeof dmData.lastMessageAt === 'number' ? dmData.lastMessageAt : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
             const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
             const lastRead = rm[`dm_${dmId}`] || 0;
-            const isCurrentDmAndFocused = (currentDmId === dmId && document.hasFocus());
+            const isNotCurrentDm = (currentDmId !== dmId);
 
-            if (lastAt > lastRead && !isCurrentDmAndFocused && dmData.lastMessageSender && dmData.lastMessageSender !== userId) {
+            if (lastAt > lastRead && isNotCurrentDm && dmData.lastMessageSender && dmData.lastMessageSender !== userId) {
               const rel = friendRelationships[otherUid];
               const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
               const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
@@ -7446,23 +7446,20 @@ function subscribeToDmChannels() {
                 }
                 if (typeof isEncrypted === 'function' && isEncrypted(textBody)) textBody = '（暗号化されたメッセージ）';
 
-                const notifTitle = `ダイレクトメッセージ › @${targetNick}`;
-                showInAppNotification(
-                  'ダイレクトメッセージ',
-                  `@${targetNick}`,
-                  targetNick,
-                  textBody,
-                  null,
-                  null,
-                  dmId,
-                  true,
-                  otherUid,
-                  targetAv
-                );
-
-                if (!document.hasFocus() || document.visibilityState === 'hidden') {
-                  showNotification(notifTitle, `${targetNick}: ${textBody}`, `dm_${dmId}`);
-                }
+                await notifyNewMessage({
+                  messageId: `${dmId}_${lastAt}`,
+                  channelId: dmId,
+                  serverName: 'ダイレクトメッセージ',
+                  channelName: `@${targetNick}`,
+                  senderName: targetNick,
+                  text: textBody,
+                  sticker: null,
+                  serverId: null,
+                  serverData: null,
+                  isDm: true,
+                  targetUid: otherUid,
+                  targetAvatarUrl: targetAv
+                });
                 updateGlobalNotifUI();
                 if (typeof scanAllUnreadAndRender === 'function') scanAllUnreadAndRender();
               })();
@@ -9662,20 +9659,19 @@ async function setupGlobalNotificationListeners() {
                     }
                   } catch (e) { body = '（暗号化されたメッセージ）'; }
                   if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
-                  
-                  const isMentioned = userNickname && body && (body.includes(`@${userNickname}`) || body.includes('@all'));
-                  const title = isMentioned ? `[@メンション] ${svData.name || svId} › #${rmName}` : `${svData.name || svId} › #${rmName}`;
-                  
-                  showInAppNotification(
-                    svData.name || svId, rmName,
-                    'メンバー',
-                    body,
-                    svId, svData, rmId, false
-                  );
-                  // バックグラウンド・非フォーカス時はOS通知 / デスクトップ通知を必ず送信
-                  if (!document.hasFocus() || document.visibilityState === 'hidden') {
-                    showNotification(title, `メンバー: ${body}`, rmId);
-                  }
+
+                  await notifyNewMessage({
+                    messageId: `${rmId}_${ts}`,
+                    channelId: rmId,
+                    serverName: svData.name || svId,
+                    channelName: rmName,
+                    senderName: 'メンバー',
+                    text: body,
+                    sticker: null,
+                    serverId: svId,
+                    serverData: svData,
+                    isDm: false
+                  });
                 })();
               }
             }
@@ -10435,8 +10431,8 @@ function loadServerRooms(serverId, _retry = 0) {
             resyncActiveRoomMessages();
           }
 
-          const isNotCurrentOrHidden = (change.doc.id !== currentRoomId) || !document.hasFocus();
-          if (lastMsgAt > lastRead && isNotCurrentOrHidden && room.lastMessageSender && room.lastMessageSender !== userId) {
+          const isNotCurrent = (change.doc.id !== currentRoomId);
+          if (lastMsgAt > lastRead && isNotCurrent && room.lastMessageSender && room.lastMessageSender !== userId) {
             updateGlobalNotifUI();
             const serverName = currentServerData?.name || 'Covo';
             const roomName = room.name || 'room';
@@ -10451,25 +10447,18 @@ function loadServerRooms(serverId, _retry = 0) {
               } catch (e) { text = '（暗号化されたメッセージ）'; }
               if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
 
-              const isMentioned = text && typeof text === "string" && (text.includes(`@${userNickname}`) || text.includes('@all'));
-              if (isMentioned && !document.hasFocus()) {
-                // Fallback mention toast when not focused is handled by showNotification title
-              }
-
-              const title = isMentioned ? `[@メンション] ${serverName} › #${roomName}` : `${serverName} › #${roomName}`;
-
-              // In-app Notification
-              if (typeof showInAppNotification === 'function') {
-                showInAppNotification(serverName, roomName, "メンバー", text, currentServerId, currentServerData, change.doc.id, false);
-              }
-              // Push Notification
-              if (!document.hasFocus()) {
-                if (isTauri) {
-                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
-                } else if (!currentFcmToken) {
-                  if (typeof showNotification === 'function') showNotification(title, `メンバー: ${text}`, change.doc.id);
-                }
-              }
+              await notifyNewMessage({
+                messageId: `${change.doc.id}_${lastMsgAt}`,
+                channelId: change.doc.id,
+                serverName: serverName,
+                channelName: roomName,
+                senderName: 'メンバー',
+                text: text,
+                sticker: null,
+                serverId: currentServerId,
+                serverData: currentServerData,
+                isDm: false
+              });
             })();
           }
         }
@@ -10866,33 +10855,28 @@ async function subscribeToMessagesRTDB() {
           }
         }
       } catch (e) { }
-      const isMentioned = bodyText && typeof bodyText === "string" && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
+      const cleanBody = formatNotificationBody(bodyText, data.sticker);
+      const isMentioned = cleanBody && typeof cleanBody === "string" && (cleanBody.includes(`@${userNickname}`) || cleanBody.includes('@all'));
       if (isMentioned && document.hasFocus()) {
         showMentionToast(data.senderNickname || "ユーザー");
       }
       
-      if (!document.hasFocus() || document.visibilityState === 'hidden') {
-        const sName = currentServerId ? (currentServerData?.name || 'Covo') : 'ダイレクトメッセージ';
-        const rName = currentServerId ? (roomNames[currentRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
-        const notifTitle = isMentioned ? `[@メンション] ${sName} › #${rName}` : `${sName} › #${rName}`;
-        showNotification(notifTitle, `${data.senderNickname || 'ユーザー'}: ${bodyText || '新着メッセージ'}`, currentRoomId || currentDmId);
-        showInAppNotification(
-          sName,
-          rName,
-          data.senderNickname || 'ユーザー',
-          bodyText || '新着メッセージ',
-          currentServerId,
-          currentServerData,
-          currentRoomId,
-          Boolean(currentDmId),
-          currentDmParticipant?.uid || null,
-          currentDmParticipant?.avatarUrl || null
-        );
-        updateGlobalNotifUI();
-        if (isTauri && window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
-        }
-      }
+      const sName = currentServerId ? (currentServerData?.name || 'Covo') : 'ダイレクトメッセージ';
+      const rName = currentServerId ? (roomNames[currentRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
+      notifyNewMessage({
+        messageId: data.id,
+        channelId: currentRoomId || currentDmId,
+        serverName: sName,
+        channelName: rName,
+        senderName: data.senderNickname || 'ユーザー',
+        text: cleanBody,
+        sticker: data.sticker,
+        serverId: currentServerId,
+        serverData: currentServerData,
+        isDm: Boolean(currentDmId),
+        targetUid: currentDmParticipant?.uid || null,
+        targetAvatarUrl: currentDmParticipant?.avatarUrl || null
+      });
     }
 
     await decryptInPlace([data]);
@@ -11971,7 +11955,7 @@ async function sendSticker(emoji) {
         participants: currentDmParticipants,
         lastMessageAt: data.timestamp,
         lastMessageSender: userId,
-        lastMessageText: 'スタンプ ' + emoji
+        lastMessageText: 'スタンプ'
       }, { merge: true });
 
       LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
@@ -11983,7 +11967,7 @@ async function sendSticker(emoji) {
           const notifPayload = JSON.stringify({
             receiverIds: [otherUid],
             title: `ダイレクトメッセージ › @${userNickname}`,
-            body: `${userNickname}: スタンプ ${emoji}`,
+            body: `${userNickname}: スタンプ`,
             roomId: currentDmId,
             messageId: newMessageId,
             appId: appId,
@@ -12009,10 +11993,10 @@ async function sendSticker(emoji) {
         LocalStore.putMessage({ ...rtdbData, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
       } catch (e) { console.error("RTDB Dual Write Failed in Reply", e); }
       await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
-        lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ ' + emoji
+        lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ'
       });
 
-      // 通知（スタンプ絵文字つき・キャッシュ利用でgetDoc通信を排除）
+      // 通知
       try {
         const sd = currentServerData;
         if (sd) {
@@ -12021,7 +12005,7 @@ async function sendSticker(emoji) {
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: ${emoji}`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
+              body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: スタンプ`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
             }).catch(() => { });
           }
         }
@@ -15400,14 +15384,131 @@ async function deleteServerCascade(serverId) {
   } catch (err) { console.error("RTDB Server Delete Failed", err); }
 }
 
-// ===== アプリ内通知スタック =====
+// ===== アプリ内通知スタック & 通知ディスパッチャー =====
+
+// スタンプ・ファイルURLを可読テキストに統一整形する共通ヘルパー
+function formatNotificationBody(text, sticker) {
+  if (sticker) return 'スタンプ';
+  if (typeof text !== 'string') return '新着メッセージ';
+
+  const colonIdx = text.indexOf(': ');
+  if (colonIdx !== -1) {
+    const senderPart = text.substring(0, colonIdx);
+    const rest = text.substring(colonIdx + 2);
+    return `${senderPart}: ${formatNotificationBody(rest)}`;
+  }
+
+  const t = text.trim();
+  if (
+    t.includes('serverstamp:') ||
+    t.includes('covo:') ||
+    t.includes('covonew:') ||
+    t.includes('[STAMP]') ||
+    t.includes('/stamps/') ||
+    t.startsWith('スタンプ ') ||
+    t === 'スタンプ' ||
+    t === '🌟 スタンプ'
+  ) {
+    return 'スタンプ';
+  }
+  if (
+    t.includes('firebase-storage') ||
+    t.includes('cloudinary') ||
+    t.includes('r2.cloudflarestorage') ||
+    t.includes('/api/file/') ||
+    /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(t)
+  ) {
+    return '📎 添付ファイル';
+  }
+  return t;
+}
+
+const _notifiedMessageIds = new Set();
+
+// 統一通知ディスパッチャー（二重通知・不要なWindows通知・二重音を完全防止）
+async function notifyNewMessage({
+  messageId,
+  channelId,
+  serverName,
+  channelName,
+  senderName,
+  text,
+  sticker,
+  serverId,
+  serverData,
+  isDm = false,
+  targetUid = null,
+  targetAvatarUrl = null
+}) {
+  const notifKey = messageId || `${channelId}_${text}_${senderName}`;
+  if (_notifiedMessageIds.has(notifKey)) return;
+  _notifiedMessageIds.add(notifKey);
+  setTimeout(() => _notifiedMessageIds.delete(notifKey), 10000);
+
+  let bodyText = text;
+  if (sticker) {
+    bodyText = 'スタンプ';
+  } else if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
+    try {
+      if (isDm && targetUid) {
+        const dmKey = await _getDmKeyWithWait(channelId, [userId, targetUid], 1000);
+        bodyText = await _decryptDmText(bodyText, dmKey);
+      } else if (serverId && channelId) {
+        const memberIds = serverData?.joinedUsers || [];
+        bodyText = await decryptText(bodyText, serverId, channelId, memberIds);
+      }
+    } catch (e) { bodyText = '（暗号化されたメッセージ）'; }
+  }
+  if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
+    bodyText = '（暗号化されたメッセージ）';
+  }
+
+  bodyText = formatNotificationBody(bodyText, sticker);
+
+  const isCurrentChannel = (channelId === currentRoomId) || (isDm && channelId === currentDmId);
+  const isAppVisible = (document.visibilityState === 'visible');
+
+  // チャット欄を開いていてアプリが画面上にあるときはWindows通知もアプリ内通知も送らない（直接メッセージが表示されるため）
+  if (isCurrentChannel && isAppVisible) {
+    return;
+  }
+
+  const isMention = userNickname && bodyText && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
+  const notifTitle = isMention
+    ? `[@メンション] ${serverName} › #${channelName}`
+    : `${serverName} › #${channelName}`;
+
+  if (isAppVisible) {
+    // アプリを開いているときはWindowsプッシュ通知は送らず、アプリ内通知（トースト）のみを表示＆アプリ内音を1回再生
+    showInAppNotification(
+      serverName,
+      channelName,
+      senderName,
+      bodyText,
+      serverId,
+      serverData,
+      channelId,
+      isDm,
+      targetUid,
+      targetAvatarUrl
+    );
+  } else {
+    // アプリが最小化または非表示のときはWindows通知（OS通知）のみを1回送信（アプリ側Web Audio音は二重鳴動防止のため鳴らさない）
+    showNotification(notifTitle, `${senderName}: ${bodyText}`, channelId);
+  }
+
+  updateGlobalNotifUI();
+}
 
 // モバイル通知用キュー & 状態
 window._mobileNotifQueue = window._mobileNotifQueue || [];
 window._mobileNotifActive = window._mobileNotifActive || false;
 
 async function showInAppNotification(serverName, roomName, senderName, text, serverId, serverData, roomId, isDm = false, targetUid = null, targetAvatarUrl = null) {
-  if (document.hasFocus() && ((roomId && roomId === currentRoomId) || (isDm && roomId === currentDmId))) return;
+  // アプリが最小化または非表示のときはアプリ内UIトーストは表示しない（OS通知側で処理）
+  if (document.visibilityState === 'hidden') return;
+  // 現在開いているチャットルームならアプリ内通知トーストは表示しない
+  if ((roomId && roomId === currentRoomId) || (isDm && roomId === currentDmId)) return;
 
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
@@ -15429,18 +15530,22 @@ async function showInAppNotification(serverName, roomName, senderName, text, ser
   }
 
   // 2. スタンプおよび添付ファイルの表現変換
-  let displayBody = text;
-  if (text.includes("firebase-storage") || text.includes("cloudinary") || text.includes("r2.cloudflarestorage") || text.match(/\.(jpg|jpeg|png|gif|webp|mp4|mov)/i)) {
-    displayBody = `📎 添付ファイル`;
-  } else if (text.startsWith("[STAMP]") || text.includes("/stamps/") || text.startsWith("covo:") || text.startsWith("covonew:") || text.startsWith("serverstamp:")) {
-    displayBody = `🌟 スタンプ`;
-  }
+  let displayBody = formatNotificationBody(text);
 
   const isMention = displayBody && userNickname && (displayBody.includes(`@${userNickname}`) || displayBody.includes('@all'));
 
-  // 通知音の再生
+  // 通知音の再生（アプリが表示されている時だけ、ここで1回だけ再生）
   if (soundEnabled && notifEnabled) {
-    playNotificationSound();
+    const now = Date.now();
+    const notifKey = `${roomId || ''}_${displayBody}`;
+    const isDuplicate = now - lastNotificationTime < 2500 && notifKey === lastNotificationKey;
+    if (!isDuplicate) {
+      lastNotificationTime = now;
+      lastNotificationKey = notifKey;
+      lastNotificationBody = displayBody;
+      lastNotificationRoomId = roomId || '';
+      playNotificationSound();
+    }
   }
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
@@ -16338,6 +16443,7 @@ function jumpToMsg(id) {
 
 // 重複通知防止 (同一内容を3秒以内に複数ソースから受け取った場合は1件のみ表示)
 let lastNotificationTime = 0;
+let lastNotificationKey = "";
 let lastNotificationBody = "";
 let lastNotificationRoomId = "";
 
@@ -18205,36 +18311,39 @@ function handleCallDeclinedFromNotification(data) {
 
 // --- 統合通知関数 ---
 async function showNotification(title, body, roomId) {
-  if (typeof body === 'string' && (body.includes('enc::v') || body.startsWith('enc::'))) {
-    if (body.includes(': enc::')) {
-      const senderPart = body.split(': enc::')[0];
-      body = `${senderPart}: 新しいメッセージがあります`;
+  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  if (!notifEnabled) return;
+
+  // アプリが画面上に表示されている（オンライン・チャット中）場合は、OS通知（Windows通知）は絶対に送らない
+  if (document.visibilityState === 'visible') return;
+
+  // 本文のスタンプ・添付ファイル整形
+  let displayBody = formatNotificationBody(body);
+  if (typeof displayBody === 'string' && (displayBody.includes('enc::v') || displayBody.startsWith('enc::'))) {
+    if (displayBody.includes(': enc::')) {
+      const senderPart = displayBody.split(': enc::')[0];
+      displayBody = `${senderPart}: 新しいメッセージがあります`;
     } else {
-      body = '新しいメッセージがあります';
+      displayBody = '新しいメッセージがあります';
     }
   }
   if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
     title = 'Covo';
   }
-  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-
-  if (!notifEnabled) return;
 
   const now = Date.now();
-  const sameContent = body === lastNotificationBody && (roomId || '') === lastNotificationRoomId;
-  if (now - lastNotificationTime < 3000 && sameContent) return;
+  const notifKey = `${roomId || ''}_${displayBody}`;
+  if (now - lastNotificationTime < 2500 && notifKey === lastNotificationKey) return;
   lastNotificationTime = now;
-  lastNotificationBody = body;
+  lastNotificationKey = notifKey;
+  lastNotificationBody = displayBody;
   lastNotificationRoomId = roomId || '';
 
-  if (soundEnabled) {
-    playNotificationSound();
-  }
+  // 通知音は OS / デスクトップ通知自体が鳴らすため、Web Audio による二重再生は行わない
 
   if (isTauri) {
     if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('set_badge', { hasUnread: !document.hasFocus() }).catch(console.error);
+      window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
     }
 
     if (window.__TAURI__?.core?.invoke) {
