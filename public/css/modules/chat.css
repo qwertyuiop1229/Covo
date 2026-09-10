@@ -605,174 +605,260 @@
     .dark-server-theme .mention-option:hover .mention-option-sub, .dark-server-theme .mention-option.active .mention-option-sub, .dark .mention-option:hover .mention-option-sub, .dark .mention-option.active .mention-option-sub {
       color: #cbd5e1;
     }
-    /* === 通話オーバーレイ === */
-    @keyframes callPulse {
-      0%, 100% { transform: scale(1); opacity: 0.7; }
-      50% { transform: scale(1.18); opacity: 0.3; }
-    }
-    @keyframes callSlideIn {
-      from { transform: translateY(100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes callFadeOut {
-      from { transform: translateY(0); opacity: 1; }
-      to { transform: translateY(100%); opacity: 0; }
-    }
-
+    /* === Discord 完全準拠 通話オーバーレイ (Agora SD-RTN™) === */
     #callOverlay {
       position: fixed;
       inset: 0;
       z-index: 100000;
       display: none;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f2544 100%);
-      padding: var(--safe-top, max(24px, env(safe-area-inset-top, 0px))) var(--safe-right, env(safe-area-inset-right, 0px)) max(24px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) var(--safe-left, env(safe-area-inset-left, 0px));
-      gap: 0;
+      background: #111214;
+      overflow: hidden;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #callOverlay.show {
-      display: flex;
-      animation: callSlideIn 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+      display: flex !important;
+      animation: discordCallFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     #callOverlay.hide {
-      display: flex;
-      animation: callFadeOut 0.28s ease-in forwards;
+      animation: discordCallFadeOut 0.2s ease-in forwards;
+    }
+    @keyframes discordCallFadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes discordCallFadeOut {
+      from { opacity: 1; transform: scale(1); }
+      to { opacity: 0; transform: scale(0.98); }
     }
 
-    #callIncomingView, #callActiveView {
+    /* 最上部ヘッダー */
+    .discord-call-header {
+      height: 52px;
+      padding: 0 20px;
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      background: #111214;
+      flex-shrink: 0;
+      padding-top: max(0px, env(safe-area-inset-top, 0px));
+    }
+    .discord-rtc-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      background: rgba(35, 165, 90, 0.15);
+      border: 1px solid rgba(35, 165, 90, 0.35);
+      font-size: 11px;
+      font-weight: 700;
+      color: #23a55a;
+      transition: all 0.25s ease;
+    }
+    .discord-rtc-badge.reconnecting {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #f59e0b;
+    }
+    .discord-call-timer {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-left: 2px;
+    }
+    .discord-call-top-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      color: #b5bac1;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      transition: all 0.15s ease;
+    }
+    .discord-call-top-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    /* 参加者グリッド */
+    .discord-call-grid-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 20px 96px 20px;
+      position: relative;
+    }
+    .discord-call-grid {
+      display: grid;
+      gap: 16px;
+      width: 100%;
+      height: 100%;
+      max-width: 1200px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      align-items: center;
+      justify-content: center;
+    }
+    .discord-participant-tile {
+      background: #2b2d31;
+      border-radius: 20px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
       align-items: center;
       justify-content: center;
       width: 100%;
-      gap: 24px;
+      height: 100%;
+      min-height: 200px;
+      max-height: 520px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      border: 3px solid transparent;
     }
-
-    .call-status-label {
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.45);
-      transition: color 0.3s;
+    /* Discord 本家同等のエメラルドグリーン発話時リング枠線 */
+    .discord-participant-tile.speaking {
+      border-color: #23a55a !important;
+      box-shadow: 0 0 0 3px rgba(35, 165, 90, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35) !important;
     }
-    .call-status-label.reconnecting {
-      color: #f59e0b;
-      animation: reconnectPulse 1.2s ease-in-out infinite;
-    }
-    @keyframes reconnectPulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.45; }
-    }
-    #callConnectionType {
-      display: inline-flex;
+    .discord-tile-avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: #1e1f22;
+      display: flex;
       align-items: center;
-      gap: 5px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-    #callConnectionType.p2p { color: #34d399; }
-    #callConnectionType.turn { color: #f59e0b; }
-
-    .call-avatar-wrap {
+      justify-content: center;
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #fff;
       position: relative;
-      width: 128px;
-      height: 128px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .call-avatar-ring {
-      position: absolute;
-      inset: -16px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(99,179,237,0.3);
-      animation: callPulse 2s ease-in-out infinite;
-      pointer-events: none;
-    }
-    .call-avatar {
-      width: 128px;
-      height: 128px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      font-size: 2.8rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       overflow: hidden;
-      position: relative;
-      z-index: 1;
-      border: 2.5px solid rgba(255,255,255,0.15);
+      border: 4px solid rgba(255, 255, 255, 0.08);
+      transition: transform 0.2s ease, border-color 0.2s ease;
     }
-    .call-avatar img {
+    .discord-participant-tile.speaking .discord-tile-avatar {
+      border-color: #23a55a;
+      transform: scale(1.04);
+    }
+    .discord-tile-name-pill {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      max-width: calc(100% - 24px);
+    }
+    .discord-tile-mute-badge {
+      color: #da373c;
+      font-size: 11px;
+    }
+    .discord-tile-video-container {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
-    }
-    .call-name {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: white;
-      letter-spacing: 0.01em;
-    }
-    .call-timer {
-      font-size: 1rem;
-      font-weight: 400;
-      color: rgba(255,255,255,0.5);
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 0.06em;
+      z-index: 1;
     }
 
-    .call-btn-row {
+    /* 下部フローティング コントロールバー */
+    .discord-call-control-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      background: rgba(30, 31, 34, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px 20px;
+      border-radius: 9999px;
       display: flex;
-      gap: 48px;
       align-items: center;
-      margin-top: 24px;
+      gap: 14px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+      max-width: calc(100vw - 32px);
     }
-    .call-btn-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
-    .call-btn-label {
-      font-size: 0.72rem;
-      font-weight: 500;
-      color: rgba(255,255,255,0.45);
-      letter-spacing: 0.05em;
-    }
-    .call-btn-circle {
-      width: 72px;
-      height: 72px;
+    .discord-control-btn {
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
-      border: none;
-      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.4rem;
-      color: white;
-      transition: transform 0.12s ease, opacity 0.12s ease;
-      -webkit-tap-highlight-color: transparent;
+      background: #35373c;
+      color: #dbdee1;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .call-btn-circle:active { transform: scale(0.88); opacity: 0.8; }
-    .call-btn-circle.accept { background: #22c55e; }
-    .call-btn-circle.decline, .call-btn-circle.hangup { background: #ef4444; }
-    .call-btn-circle.mute {
-      background: rgba(255,255,255,0.14);
-      border: 1px solid rgba(255,255,255,0.2);
+    .discord-control-btn:hover {
+      background: #404249;
+      color: #fff;
+      transform: translateY(-1px);
     }
-    .call-btn-circle.mute.active {
-      background: rgba(255,255,255,0.3);
-      border-color: rgba(255,255,255,0.4);
+    .discord-control-btn:active {
+      transform: scale(0.92);
     }
-
+    .discord-control-btn.active, .discord-control-btn.muted {
+      background: #da373c !important;
+      color: #fff !important;
+    }
+    .discord-control-btn.hangup-btn {
+      background: #da373c !important;
+      color: #fff !important;
+    }
+    .discord-control-btn.hangup-btn:hover {
+      background: #b82e34 !important;
+      transform: translateY(-1px);
+    }
+    /* デバイス設定ポップアップメニュー */
+    .discord-device-menu {
+      display: none;
+      position: fixed;
+      z-index: 100010;
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+      width: 280px;
+      max-width: calc(100vw - 24px);
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      user-select: none;
+    }
+    .discord-device-menu.show {
+      display: flex;
+      flex-direction: column;
+      animation: discordMenuPop 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    @keyframes discordMenuPop {
+      from { opacity: 0; transform: scale(0.95) translateY(6px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
     #callEndedToast {
       position: fixed;
       bottom: max(100px, calc(84px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
@@ -1304,94 +1390,130 @@
       color: #93c5fd;
     }
 
-    /* 通話中ピクチャーインピクチャー (PiP) ミニバー (#71) */
+    /* Discord 本家完全準拠 通話中ピクチャー・イン・ピクチャー (PiP ミニバー) */
     #callPipBar {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
+      bottom: 20px;
+      right: 20px;
       z-index: 99990;
       display: none;
       align-items: center;
       gap: 12px;
-      background: rgba(15, 23, 42, 0.92);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-      border-radius: 9999px;
-      padding: 6px 14px 6px 6px;
-      color: #f8fafc;
-      animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      background: rgba(17, 18, 20, 0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(35, 165, 90, 0.4);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+      border-radius: 14px;
+      padding: 8px 14px 8px 12px;
+      color: #ffffff;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
     }
     #callPipBar.active {
+      display: flex !important;
+    }
+    #callPipBar:hover {
+      border-color: #23a55a;
+      transform: translateY(-2px);
+    }
+    .discord-pip-indicator {
       display: flex;
+      align-items: center;
+      gap: 6px;
+      padding-right: 4px;
+    }
+    .pip-pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #23a55a;
+      animation: pipDotPulse 1.6s infinite;
+    }
+    @keyframes pipDotPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .pip-avatar-wrap {
+      position: relative;
+      flex-shrink: 0;
     }
     .pip-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 9999px;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
       object-fit: cover;
-      background: #334155;
+      background: #2b2d31;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: bold;
-      font-size: 14px;
-      border: 2px solid #22c55e;
+      font-weight: 700;
+      font-size: 13px;
+      border: 2px solid #23a55a;
+      color: white;
+      overflow: hidden;
     }
     .pip-info {
       display: flex;
       flex-direction: column;
-      line-height: 1.2;
+      line-height: 1.25;
+      min-width: 0;
     }
     .pip-name {
       font-size: 12px;
       font-weight: 700;
-      max-width: 110px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      max-width: 120px;
+      color: #f2f3f5;
     }
     .pip-timer {
       font-size: 11px;
-      font-family: ui-monospace, monospace;
-      color: #94a3b8;
+      font-family: ui-monospace, Consolas, monospace;
+      color: #23a55a;
+      font-weight: 600;
+    }
+    .pip-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 4px;
     }
     .pip-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 9999px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f8fafc;
+      background: rgba(255, 255, 255, 0.08);
+      color: #dbdee1;
       border: none;
       cursor: pointer;
       transition: all 0.15s ease;
-      font-size: 13px;
+      font-size: 12px;
     }
     .pip-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
     }
     .pip-btn.mute.active {
-      background: #ef4444;
+      background: #da373c;
       color: #ffffff;
     }
     .pip-btn.hangup {
-      background: #ef4444;
+      background: #da373c;
       color: #ffffff;
     }
     .pip-btn.hangup:hover {
-      background: #dc2626;
+      background: #b82e34;
     }
     .pip-btn.expand {
-      background: #3b82f6;
-      color: #ffffff;
+      background: rgba(88, 101, 242, 0.2);
+      color: #5865f2;
     }
     .pip-btn.expand:hover {
-      background: #2563eb;
+      background: #5865f2;
+      color: #ffffff;
     }
 
     /* 画面PINロックオーバーレイ (#105) */

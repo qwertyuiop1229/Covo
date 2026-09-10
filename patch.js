@@ -227,46 +227,61 @@ function applyReplacement(originalContent, searchText, replaceText) {
     };
   }
 
-  // Level 2: 行シーケンス照合（インデント・クォート・末尾セミコロン柔軟吸収）
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
   const origLines = origLF.split('\n');
   const searchLines = searchLF.split('\n');
   const replaceLines = replaceLF.split('\n');
 
-  const sCount = searchLines.length;
-  if (sCount === 0) {
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+
+  if (sValid.length === 0) {
     return { success: false, reason: '検索コードが空です。' };
   }
 
-  const searchNorm = searchLines.map(l => normalizeLine(l));
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
   const matchedRanges = [];
 
-  for (let startI = 0; startI <= origLines.length - sCount; startI++) {
-    let match = true;
-    for (let offset = 0; offset < sCount; offset++) {
-      const oLine = origLines[startI + offset];
-      const sLine = searchLines[offset];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
 
-      if (!oLine.trim() && !sLine.trim()) continue;
-      if (!oLine.trim() || !sLine.trim()) {
-        match = false;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
         break;
       }
-
-      if (normalizeLine(oLine) !== searchNorm[offset]) {
-        match = false;
-        break;
-      }
+      sIdx++;
+      curOrigI++;
     }
-    if (match) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: startI + sCount - 1 });
+
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
     }
   }
 
   if (matchedRanges.length === 1) {
     const { startOrigLine, endOrigLine } = matchedRanges[0];
     const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const firstSearchIndentLen = (searchLines[0].match(/^\s*/) || [''])[0].length;
-
     const adjustedReplace = replaceLines.map(line => {
       if (!line.trim()) return '';
       const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
@@ -282,11 +297,10 @@ function applyReplacement(originalContent, searchText, replaceText) {
 
     const newLF = newLines.join('\n');
     const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-
     return {
       success: true,
       content: finalContent,
-      mode: 'Level 2 行シーケンス照合 (改行・インデント完全吸収)',
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
       lineNo: startOrigLine + 1
     };
   } else if (matchedRanges.length > 1) {

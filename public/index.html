@@ -32,14 +32,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.148" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.149" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.148" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.149" />
 
+  <!-- Agora RTC Web SDK (v4.22.2) -->
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <!-- Panzoom (画像拡大用) -->
@@ -2977,7 +2979,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.148"></script>
+  <script type="module" src="js/main.js?v=1.1.149"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3109,75 +3111,116 @@
       <button class="" onclick="toggleDevConsole()" style="padding:5px 10px;background:#374151;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;">閉じる</button>
     </div>
     <div id="devConsoleBody" style="flex:1;overflow-y:auto;padding:8px 10px;font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;"></div>
-  </div>
-
-  <!-- 通話オーバーレイ -->
-  <div id="callOverlay">
-    <!-- 着信ビュー -->
-    <div id="callIncomingView" style="display:none">
-      <div class="call-status-label">着信中</div>
-      <div class="call-avatar-wrap">
-        <div class="call-avatar-ring"></div>
-        <div class="call-avatar-ring"></div>
-        <div class="call-avatar-ring"></div>
-        <div class="call-avatar" id="callIncomingAvatar"></div>
-      </div>
-      <div class="call-name" id="callIncomingName"></div>
-      <div class="call-btn-row">
-        <div class="call-btn-col">
-          <button class="call-btn-circle decline" onclick="declineCall()"><i class="fas fa-phone-slash"></i></button>
-          <span class="call-btn-label">拒否</span>
+    </div>
+    <!-- Discord 完全準拠 通話UI (Agora SD-RTN™ 音声通話システム) -->
+    <!-- 1. 着信ダイアログ (Discord 本家風 着信ポップアップカード) -->
+  <div id="discordCallIncomingModal" class="fixed inset-0 z-[100002] modal-overlay items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);">
+    <div class="bg-[#2b2d31] text-gray-200 rounded-3xl shadow-2xl p-6 max-w-sm w-full border border-white/10 flex flex-col items-center text-center animate-pop-in">
+      <div class="relative mb-4">
+        <div class="w-24 h-24 rounded-full bg-[#1e1f22] border-4 border-[#23a55a] flex items-center justify-center text-3xl font-bold shadow-xl overflow-hidden" id="discordIncomingAvatar">
+          U
         </div>
-        <div class="call-btn-col">
-          <button class="call-btn-circle accept" onclick="acceptCall()"><i class="fas fa-phone"></i></button>
-          <span class="call-btn-label">応答</span>
+        <div class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#23a55a] text-white flex items-center justify-center text-xs shadow-md border-2 border-[#2b2d31] animate-bounce">
+          <i class="fas fa-phone"></i>
+        </div>
+      </div>
+      <div class="text-xs font-extrabold text-[#23a55a] tracking-wider uppercase mb-1">音声着信中...</div>
+      <div class="text-xl font-black text-white truncate max-w-full mb-1" id="discordIncomingName">ユーザー</div>
+      <p class="text-xs text-gray-400 mb-6" id="discordIncomingChannel">ダイレクト通話</p>
+      
+      <div class="flex items-center justify-center gap-6 w-full">
+        <div class="flex flex-col items-center gap-1.5">
+          <button type="button" onclick="declineCall()" class="w-14 h-14 rounded-full bg-[#da373c] hover:bg-[#c02e34] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg transition-all cursor-pointer" title="拒否">
+            <i class="fas fa-phone-slash"></i>
+          </button>
+          <span class="text-[11px] font-bold text-gray-400">拒否</span>
+        </div>
+        <div class="flex flex-col items-center gap-1.5">
+          <button type="button" onclick="acceptCall()" class="w-14 h-14 rounded-full bg-[#23a55a] hover:bg-[#1f934f] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg shadow-[#23a55a]/30 transition-all cursor-pointer animate-pulse" title="応答">
+            <i class="fas fa-phone"></i>
+          </button>
+          <span class="text-[11px] font-bold text-gray-400">応答</span>
         </div>
       </div>
     </div>
-    <!-- 発信・通話中ビュー -->
-    <div id="callActiveView" style="display:none; position: relative;">
-      <!-- 最小化ボタン (PiPモードへ移行) (#71) -->
-      <button type="button" class="absolute top-4 right-4 sm:top-6 sm:right-6 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer text-sm" onclick="minimizeCallOverlay()" title="最小化してチャットを見る">
-        <i class="fas fa-compress-alt"></i>
+  </div>
+
+  <!-- 2. Discord 本家完全準拠 フルスクリーン通話画面 (#callOverlay) -->
+  <div id="callOverlay" class="select-none">
+    <!-- 最上部ヘッダーバー -->
+    <div class="discord-call-header">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="flex items-center gap-2 text-sm font-bold text-gray-200 truncate">
+          <i class="fas fa-hashtag text-indigo-400 text-xs" id="discordCallHeaderIcon"></i>
+          <span id="discordCallHeaderTitle" class="truncate">音声通話</span>
+        </div>
+        <div class="discord-rtc-badge" id="discordCallRtcStatus">
+          <span class="rtc-signal-icon"><i class="fas fa-signal"></i></span>
+          <span id="discordCallRtcText">RTC 接続完了</span>
+          <span class="discord-call-timer" id="callTimerDisplay">00:00</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" class="discord-call-top-btn" onclick="toggleCallFullscreen()" title="全画面表示切替">
+          <i class="fas fa-expand" id="callFullscreenIcon"></i>
+        </button>
+        <button type="button" class="discord-call-top-btn" onclick="minimizeCallOverlay()" title="チャットに戻る (通話を最小化)">
+          <i class="fas fa-compress-alt"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 参加者グリッドエリア -->
+    <div class="discord-call-grid-wrap">
+      <div id="discordCallGrid" class="discord-call-grid">
+        <!-- 参加者タイルがJSで動的に配置されます -->
+      </div>
+    </div>
+
+    <!-- 下部フローティング コントロールバー (Discord 本家デザイン) -->
+    <div class="discord-call-control-bar">
+      <button type="button" id="callVideoBtn" class="discord-control-btn" onclick="toggleCallVideo()" title="カメラ (ビデオ)">
+        <i class="fas fa-video"></i>
       </button>
-      <div class="call-status-label" id="callStatusLabel">発信中</div>
-      <div class="call-avatar-wrap">
-        <div class="call-avatar" id="callActiveAvatar"></div>
-      </div>
-      <canvas id="voiceWaveform" width="200" height="40" style="margin-top: 15px; display: none;"></canvas>
-      <div class="call-name" id="callActiveName"></div>
-      <div id="callConnectionType" style="display:none"></div>
-      <div class="call-timer" id="callTimerDisplay" style="display:none">00:00</div>
-      <div class="call-timer" id="callTimeoutDisplay" style="color:rgba(255,255,255,0.4);font-size:0.82rem;">30秒後に自動終了</div>
-      <div class="call-btn-row">
-        <div class="call-btn-col">
-          <button class="call-btn-circle mute" id="muteButton" onclick="toggleMute()"><i class="fas fa-microphone"></i></button>
-          <span class="call-btn-label" id="muteLabel">ミュート</span>
-        </div>
-        <div class="call-btn-col">
-          <button class="call-btn-circle hangup" onclick="endCall(false)"><i class="fas fa-phone-slash"></i></button>
-          <span class="call-btn-label">終了</span>
-        </div>
-      </div>
+      <button type="button" id="callScreenBtn" class="discord-control-btn" onclick="toggleCallScreenShare()" title="画面を共有">
+        <i class="fas fa-desktop"></i>
+      </button>
+      <button type="button" id="callMuteBtn" class="discord-control-btn" onclick="toggleMute()" title="マイクミュート切替">
+        <i class="fas fa-microphone" id="callMuteIcon"></i>
+      </button>
+      <button type="button" id="callDeviceSettingsBtn" class="discord-control-btn" onclick="toggleCallDeviceMenu(event)" title="音声・デバイス設定">
+        <i class="fas fa-cog"></i>
+      </button>
+      <button type="button" id="callHangupBtn" class="discord-control-btn hangup-btn" onclick="endCall(false)" title="切断">
+        <i class="fas fa-phone-slash"></i>
+      </button>
     </div>
   </div>
 
-  <!-- 通話中ピクチャーインピクチャー (PiP) ミニバー (#71) -->
-  <div id="callPipBar" onclick="restoreCallOverlay()">
-    <div class="pip-avatar" id="callPipAvatar"></div>
+  <!-- 3. Discord 本家完全準拠 通話中ピクチャー・イン・ピクチャー (PiP ミニバー) -->
+  <div id="callPipBar" onclick="restoreCallOverlay()" title="クリックして通話画面に戻る">
+    <div class="discord-pip-indicator">
+      <span class="pip-pulse-dot"></span>
+      <i class="fas fa-signal text-[#23a55a] text-xs"></i>
+    </div>
+    <div class="pip-avatar-wrap">
+      <div class="pip-avatar" id="callPipAvatar">U</div>
+    </div>
     <div class="pip-info">
-      <span class="pip-name" id="callPipName">通話中</span>
+      <span class="pip-name truncate" id="callPipName">音声通話中</span>
       <span class="pip-timer" id="callPipTimer">00:00</span>
     </div>
-    <button type="button" class="pip-btn mute" id="callPipMuteBtn" onclick="event.stopPropagation(); toggleMute();" title="マイク切替">
-      <i class="fas fa-microphone"></i>
-    </button>
-    <button type="button" class="pip-btn hangup" onclick="event.stopPropagation(); endCall(false);" title="通話を終了">
-      <i class="fas fa-phone-slash"></i>
-    </button>
-    <button type="button" class="pip-btn expand" onclick="event.stopPropagation(); restoreCallOverlay();" title="通話画面を最大化">
-      <i class="fas fa-expand-alt"></i>
-    </button>
+    <div class="pip-actions" onclick="event.stopPropagation()">
+      <button type="button" class="pip-btn mute" id="callPipMuteBtn" onclick="toggleMute()" title="マイク切替">
+        <i class="fas fa-microphone"></i>
+      </button>
+      <button type="button" class="pip-btn hangup" onclick="endCall(false)" title="切断">
+        <i class="fas fa-phone-slash"></i>
+      </button>
+      <button type="button" class="pip-btn expand" onclick="restoreCallOverlay()" title="最大化">
+        <i class="fas fa-expand-alt"></i>
+      </button>
+    </div>
   </div>
 
   <!-- 離席時の画面PINロックオーバーレイ (#105) -->

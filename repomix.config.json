@@ -3,7 +3,7 @@
     "filePath": "repomix-output.xml",
     "style": "xml",
     "removeComments": false,
-    "removeEmptyLines": false,
+    "removeEmptyLines": true,
     "showLineNumbers": false,
     "copyToClipboard": false
   },
@@ -14,17 +14,15 @@
     "customPatterns": [
       "repomix-output.xml",
       "repomix.config.json",
-
       "package-lock.json",
       "yarn.lock",
 
       ".patch_backup/",
       "scratch/",
-      "tools/backups/",
-      "tools/logs/",
-      "tools/snippets/",
+      "tools/",
 
       "node_modules/",
+      "server/node_modules/",
 
       "public/assets/",
       "public/covo-stamps/",
@@ -33,8 +31,15 @@
       "public/img/",
 
       "public/js/geoguessr_locations.js",
-
       "public/css/font-awesome.min.css",
+      "public/css/styles.css",
+
+      "public/404.html",
+      "public/.repomixignore",
+
+      "scripts/migrate_firestore_to_rtdb.js",
+      "scripts/cleanup_webrtc*.js",
+      "scripts/generate_geoguessr_data.py",
 
       "*.png",
       "*.jpg",
@@ -49,11 +54,10 @@
       "dist/",
       "build/",
       ".wrangler/",
+      "server/.wrangler/",
       ".firebase/",
 
-      "src-tauri/",
-      "server/",
-      "tests/"
+      "src-tauri/target/"
     ]
   },
   "security": {
