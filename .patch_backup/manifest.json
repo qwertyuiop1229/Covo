@@ -1,8 +1,6 @@
 {
-  "date": "2026-09-10T12:50:09.185Z",
+  "date": "2026-09-10T12:58:31.823Z",
   "files": [
-    "public/js/main.js",
-    "public/css/modules/chat.css",
-    "server/wrangler.toml"
+    "public/js/main.js"
   ]
 }

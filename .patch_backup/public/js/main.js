@@ -624,6 +624,15 @@ function openChatBackupViewerModal(...args) { return window.openChatBackupViewer
 function updateForceOverrideUI(...args) { return window.updateForceOverrideUI ? window.updateForceOverrideUI(...args) : null; }
 function updateMetaThemeColor(...args) { return window.updateMetaThemeColor ? window.updateMetaThemeColor(...args) : null; }
 function showEmergencyRecoveryPanel(...args) { return window.showEmergencyRecoveryPanel ? window.showEmergencyRecoveryPanel(...args) : null; }
+function toggleMute(...args) { return window.toggleMute ? window.toggleMute(...args) : null; }
+function startCall(...args) { return window.startCall ? window.startCall(...args) : null; }
+function acceptCall(...args) { return window.acceptCall ? window.acceptCall(...args) : null; }
+function declineCall(...args) { return window.declineCall ? window.declineCall(...args) : null; }
+function endCall(...args) { return window.endCall ? window.endCall(...args) : null; }
+function openCallPicker(...args) { return window.openCallPicker ? window.openCallPicker(...args) : null; }
+function closeCallPicker(...args) { return window.closeCallPicker ? window.closeCallPicker(...args) : null; }
+function minimizeCallOverlay(...args) { return window.minimizeCallOverlay ? window.minimizeCallOverlay(...args) : null; }
+function restoreCallOverlay(...args) { return window.restoreCallOverlay ? window.restoreCallOverlay(...args) : null; }
 function toggleCamera(...args) { return window.toggleCamera ? window.toggleCamera(...args) : null; }
 function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
 function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
@@ -5977,7 +5986,7 @@ if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
 
 // タブ閉じ・ページ離脱時の確実なオフライン化 & 通話クリーンアップ (#57)
 const handlePageClose = (e) => {
-  if (typeof _callId !== 'undefined' && _callId) {
+  if ((typeof _callId !== 'undefined' && _callId) || (typeof _agoraClient !== 'undefined' && _agoraClient)) {
     try { endCall(false); } catch (_) {}
   }
   // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
@@ -6113,12 +6122,12 @@ window.declineCall = declineCall;
 window.endCall = endCall;
 window.toggleMute = toggleMute;
 window.toggleCamera = toggleCamera;
-window.toggleCallVideo = toggleCamera;
+window.toggleCallVideo = toggleCallVideo;
 window.toggleScreenShare = toggleScreenShare;
-window.toggleCallScreenShare = toggleScreenShare;
+window.toggleCallScreenShare = toggleCallScreenShare;
 window.toggleCallFullscreen = toggleCallFullscreen;
 window.toggleCallDeviceMenu = toggleCallDeviceMenu;
-window.openDeviceSettingsModal = toggleCallDeviceMenu;
+window.openDeviceSettingsModal = openDeviceSettingsModal;
 window.minimizeCallOverlay = minimizeCallOverlay;
 window.restoreCallOverlay = restoreCallOverlay;
 
@@ -16549,7 +16558,7 @@ function hideCallOverlay() {
   if (devMenu) devMenu.classList.remove('show');
 }
 
-window.minimizeCallOverlay = function () {
+function minimizeCallOverlay() {
   const overlay = document.getElementById('callOverlay');
   const pipBar = document.getElementById('callPipBar');
   if (!overlay || !pipBar) return;
@@ -16558,7 +16567,6 @@ window.minimizeCallOverlay = function () {
     overlay.classList.remove('show', 'hide');
     overlay.style.display = 'none';
   }, 200);
-
   const pipAvatar = document.getElementById('callPipAvatar');
   const pipName = document.getElementById('callPipName');
   if (_activeCallTarget) {
@@ -16568,9 +16576,10 @@ window.minimizeCallOverlay = function () {
     if (pipName) pipName.textContent = '通話中';
   }
   pipBar.classList.add('active');
-};
+}
+window.minimizeCallOverlay = minimizeCallOverlay;
 
-window.restoreCallOverlay = function () {
+function restoreCallOverlay() {
   const overlay = document.getElementById('callOverlay');
   const pipBar = document.getElementById('callPipBar');
   if (pipBar) pipBar.classList.remove('active');
@@ -16579,7 +16588,8 @@ window.restoreCallOverlay = function () {
     overlay.classList.add('show');
     overlay.style.display = 'flex';
   }
-};
+}
+window.restoreCallOverlay = restoreCallOverlay;
 
 function startCallTimer() {
   stopCallTimer();
@@ -18036,8 +18046,19 @@ function renderParticipantTiles() {
   });
   // 相手（リモート参加者）
   if (_activeCallTarget) {
-    const remoteUid = _activeCallTarget.uid;
-    const remoteUser = _remoteUsers.get(remoteUid);
+    const remoteUid = String(_activeCallTarget.uid);
+    let remoteUser = _remoteUsers.get(remoteUid);
+    if (!remoteUser) {
+      for (const [k, v] of _remoteUsers.entries()) {
+        if (String(k) === remoteUid) {
+          remoteUser = v;
+          break;
+        }
+      }
+    }
+    if (!remoteUser && _remoteUsers.size > 0) {
+      remoteUser = _remoteUsers.values().next().value;
+    }
     const hasRemoteVideo = Boolean(remoteUser?.hasVideo && remoteUser?.videoTrack);
     participants.push({
       uid: remoteUid,
@@ -18094,7 +18115,7 @@ function renderParticipantTiles() {
   });
 }
 
-window.toggleMute = async function () {
+async function toggleMute() {
   if (!_localAudioTrack) return;
   _isAudioMuted = !_isAudioMuted;
   await _localAudioTrack.setEnabled(!_isAudioMuted);
@@ -18125,9 +18146,10 @@ window.toggleMute = async function () {
     }
     if (localMuteBadge) localMuteBadge.classList.add("hidden");
   }
-};
+}
+window.toggleMute = toggleMute;
 
-window.toggleCamera = async function () {
+async function toggleCamera() {
   if (!_agoraClient) return;
   const camBtn = document.getElementById("callVideoBtn") || document.getElementById("callCameraBtn");
   try {
@@ -18172,9 +18194,10 @@ window.toggleCamera = async function () {
     alertMessage("カメラの起動に失敗しました", "error");
   }
 };
-window.toggleCallVideo = window.toggleCamera;
+window.toggleCamera = toggleCamera;
+window.toggleCallVideo = toggleCamera;
 
-window.toggleScreenShare = async function () {
+async function toggleScreenShare() {
   if (!_agoraClient) return;
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
   try {
@@ -18223,10 +18246,11 @@ window.toggleScreenShare = async function () {
       alertMessage("画面共有を開始できませんでした", "error");
     }
   }
-};
-window.toggleCallScreenShare = window.toggleScreenShare;
+}
+window.toggleScreenShare = toggleScreenShare;
+window.toggleCallScreenShare = toggleScreenShare;
 
-window.toggleCallFullscreen = function () {
+function toggleCallFullscreen() {
   const overlay = document.getElementById("callOverlay");
   const icon = document.getElementById("callFullscreenIcon");
   if (!document.fullscreenElement) {
@@ -18238,7 +18262,9 @@ window.toggleCallFullscreen = function () {
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     if (icon) icon.className = "fas fa-expand text-xs";
   }
-};
+}
+window.toggleCallFullscreen = toggleCallFullscreen;
+
 document.addEventListener("fullscreenchange", () => {
   const icon = document.getElementById("callFullscreenIcon");
   if (icon) {
@@ -18246,7 +18272,7 @@ document.addEventListener("fullscreenchange", () => {
   }
 });
 
-window.toggleCallDeviceMenu = async function (e) {
+async function toggleCallDeviceMenu(e) {
   if (e && e.stopPropagation) e.stopPropagation();
   let menu = document.getElementById("callDeviceMenu");
   if (!menu) {
@@ -18254,19 +18280,16 @@ window.toggleCallDeviceMenu = async function (e) {
     menu.id = "callDeviceMenu";
     menu.className = "discord-device-menu";
     document.body.appendChild(menu);
-
     document.addEventListener("click", (ev) => {
       if (menu && !menu.contains(ev.target) && ev.target.id !== "callDeviceSettingsBtn" && !ev.target.closest("#callDeviceSettingsBtn")) {
         menu.classList.remove("show");
       }
     });
   }
-
   if (menu.classList.contains("show")) {
     menu.classList.remove("show");
     return;
   }
-
   menu.innerHTML = '<div class="p-3 text-xs text-gray-400 text-center"><i class="fas fa-spinner fa-spin mr-1"></i>デバイス一覧を取得中...</div>';
   const triggerBtn = document.getElementById("callDeviceSettingsBtn");
   if (triggerBtn) {
@@ -18276,11 +18299,10 @@ window.toggleCallDeviceMenu = async function (e) {
     menu.style.left = `${Math.max(12, Math.min(window.innerWidth - 270, r.left - 100))}px`;
   }
   menu.classList.add("show");
-
   try {
     const mics = await AgoraRTC.getMicrophones();
     const cams = await AgoraRTC.getCameras();
-
+    const speakers = (AgoraRTC.getPlaybackDevices ? await AgoraRTC.getPlaybackDevices() : []);
     menu.innerHTML = `
       <div class="p-3.5 space-y-3 text-xs text-gray-200">
         <div>
@@ -18295,9 +18317,16 @@ window.toggleCallDeviceMenu = async function (e) {
             ${cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'カメラ')}</option>`).join('')}
           </select>
         </div>
+        ${speakers.length > 0 ? `
+        <div>
+          <label class="block font-bold text-gray-400 mb-1"><i class="fas fa-volume-high mr-1 text-blue-400"></i>出力デバイス (スピーカー)</label>
+          <select id="callSpeakerSelect" class="w-full bg-[#1e1f22] border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
+            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || 'スピーカー')}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
       </div>
     `;
-
     const micSel = document.getElementById("callMicSelect");
     if (micSel) {
       micSel.onchange = async () => {
@@ -18307,7 +18336,6 @@ window.toggleCallDeviceMenu = async function (e) {
         }
       };
     }
-
     const camSel = document.getElementById("callCamSelect");
     if (camSel) {
       camSel.onchange = async () => {
@@ -18317,11 +18345,26 @@ window.toggleCallDeviceMenu = async function (e) {
         }
       };
     }
+    const spkSel = document.getElementById("callSpeakerSelect");
+    if (spkSel) {
+      spkSel.onchange = async () => {
+        const devId = spkSel.value;
+        if (devId) {
+          _remoteUsers.forEach(u => {
+            if (u.audioTrack?.setPlaybackDevice) {
+              u.audioTrack.setPlaybackDevice(devId).catch(() => {});
+            }
+          });
+          alertMessage("スピーカーを切り替えました", "success");
+        }
+      };
+    }
   } catch (err) {
     menu.innerHTML = `<div class="p-3 text-xs text-rose-400">デバイス取得エラー: ${escapeHtml(err.message || String(err))}</div>`;
   }
-};
-window.openDeviceSettingsModal = window.toggleCallDeviceMenu;
+}
+window.toggleCallDeviceMenu = toggleCallDeviceMenu;
+window.openDeviceSettingsModal = toggleCallDeviceMenu;
 
 async function endCall(skipFirestore, reason) {
   const overlay = document.getElementById('callOverlay');
