@@ -625,15 +625,15 @@ function updateForceOverrideUI(...args) { return window.updateForceOverrideUI ? 
 function updateMetaThemeColor(...args) { return window.updateMetaThemeColor ? window.updateMetaThemeColor(...args) : null; }
 function showEmergencyRecoveryPanel(...args) { return window.showEmergencyRecoveryPanel ? window.showEmergencyRecoveryPanel(...args) : null; }
 function toggleMute(...args) { return window.toggleMute ? window.toggleMute(...args) : null; }
-function startCall(...args) { return window.startCall ? window.startCall(...args) : null; }
-function acceptCall(...args) { return window.acceptCall ? window.acceptCall(...args) : null; }
-function declineCall(...args) { return window.declineCall ? window.declineCall(...args) : null; }
-function endCall(...args) { return window.endCall ? window.endCall(...args) : null; }
-function openCallPicker(...args) { return window.openCallPicker ? window.openCallPicker(...args) : null; }
-function closeCallPicker(...args) { return window.closeCallPicker ? window.closeCallPicker(...args) : null; }
+function toggleCamera(...args) { return window.toggleCamera ? window.toggleCamera(...args) : null; }
+function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
+function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
+function toggleCallScreenShare(...args) { return window.toggleCallScreenShare ? window.toggleCallScreenShare(...args) : (window.toggleScreenShare ? window.toggleScreenShare(...args) : null); }
+function toggleCallFullscreen(...args) { return window.toggleCallFullscreen ? window.toggleCallFullscreen(...args) : null; }
+function toggleCallDeviceMenu(...args) { return window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null; }
+function openDeviceSettingsModal(...args) { return window.openDeviceSettingsModal ? window.openDeviceSettingsModal(...args) : (window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null); }
 function minimizeCallOverlay(...args) { return window.minimizeCallOverlay ? window.minimizeCallOverlay(...args) : null; }
 function restoreCallOverlay(...args) { return window.restoreCallOverlay ? window.restoreCallOverlay(...args) : null; }
-function toggleCamera(...args) { return window.toggleCamera ? window.toggleCamera(...args) : null; }
 function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
 function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
 function toggleCallScreenShare(...args) { return window.toggleCallScreenShare ? window.toggleCallScreenShare(...args) : (window.toggleScreenShare ? window.toggleScreenShare(...args) : null); }
@@ -16558,7 +16558,7 @@ function hideCallOverlay() {
   if (devMenu) devMenu.classList.remove('show');
 }
 
-function minimizeCallOverlay() {
+window.minimizeCallOverlay = function () {
   const overlay = document.getElementById('callOverlay');
   const pipBar = document.getElementById('callPipBar');
   if (!overlay || !pipBar) return;
@@ -16576,10 +16576,9 @@ function minimizeCallOverlay() {
     if (pipName) pipName.textContent = '通話中';
   }
   pipBar.classList.add('active');
-}
-window.minimizeCallOverlay = minimizeCallOverlay;
+};
 
-function restoreCallOverlay() {
+window.restoreCallOverlay = function () {
   const overlay = document.getElementById('callOverlay');
   const pipBar = document.getElementById('callPipBar');
   if (pipBar) pipBar.classList.remove('active');
@@ -16588,8 +16587,7 @@ function restoreCallOverlay() {
     overlay.classList.add('show');
     overlay.style.display = 'flex';
   }
-}
-window.restoreCallOverlay = restoreCallOverlay;
+};
 
 function startCallTimer() {
   stopCallTimer();
@@ -18115,7 +18113,7 @@ function renderParticipantTiles() {
   });
 }
 
-async function toggleMute() {
+window.toggleMute = async function () {
   if (!_localAudioTrack) return;
   _isAudioMuted = !_isAudioMuted;
   await _localAudioTrack.setEnabled(!_isAudioMuted);
@@ -18146,10 +18144,9 @@ async function toggleMute() {
     }
     if (localMuteBadge) localMuteBadge.classList.add("hidden");
   }
-}
-window.toggleMute = toggleMute;
+};
 
-async function toggleCamera() {
+window.toggleCamera = async function () {
   if (!_agoraClient) return;
   const camBtn = document.getElementById("callVideoBtn") || document.getElementById("callCameraBtn");
   try {

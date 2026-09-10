@@ -599,39 +599,6 @@ CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
 CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
 </file>
 
-<file path="server/wrangler.toml">
-name = "simplechat-api"
-main = "src/index.js"
-compatibility_date = "2024-04-28"
-
-[[kv_namespaces]]
-binding = "FILES"
-id = "cb436609107e4f9e9aca4610dd4e100a"
-
-[vars]
-# Firebase REST API
-FIREBASE_API_KEY = "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY"
-FIREBASE_PROJECT_ID = "simplechat-65a0d"
-FIREBASE_APP_ID = "simplechat-65a0d" # Firestoreの /artifacts/{appId} で使用する値
-CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
-
-# --- 以下の変数はシークレットとして設定する必要があります ---
-# wrangler secret put FIREBASE_API_KEY
-# wrangler secret put WORKER_AUTH_EMAIL
-# wrangler secret put WORKER_AUTH_PASSWORD
-# wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
-# wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
-
-# [dev]
-# ローカル開発用のポート
-# port = 8787
-
-[[d1_databases]]
-binding = "DB"
-database_name = "covo-db"
-database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
-</file>
-
 <file path="src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml">
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -5109,6 +5076,41 @@ database_name = "covo-db"
 database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </file>
 </files>
+</file>
+
+<file path="server/wrangler.toml">
+name = "simplechat-api"
+main = "src/index.js"
+compatibility_date = "2024-04-28"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "cb436609107e4f9e9aca4610dd4e100a"
+
+[vars]
+# Firebase REST API
+FIREBASE_API_KEY = "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY"
+FIREBASE_PROJECT_ID = "simplechat-65a0d"
+FIREBASE_APP_ID = "simplechat-65a0d" # Firestoreの /artifacts/{appId} で使用する値
+CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
+
+# --- 以下の変数はシークレットとして設定する必要があります ---
+# wrangler secret put FIREBASE_API_KEY
+# wrangler secret put WORKER_AUTH_EMAIL
+# wrangler secret put WORKER_AUTH_PASSWORD
+# wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
+# wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
+# wrangler secret put AGORA_APP_ID           (Agora SD-RTN 音声通話トークン生成に必要)
+# wrangler secret put AGORA_PRIMARY_CERTIFICATE (Agora SD-RTN 音声通話トークン生成に必要)
+
+# [dev]
+# ローカル開発用のポート
+# port = 8787
+
+[[d1_databases]]
+binding = "DB"
+database_name = "covo-db"
+database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </file>
 
 <file path="tests/security.test.js">
@@ -10998,1116 +11000,6 @@ run();
     }
 </file>
 
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (動画・音声は100MB、その他ファイルは50MB) (#60)
-  const isVideoOrAudio = file.type && (file.type.startsWith('video/') || file.type.startsWith('audio/'));
-  const MAX_FILE_SIZE = isVideoOrAudio ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    const limitMb = isVideoOrAudio ? 100 : 50;
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限${limitMb}MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
-<file path="public/js/geo_study.js">
-// geo_study.js - 隠し機能の制御スクリプト
-document.addEventListener('DOMContentLoaded', () => {
-  setupHiddenTrigger();
-});
-function setupHiddenTrigger() {
-  const pcTarget = document.getElementById('appInfoVersion');
-  const mobileTarget = document.getElementById('mobileAppInfoVersion');
-  const targets = [];
-  if (pcTarget) targets.push(pcTarget);
-  if (mobileTarget) targets.push(mobileTarget);
-  if (targets.length === 0) return;
-  let pressTimer = null;
-  const triggerDuration = 3000; // 3 seconds
-  let startX = 0;
-  let startY = 0;
-  const startPress = (e) => {
-    if (e.type === 'mousedown' && e.button !== 0) return;
-    if (e.touches && e.touches.length > 0) {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-    }
-    if (pressTimer) clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => {
-      openGeoStudy();
-    }, triggerDuration);
-  };
-  const cancelPress = () => {
-    if (pressTimer) {
-      clearTimeout(pressTimer);
-      pressTimer = null;
-    }
-  };
-  const movePress = (e) => {
-    if (!pressTimer) return;
-    if (e.touches && e.touches.length > 0) {
-      const dx = Math.abs(e.touches[0].clientX - startX);
-      const dy = Math.abs(e.touches[0].clientY - startY);
-      if (dx > 10 || dy > 10) cancelPress();
-    }
-  };
-  targets.forEach(target => {
-    target.addEventListener('mousedown', startPress);
-    target.addEventListener('touchstart', startPress, {passive: true});
-    target.addEventListener('mouseup', cancelPress);
-    target.addEventListener('mouseleave', cancelPress);
-    target.addEventListener('touchend', cancelPress);
-    target.addEventListener('touchcancel', cancelPress);
-    target.addEventListener('touchmove', movePress, {passive: true});
-    // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
-    target.style.webkitUserSelect = 'none';
-    target.style.userSelect = 'none';
-    target.style.webkitTouchCallout = 'none';
-    target.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-    });
-  });
-}
-let isGeoStudyInitialized = false;
-let leafletMap = null;
-let leafletMarker = null;
-let currentAnswerLatLng = null;
-let currentRoundId = 0;
-let gameLayers = null;
-let isGuessed = false;
-let currentDistanceKm = 0;
-let currentLocationData = null;
-function openGeoStudy() {
-  const container = document.getElementById('geoStudyContainer');
-  if (!container) return;
-  // モーダル等が重ならないように最高前面へ
-  container.classList.remove('hidden');
-  container.style.display = 'flex';
-  // 起動時アニメーション
-  container.classList.add('gs-fade-in');
-  setTimeout(() => container.classList.remove('gs-fade-in'), 500);
-  if (!isGeoStudyInitialized) {
-    buildGeoStudyUI(container);
-    loadDependencies().then(() => {
-      startNewLocation();
-    });
-    isGeoStudyInitialized = true;
-  } else {
-    // 既に初期化されている場合、前回回答済み状態なら自動で新規ゲームを開始
-    if (isGuessed || !currentAnswerLatLng) {
-      startNewLocation();
-    } else if (leafletMap) {
-      setTimeout(() => {
-        if (leafletMap) leafletMap.invalidateSize();
-      }, 100);
-    }
-  }
-}
-function closeGeoStudy() {
-  const container = document.getElementById('geoStudyContainer');
-  if (container) {
-    container.classList.add('hidden');
-    container.style.display = 'none';
-    // ウィンドウを閉じたときにリセット
-    closeResultOverlay();
-    const postBar = document.getElementById('gs-post-guess-bar');
-    if (postBar) postBar.classList.add('hidden');
-    // 回答済みだった場合は、次回開いたときに前の線やピンが残らないようにクリーンアップ
-    if (isGuessed) {
-      clearGameMapLayers();
-      isGuessed = false;
-    }
-  }
-}
-function buildGeoStudyUI(container) {
-  container.innerHTML = `
-    <div class="flex justify-between items-center p-4 bg-gray-900 border-b border-gray-800 shrink-0">
-      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>げっさー</div>
-      <button onclick="closeGeoStudy()" class="text-gray-400 hover:text-white p-2 transition"><i class="fas fa-times text-xl"></i></button>
-    </div>
-    <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-      <!-- 写真表示エリア -->
-      <div id="gs-photo-container" class="absolute inset-0 z-0 gs-swap-transition" onclick="if(isMapFullscreen) toggleMapSwap()">
-        <!-- Panzoom適用要素 -->
-        <div id="gs-photo-panzoom" class="w-full h-full bg-cover bg-center bg-no-repeat" style="transition: opacity 0.3s ease;"></div>
-        <div id="gs-photo-overlay-icon" class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40 hidden cursor-pointer rounded-xl">
-           <i class="fas fa-expand text-white text-3xl"></i>
-        </div>
-      </div>
-      <!-- ローディング -->
-      <div id="gs-loading" class="absolute inset-0 z-[10] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm hidden">
-         <div class="gs-spinner"></div>
-      </div>
-      <!-- コントロールパネル -->
-      <div class="absolute top-4 right-4 z-[999] bg-gray-900/90 backdrop-blur rounded-xl p-3 border border-gray-700 shadow-xl w-48 flex flex-col gap-2">
-        <div class="text-xs text-gray-400 font-bold">モード</div>
-        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
-          <option value="photo">写真から推測</option>
-        </select>
-        <div class="text-xs text-gray-400 font-bold mt-1">難易度</div>
-        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
-          <option value="easy">かんたん（首都など）</option>
-          <option value="normal" selected>ふつう（主要都市）</option>
-          <option value="hard">むずかしい（全地域）</option>
-        </select>
-        <div class="text-xs text-gray-400 mt-1">ヒント</div>
-        <div id="gs-hint-text" class="text-xs text-gray-200 bg-gray-800 p-2 rounded border border-gray-700 max-h-20 overflow-y-auto break-words">読込中...</div>
-        <button onclick="closeResultOverlay(); startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
-      </div>
-      <!-- ミニマップ -->
-      <div id="gs-minimap-container" class="absolute bottom-4 right-4 z-[999] w-48 h-32 md:w-80 md:h-64 rounded-xl border-2 border-gray-600 shadow-2xl overflow-hidden bg-gray-800 flex flex-col group cursor-crosshair gs-swap-transition"
-           onmouseenter="if(!isMapFullscreen) this.classList.add('active-map')" 
-           onmouseleave="this.classList.remove('active-map')">
-        <div id="gs-map" class="flex-1 w-full bg-gray-200" style="min-height: 100px;"></div>
-        <div class="bg-gray-900/95 text-white text-xs p-1.5 flex justify-center items-center shrink-0">
-          <span id="gs-status-text" class="text-gray-300 font-bold text-[10px] md:text-xs text-center w-full">地図をクリックして拡大</span>
-        </div>
-      </div>
-      <!-- 独立した決定ボタン -->
-      <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex justify-center w-full pointer-events-none">
-         <button id="gs-guess-btn" onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] disabled:opacity-0 disabled:translate-y-4 disabled:scale-95 text-lg pointer-events-auto" disabled>決定</button>
-      </div>
-      <!-- 地図確認中の下部コントロールバー -->
-      <div id="gs-post-guess-bar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center justify-center gap-3 w-full pointer-events-none">
-         <button onclick="reopenResultOverlay()" class="bg-gray-800/95 hover:bg-gray-700 text-gray-200 hover:text-white px-6 py-3 rounded-full font-bold transition-all shadow-xl backdrop-blur-sm border border-gray-600 pointer-events-auto text-sm flex items-center gap-2">
-            <i class="fas fa-chart-bar"></i>結果を見る
-         </button>
-         <button onclick="startNewLocation()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] pointer-events-auto text-sm flex items-center gap-2">
-            <i class="fas fa-forward"></i>次の問題へ
-         </button>
-      </div>
-      <!-- 結果表示オーバーレイ (z-indexを1200に引き上げ、背後要素の突き抜けを防止) -->
-      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[1200] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
-         <div class="bg-gray-800 p-8 rounded-3xl border border-gray-700 text-center shadow-2xl max-w-sm w-full">
-            <div class="w-16 h-16 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-400 text-3xl mb-4 border border-blue-500/30">
-                <i class="fas fa-map-marker-alt"></i>
-            </div>
-            <h2 class="text-xl font-bold text-white mb-2">推測結果</h2>
-            <div class="text-5xl font-bold text-blue-400 mb-1"><span id="gs-distance-text">--</span> <span class="text-xl">km</span></div>
-            <div class="text-sm text-gray-400 mb-2">実際の場所との誤差距離</div>
-            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700 select-text">正解: 判定中...</div>
-            <div class="flex gap-3">
-              <button onclick="viewResultOnMap()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm flex items-center justify-center gap-1.5"><i class="fas fa-map"></i>地図を見る</button>
-              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-1.5"><i class="fas fa-play mr-1"></i>次へ</button>
-            </div>
-         </div>
-      </div>
-    </div>
-  `;
-  // スマホでマップ外をタッチしたらマップを縮小する
-  /*
-  container.addEventListener('touchstart', (e) => {
-      const minimap = document.getElementById('gs-minimap-container');
-      if (minimap && !minimap.contains(e.target)) {
-          minimap.classList.remove('active-map');
-      }
-  });
-  */
-}
-let isMapFullscreen = false;
-function toggleMapSwap() {
-  const mapContainer = document.getElementById('gs-minimap-container');
-  const photoContainer = document.getElementById('gs-photo-container');
-  const photoOverlayIcon = document.getElementById('gs-photo-overlay-icon');
-  isMapFullscreen = !isMapFullscreen;
-  if (isMapFullscreen) {
-    mapContainer.classList.add('is-fullscreen');
-    photoContainer.classList.add('is-minimap');
-    photoOverlayIcon.classList.remove('hidden');
-    mapContainer.classList.remove('active-map');
-    document.getElementById('gs-status-text').textContent = "地図をタップしてピンを刺す";
-  } else {
-    mapContainer.classList.remove('is-fullscreen');
-    photoContainer.classList.remove('is-minimap');
-    photoOverlayIcon.classList.add('hidden');
-    document.getElementById('gs-status-text').textContent = "地図をクリックして拡大";
-  }
-  setTimeout(() => {
-    if (leafletMap) leafletMap.invalidateSize();
-  }, 500);
-}
-function loadDependencies() {
-  return new Promise((resolve) => {
-    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
-    if (window.L) {
-      if (!leafletMap) initMap();
-      resolve();
-      return;
-    }
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-    css.crossOrigin = '';
-    document.head.appendChild(css);
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-    script.crossOrigin = '';
-    script.onload = () => {
-      initMap();
-      resolve();
-    };
-    script.onerror = (e) => {
-      console.error("Leaflet load error:", e);
-      showLoading(false);
-      const hint = document.getElementById('gs-hint-text');
-      if (hint) hint.textContent = "地図ライブラリの読み込みに失敗しました。";
-      resolve();
-    };
-    document.head.appendChild(script);
-  });
-}
-let resultLine = null;
-let resultMarker = null;
-// 自前インラインSVGピンアイコン生成（外部画像URL依存・404破損の完全防止）
-function createGuessIcon() {
-  return L.divIcon({
-    className: 'gs-custom-marker-wrapper',
-    html: `
-      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
-        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#3B82F6"/>
-          <circle cx="16" cy="15" r="7" fill="white"/>
-          <circle cx="16" cy="15" r="4" fill="#3B82F6"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 42],
-    iconAnchor: [16, 42],
-    popupAnchor: [0, -38]
-  });
-}
-function createAnswerIcon() {
-  return L.divIcon({
-    className: 'gs-custom-marker-wrapper',
-    html: `
-      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
-        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#EF4444"/>
-          <circle cx="16" cy="15" r="7" fill="white"/>
-          <circle cx="16" cy="15" r="4" fill="#EF4444"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 42],
-    iconAnchor: [16, 42],
-    popupAnchor: [0, -38]
-  });
-}
-// 全ゲームレイヤー（ピン・正解・ライン）の一括完全消去
-function clearGameMapLayers() {
-  if (gameLayers) {
-    try { gameLayers.clearLayers(); } catch (_) {}
-  }
-  if (leafletMap) {
-    if (leafletMarker) {
-      try { leafletMap.removeLayer(leafletMarker); } catch (_) {}
-    }
-    if (resultMarker) {
-      try { leafletMap.removeLayer(resultMarker); } catch (_) {}
-    }
-    if (resultLine) {
-      try { leafletMap.removeLayer(resultLine); } catch (_) {}
-    }
-  }
-  leafletMarker = null;
-  resultMarker = null;
-  resultLine = null;
-}
-function initMap() {
-  const mapEl = document.getElementById('gs-map');
-  if (!mapEl) return;
-  if (leafletMap) {
-    try { leafletMap.remove(); } catch (_) {}
-    leafletMap = null;
-    gameLayers = null;
-  }
-  // Leafletの初期化（世界ループ防止と境界固定）
-  leafletMap = L.map(mapEl, {
-    center: [20, 0],
-    zoom: 2,
-    minZoom: 2,
-    maxZoom: 18,
-    maxBounds: [[-85, -180], [85, 180]],
-    maxBoundsViscosity: 1.0,
-    worldCopyJump: false,
-    zoomControl: false, // UIが狭いので非表示
-    attributionControl: false // UIが狭いので非表示
-  });
-  // 右下に小さく帰属表示
-  L.control.attribution({position: 'bottomleft', prefix: false}).addAttribution('&copy; OSM').addTo(leafletMap);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    minZoom: 2,
-    maxZoom: 19,
-    noWrap: true,
-    bounds: [[-85, -180], [85, 180]]
-  }).addTo(leafletMap);
-  // ゲーム専用レイヤーグループを初期化してマップに追加
-  gameLayers = L.layerGroup().addTo(leafletMap);
-  leafletMap.on('click', (e) => {
-    // 回答済み・結果確認中・地図確認中はピン移動・再推測を不可にする
-    if (isGuessed) return;
-    // 結果表示中は操作不可
-    const resOverlay = document.getElementById('gs-result-overlay');
-    if (resOverlay && !resOverlay.classList.contains('hidden')) return;
-    // 全画面でない場合は、マップを拡大するだけ（ピンは刺さない）
-    if (!isMapFullscreen) {
-        toggleMapSwap();
-        return;
-    }
-    // 既存の推測ピンを削除
-    if (leafletMarker) {
-      if (gameLayers) gameLayers.removeLayer(leafletMarker);
-      else leafletMap.removeLayer(leafletMarker);
-      leafletMarker = null;
-    }
-    const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
-    leafletMarker = L.marker(wrappedLatLng, {
-      icon: createGuessIcon()
-    }).addTo(gameLayers || leafletMap);
-    const guessBtn = document.getElementById('gs-guess-btn');
-    if (guessBtn) {
-      guessBtn.disabled = false;
-      guessBtn.classList.remove('hidden');
-      guessBtn.classList.add('animate-pulse');
-      setTimeout(() => guessBtn.classList.remove('animate-pulse'), 1000);
-    }
-    const statusText = document.getElementById('gs-status-text');
-    if (statusText) {
-      statusText.textContent = "ピンを変更できます（決定ボタンを押して確定）";
-      statusText.classList.add('text-indigo-400');
-    }
-  });
-}
-async function startNewLocation() {
-  currentRoundId++;
-  const thisRound = currentRoundId;
-  isGuessed = false;
-  currentAnswerLatLng = null;
-  currentLocationData = null;
-  currentDistanceKm = 0;
-  showLoading(true);
-  // 前問の画像を直ちに完全消去し、前回の画像が残る不具合を根本防止
-  const panzoomEl = document.getElementById('gs-photo-panzoom');
-  if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
-  const photoContainer = document.getElementById('gs-photo-container');
-  if (photoContainer) {
-    photoContainer.style.opacity = '0';
-    photoContainer.classList.add('loading');
-  }
-  // マップのリセット（全レイヤー完全一括消去）
-  clearGameMapLayers();
-  const postBar = document.getElementById('gs-post-guess-bar');
-  if (postBar) postBar.classList.add('hidden');
-  const guessBtn = document.getElementById('gs-guess-btn');
-  if (guessBtn) {
-    guessBtn.disabled = true;
-    guessBtn.classList.remove('hidden');
-    guessBtn.classList.remove('animate-pulse');
-  }
-  const ansEl = document.getElementById('gs-result-answer');
-  if (ansEl) ansEl.textContent = "正解: 判定中...";
-  const distText = document.getElementById('gs-distance-text');
-  if (distText) distText.textContent = "--";
-  if (isMapFullscreen) {
-      toggleMapSwap();
-  }
-  if (leafletMap) {
-    leafletMap.setView([20, 0], 2);
-    setTimeout(() => {
-      if (leafletMap) leafletMap.invalidateSize();
-    }, 400);
-  }
-  const statusText = document.getElementById('gs-status-text');
-  if (statusText) {
-    statusText.textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
-    statusText.classList.remove('text-indigo-400');
-  }
-  const modeSelect = document.getElementById('gs-mode-select');
-  const mode = modeSelect ? modeSelect.value : 'photo';
-  if (mode === 'photo') {
-    const photoContainer = document.getElementById('gs-photo-container');
-    if (photoContainer) photoContainer.classList.add('loading');
-    await loadNewPhoto(thisRound);
-  }
-  if (thisRound === currentRoundId) {
-      showLoading(false);
-  }
-}
-async function loadNewPhoto(roundId) {
-  try {
-    const difficulty = document.getElementById('gs-difficulty-select') ? document.getElementById('gs-difficulty-select').value : 'easy';
-    let loc = null;
-    let imgUrl = "";
-    // Auto-generated JS からデータを取得
-    let pool = window.EASY_LOCATIONS || [];
-    if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
-    if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
-    // フォールバック（スクリプト未ロード時でも多様に出題）
-    if (!pool || pool.length === 0) {
-        pool = [
-            { name: "エッフェル塔, パリ (フランス)", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
-            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" },
-            { name: "自由の女神像, ニューヨーク (アメリカ)", lat: 40.6892, lng: -74.0445, q: "Statue of Liberty", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Statue_of_Liberty_7.jpg/800px-Statue_of_Liberty_7.jpg" },
-            { name: "コロッセオ, ローマ (イタリア)", lat: 41.8902, lng: 12.4922, q: "Colosseum", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Colosseum_in_Rome-April_2007-1-_copie_2B.jpg/800px-Colosseum_in_Rome-April_2007-1-_copie_2B.jpg" },
-            { name: "タージ・マハル, アーグラ (インド)", lat: 27.1751, lng: 78.0421, q: "Taj Mahal", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Taj_Mahal_%28Edited%29.jpeg/800px-Taj_Mahal_%28Edited%29.jpeg" },
-            { name: "シドニー・オペラハウス, シドニー (オーストラリア)", lat: -33.8568, lng: 151.2153, q: "Sydney Opera House", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Sydney_Opera_House_-_Dec_2008.jpg/800px-Sydney_Opera_House_-_Dec_2008.jpg" },
-            { name: "ギザの大ピラミッド, カイロ (エジプト)", lat: 29.9792, lng: 31.1342, q: "Great Pyramid of Giza", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Kheops-Pyramid.jpg/800px-Kheops-Pyramid.jpg" },
-            { name: "サグラダ・ファミリア, バルセロナ (スペイン)", lat: 41.4036, lng: 2.1744, q: "Sagrada Familia", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ee/Sagrada_Familia_01.jpg/800px-Sagrada_Familia_01.jpg" }
-        ];
-    }
-    // 直近に出題された問題を除外して抽選（2問連続同じ問題の出現を完全防止）
-    window._gsRecentLocationHistory = window._gsRecentLocationHistory || [];
-    let candidatePool = pool.filter(p => !window._gsRecentLocationHistory.includes(p.name));
-    if (candidatePool.length === 0) {
-      window._gsRecentLocationHistory = [];
-      candidatePool = pool;
-    }
-    loc = candidatePool[Math.floor(Math.random() * candidatePool.length)];
-    currentLocationData = loc;
-    window._gsRecentLocationHistory.push(loc.name);
-    const maxHistory = Math.max(1, Math.min(30, Math.floor(pool.length / 2)));
-    if (window._gsRecentLocationHistory.length > maxHistory) {
-      window._gsRecentLocationHistory.shift();
-    }
-    currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
-    imgUrl = loc.imgUrl;
-    if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
-    if (imgUrl && typeof imgUrl === 'string') {
-      const photoEl = document.getElementById('gs-photo-container');
-      const panzoomEl = document.getElementById('gs-photo-panzoom');
-      if (photoEl) photoEl.style.opacity = '0';
-      if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
-      let safeImgUrl = imgUrl.trim();
-      if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
-      if (!safeImgUrl.startsWith("https://")) {
-        showLoading(false);
-        return;
-      }
-      // Special:FilePath 画像の場合はサムネイルパラメータ (?width=1000) を確実に付与・維持（数十MBの巨大原寸大取得によるエラーを防止）
-      if (safeImgUrl.includes("Special:FilePath")) {
-        if (!safeImgUrl.includes("?width=") && !safeImgUrl.includes("&width=")) {
-          safeImgUrl += (safeImgUrl.includes("?") ? "&" : "?") + "width=1000";
-        }
-      }
-      // URLサニタイズ（CSSインジェクション防止）
-      safeImgUrl = encodeURI(decodeURI(safeImgUrl)).replace(/['"()]/g, encodeURIComponent);
-      // Panzoom初期化
-      if (window.Panzoom && panzoomEl) {
-        if (window.geoStudyPanzoom) {
-          try { window.geoStudyPanzoom.destroy(); } catch (_) {}
-          window.geoStudyPanzoom = null;
-        }
-        window.geoStudyPanzoom = Panzoom(panzoomEl, {
-            maxScale: 20,
-            minScale: 1,
-            step: 0.2,
-            contain: 'outside'
-        });
-        const panzoomContainer = panzoomEl.parentElement;
-        if (panzoomContainer) {
-          panzoomContainer.style.touchAction = 'none';
-          panzoomContainer.onwheel = window.geoStudyPanzoom.zoomWithWheel;
-        }
-        let lastTap = 0;
-        const handleDoubleTap = (e) => {
-            if (isMapFullscreen) return; // ミニマップ時は拡大スワップを優先
-            const currentTime = Date.now();
-            const tapLength = currentTime - lastTap;
-            if (tapLength < 350 && tapLength > 0) {
-                e.preventDefault();
-                const currentScale = window.geoStudyPanzoom.getScale();
-                if (currentScale > 1.2) {
-                    window.geoStudyPanzoom.reset();
-                } else {
-                    window.geoStudyPanzoom.zoom(2.5);
-                }
-            }
-            lastTap = currentTime;
-        };
-        panzoomEl.ontouchend = (e) => {
-            if (e.touches && e.touches.length > 0) return;
-            handleDoubleTap(e);
-        };
-        panzoomEl.onclick = (e) => {
-            if (isMapFullscreen) return;
-            handleDoubleTap(e);
-        };
-      }
-      // 画像を完全プリロードしてからフェードイン（黒画面・ちらつき完全防止）
-      const preloader = new Image();
-      preloader.onload = () => {
-        if (roundId !== currentRoundId) return;
-        if (panzoomEl) {
-          panzoomEl.style.backgroundImage = `url("${safeImgUrl}")`;
-        }
-        if (photoEl) {
-          photoEl.style.opacity = 1;
-          photoEl.classList.remove('loading');
-        }
-        if (window.geoStudyPanzoom) {
-          try { window.geoStudyPanzoom.reset(); } catch (_) {}
-        }
-        const hintEl = document.getElementById('gs-hint-text');
-        if (hintEl) hintEl.textContent = "この風景・建造物がある場所を地図から推測してください。";
-        showLoading(false);
-      };
-      preloader.onerror = () => {
-        if (roundId !== currentRoundId) return;
-        if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
-        if (photoEl) {
-          photoEl.style.opacity = '0';
-          photoEl.classList.add('loading');
-        }
-        console.warn("[GeoStudy] Image load failed for:", safeImgUrl, "Auto-skipping to next location...");
-        const hintEl = document.getElementById('gs-hint-text');
-        if (hintEl) hintEl.textContent = "画像を再取得中...";
-        // 前の画像が残ったまま正解の場所だけがズレる不具合を防止するため、自動的に次の候補へ安全にスキップ
-        setTimeout(() => {
-          if (roundId === currentRoundId) {
-            loadNewPhoto(roundId);
-          }
-        }, 150);
-      };
-      preloader.src = safeImgUrl;
-    } else {
-      const hintEl = document.getElementById('gs-hint-text');
-      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
-      showLoading(false);
-    }
-  } catch (e) {
-    console.error("loadNewPhoto error:", e);
-    if (roundId === currentRoundId) {
-      const hintEl = document.getElementById('gs-hint-text');
-      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
-      showLoading(false);
-    }
-  }
-}
-function submitGuess() {
-  if (isGuessed) return; // 二重提出ガード
-  if (!leafletMarker || !currentAnswerLatLng) return;
-  isGuessed = true;
-  // 決定ボタンを無効化＆非表示
-  const guessBtn = document.getElementById('gs-guess-btn');
-  if (guessBtn) {
-    guessBtn.disabled = true;
-    guessBtn.classList.add('hidden');
-  }
-  // もしミニマップ状態なら、結果の全貌が見えるように自動全画面化
-  if (!isMapFullscreen) {
-    toggleMapSwap();
-  }
-  const guessLatLng = leafletMarker.getLatLng().wrap();
-  const answerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng).wrap();
-  // 距離の計算 (Haversine法)
-  const R = 6371; // km
-  let dLngRaw = answerLatLng.lng - guessLatLng.lng;
-  if (dLngRaw > 180) dLngRaw -= 360;
-  else if (dLngRaw < -180) dLngRaw += 360;
-  const dLat = (answerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
-  const dLng = dLngRaw * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(answerLatLng.lat * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distanceKm = Math.round(R * c);
-  currentDistanceKm = distanceKm;
-  // 古い結果オブジェクトがあれば念のため除去
-  if (resultMarker) {
-    if (gameLayers) gameLayers.removeLayer(resultMarker);
-    else if (leafletMap) leafletMap.removeLayer(resultMarker);
-    resultMarker = null;
-  }
-  if (resultLine) {
-    if (gameLayers) gameLayers.removeLayer(resultLine);
-    else if (leafletMap) leafletMap.removeLayer(resultLine);
-    resultLine = null;
-  }
-  // 正解マーカーの描画（自己完結型SVGアイコン）
-  resultMarker = L.marker(answerLatLng, {
-    icon: createAnswerIcon()
-  }).addTo(gameLayers || leafletMap);
-  // 日付変更線（経度180度 / -180度）をまたぐ場合の最短ルート分割描画（地球一周横断線の完全防止）
-  const lngDiff = answerLatLng.lng - guessLatLng.lng;
-  const lineCoords = [];
-  if (Math.abs(lngDiff) > 180) {
-    if (lngDiff > 180) {
-      const adjLng2 = answerLatLng.lng - 360;
-      const t = (-180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
-      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
-      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, -180]]);
-      lineCoords.push([[crossLat, 180], [answerLatLng.lat, answerLatLng.lng]]);
-    } else {
-      const adjLng2 = answerLatLng.lng + 360;
-      const t = (180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
-      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
-      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, 180]]);
-      lineCoords.push([[crossLat, -180], [answerLatLng.lat, answerLatLng.lng]]);
-    }
-  } else {
-    lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [answerLatLng.lat, answerLatLng.lng]]);
-  }
-  resultLine = L.polyline(lineCoords, {
-    color: '#ef4444',
-    weight: 3,
-    opacity: 0.85,
-    dashArray: '8, 8'
-  }).addTo(gameLayers || leafletMap);
-  // 地図のズーム調整
-  if (leafletMap) {
-    if (Math.abs(lngDiff) <= 180) {
-      leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng), {
-        padding: [50, 50],
-        maxZoom: 14
-      });
-    } else {
-      const autoZoom = Math.max(2, Math.min(7, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
-      leafletMap.setView(answerLatLng, autoZoom);
-    }
-  }
-  // 正解名の表示
-  const resultAnswerEl = document.getElementById('gs-result-answer');
-  if (resultAnswerEl && currentLocationData) {
-    resultAnswerEl.textContent = `正解: ${currentLocationData.name}`;
-  }
-  // 数値のアニメーション (0km対応済み)
-  animateValue("gs-distance-text", 0, distanceKm, 1000);
-  const overlay = document.getElementById('gs-result-overlay');
-  if (overlay) overlay.classList.remove('hidden');
-  // マップコンテナのホバーを解除
-  const minimapContainer = document.getElementById('gs-minimap-container');
-  if (minimapContainer) minimapContainer.classList.remove('active-map');
-  const statusText = document.getElementById('gs-status-text');
-  if (statusText) {
-    statusText.textContent = `正解との距離: ${distanceKm.toLocaleString()} km`;
-  }
-}
-function animateValue(id, start, end, duration) {
-    const obj = document.getElementById(id);
-    if (!obj) return;
-    if (start === end) {
-      obj.textContent = end.toLocaleString();
-      return;
-    }
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-        obj.textContent = Math.floor(easeProgress * (end - start) + start).toLocaleString();
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
-        } else {
-            obj.textContent = end.toLocaleString();
-        }
-    };
-    window.requestAnimationFrame(step);
-}
-function closeResultOverlay() {
-  const overlay = document.getElementById('gs-result-overlay');
-  if (overlay) overlay.classList.add('hidden');
-}
-function viewResultOnMap() {
-  closeResultOverlay();
-  const postBar = document.getElementById('gs-post-guess-bar');
-  if (postBar) postBar.classList.remove('hidden');
-  if (!isMapFullscreen) {
-    toggleMapSwap();
-  }
-  const statusText = document.getElementById('gs-status-text');
-  if (statusText) {
-    statusText.textContent = `「次の問題へ」または「結果を見る」を押してください`;
-  }
-}
-function reopenResultOverlay() {
-  const overlay = document.getElementById('gs-result-overlay');
-  if (overlay) overlay.classList.remove('hidden');
-  const postBar = document.getElementById('gs-post-guess-bar');
-  if (postBar) postBar.classList.add('hidden');
-}
-function showLoading(show) {
-  const el = document.getElementById('gs-loading');
-  if (el) {
-    if (show) el.classList.remove('hidden');
-    else el.classList.add('hidden');
-  }
-}
-// キーボード操作サポート (ESC: 閉じる, Enter: 決定/次へ, Space: 地図スワップ)
-document.addEventListener('keydown', (e) => {
-  const container = document.getElementById('geoStudyContainer');
-  if (!container || container.classList.contains('hidden') || container.style.display === 'none') return;
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    closeGeoStudy();
-  } else if (e.key === 'Enter' && !e.shiftKey) {
-    if (e.isComposing || e.keyCode === 229) return;
-    const resultOverlay = document.getElementById('gs-result-overlay');
-    if (resultOverlay && !resultOverlay.classList.contains('hidden')) {
-      e.preventDefault();
-      closeResultOverlay();
-      startNewLocation();
-    } else if (!isGuessed) {
-      const guessBtn = document.getElementById('gs-guess-btn');
-      if (guessBtn && !guessBtn.disabled && !guessBtn.classList.contains('hidden')) {
-        e.preventDefault();
-        submitGuess();
-      }
-    } else {
-      const postBar = document.getElementById('gs-post-guess-bar');
-      if (postBar && !postBar.classList.contains('hidden')) {
-        e.preventDefault();
-        startNewLocation();
-      }
-    }
-  } else if (e.key === ' ' || e.code === 'Space') {
-    const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'BUTTON')) return;
-    e.preventDefault();
-    toggleMapSwap();
-  }
-});
-if (typeof window !== 'undefined') {
-  window.openGeoStudy = openGeoStudy;
-  window.closeGeoStudy = closeGeoStudy;
-  window.toggleMapSwap = toggleMapSwap;
-  window.startNewLocation = startNewLocation;
-  window.submitGuess = submitGuess;
-  window.closeResultOverlay = closeResultOverlay;
-  window.viewResultOnMap = viewResultOnMap;
-  window.reopenResultOverlay = reopenResultOverlay;
-}
-</file>
-
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  switch (event.data.type) {
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
-}
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
-    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
-    if (clientList.length === 0) {
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
-  if (typeof body === 'string') {
-    if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::')) {
-        const senderPart = body.split(': enc::')[0];
-        body = `${senderPart}: 新しいメッセージがあります`;
-      } else {
-        body = '新しいメッセージがあります';
-      }
-    }
-  }
-  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
-    title = 'Covo';
-  }
-  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
-  if (typeof body === 'string') {
-    function _swIsStamp(s) {
-      if (!s || typeof s !== 'string') return false;
-      return s.includes('[STAMP]') || s.includes('/stamps/') ||
-             s.includes('covo:') || s.includes('covonew:') || s.includes('serverstamp:') ||
-             s.startsWith('スタンプ') || s === '🌟 スタンプ';
-    }
-    function _swIsFile(s) {
-      if (!s || typeof s !== 'string') return false;
-      return s.includes('firebase-storage') || s.includes('cloudinary') ||
-             s.includes('r2.cloudflarestorage') || s.includes('/api/file/') ||
-             /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(s);
-    }
-    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
-    const colonIdx = body.indexOf(': ');
-    if (colonIdx !== -1) {
-      const senderPart = body.substring(0, colonIdx);
-      const rest = body.substring(colonIdx + 2);
-      if (_swIsStamp(rest)) {
-        body = `${senderPart}: スタンプ`;
-      } else if (_swIsFile(rest)) {
-        body = `${senderPart}: 📎 添付ファイル`;
-      }
-    } else {
-      if (_swIsStamp(body)) {
-        body = 'スタンプ';
-      } else if (_swIsFile(body)) {
-        body = '📎 添付ファイル';
-      }
-    }
-  }
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-  return self.registration.showNotification(title, notificationOptions);
-});
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
-</file>
-
 <file path="public/css/modules/sidebar.css">
 /* --- メンバーリスト用スタイル (Discord風) --- */
     #membersSidebar {
@@ -13756,6 +12648,1116 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       min-height: 100vh !important;
     }
     /* ----------------------------------- */
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+/**
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (動画・音声は100MB、その他ファイルは50MB) (#60)
+  const isVideoOrAudio = file.type && (file.type.startsWith('video/') || file.type.startsWith('audio/'));
+  const MAX_FILE_SIZE = isVideoOrAudio ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    const limitMb = isVideoOrAudio ? 100 : 50;
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限${limitMb}MB)`, "error");
+    return false;
+  }
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
+<file path="public/js/geo_study.js">
+// geo_study.js - 隠し機能の制御スクリプト
+document.addEventListener('DOMContentLoaded', () => {
+  setupHiddenTrigger();
+});
+function setupHiddenTrigger() {
+  const pcTarget = document.getElementById('appInfoVersion');
+  const mobileTarget = document.getElementById('mobileAppInfoVersion');
+  const targets = [];
+  if (pcTarget) targets.push(pcTarget);
+  if (mobileTarget) targets.push(mobileTarget);
+  if (targets.length === 0) return;
+  let pressTimer = null;
+  const triggerDuration = 3000; // 3 seconds
+  let startX = 0;
+  let startY = 0;
+  const startPress = (e) => {
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    if (e.touches && e.touches.length > 0) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      openGeoStudy();
+    }, triggerDuration);
+  };
+  const cancelPress = () => {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+  };
+  const movePress = (e) => {
+    if (!pressTimer) return;
+    if (e.touches && e.touches.length > 0) {
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > 10 || dy > 10) cancelPress();
+    }
+  };
+  targets.forEach(target => {
+    target.addEventListener('mousedown', startPress);
+    target.addEventListener('touchstart', startPress, {passive: true});
+    target.addEventListener('mouseup', cancelPress);
+    target.addEventListener('mouseleave', cancelPress);
+    target.addEventListener('touchend', cancelPress);
+    target.addEventListener('touchcancel', cancelPress);
+    target.addEventListener('touchmove', movePress, {passive: true});
+    // スマホでの長押しによるテキスト選択やメニュー表示を防ぐ
+    target.style.webkitUserSelect = 'none';
+    target.style.userSelect = 'none';
+    target.style.webkitTouchCallout = 'none';
+    target.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+  });
+}
+let isGeoStudyInitialized = false;
+let leafletMap = null;
+let leafletMarker = null;
+let currentAnswerLatLng = null;
+let currentRoundId = 0;
+let gameLayers = null;
+let isGuessed = false;
+let currentDistanceKm = 0;
+let currentLocationData = null;
+function openGeoStudy() {
+  const container = document.getElementById('geoStudyContainer');
+  if (!container) return;
+  // モーダル等が重ならないように最高前面へ
+  container.classList.remove('hidden');
+  container.style.display = 'flex';
+  // 起動時アニメーション
+  container.classList.add('gs-fade-in');
+  setTimeout(() => container.classList.remove('gs-fade-in'), 500);
+  if (!isGeoStudyInitialized) {
+    buildGeoStudyUI(container);
+    loadDependencies().then(() => {
+      startNewLocation();
+    });
+    isGeoStudyInitialized = true;
+  } else {
+    // 既に初期化されている場合、前回回答済み状態なら自動で新規ゲームを開始
+    if (isGuessed || !currentAnswerLatLng) {
+      startNewLocation();
+    } else if (leafletMap) {
+      setTimeout(() => {
+        if (leafletMap) leafletMap.invalidateSize();
+      }, 100);
+    }
+  }
+}
+function closeGeoStudy() {
+  const container = document.getElementById('geoStudyContainer');
+  if (container) {
+    container.classList.add('hidden');
+    container.style.display = 'none';
+    // ウィンドウを閉じたときにリセット
+    closeResultOverlay();
+    const postBar = document.getElementById('gs-post-guess-bar');
+    if (postBar) postBar.classList.add('hidden');
+    // 回答済みだった場合は、次回開いたときに前の線やピンが残らないようにクリーンアップ
+    if (isGuessed) {
+      clearGameMapLayers();
+      isGuessed = false;
+    }
+  }
+}
+function buildGeoStudyUI(container) {
+  container.innerHTML = `
+    <div class="flex justify-between items-center p-4 bg-gray-900 border-b border-gray-800 shrink-0">
+      <div class="font-bold text-gray-200"><i class="fas fa-globe-americas mr-2"></i>げっさー</div>
+      <button onclick="closeGeoStudy()" class="text-gray-400 hover:text-white p-2 transition"><i class="fas fa-times text-xl"></i></button>
+    </div>
+    <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+      <!-- 写真表示エリア -->
+      <div id="gs-photo-container" class="absolute inset-0 z-0 gs-swap-transition" onclick="if(isMapFullscreen) toggleMapSwap()">
+        <!-- Panzoom適用要素 -->
+        <div id="gs-photo-panzoom" class="w-full h-full bg-cover bg-center bg-no-repeat" style="transition: opacity 0.3s ease;"></div>
+        <div id="gs-photo-overlay-icon" class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40 hidden cursor-pointer rounded-xl">
+           <i class="fas fa-expand text-white text-3xl"></i>
+        </div>
+      </div>
+      <!-- ローディング -->
+      <div id="gs-loading" class="absolute inset-0 z-[10] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm hidden">
+         <div class="gs-spinner"></div>
+      </div>
+      <!-- コントロールパネル -->
+      <div class="absolute top-4 right-4 z-[999] bg-gray-900/90 backdrop-blur rounded-xl p-3 border border-gray-700 shadow-xl w-48 flex flex-col gap-2">
+        <div class="text-xs text-gray-400 font-bold">モード</div>
+        <select id="gs-mode-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="photo">写真から推測</option>
+        </select>
+        <div class="text-xs text-gray-400 font-bold mt-1">難易度</div>
+        <select id="gs-difficulty-select" class="w-full bg-gray-800 text-white rounded p-1.5 text-sm border border-gray-600 focus:outline-none focus:border-blue-500" onchange="closeResultOverlay(); startNewLocation()">
+          <option value="easy">かんたん（首都など）</option>
+          <option value="normal" selected>ふつう（主要都市）</option>
+          <option value="hard">むずかしい（全地域）</option>
+        </select>
+        <div class="text-xs text-gray-400 mt-1">ヒント</div>
+        <div id="gs-hint-text" class="text-xs text-gray-200 bg-gray-800 p-2 rounded border border-gray-700 max-h-20 overflow-y-auto break-words">読込中...</div>
+        <button onclick="closeResultOverlay(); startNewLocation()" class="w-full mt-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-1.5 rounded-lg text-xs transition shadow border border-gray-600"><i class="fas fa-forward mr-1"></i>スキップ</button>
+      </div>
+      <!-- ミニマップ -->
+      <div id="gs-minimap-container" class="absolute bottom-4 right-4 z-[999] w-48 h-32 md:w-80 md:h-64 rounded-xl border-2 border-gray-600 shadow-2xl overflow-hidden bg-gray-800 flex flex-col group cursor-crosshair gs-swap-transition"
+           onmouseenter="if(!isMapFullscreen) this.classList.add('active-map')" 
+           onmouseleave="this.classList.remove('active-map')">
+        <div id="gs-map" class="flex-1 w-full bg-gray-200" style="min-height: 100px;"></div>
+        <div class="bg-gray-900/95 text-white text-xs p-1.5 flex justify-center items-center shrink-0">
+          <span id="gs-status-text" class="text-gray-300 font-bold text-[10px] md:text-xs text-center w-full">地図をクリックして拡大</span>
+        </div>
+      </div>
+      <!-- 独立した決定ボタン -->
+      <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex justify-center w-full pointer-events-none">
+         <button id="gs-guess-btn" onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] disabled:opacity-0 disabled:translate-y-4 disabled:scale-95 text-lg pointer-events-auto" disabled>決定</button>
+      </div>
+      <!-- 地図確認中の下部コントロールバー -->
+      <div id="gs-post-guess-bar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center justify-center gap-3 w-full pointer-events-none">
+         <button onclick="reopenResultOverlay()" class="bg-gray-800/95 hover:bg-gray-700 text-gray-200 hover:text-white px-6 py-3 rounded-full font-bold transition-all shadow-xl backdrop-blur-sm border border-gray-600 pointer-events-auto text-sm flex items-center gap-2">
+            <i class="fas fa-chart-bar"></i>結果を見る
+         </button>
+         <button onclick="startNewLocation()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-full font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.5)] pointer-events-auto text-sm flex items-center gap-2">
+            <i class="fas fa-forward"></i>次の問題へ
+         </button>
+      </div>
+      <!-- 結果表示オーバーレイ (z-indexを1200に引き上げ、背後要素の突き抜けを防止) -->
+      <div id="gs-result-overlay" class="hidden absolute inset-0 z-[1200] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4">
+         <div class="bg-gray-800 p-8 rounded-3xl border border-gray-700 text-center shadow-2xl max-w-sm w-full">
+            <div class="w-16 h-16 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-400 text-3xl mb-4 border border-blue-500/30">
+                <i class="fas fa-map-marker-alt"></i>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-2">推測結果</h2>
+            <div class="text-5xl font-bold text-blue-400 mb-1"><span id="gs-distance-text">--</span> <span class="text-xl">km</span></div>
+            <div class="text-sm text-gray-400 mb-2">実際の場所との誤差距離</div>
+            <div id="gs-result-answer" class="text-sm font-bold text-gray-200 bg-gray-900 p-3 rounded-xl mb-6 mt-4 border border-gray-700 select-text">正解: 判定中...</div>
+            <div class="flex gap-3">
+              <button onclick="viewResultOnMap()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition text-sm flex items-center justify-center gap-1.5"><i class="fas fa-map"></i>地図を見る</button>
+              <button onclick="event.stopPropagation(); closeResultOverlay(); startNewLocation();" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-1.5"><i class="fas fa-play mr-1"></i>次へ</button>
+            </div>
+         </div>
+      </div>
+    </div>
+  `;
+  // スマホでマップ外をタッチしたらマップを縮小する
+  /*
+  container.addEventListener('touchstart', (e) => {
+      const minimap = document.getElementById('gs-minimap-container');
+      if (minimap && !minimap.contains(e.target)) {
+          minimap.classList.remove('active-map');
+      }
+  });
+  */
+}
+let isMapFullscreen = false;
+function toggleMapSwap() {
+  const mapContainer = document.getElementById('gs-minimap-container');
+  const photoContainer = document.getElementById('gs-photo-container');
+  const photoOverlayIcon = document.getElementById('gs-photo-overlay-icon');
+  isMapFullscreen = !isMapFullscreen;
+  if (isMapFullscreen) {
+    mapContainer.classList.add('is-fullscreen');
+    photoContainer.classList.add('is-minimap');
+    photoOverlayIcon.classList.remove('hidden');
+    mapContainer.classList.remove('active-map');
+    document.getElementById('gs-status-text').textContent = "地図をタップしてピンを刺す";
+  } else {
+    mapContainer.classList.remove('is-fullscreen');
+    photoContainer.classList.remove('is-minimap');
+    photoOverlayIcon.classList.add('hidden');
+    document.getElementById('gs-status-text').textContent = "地図をクリックして拡大";
+  }
+  setTimeout(() => {
+    if (leafletMap) leafletMap.invalidateSize();
+  }, 500);
+}
+function loadDependencies() {
+  return new Promise((resolve) => {
+    // 既に読み込み済みの場合はマップ初期化を確認してスキップ
+    if (window.L) {
+      if (!leafletMap) initMap();
+      resolve();
+      return;
+    }
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+    css.crossOrigin = '';
+    document.head.appendChild(css);
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+    script.crossOrigin = '';
+    script.onload = () => {
+      initMap();
+      resolve();
+    };
+    script.onerror = (e) => {
+      console.error("Leaflet load error:", e);
+      showLoading(false);
+      const hint = document.getElementById('gs-hint-text');
+      if (hint) hint.textContent = "地図ライブラリの読み込みに失敗しました。";
+      resolve();
+    };
+    document.head.appendChild(script);
+  });
+}
+let resultLine = null;
+let resultMarker = null;
+// 自前インラインSVGピンアイコン生成（外部画像URL依存・404破損の完全防止）
+function createGuessIcon() {
+  return L.divIcon({
+    className: 'gs-custom-marker-wrapper',
+    html: `
+      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
+        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#3B82F6"/>
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <circle cx="16" cy="15" r="4" fill="#3B82F6"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38]
+  });
+}
+function createAnswerIcon() {
+  return L.divIcon({
+    className: 'gs-custom-marker-wrapper',
+    html: `
+      <div style="position: relative; width: 32px; height: 42px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
+        <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#EF4444"/>
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <circle cx="16" cy="15" r="4" fill="#EF4444"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38]
+  });
+}
+// 全ゲームレイヤー（ピン・正解・ライン）の一括完全消去
+function clearGameMapLayers() {
+  if (gameLayers) {
+    try { gameLayers.clearLayers(); } catch (_) {}
+  }
+  if (leafletMap) {
+    if (leafletMarker) {
+      try { leafletMap.removeLayer(leafletMarker); } catch (_) {}
+    }
+    if (resultMarker) {
+      try { leafletMap.removeLayer(resultMarker); } catch (_) {}
+    }
+    if (resultLine) {
+      try { leafletMap.removeLayer(resultLine); } catch (_) {}
+    }
+  }
+  leafletMarker = null;
+  resultMarker = null;
+  resultLine = null;
+}
+function initMap() {
+  const mapEl = document.getElementById('gs-map');
+  if (!mapEl) return;
+  if (leafletMap) {
+    try { leafletMap.remove(); } catch (_) {}
+    leafletMap = null;
+    gameLayers = null;
+  }
+  // Leafletの初期化（世界ループ防止と境界固定）
+  leafletMap = L.map(mapEl, {
+    center: [20, 0],
+    zoom: 2,
+    minZoom: 2,
+    maxZoom: 18,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 1.0,
+    worldCopyJump: false,
+    zoomControl: false, // UIが狭いので非表示
+    attributionControl: false // UIが狭いので非表示
+  });
+  // 右下に小さく帰属表示
+  L.control.attribution({position: 'bottomleft', prefix: false}).addAttribution('&copy; OSM').addTo(leafletMap);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    minZoom: 2,
+    maxZoom: 19,
+    noWrap: true,
+    bounds: [[-85, -180], [85, 180]]
+  }).addTo(leafletMap);
+  // ゲーム専用レイヤーグループを初期化してマップに追加
+  gameLayers = L.layerGroup().addTo(leafletMap);
+  leafletMap.on('click', (e) => {
+    // 回答済み・結果確認中・地図確認中はピン移動・再推測を不可にする
+    if (isGuessed) return;
+    // 結果表示中は操作不可
+    const resOverlay = document.getElementById('gs-result-overlay');
+    if (resOverlay && !resOverlay.classList.contains('hidden')) return;
+    // 全画面でない場合は、マップを拡大するだけ（ピンは刺さない）
+    if (!isMapFullscreen) {
+        toggleMapSwap();
+        return;
+    }
+    // 既存の推測ピンを削除
+    if (leafletMarker) {
+      if (gameLayers) gameLayers.removeLayer(leafletMarker);
+      else leafletMap.removeLayer(leafletMarker);
+      leafletMarker = null;
+    }
+    const wrappedLatLng = e.latlng.wrap(); // 経度を -180〜180 に丸める
+    leafletMarker = L.marker(wrappedLatLng, {
+      icon: createGuessIcon()
+    }).addTo(gameLayers || leafletMap);
+    const guessBtn = document.getElementById('gs-guess-btn');
+    if (guessBtn) {
+      guessBtn.disabled = false;
+      guessBtn.classList.remove('hidden');
+      guessBtn.classList.add('animate-pulse');
+      setTimeout(() => guessBtn.classList.remove('animate-pulse'), 1000);
+    }
+    const statusText = document.getElementById('gs-status-text');
+    if (statusText) {
+      statusText.textContent = "ピンを変更できます（決定ボタンを押して確定）";
+      statusText.classList.add('text-indigo-400');
+    }
+  });
+}
+async function startNewLocation() {
+  currentRoundId++;
+  const thisRound = currentRoundId;
+  isGuessed = false;
+  currentAnswerLatLng = null;
+  currentLocationData = null;
+  currentDistanceKm = 0;
+  showLoading(true);
+  // 前問の画像を直ちに完全消去し、前回の画像が残る不具合を根本防止
+  const panzoomEl = document.getElementById('gs-photo-panzoom');
+  if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
+  const photoContainer = document.getElementById('gs-photo-container');
+  if (photoContainer) {
+    photoContainer.style.opacity = '0';
+    photoContainer.classList.add('loading');
+  }
+  // マップのリセット（全レイヤー完全一括消去）
+  clearGameMapLayers();
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.add('hidden');
+  const guessBtn = document.getElementById('gs-guess-btn');
+  if (guessBtn) {
+    guessBtn.disabled = true;
+    guessBtn.classList.remove('hidden');
+    guessBtn.classList.remove('animate-pulse');
+  }
+  const ansEl = document.getElementById('gs-result-answer');
+  if (ansEl) ansEl.textContent = "正解: 判定中...";
+  const distText = document.getElementById('gs-distance-text');
+  if (distText) distText.textContent = "--";
+  if (isMapFullscreen) {
+      toggleMapSwap();
+  }
+  if (leafletMap) {
+    leafletMap.setView([20, 0], 2);
+    setTimeout(() => {
+      if (leafletMap) leafletMap.invalidateSize();
+    }, 400);
+  }
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = isMapFullscreen ? "地図をタップしてピンを刺す" : "地図をクリックして拡大";
+    statusText.classList.remove('text-indigo-400');
+  }
+  const modeSelect = document.getElementById('gs-mode-select');
+  const mode = modeSelect ? modeSelect.value : 'photo';
+  if (mode === 'photo') {
+    const photoContainer = document.getElementById('gs-photo-container');
+    if (photoContainer) photoContainer.classList.add('loading');
+    await loadNewPhoto(thisRound);
+  }
+  if (thisRound === currentRoundId) {
+      showLoading(false);
+  }
+}
+async function loadNewPhoto(roundId) {
+  try {
+    const difficulty = document.getElementById('gs-difficulty-select') ? document.getElementById('gs-difficulty-select').value : 'easy';
+    let loc = null;
+    let imgUrl = "";
+    // Auto-generated JS からデータを取得
+    let pool = window.EASY_LOCATIONS || [];
+    if (difficulty === 'normal') pool = window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
+    if (difficulty === 'hard') pool = window.HARD_LOCATIONS || window.NORMAL_LOCATIONS || window.EASY_LOCATIONS || [];
+    // フォールバック（スクリプト未ロード時でも多様に出題）
+    if (!pool || pool.length === 0) {
+        pool = [
+            { name: "エッフェル塔, パリ (フランス)", lat: 48.8584, lng: 2.2945, q: "Eiffel Tower", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons.jpg/800px-Tour_Eiffel_Wikimedia_Commons.jpg" },
+            { name: "富士山, 日本", lat: 35.3606, lng: 138.7274, q: "Mount Fuji", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/080103_hakkai_fuji.jpg/800px-080103_hakkai_fuji.jpg" },
+            { name: "自由の女神像, ニューヨーク (アメリカ)", lat: 40.6892, lng: -74.0445, q: "Statue of Liberty", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Statue_of_Liberty_7.jpg/800px-Statue_of_Liberty_7.jpg" },
+            { name: "コロッセオ, ローマ (イタリア)", lat: 41.8902, lng: 12.4922, q: "Colosseum", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Colosseum_in_Rome-April_2007-1-_copie_2B.jpg/800px-Colosseum_in_Rome-April_2007-1-_copie_2B.jpg" },
+            { name: "タージ・マハル, アーグラ (インド)", lat: 27.1751, lng: 78.0421, q: "Taj Mahal", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Taj_Mahal_%28Edited%29.jpeg/800px-Taj_Mahal_%28Edited%29.jpeg" },
+            { name: "シドニー・オペラハウス, シドニー (オーストラリア)", lat: -33.8568, lng: 151.2153, q: "Sydney Opera House", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Sydney_Opera_House_-_Dec_2008.jpg/800px-Sydney_Opera_House_-_Dec_2008.jpg" },
+            { name: "ギザの大ピラミッド, カイロ (エジプト)", lat: 29.9792, lng: 31.1342, q: "Great Pyramid of Giza", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Kheops-Pyramid.jpg/800px-Kheops-Pyramid.jpg" },
+            { name: "サグラダ・ファミリア, バルセロナ (スペイン)", lat: 41.4036, lng: 2.1744, q: "Sagrada Familia", imgUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ee/Sagrada_Familia_01.jpg/800px-Sagrada_Familia_01.jpg" }
+        ];
+    }
+    // 直近に出題された問題を除外して抽選（2問連続同じ問題の出現を完全防止）
+    window._gsRecentLocationHistory = window._gsRecentLocationHistory || [];
+    let candidatePool = pool.filter(p => !window._gsRecentLocationHistory.includes(p.name));
+    if (candidatePool.length === 0) {
+      window._gsRecentLocationHistory = [];
+      candidatePool = pool;
+    }
+    loc = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    currentLocationData = loc;
+    window._gsRecentLocationHistory.push(loc.name);
+    const maxHistory = Math.max(1, Math.min(30, Math.floor(pool.length / 2)));
+    if (window._gsRecentLocationHistory.length > maxHistory) {
+      window._gsRecentLocationHistory.shift();
+    }
+    currentAnswerLatLng = L.latLng(loc.lat, loc.lng);
+    imgUrl = loc.imgUrl;
+    if (roundId !== currentRoundId) return; // 非同期処理中にスキップされた場合は中断
+    if (imgUrl && typeof imgUrl === 'string') {
+      const photoEl = document.getElementById('gs-photo-container');
+      const panzoomEl = document.getElementById('gs-photo-panzoom');
+      if (photoEl) photoEl.style.opacity = '0';
+      if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
+      let safeImgUrl = imgUrl.trim();
+      if (safeImgUrl.startsWith("http://")) safeImgUrl = "https://" + safeImgUrl.substring(7);
+      if (!safeImgUrl.startsWith("https://")) {
+        showLoading(false);
+        return;
+      }
+      // Special:FilePath 画像の場合はサムネイルパラメータ (?width=1000) を確実に付与・維持（数十MBの巨大原寸大取得によるエラーを防止）
+      if (safeImgUrl.includes("Special:FilePath")) {
+        if (!safeImgUrl.includes("?width=") && !safeImgUrl.includes("&width=")) {
+          safeImgUrl += (safeImgUrl.includes("?") ? "&" : "?") + "width=1000";
+        }
+      }
+      // URLサニタイズ（CSSインジェクション防止）
+      safeImgUrl = encodeURI(decodeURI(safeImgUrl)).replace(/['"()]/g, encodeURIComponent);
+      // Panzoom初期化
+      if (window.Panzoom && panzoomEl) {
+        if (window.geoStudyPanzoom) {
+          try { window.geoStudyPanzoom.destroy(); } catch (_) {}
+          window.geoStudyPanzoom = null;
+        }
+        window.geoStudyPanzoom = Panzoom(panzoomEl, {
+            maxScale: 20,
+            minScale: 1,
+            step: 0.2,
+            contain: 'outside'
+        });
+        const panzoomContainer = panzoomEl.parentElement;
+        if (panzoomContainer) {
+          panzoomContainer.style.touchAction = 'none';
+          panzoomContainer.onwheel = window.geoStudyPanzoom.zoomWithWheel;
+        }
+        let lastTap = 0;
+        const handleDoubleTap = (e) => {
+            if (isMapFullscreen) return; // ミニマップ時は拡大スワップを優先
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < 350 && tapLength > 0) {
+                e.preventDefault();
+                const currentScale = window.geoStudyPanzoom.getScale();
+                if (currentScale > 1.2) {
+                    window.geoStudyPanzoom.reset();
+                } else {
+                    window.geoStudyPanzoom.zoom(2.5);
+                }
+            }
+            lastTap = currentTime;
+        };
+        panzoomEl.ontouchend = (e) => {
+            if (e.touches && e.touches.length > 0) return;
+            handleDoubleTap(e);
+        };
+        panzoomEl.onclick = (e) => {
+            if (isMapFullscreen) return;
+            handleDoubleTap(e);
+        };
+      }
+      // 画像を完全プリロードしてからフェードイン（黒画面・ちらつき完全防止）
+      const preloader = new Image();
+      preloader.onload = () => {
+        if (roundId !== currentRoundId) return;
+        if (panzoomEl) {
+          panzoomEl.style.backgroundImage = `url("${safeImgUrl}")`;
+        }
+        if (photoEl) {
+          photoEl.style.opacity = 1;
+          photoEl.classList.remove('loading');
+        }
+        if (window.geoStudyPanzoom) {
+          try { window.geoStudyPanzoom.reset(); } catch (_) {}
+        }
+        const hintEl = document.getElementById('gs-hint-text');
+        if (hintEl) hintEl.textContent = "この風景・建造物がある場所を地図から推測してください。";
+        showLoading(false);
+      };
+      preloader.onerror = () => {
+        if (roundId !== currentRoundId) return;
+        if (panzoomEl) panzoomEl.style.backgroundImage = 'none';
+        if (photoEl) {
+          photoEl.style.opacity = '0';
+          photoEl.classList.add('loading');
+        }
+        console.warn("[GeoStudy] Image load failed for:", safeImgUrl, "Auto-skipping to next location...");
+        const hintEl = document.getElementById('gs-hint-text');
+        if (hintEl) hintEl.textContent = "画像を再取得中...";
+        // 前の画像が残ったまま正解の場所だけがズレる不具合を防止するため、自動的に次の候補へ安全にスキップ
+        setTimeout(() => {
+          if (roundId === currentRoundId) {
+            loadNewPhoto(roundId);
+          }
+        }, 150);
+      };
+      preloader.src = safeImgUrl;
+    } else {
+      const hintEl = document.getElementById('gs-hint-text');
+      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
+      showLoading(false);
+    }
+  } catch (e) {
+    console.error("loadNewPhoto error:", e);
+    if (roundId === currentRoundId) {
+      const hintEl = document.getElementById('gs-hint-text');
+      if (hintEl) hintEl.textContent = "画像の取得に失敗しました。スキップしてください。";
+      showLoading(false);
+    }
+  }
+}
+function submitGuess() {
+  if (isGuessed) return; // 二重提出ガード
+  if (!leafletMarker || !currentAnswerLatLng) return;
+  isGuessed = true;
+  // 決定ボタンを無効化＆非表示
+  const guessBtn = document.getElementById('gs-guess-btn');
+  if (guessBtn) {
+    guessBtn.disabled = true;
+    guessBtn.classList.add('hidden');
+  }
+  // もしミニマップ状態なら、結果の全貌が見えるように自動全画面化
+  if (!isMapFullscreen) {
+    toggleMapSwap();
+  }
+  const guessLatLng = leafletMarker.getLatLng().wrap();
+  const answerLatLng = L.latLng(currentAnswerLatLng.lat, currentAnswerLatLng.lng).wrap();
+  // 距離の計算 (Haversine法)
+  const R = 6371; // km
+  let dLngRaw = answerLatLng.lng - guessLatLng.lng;
+  if (dLngRaw > 180) dLngRaw -= 360;
+  else if (dLngRaw < -180) dLngRaw += 360;
+  const dLat = (answerLatLng.lat - guessLatLng.lat) * Math.PI / 180;
+  const dLng = dLngRaw * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(guessLatLng.lat * Math.PI / 180) * Math.cos(answerLatLng.lat * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distanceKm = Math.round(R * c);
+  currentDistanceKm = distanceKm;
+  // 古い結果オブジェクトがあれば念のため除去
+  if (resultMarker) {
+    if (gameLayers) gameLayers.removeLayer(resultMarker);
+    else if (leafletMap) leafletMap.removeLayer(resultMarker);
+    resultMarker = null;
+  }
+  if (resultLine) {
+    if (gameLayers) gameLayers.removeLayer(resultLine);
+    else if (leafletMap) leafletMap.removeLayer(resultLine);
+    resultLine = null;
+  }
+  // 正解マーカーの描画（自己完結型SVGアイコン）
+  resultMarker = L.marker(answerLatLng, {
+    icon: createAnswerIcon()
+  }).addTo(gameLayers || leafletMap);
+  // 日付変更線（経度180度 / -180度）をまたぐ場合の最短ルート分割描画（地球一周横断線の完全防止）
+  const lngDiff = answerLatLng.lng - guessLatLng.lng;
+  const lineCoords = [];
+  if (Math.abs(lngDiff) > 180) {
+    if (lngDiff > 180) {
+      const adjLng2 = answerLatLng.lng - 360;
+      const t = (-180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, -180]]);
+      lineCoords.push([[crossLat, 180], [answerLatLng.lat, answerLatLng.lng]]);
+    } else {
+      const adjLng2 = answerLatLng.lng + 360;
+      const t = (180 - guessLatLng.lng) / (adjLng2 - guessLatLng.lng);
+      const crossLat = guessLatLng.lat + t * (answerLatLng.lat - guessLatLng.lat);
+      lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [crossLat, 180]]);
+      lineCoords.push([[crossLat, -180], [answerLatLng.lat, answerLatLng.lng]]);
+    }
+  } else {
+    lineCoords.push([[guessLatLng.lat, guessLatLng.lng], [answerLatLng.lat, answerLatLng.lng]]);
+  }
+  resultLine = L.polyline(lineCoords, {
+    color: '#ef4444',
+    weight: 3,
+    opacity: 0.85,
+    dashArray: '8, 8'
+  }).addTo(gameLayers || leafletMap);
+  // 地図のズーム調整
+  if (leafletMap) {
+    if (Math.abs(lngDiff) <= 180) {
+      leafletMap.fitBounds(L.latLngBounds(guessLatLng, answerLatLng), {
+        padding: [50, 50],
+        maxZoom: 14
+      });
+    } else {
+      const autoZoom = Math.max(2, Math.min(7, Math.round(14.5 - Math.log2(Math.max(50, distanceKm)))));
+      leafletMap.setView(answerLatLng, autoZoom);
+    }
+  }
+  // 正解名の表示
+  const resultAnswerEl = document.getElementById('gs-result-answer');
+  if (resultAnswerEl && currentLocationData) {
+    resultAnswerEl.textContent = `正解: ${currentLocationData.name}`;
+  }
+  // 数値のアニメーション (0km対応済み)
+  animateValue("gs-distance-text", 0, distanceKm, 1000);
+  const overlay = document.getElementById('gs-result-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  // マップコンテナのホバーを解除
+  const minimapContainer = document.getElementById('gs-minimap-container');
+  if (minimapContainer) minimapContainer.classList.remove('active-map');
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = `正解との距離: ${distanceKm.toLocaleString()} km`;
+  }
+}
+function animateValue(id, start, end, duration) {
+    const obj = document.getElementById(id);
+    if (!obj) return;
+    if (start === end) {
+      obj.textContent = end.toLocaleString();
+      return;
+    }
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+        obj.textContent = Math.floor(easeProgress * (end - start) + start).toLocaleString();
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        } else {
+            obj.textContent = end.toLocaleString();
+        }
+    };
+    window.requestAnimationFrame(step);
+}
+function closeResultOverlay() {
+  const overlay = document.getElementById('gs-result-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+function viewResultOnMap() {
+  closeResultOverlay();
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.remove('hidden');
+  if (!isMapFullscreen) {
+    toggleMapSwap();
+  }
+  const statusText = document.getElementById('gs-status-text');
+  if (statusText) {
+    statusText.textContent = `「次の問題へ」または「結果を見る」を押してください`;
+  }
+}
+function reopenResultOverlay() {
+  const overlay = document.getElementById('gs-result-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  const postBar = document.getElementById('gs-post-guess-bar');
+  if (postBar) postBar.classList.add('hidden');
+}
+function showLoading(show) {
+  const el = document.getElementById('gs-loading');
+  if (el) {
+    if (show) el.classList.remove('hidden');
+    else el.classList.add('hidden');
+  }
+}
+// キーボード操作サポート (ESC: 閉じる, Enter: 決定/次へ, Space: 地図スワップ)
+document.addEventListener('keydown', (e) => {
+  const container = document.getElementById('geoStudyContainer');
+  if (!container || container.classList.contains('hidden') || container.style.display === 'none') return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeGeoStudy();
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.isComposing || e.keyCode === 229) return;
+    const resultOverlay = document.getElementById('gs-result-overlay');
+    if (resultOverlay && !resultOverlay.classList.contains('hidden')) {
+      e.preventDefault();
+      closeResultOverlay();
+      startNewLocation();
+    } else if (!isGuessed) {
+      const guessBtn = document.getElementById('gs-guess-btn');
+      if (guessBtn && !guessBtn.disabled && !guessBtn.classList.contains('hidden')) {
+        e.preventDefault();
+        submitGuess();
+      }
+    } else {
+      const postBar = document.getElementById('gs-post-guess-bar');
+      if (postBar && !postBar.classList.contains('hidden')) {
+        e.preventDefault();
+        startNewLocation();
+      }
+    }
+  } else if (e.key === ' ' || e.code === 'Space') {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'BUTTON')) return;
+    e.preventDefault();
+    toggleMapSwap();
+  }
+});
+if (typeof window !== 'undefined') {
+  window.openGeoStudy = openGeoStudy;
+  window.closeGeoStudy = closeGeoStudy;
+  window.toggleMapSwap = toggleMapSwap;
+  window.startNewLocation = startNewLocation;
+  window.submitGuess = submitGuess;
+  window.closeResultOverlay = closeResultOverlay;
+  window.viewResultOnMap = viewResultOnMap;
+  window.reopenResultOverlay = reopenResultOverlay;
+}
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+  switch (event.data.type) {
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
+    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
+    if (clientList.length === 0) {
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::')) {
+        const senderPart = body.split(': enc::')[0];
+        body = `${senderPart}: 新しいメッセージがあります`;
+      } else {
+        body = '新しいメッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
+    title = 'Covo';
+  }
+  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  if (typeof body === 'string') {
+    function _swIsStamp(s) {
+      if (!s || typeof s !== 'string') return false;
+      return s.includes('[STAMP]') || s.includes('/stamps/') ||
+             s.includes('covo:') || s.includes('covonew:') || s.includes('serverstamp:') ||
+             s.startsWith('スタンプ') || s === '🌟 スタンプ';
+    }
+    function _swIsFile(s) {
+      if (!s || typeof s !== 'string') return false;
+      return s.includes('firebase-storage') || s.includes('cloudinary') ||
+             s.includes('r2.cloudflarestorage') || s.includes('/api/file/') ||
+             /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(s);
+    }
+    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      if (_swIsStamp(rest)) {
+        body = `${senderPart}: スタンプ`;
+      } else if (_swIsFile(rest)) {
+        body = `${senderPart}: 📎 添付ファイル`;
+      }
+    } else {
+      if (_swIsStamp(body)) {
+        body = 'スタンプ';
+      } else if (_swIsFile(body)) {
+        body = '📎 添付ファイル';
+      }
+    }
+  }
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+  return self.registration.showNotification(title, notificationOptions);
+});
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -16957,6 +16959,57 @@ pub fn run() {
       from { opacity: 0; transform: scale(0.95) translateY(6px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
+    /* === モバイル (スマホ) 専用 Discord 通話画面 最適化 === */
+    @media (max-width: 768px) {
+      .discord-call-header {
+        height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: var(--safe-top, env(safe-area-inset-top, 0px)) !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+      }
+      .discord-call-header .text-sm {
+        font-size: 0.8rem !important;
+      }
+      .discord-call-grid-wrap {
+        padding: 10px 10px calc(86px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) 10px !important;
+      }
+      .discord-call-grid {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: 1fr 1fr !important;
+        gap: 10px !important;
+        height: 100% !important;
+      }
+      .discord-participant-tile {
+        min-height: 0 !important;
+        max-height: 100% !important;
+        height: 100% !important;
+        border-radius: 16px !important;
+      }
+      .discord-tile-avatar {
+        width: 80px !important;
+        height: 80px !important;
+        font-size: 1.8rem !important;
+      }
+      .discord-call-control-bar {
+        bottom: max(14px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+        padding: 6px 14px !important;
+        gap: 8px !important;
+        width: max-content !important;
+        max-width: calc(100vw - 20px) !important;
+      }
+      .discord-control-btn {
+        width: 44px !important;
+        height: 44px !important;
+        font-size: 16px !important;
+      }
+      #callScreenBtn {
+        display: none !important; /* モバイルでは画面共有を非表示にし、Discord本家同様の4ボタン配置に整理 */
+      }
+      .discord-device-menu {
+        width: calc(100vw - 24px) !important;
+        left: 12px !important;
+      }
+    }
     #callEndedToast {
       position: fixed;
       bottom: max(100px, calc(84px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
@@ -17496,6 +17549,22 @@ pub fn run() {
       cursor: pointer;
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
+    }
+    /* スマホ画面でのPiPミニバー: 入力欄やボタンを隠さないよう画面上部に配置 */
+    @media (max-width: 768px) {
+      #callPipBar {
+        top: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px)) + 8px) !important;
+        bottom: auto !important;
+        left: 10px !important;
+        right: 10px !important;
+        border-radius: 12px !important;
+        padding: 6px 12px !important;
+        gap: 8px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+      }
+      #callPipBar .pip-name {
+        max-width: 100px !important;
+      }
     }
     #callPipBar.active {
       display: flex !important;
@@ -22260,13 +22329,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.150" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.152" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.150" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.152" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
@@ -25013,7 +25082,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.150"></script>
+  <script type="module" src="js/main.js?v=1.1.152"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -26787,7 +26856,16 @@ function openChatBackupViewerModal(...args) { return window.openChatBackupViewer
 function updateForceOverrideUI(...args) { return window.updateForceOverrideUI ? window.updateForceOverrideUI(...args) : null; }
 function updateMetaThemeColor(...args) { return window.updateMetaThemeColor ? window.updateMetaThemeColor(...args) : null; }
 function showEmergencyRecoveryPanel(...args) { return window.showEmergencyRecoveryPanel ? window.showEmergencyRecoveryPanel(...args) : null; }
+function toggleMute(...args) { return window.toggleMute ? window.toggleMute(...args) : null; }
 function toggleCamera(...args) { return window.toggleCamera ? window.toggleCamera(...args) : null; }
+function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
+function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
+function toggleCallScreenShare(...args) { return window.toggleCallScreenShare ? window.toggleCallScreenShare(...args) : (window.toggleScreenShare ? window.toggleScreenShare(...args) : null); }
+function toggleCallFullscreen(...args) { return window.toggleCallFullscreen ? window.toggleCallFullscreen(...args) : null; }
+function toggleCallDeviceMenu(...args) { return window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null; }
+function openDeviceSettingsModal(...args) { return window.openDeviceSettingsModal ? window.openDeviceSettingsModal(...args) : (window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null); }
+function minimizeCallOverlay(...args) { return window.minimizeCallOverlay ? window.minimizeCallOverlay(...args) : null; }
+function restoreCallOverlay(...args) { return window.restoreCallOverlay ? window.restoreCallOverlay(...args) : null; }
 function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
 function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
 function toggleCallScreenShare(...args) { return window.toggleCallScreenShare ? window.toggleCallScreenShare(...args) : (window.toggleScreenShare ? window.toggleScreenShare(...args) : null); }
@@ -31635,7 +31713,7 @@ if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
 }
 // タブ閉じ・ページ離脱時の確実なオフライン化 & 通話クリーンアップ (#57)
 const handlePageClose = (e) => {
-  if (typeof _callId !== 'undefined' && _callId) {
+  if ((typeof _callId !== 'undefined' && _callId) || (typeof _agoraClient !== 'undefined' && _agoraClient)) {
     try { endCall(false); } catch (_) {}
   }
   // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
@@ -31755,12 +31833,12 @@ window.declineCall = declineCall;
 window.endCall = endCall;
 window.toggleMute = toggleMute;
 window.toggleCamera = toggleCamera;
-window.toggleCallVideo = toggleCamera;
+window.toggleCallVideo = toggleCallVideo;
 window.toggleScreenShare = toggleScreenShare;
-window.toggleCallScreenShare = toggleScreenShare;
+window.toggleCallScreenShare = toggleCallScreenShare;
 window.toggleCallFullscreen = toggleCallFullscreen;
 window.toggleCallDeviceMenu = toggleCallDeviceMenu;
-window.openDeviceSettingsModal = toggleCallDeviceMenu;
+window.openDeviceSettingsModal = openDeviceSettingsModal;
 window.minimizeCallOverlay = minimizeCallOverlay;
 window.restoreCallOverlay = restoreCallOverlay;
 function setCallReconnectStatus(isReconnecting) {}
@@ -42483,8 +42561,19 @@ function renderParticipantTiles() {
   });
   // 相手（リモート参加者）
   if (_activeCallTarget) {
-    const remoteUid = _activeCallTarget.uid;
-    const remoteUser = _remoteUsers.get(remoteUid);
+    const remoteUid = String(_activeCallTarget.uid);
+    let remoteUser = _remoteUsers.get(remoteUid);
+    if (!remoteUser) {
+      for (const [k, v] of _remoteUsers.entries()) {
+        if (String(k) === remoteUid) {
+          remoteUser = v;
+          break;
+        }
+      }
+    }
+    if (!remoteUser && _remoteUsers.size > 0) {
+      remoteUser = _remoteUsers.values().next().value;
+    }
     const hasRemoteVideo = Boolean(remoteUser?.hasVideo && remoteUser?.videoTrack);
     participants.push({
       uid: remoteUid,
@@ -42617,8 +42706,9 @@ window.toggleCamera = async function () {
     alertMessage("カメラの起動に失敗しました", "error");
   }
 };
-window.toggleCallVideo = window.toggleCamera;
-window.toggleScreenShare = async function () {
+window.toggleCamera = toggleCamera;
+window.toggleCallVideo = toggleCamera;
+async function toggleScreenShare() {
   if (!_agoraClient) return;
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
   try {
@@ -42667,9 +42757,10 @@ window.toggleScreenShare = async function () {
       alertMessage("画面共有を開始できませんでした", "error");
     }
   }
-};
-window.toggleCallScreenShare = window.toggleScreenShare;
-window.toggleCallFullscreen = function () {
+}
+window.toggleScreenShare = toggleScreenShare;
+window.toggleCallScreenShare = toggleScreenShare;
+function toggleCallFullscreen() {
   const overlay = document.getElementById("callOverlay");
   const icon = document.getElementById("callFullscreenIcon");
   if (!document.fullscreenElement) {
@@ -42681,14 +42772,15 @@ window.toggleCallFullscreen = function () {
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     if (icon) icon.className = "fas fa-expand text-xs";
   }
-};
+}
+window.toggleCallFullscreen = toggleCallFullscreen;
 document.addEventListener("fullscreenchange", () => {
   const icon = document.getElementById("callFullscreenIcon");
   if (icon) {
     icon.className = document.fullscreenElement ? "fas fa-compress text-xs" : "fas fa-expand text-xs";
   }
 });
-window.toggleCallDeviceMenu = async function (e) {
+async function toggleCallDeviceMenu(e) {
   if (e && e.stopPropagation) e.stopPropagation();
   let menu = document.getElementById("callDeviceMenu");
   if (!menu) {
@@ -42718,6 +42810,7 @@ window.toggleCallDeviceMenu = async function (e) {
   try {
     const mics = await AgoraRTC.getMicrophones();
     const cams = await AgoraRTC.getCameras();
+    const speakers = (AgoraRTC.getPlaybackDevices ? await AgoraRTC.getPlaybackDevices() : []);
     menu.innerHTML = `
       <div class="p-3.5 space-y-3 text-xs text-gray-200">
         <div>
@@ -42732,6 +42825,14 @@ window.toggleCallDeviceMenu = async function (e) {
             ${cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'カメラ')}</option>`).join('')}
           </select>
         </div>
+        ${speakers.length > 0 ? `
+        <div>
+          <label class="block font-bold text-gray-400 mb-1"><i class="fas fa-volume-high mr-1 text-blue-400"></i>出力デバイス (スピーカー)</label>
+          <select id="callSpeakerSelect" class="w-full bg-[#1e1f22] border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
+            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || 'スピーカー')}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
       </div>
     `;
     const micSel = document.getElementById("callMicSelect");
@@ -42752,11 +42853,26 @@ window.toggleCallDeviceMenu = async function (e) {
         }
       };
     }
+    const spkSel = document.getElementById("callSpeakerSelect");
+    if (spkSel) {
+      spkSel.onchange = async () => {
+        const devId = spkSel.value;
+        if (devId) {
+          _remoteUsers.forEach(u => {
+            if (u.audioTrack?.setPlaybackDevice) {
+              u.audioTrack.setPlaybackDevice(devId).catch(() => {});
+            }
+          });
+          alertMessage("スピーカーを切り替えました", "success");
+        }
+      };
+    }
   } catch (err) {
     menu.innerHTML = `<div class="p-3 text-xs text-rose-400">デバイス取得エラー: ${escapeHtml(err.message || String(err))}</div>`;
   }
-};
-window.openDeviceSettingsModal = window.toggleCallDeviceMenu;
+}
+window.toggleCallDeviceMenu = toggleCallDeviceMenu;
+window.openDeviceSettingsModal = toggleCallDeviceMenu;
 async function endCall(skipFirestore, reason) {
   const overlay = document.getElementById('callOverlay');
   if (!_callId && !_agoraClient && !(overlay?.classList.contains('show'))) return;
@@ -45896,7 +46012,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.150",
+  "version": "1.1.152",
   "force": false
 }
 </file>
@@ -45905,7 +46021,7 @@ window.saveViewerMessagesAsTxt = function () {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.150",
+  "version": "1.1.152",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
