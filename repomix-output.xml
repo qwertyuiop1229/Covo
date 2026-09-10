@@ -384,6 +384,1748 @@ console.log('');
 }
 </file>
 
+<file path="server/schema.sql">
+-- Cloudflare D1 Schema for Covo (Firestore Migration)
+-- 1. Users & Profiles
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    nickname TEXT,
+    avatar_url TEXT,
+    public_key_jwk TEXT, -- Stored as JSON string
+    fcm_tokens TEXT, -- Stored as JSON array
+    created_at INTEGER, -- Unix timestamp in milliseconds
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_users_app_id ON users(app_id);
+-- 2. User Private Keys
+CREATE TABLE IF NOT EXISTS user_private_keys (
+    user_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    key_type TEXT NOT NULL, -- 'keys' or 'escrowKey'
+    key_data TEXT NOT NULL, -- Stored as JSON string
+    updated_at INTEGER,
+    PRIMARY KEY (user_id, app_id, key_type)
+);
+-- 3. User Read States (Per user, per room read states)
+CREATE TABLE IF NOT EXISTS user_read_states (
+    user_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    room_id TEXT NOT NULL,
+    last_read_at INTEGER, -- Unix timestamp in milliseconds
+    PRIMARY KEY (user_id, app_id, room_id)
+);
+-- 4. Settings (App global settings like allowedEmails, adminList, etc.)
+CREATE TABLE IF NOT EXISTS settings (
+    app_id TEXT NOT NULL,
+    setting_id TEXT NOT NULL, -- 'allowedEmails', 'adminList', 'listAdminList', 'escrowKey'
+    setting_data TEXT NOT NULL, -- Stored as JSON string
+    updated_at INTEGER,
+    PRIMARY KEY (app_id, setting_id)
+);
+-- 5. Servers
+CREATE TABLE IF NOT EXISTS servers (
+    server_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_public INTEGER DEFAULT 0, -- boolean: 0 or 1
+    created_by TEXT NOT NULL,
+    created_at INTEGER,
+    member_count INTEGER DEFAULT 1,
+    server_data TEXT -- Store any additional fields as JSON
+);
+CREATE INDEX IF NOT EXISTS idx_servers_app_id_public ON servers(app_id, is_public);
+-- 6. Server Joined Users (For querying which servers a user has joined)
+CREATE TABLE IF NOT EXISTS server_joined_users (
+    server_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    joined_at INTEGER,
+    PRIMARY KEY (server_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_server_joined_users_user_id ON server_joined_users(user_id, app_id);
+-- 7. Server Secrets (For auth / passwordHash)
+CREATE TABLE IF NOT EXISTS server_secrets (
+    server_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    updated_at INTEGER
+);
+-- 8. Server Profiles (Per-server user profiles)
+CREATE TABLE IF NOT EXISTS server_profiles (
+    server_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    profile_data TEXT NOT NULL, -- Stored as JSON string
+    updated_at INTEGER,
+    PRIMARY KEY (server_id, user_id)
+);
+-- 9. Server Invite Codes & Index
+CREATE TABLE IF NOT EXISTS server_invite_codes (
+    code TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at INTEGER,
+    expires_at INTEGER,
+    uses INTEGER DEFAULT 0,
+    max_uses INTEGER DEFAULT 0,
+    disabled INTEGER DEFAULT 0, -- boolean: 0 or 1
+    invite_data TEXT -- Store any additional fields as JSON
+);
+CREATE INDEX IF NOT EXISTS idx_invite_codes_server_id ON server_invite_codes(server_id);
+-- 10. Server Stamps
+CREATE TABLE IF NOT EXISTS server_stamps (
+    stamp_id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_server_stamps_server_id ON server_stamps(server_id);
+-- 11. Server Stamp Groups
+CREATE TABLE IF NOT EXISTS server_stamp_groups (
+    group_id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    group_data TEXT NOT NULL, -- Stored as JSON string
+    created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_server_stamp_groups_server_id ON server_stamp_groups(server_id);
+-- 12. Rooms
+CREATE TABLE IF NOT EXISTS rooms (
+    room_id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL, -- 'chat', 'voice', etc.
+    created_by TEXT NOT NULL,
+    created_at INTEGER,
+    current_key_version INTEGER DEFAULT 1,
+    room_data TEXT -- Store any additional fields as JSON
+);
+CREATE INDEX IF NOT EXISTS idx_rooms_server_id ON rooms(server_id);
+-- 13. Room Keys (E2EE room keys per user)
+CREATE TABLE IF NOT EXISTS room_keys (
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL, -- includes '__escrow__'
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    key_data TEXT NOT NULL, -- Stored as JSON string
+    updated_at INTEGER,
+    PRIMARY KEY (room_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_room_keys_room_id ON room_keys(room_id);
+-- 14. Messages
+CREATE TABLE IF NOT EXISTS messages (
+    message_id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    text TEXT,
+    created_at INTEGER, -- Unix timestamp in milliseconds
+    is_pinned INTEGER DEFAULT 0, -- boolean: 0 or 1
+    reactions TEXT, -- Stored as JSON string: { userId: emoji }
+    additional_data TEXT -- Stored as JSON string (attachments, etc.)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_room_id_pinned ON messages(room_id, is_pinned);
+-- 15. Read Receipts
+CREATE TABLE IF NOT EXISTS read_receipts (
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    last_read_at INTEGER, -- Unix timestamp in milliseconds
+    last_read_message_id TEXT,
+    PRIMARY KEY (room_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_read_receipts_room_id ON read_receipts(room_id);
+-- 16. Typing States
+CREATE TABLE IF NOT EXISTS typing_states (
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    nickname TEXT NOT NULL,
+    updated_at INTEGER, -- Unix timestamp in milliseconds
+    PRIMARY KEY (room_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_typing_states_room_id ON typing_states(room_id);
+-- 17. User Online Status (Firestore status collection)
+CREATE TABLE IF NOT EXISTS user_status (
+    user_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    status_data TEXT NOT NULL, -- Stored as JSON string
+    updated_at INTEGER
+);
+-- 18. WebRTC Calls (Signaling)
+CREATE TABLE IF NOT EXISTS webrtc_calls (
+    call_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    call_data TEXT NOT NULL, -- Stored as JSON string
+    created_at INTEGER,
+    updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS webrtc_call_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    call_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    candidate_type TEXT NOT NULL, -- 'offer' or 'answer'
+    candidate_data TEXT NOT NULL, -- Stored as JSON string
+    created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_call_candidates_call_id ON webrtc_call_candidates(call_id, candidate_type);
+-- 19. WebRTC File Shares (Signaling)
+CREATE TABLE IF NOT EXISTS webrtc_fileshares (
+    fs_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    fs_data TEXT NOT NULL, -- Stored as JSON string
+    created_at INTEGER,
+    updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    fs_id TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    candidate_type TEXT NOT NULL, -- 'sender' or 'receiver'
+    candidate_data TEXT NOT NULL, -- Stored as JSON string
+    created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
+</file>
+
+<file path="server/wrangler.toml">
+name = "simplechat-api"
+main = "src/index.js"
+compatibility_date = "2024-04-28"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "cb436609107e4f9e9aca4610dd4e100a"
+
+[vars]
+# Firebase REST API
+FIREBASE_API_KEY = "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY"
+FIREBASE_PROJECT_ID = "simplechat-65a0d"
+FIREBASE_APP_ID = "simplechat-65a0d" # Firestoreの /artifacts/{appId} で使用する値
+CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
+
+# --- 以下の変数はシークレットとして設定する必要があります ---
+# wrangler secret put FIREBASE_API_KEY
+# wrangler secret put WORKER_AUTH_EMAIL
+# wrangler secret put WORKER_AUTH_PASSWORD
+# wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
+# wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
+
+# [dev]
+# ローカル開発用のポート
+# port = 8787
+
+[[d1_databases]]
+binding = "DB"
+database_name = "covo-db"
+database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
+</file>
+
+<file path="src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml">
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+  <background android:drawable="@color/ic_launcher_background"/>
+</adaptive-icon>
+</file>
+
+<file path="src-tauri/icons/android/values/ic_launcher_background.xml">
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">#fff</color>
+</resources>
+</file>
+
+<file path="src-tauri/scripts/draw.ps1">
+Add-Type -AssemblyName System.Drawing
+
+$srcPath = "C:\Users\qwert\Desktop\covo\src-tauri\icons\icon.png"
+$dstPath = "C:\Users\qwert\Desktop\covo\src-tauri\icons\icon-unread.png"
+
+$img = [System.Drawing.Image]::FromFile($srcPath)
+$bmp = New-Object System.Drawing.Bitmap($img.Width, $img.Height)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+
+# Draw original image
+$g.DrawImage($img, 0, 0, $img.Width, $img.Height)
+
+# Calculate badge size and position
+# User wants it smaller (e.g. 15% instead of a huge one) and top right.
+$diameter = [int]($img.Width * 0.18)
+$margin = [int]($img.Width * 0.04)
+$x = $img.Width - $diameter - $margin
+$y = $margin
+
+$brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Red)
+$g.FillEllipse($brush, $x, $y, $diameter, $diameter)
+
+# White border for better quality look
+$pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, [float]($img.Width * 0.02))
+$g.DrawEllipse($pen, $x, $y, $diameter, $diameter)
+
+$bmp.Save($dstPath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+$g.Dispose()
+$bmp.Dispose()
+$img.Dispose()
+$brush.Dispose()
+$pen.Dispose()
+
+Write-Host "icon-unread.png generated successfully."
+</file>
+
+<file path="src-tauri/src/main.rs">
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+fn main() {
+  app_lib::run();
+}
+</file>
+
+<file path="src-tauri/.gitignore">
+# Generated by Cargo
+# will have compiled files and executables
+/target/
+/gen/schemas
+</file>
+
+<file path="src-tauri/build.rs">
+fn main() {
+  tauri_build::build()
+}
+</file>
+
+<file path="src-tauri/Cargo.toml">
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.10.3", features = ["tray-icon", "devtools"] }
+tauri-plugin-log = "2"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-single-instance = "2.4.1"
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-global-shortcut = "2.2.0"
+urlencoding = "2.1.3"
+url = "2"
+uuid = { version = "1.0", features = ["v4"] }
+image = "0.24"
+windows = { version = "0.61.3", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_System_Com"] }
+notify-rust = "4.17.0"
+tauri-plugin-notification = "2.0.0"
+reqwest = { version = "0.12", features = ["blocking", "stream"] }
+tokio = { version = "1", features = ["time"] }
+</file>
+
+<file path=".firebaserc">
+{
+  "projects": {
+    "default": "simplechat-65a0d"
+  }
+}
+</file>
+
+<file path=".gitignore">
+# Logs & Debug
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.*.log*
+.git_diff.txt
+.git_diff_snav.txt
+
+# Firebase & Server Cache / Local State
+.firebase/
+.dataconnect/
+server/.wrangler/
+.wrangler/
+
+# Dependency directories
+node_modules/
+bower_components/
+
+# Environment variables & Keys
+.env
+.env.*
+keys/
+.claude/
+serviceAccountKey.json
+
+# Build & Test outputs
+build/Release/
+coverage/
+.nyc_output/
+.grunt/
+.npm/
+.eslintcache/
+.node_repl_history
+*.tgz
+.yarn-integrity
+*.lock-wscript
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Tools, Backups & Generated Files
+tools/backups/
+tools/logs/
+*.bak
+*.diff
+*.patch
+public/repomix-output.xml
+scratch/
+</file>
+
+<file path=".jshintrc">
+{
+  "esversion": 11,
+  "browser": true,
+  "devel": true,
+  "undef": true,
+  "unused": false,
+  "globals": {
+    "firebase": false,
+    "db": false,
+    "auth": false,
+    "storage": false,
+    "Tailwind": false,
+    "$": false,
+    "moment": false,
+    "DOMPurify": false,
+    "marked": false,
+    "hljs": false,
+    "JSEncrypt": false,
+    "CryptoJS": false,
+    "RTCPeerConnection": false,
+    "RTCSessionDescription": false,
+    "RTCIceCandidate": false
+  }
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "simplechat",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tauri": "tauri",
+    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
+    "test:web": "firebase serve --only hosting",
+    "test:win": "tauri dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qwertyuiop1229/simplechat.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/qwertyuiop1229/simplechat/issues"
+  },
+  "homepage": "https://github.com/qwertyuiop1229/simplechat#readme",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@tauri-apps/cli": "^2.10.1",
+    "firebase": "^12.14.0",
+    "jest": "^30.4.2",
+    "tailwindcss": "^3.4.19"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.1.0",
+    "jimp": "^1.6.1"
+  }
+}
+</file>
+
+<file path="README.md">
+# Covo プロジェクト構成メモ
+
+このファイルは「どこに何があるか」を日本語でまとめたメモです。
+整理された新しいフォルダ構成を反映しています。
+
+---
+
+## 🚀 デプロイ方法
+
+```
+npm run deploy
+```
+
+これ一発で以下が全部公開されます（`deploy.ps1` が実行される）:
+1. バージョン番号を自動で +0.0.1 する
+2. Tailwind CSS をビルド
+3. Cloudflare Worker（`server/`）をデプロイ
+4. Firebase Hosting（`public/`）と Firestore ルールをデプロイ
+5. git コミット＋タグ＋GitHub へ push
+
+公開先: https://simplechat-65a0d.web.app
+
+---
+
+## 📁 フォルダ・ファイルの役割
+
+### アプリ本体 (フロントエンド)
+| 場所 | 役割 |
+|------|------|
+| `public/` | **アプリ本体**。Firebase Hosting で公開される |
+| `public/index.html` | メインのHTMLファイル。CSSやJSは外部ファイルとして読み込む |
+| `public/css/` | CSSフォルダ。抽出された `main.css` や Tailwindが生成した `styles.css` など |
+| `public/js/` | JavaScriptフォルダ。抽出されたメインロジック `main.js` が入る |
+| `public/img/` | 画像・アイコン類 (`favicon.ico`, `icon-*.png` など) |
+| `public/firebase-messaging-sw.js` | プッシュ通知用の Service Worker（バックグラウンド通知用） |
+| `public/manifest.json` | PWA設定（ホーム画面追加時の名前・アイコン等） |
+| `public/version.json` | 現在のバージョン番号（デプロイ時に自動更新） |
+| `public/404.html` | 404エラーページ |
+| `public/recovery.html` | アカウント・E2EE鍵復元用のページ |
+
+### サーバー（バックエンド）
+| 場所 | 役割 |
+|------|------|
+| `server/` | **Cloudflare Worker（バックエンドAPI）** |
+| `server/src/index.js` | Worker の本体。プッシュ通知の送信等のAPI。※UTF-16LEで保存されている点に注意 |
+| `server/wrangler.toml` | Worker の設定（KV・環境変数・シークレット） |
+
+### 補助ツール・ログ・バックアップ
+| 場所 | 役割 |
+|------|------|
+| `tools/scripts/` | プロジェクト整理・バグ修正などに使われた Python/JS スクリプト群 |
+| `tools/logs/` | 過去の差分ログ (`*.diff`, `*.patch`, `*.txt`) |
+| `tools/snippets/` | 一時的に抽出・作成された HTMLスニペットなど |
+| `tools/backups/` | 古い index.html のバックアップなど |
+| `scripts/` | デプロイ補助スクリプト（バージョン更新など npm scripts で呼ばれるもの） |
+
+### デスクトップアプリ
+| 場所 | 役割 |
+|------|------|
+| `src-tauri/` | **Tauri（Windows等のデスクトップEXE）の設定**。`public/` を中身として表示する |
+| `src-tauri/tauri.conf.json` | Tauri の設定（バージョンは deploy 時に自動同期） |
+
+### 設定・ツール（ルートに置く必要があるもの＝動かさない）
+| ファイル | 役割 |
+|----------|------|
+| `firebase.json` | Firebase Hosting / Firestore の設定。デプロイ対象や predeploy 処理を定義 |
+| `.firebaserc` | Firebase プロジェクトID（simplechat-65a0d） |
+| `firestore.rules` | **Firestore のセキュリティルール**。誰が何を読み書きできるか。E2EE鍵の保護もここ |
+| `deploy.ps1` | デプロイ手順をまとめた PowerShell スクリプト（`npm run deploy` の中身） |
+| `package.json` / `package-lock.json` | npm の設定・依存関係 |
+| `tailwind.config.js` / `tailwind.input.css` | Tailwind CSS の設定（`public/css/styles.css` を生成する元） |
+| `.github/` | GitHub Actions（Windowsインストーラーの自動ビルド等） |
+| `.gitignore` | git で無視するファイルの一覧 |
+
+### その他
+| 場所 | 役割 |
+|------|------|
+| `assets/` | コードから参照されない素材ファイル置き場（スクショ等） |
+| `covo スタンプ/` | スタンプ用画像群（ルート） |
+| `keys/` | 鍵ファイル置き場。⚠️ 下の「注意」参照 |
+| `.backups/` | 手動バックアップ置き場（公開されない） |
+| `node_modules/` | npm が入れた依存ライブラリ（自動生成・git管理外） |
+| `.firebase/` | Firebase のキャッシュ（自動生成） |
+
+---
+
+## 🛠 開発者ツール（アプリ内）
+
+iPhone等で開発者コンソールが無くてもデバッグできるよう、アプリ内に診断機能を入れてある。
+**設定 → あなた → 開発者ツール** から:
+- **要素を検査**: ONにして画面を長押しすると、その要素の情報を調べてコピー
+- **レイアウト診断**: safe-area やナビ位置、影の有無などを表示
+- **コンソール**: `console.log` 等を画面で見られる
+- **診断情報をまとめてコピー**: バージョン・ログをまとめてコピー
+
+---
+
+## ⚠️ 注意
+
+- **`keys/` の鍵ファイルは過去に git にコミットされている**ため、GitHub の履歴に残っている可能性があります。もし秘密の鍵なら、新しい鍵に作り直す（ローテーションする）ことを検討してください。
+- `server/src/index.js` は **UTF-16LE** で保存されています（通常のエディタで文字化けする場合あり）。
+</file>
+
+<file path="tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: 'class',
+  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
+  theme: {
+    extend: {
+      transitionTimingFunction: {
+        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
+      },
+      keyframes: {
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-down': {
+          '0%': { opacity: '0', transform: 'translateY(-10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        }
+      },
+      animation: {
+        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
+        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+      }
+    },
+  },
+  plugins: [],
+}
+</file>
+
+<file path="public/css/modules/animations.css">
+/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
+.splash-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+@media (max-width: 768px) {
+  .splash-icon-container {
+    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
+  }
+}
+/* === サーバーリスト画面 === */
+    #serverListScreen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+      overflow-y: auto;
+    }
+    #serverListScreen.hidden {
+      display: none !important;
+    }
+    /* === アニメーション定義 === */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes scaleInFade {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .anim-fade-in {
+      animation: fadeIn 0.18s ease both;
+    }
+    .anim-slide-up {
+      animation: slideUpFade 0.22s ease both;
+    }
+    .anim-scale-in {
+      animation: scaleInFade 0.22s ease both;
+    }
+    .anim-card {
+      animation: cardIn 0.28s ease both;
+      opacity: 0;
+    }
+    /* === サーバーリスト画面 === */
+    .server-list-header {
+      background: #1f2937;
+      color: white;
+      padding: 0.875rem 1.25rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .server-list-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .server-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .server-list-actions button:not(.server-list-user-btn) {
+      padding: 7px 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #joinServerBtn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+    #joinServerBtn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    #createServerBtn {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+    #createServerBtn:hover {
+      background: #e5e7eb;
+    }
+    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
+    .server-list-user-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.12s;
+      flex-shrink: 0;
+    }
+    .server-list-user-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: scale(1.07);
+    }
+    .server-list-user-btn:active {
+      transform: scale(0.95);
+    }
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      padding: 1.25rem 1.25rem 0 1.25rem;
+    }
+    .server-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0 2px 2px;
+      border-bottom: 1px solid #f3f4f6;
+      margin-bottom: 2px;
+      margin-top: 4px;
+    }
+    .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .admin-join-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid #f3f4f6;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .admin-join-item:hover {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+    .admin-join-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+    .admin-join-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+    }
+    .admin-join-meta {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+    .admin-join-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 3px 9px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .server-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+    .server-card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+    }
+    .server-card:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+    .server-card-icon {
+      width: 44px;
+      height: 44px;
+      background: #4f46e5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: translateY(-1px);
+      background: #4338ca;
+    }
+    .server-card-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+    .server-card-meta {
+      font-size: 0.73rem;
+      color: #6b7280;
+    }
+    .server-card-admin-badge {
+      display: inline-block;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.63rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid #d1d5db;
+    }
+    .server-list-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: #6b7280;
+      animation: fadeIn 0.3s ease;
+    }
+    .server-list-empty i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+    /* === ルームリストアイテムアニメーション === */
+    @keyframes roomSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    .room-list-anim {
+      animation: roomSlideIn 0.2s ease both;
+    }
+    /* === メンバーリストアイテムアニメーション === */
+    @keyframes memberFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .member-anim {
+      animation: memberFadeIn 0.18s ease both;
+    }
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
+    }
+    /* Mobile full-screen pages (スライドインアニメーション対応) */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
+      z-index: 300;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    #mobileProfileScreen.closing,
+    #mobileNotifScreen.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }
+</file>
+
+<file path="public/css/modules/components.css">
+/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
+    .flipped {
+      transform: scaleY(-1);
+    }
+    .message-bubble {
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      margin-bottom: 0;
+      word-wrap: break-word;
+      -webkit-touch-callout: none;
+      /* iOS長押しメニュー防止 */
+    }
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+      transition: opacity 0.15s;
+    }
+    .msg-avatar:hover {
+      opacity: 0.85;
+    }
+    .msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .my-message {
+      background-color: #e0e0e0;
+      /* 薄いグレー */
+      border-top-right-radius: 0.25rem;
+    }
+    .other-message {
+      background-color: #f0f0f0;
+      /* 非常に薄いグレー */
+      border-top-left-radius: 0.25rem;
+    }
+    .scrollable {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
+    #updateOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      flex-direction: column;
+    }
+    #updateOverlay.show {
+      display: flex;
+    }
+    .update-card {
+      position: relative;
+      background: #ffffff;
+      color: #1f2937;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+    .update-close-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #111827;
+      transform: scale(1.05);
+    }
+    @keyframes updateCardPopIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .update-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #4f46e5;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: white;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+    }
+    .update-title {
+      color: #111827;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .update-version {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .update-body {
+      color: #4b5563;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      padding: 1rem;
+      background: #f3f4f6;
+      border-radius: 1rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .update-btn {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #4f46e5;
+      color: white;
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .update-btn:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    }
+    .update-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .update-progress {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .update-progress.show {
+      display: block;
+    }
+    .update-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    /* === 設定トグルスイッチ === */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+    .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+    .setting-label i {
+      width: 18px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background-color: #d1d5db;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background-color 0.25s;
+    }
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #374151;
+    }
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+    #updateErrorBox textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      font-size: 0.7rem;
+      background: #1e293b;
+      color: #fca5a5;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 8px;
+      white-space: pre;
+      overflow: auto;
+    }
+    #updateErrorBox button {
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #updateErrorBox button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    /* === モーダルアニメーション === */
+    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
+    /* .modal-box { placeholder } */
+    .modal-opening {
+      animation: scaleInFade 0.22s ease both;
+    }
+    /* === メッセージバブルフェードイン === */
+    .message-bubble {
+      animation: slideUpFade 0.18s ease both;
+    }
+    /* === ルームリストアイテムのフェード === */
+    .room-item-animate {
+      animation: fadeIn 0.15s ease both;
+    }
+    /* === ボタン全般のactiveフィードバック === */
+    button:not(.server-list-user-btn):active {
+      opacity: 0.8;
+    }
+    #backToServerListBtn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    /* サーバー設定モーダル内のタブ */
+    .ss-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .ss-tab.active {
+      background: #1f2937;
+      color: white;
+    }
+    .ss-tab:not(.active) {
+      background: transparent;
+      color: #6b7280;
+    }
+    .ss-tab:not(.active):hover {
+      background: #f3f4f6;
+    }
+    /* 招待コード表示 */
+    .invite-code-item {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .invite-code-text {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+      letter-spacing: 2px;
+    }
+    .invite-code-meta {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+    /* === サーバービュー用ニックネームヘッダー === */
+    #globalAppHeader {
+      display: none;
+      background: #374151;
+      color: white;
+      padding: 0.45rem 1rem;
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #globalAppHeader.server-mode {
+      display: flex;
+    }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
+    #headerTitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.88;
+    }
+    /* === カスタム確認ダイアログ === */
+    #customConfirmModal {
+      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
+    }
+    #customConfirmModal .confirm-box {
+      text-align: left;
+    }
+    /* === モーダル角丸崩れ防止 === */
+    .modal-dark-header {
+      border-radius: inherit;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    /* === メンションバッジ通知 === */
+    .mention-toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mention-toast-badge {
+      background: #4f46e5;
+      color: white;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 99px;
+      flex-shrink: 0;
+      letter-spacing: 0.03em;
+    }
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
+    }
+</file>
+
+<file path="public/css/geo_study.css">
+/* geo_study.css - 隠し機能用スタイル */
+#geoStudyContainer {
+  /* Tailwindのユーティリティでカバーしきれない部分を補完 */
+  font-family: 'Inter', sans-serif;
+}
+/* モジュール起動時のフェードインアニメーション */
+.gs-fade-in {
+  animation: gsFadeIn 0.4s ease-out forwards;
+}
+@keyframes gsFadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+#gs-minimap-container {
+  /* ホバー時やアクティブ時に少し広がるようなエフェクト */
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+#gs-minimap-container:hover, #gs-minimap-container.active-map {
+  opacity: 1 !important;
+  transform: scale(1.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  border-color: #4f46e5; /* indigo-600 */
+}
+/* スマホ用により大きく展開するクラス */
+@media (max-width: 768px) {
+  #gs-minimap-container.active-map {
+    width: calc(100vw - 2rem) !important;
+    height: 50vh !important;
+    transform: scale(1) !important;
+    bottom: 1rem !important;
+    right: 1rem !important;
+    z-index: 500;
+  }
+}
+/* 読み込みスピナー用 */
+.gs-spinner {
+  border: 3px solid rgba(255,255,255,0.1);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border-left-color: #3b82f6; /* blue-500 */
+  animation: gs-spin 1s linear infinite;
+}
+@keyframes gs-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+/* 写真モード用の画像表示調整（見切れないようにcontainを使用） */
+#gs-photo-container {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: opacity 0.6s ease-in-out;
+  opacity: 1;
+}
+#gs-photo-container.loading {
+  opacity: 0.3;
+  filter: blur(5px);
+}
+/* スワップ時のアニメーション用 */
+.gs-swap-transition {
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+/* 写真がミニサイズになる状態 */
+#gs-photo-container.is-minimap {
+  width: 12rem !important;
+  height: 8rem !important;
+  bottom: 1rem !important;
+  right: 1rem !important;
+  top: auto !important;
+  left: auto !important;
+  z-index: 999 !important;
+  border-radius: 0.75rem !important;
+  border: 2px solid #4b5563 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
+  cursor: pointer;
+  background-size: cover !important;
+  background-color: #1f2937 !important;
+}
+@media (min-width: 768px) {
+  #gs-photo-container.is-minimap {
+    width: 20rem !important;
+    height: 16rem !important;
+  }
+}
+#gs-photo-container.is-minimap:hover {
+  transform: scale(1.05);
+  border-color: #4f46e5 !important;
+}
+/* 地図が全画面になる状態 */
+#gs-minimap-container.is-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  z-index: 0 !important;
+  transform: none !important;
+}
+/* Leaflet DivIconのデフォルト枠・白背景の除去 */
+.gs-custom-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+}
+</file>
+
 <file path="server/repomix-output.xml">
 This file is a merged representation of the entire codebase, combined into a single document by Repomix.
 <file_summary>
@@ -3369,460 +5111,701 @@ database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </files>
 </file>
 
-<file path="server/schema.sql">
--- Cloudflare D1 Schema for Covo (Firestore Migration)
--- 1. Users & Profiles
-CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    nickname TEXT,
-    avatar_url TEXT,
-    public_key_jwk TEXT, -- Stored as JSON string
-    fcm_tokens TEXT, -- Stored as JSON array
-    created_at INTEGER, -- Unix timestamp in milliseconds
-    updated_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_users_app_id ON users(app_id);
--- 2. User Private Keys
-CREATE TABLE IF NOT EXISTS user_private_keys (
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    key_type TEXT NOT NULL, -- 'keys' or 'escrowKey'
-    key_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (user_id, app_id, key_type)
-);
--- 3. User Read States (Per user, per room read states)
-CREATE TABLE IF NOT EXISTS user_read_states (
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    room_id TEXT NOT NULL,
-    last_read_at INTEGER, -- Unix timestamp in milliseconds
-    PRIMARY KEY (user_id, app_id, room_id)
-);
--- 4. Settings (App global settings like allowedEmails, adminList, etc.)
-CREATE TABLE IF NOT EXISTS settings (
-    app_id TEXT NOT NULL,
-    setting_id TEXT NOT NULL, -- 'allowedEmails', 'adminList', 'listAdminList', 'escrowKey'
-    setting_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (app_id, setting_id)
-);
--- 5. Servers
-CREATE TABLE IF NOT EXISTS servers (
-    server_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    is_public INTEGER DEFAULT 0, -- boolean: 0 or 1
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    member_count INTEGER DEFAULT 1,
-    server_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_servers_app_id_public ON servers(app_id, is_public);
--- 6. Server Joined Users (For querying which servers a user has joined)
-CREATE TABLE IF NOT EXISTS server_joined_users (
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    joined_at INTEGER,
-    PRIMARY KEY (server_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_server_joined_users_user_id ON server_joined_users(user_id, app_id);
--- 7. Server Secrets (For auth / passwordHash)
-CREATE TABLE IF NOT EXISTS server_secrets (
-    server_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    updated_at INTEGER
-);
--- 8. Server Profiles (Per-server user profiles)
-CREATE TABLE IF NOT EXISTS server_profiles (
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    profile_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (server_id, user_id)
-);
--- 9. Server Invite Codes & Index
-CREATE TABLE IF NOT EXISTS server_invite_codes (
-    code TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    expires_at INTEGER,
-    uses INTEGER DEFAULT 0,
-    max_uses INTEGER DEFAULT 0,
-    disabled INTEGER DEFAULT 0, -- boolean: 0 or 1
-    invite_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_invite_codes_server_id ON server_invite_codes(server_id);
--- 10. Server Stamps
-CREATE TABLE IF NOT EXISTS server_stamps (
-    stamp_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL,
-    created_by TEXT NOT NULL,
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_server_stamps_server_id ON server_stamps(server_id);
--- 11. Server Stamp Groups
-CREATE TABLE IF NOT EXISTS server_stamp_groups (
-    group_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    group_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_server_stamp_groups_server_id ON server_stamp_groups(server_id);
--- 12. Rooms
-CREATE TABLE IF NOT EXISTS rooms (
-    room_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'chat', 'voice', etc.
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    current_key_version INTEGER DEFAULT 1,
-    room_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_rooms_server_id ON rooms(server_id);
--- 13. Room Keys (E2EE room keys per user)
-CREATE TABLE IF NOT EXISTS room_keys (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL, -- includes '__escrow__'
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    key_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_room_keys_room_id ON room_keys(room_id);
--- 14. Messages
-CREATE TABLE IF NOT EXISTS messages (
-    message_id TEXT PRIMARY KEY,
-    room_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    text TEXT,
-    created_at INTEGER, -- Unix timestamp in milliseconds
-    is_pinned INTEGER DEFAULT 0, -- boolean: 0 or 1
-    reactions TEXT, -- Stored as JSON string: { userId: emoji }
-    additional_data TEXT -- Stored as JSON string (attachments, etc.)
-);
-CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages(room_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_messages_room_id_pinned ON messages(room_id, is_pinned);
--- 15. Read Receipts
-CREATE TABLE IF NOT EXISTS read_receipts (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    last_read_at INTEGER, -- Unix timestamp in milliseconds
-    last_read_message_id TEXT,
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_read_receipts_room_id ON read_receipts(room_id);
--- 16. Typing States
-CREATE TABLE IF NOT EXISTS typing_states (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    nickname TEXT NOT NULL,
-    updated_at INTEGER, -- Unix timestamp in milliseconds
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_typing_states_room_id ON typing_states(room_id);
--- 17. User Online Status (Firestore status collection)
-CREATE TABLE IF NOT EXISTS user_status (
-    user_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    status_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER
-);
--- 18. WebRTC Calls (Signaling)
-CREATE TABLE IF NOT EXISTS webrtc_calls (
-    call_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    call_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER,
-    updated_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS webrtc_call_candidates (
-    candidate_id TEXT PRIMARY KEY,
-    call_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    candidate_type TEXT NOT NULL, -- 'offer' or 'answer'
-    candidate_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_call_candidates_call_id ON webrtc_call_candidates(call_id, candidate_type);
--- 19. WebRTC File Shares (Signaling)
-CREATE TABLE IF NOT EXISTS webrtc_fileshares (
-    fs_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    fs_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER,
-    updated_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
-    candidate_id TEXT PRIMARY KEY,
-    fs_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    candidate_type TEXT NOT NULL, -- 'sender' or 'receiver'
-    candidate_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
+<file path="tests/security.test.js">
+const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
+const { doc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const fs = require('fs');
+const PROJECT_ID = "demo-covo-security-test";
+const APP_ID = "testApp";
+let testEnv;
+// ============================================================================
+// セットアップ & クリーンアップ
+// ============================================================================
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: {
+      rules: fs.readFileSync('firestore.rules', 'utf8'),
+    },
+  });
+});
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+});
+afterAll(async () => {
+  await testEnv.cleanup();
+});
+const getDb = (auth) => {
+  return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
+};
+// ============================================================================
+// テストスイート
+// ============================================================================
+describe('Firestore Security Rules Testing', () => {
+  // ★これでJestが「テストがある」と必ず認識します
+  it('【環境確認】Jestが正しく動いているか (Must Pass)', () => {
+    expect(true).toBe(true);
+  });
+  // -----------------------------------------------------------------------
+  // 【脆弱性1】退出ロジックの欠陥 (Server Leave)
+  // -----------------------------------------------------------------------
+  describe('脆弱性1: サーバー退出時の破壊行為防止', () => {
+    const serverId = "server1";
+    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, serverPath), {
+          joinedUsers: ['alice', 'bob', 'admin'],
+          serverAdmins: ['admin'],
+          memberCount: 3,
+          createdBy: 'admin'
+        });
+      });
+    });
+    it('【正常系】Aliceが自分自身のみを配列から削除して退出できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, serverPath);
+      await assertSucceeds(updateDoc(ref, {
+        joinedUsers: ['bob', 'admin'],
+        serverAdmins: ['admin'],
+        memberCount: 2
+      }));
+    });
+    it('【異常系】Aliceが退出時にBob等も一緒に削除しようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, serverPath);
+      await assertFails(updateDoc(ref, {
+        joinedUsers: ['admin'],
+        serverAdmins: ['admin'],
+        memberCount: 1
+      }));
+    });
+  });
+  // -----------------------------------------------------------------------
+  // 【脆弱性2】サーバー作成時の強制参加スパム (Forced Join)
+  // -----------------------------------------------------------------------
+  describe('脆弱性2: サーバー作成時の他者強制参加防止', () => {
+    const newServerId = "newServer";
+    const serverPath = `artifacts/${APP_ID}/servers/${newServerId}`;
+    it('【正常系】Aliceが自分だけを参加者としてサーバーを作成できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertSucceeds(setDoc(doc(aliceDb, serverPath), {
+        createdBy: 'alice',
+        serverAdmins: ['alice'],
+        joinedUsers: ['alice'],
+        memberCount: 1
+      }));
+    });
+    it('【異常系】Aliceが他人のUID(Bob)を勝手に追加して作成しようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertFails(setDoc(doc(aliceDb, serverPath), {
+        createdBy: 'alice',
+        serverAdmins: ['alice'],
+        joinedUsers: ['alice', 'bob'],
+        memberCount: 2
+      }));
+    });
+  });
+  // -----------------------------------------------------------------------
+  // 【脆弱性3】E2EEルームキーの暗号化DoS (Room Keys)
+  // -----------------------------------------------------------------------
+  describe('脆弱性3: E2EEルームキーの不正上書き/削除防止', () => {
+    const serverId = "server1";
+    const roomId = "room1";
+    const keyId = "bob_key";
+    const keyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/${keyId}`;
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
+          joinedUsers: ['alice', 'bob'],
+          serverAdmins: ['alice']
+        });
+        await setDoc(doc(db, keyPath), {
+          keyData: 'encrypted_data_for_bob'
+        });
+      });
+    });
+    it('【正常系】参加メンバー(Bob)が新しいメンバー(Charlie)用の鍵を作成(create)できること (Must Pass)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const newKeyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/charlie_key`;
+      await assertSucceeds(setDoc(doc(bobDb, newKeyPath), {
+        keyData: 'encrypted_data_for_charlie'
+      }));
+    });
+    it('【異常系】一般メンバー(Bob)が既存の鍵を削除(delete)・上書き(update)しようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const ref = doc(bobDb, keyPath);
+      await assertFails(updateDoc(ref, { keyData: 'malicious_garbage_data' }));
+      await assertFails(deleteDoc(ref));
+    });
+  });
+  // -----------------------------------------------------------------------
+  // 【脆弱性5】P2Pシグナリングのなりすまし (Signaling Spoofing)
+  // -----------------------------------------------------------------------
+  describe('脆弱性5: P2PシグナリングID改ざん防止', () => {
+    const shareId = "share1";
+    const sharePath = `artifacts/${APP_ID}/fileshares/${shareId}`;
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, sharePath), {
+          sender: { uid: 'alice' },
+          receiverUid: 'bob',
+          status: 'init'
+        });
+      });
+    });
+    it('【正常系】Aliceが自分とBob間のシグナリングデータを更新(SDP追加など)できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, sharePath);
+      await assertSucceeds(updateDoc(ref, { status: 'connecting', sdp: 'dummy_sdp_data' }));
+    });
+    it('【異常系】Aliceが更新時に送信者(sender)をCharlieにすり替えようとすると弾かれること (Must Fail)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      const ref = doc(aliceDb, sharePath);
+      await assertFails(updateDoc(ref, { sender: { uid: 'charlie' }, status: 'connecting' }));
+    });
+    it('【異常系】Bobが更新時に受信者(receiverUid)を自分以外にすり替えようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      const ref = doc(bobDb, sharePath);
+      await assertFails(updateDoc(ref, { receiverUid: 'charlie' }));
+    });
+  });
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】メッセージ削除・改ざん防止と権限階層の検証 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('メッセージセキュリティ: 他人の発言削除・本文改ざん防止', () => {
+    const serverId = "server1";
+    const roomId = "room1";
+    const msgId = "msg_alice_1";
+    const msgPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/messages/${msgId}`;
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin'],
+          emails: ['superadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/listAdminList`), {
+          admins: ['list_admin'],
+          emails: ['listadmin@covo.app']
+        });
+        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
+          joinedUsers: ['alice', 'bob', 'moderator', 'list_admin', 'super_admin'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user'
+        });
+        await setDoc(doc(db, msgPath), {
+          senderId: 'alice',
+          text: 'Hello from Alice',
+          createdAt: 1000,
+          timestamp: 1000,
+          isPinned: false
+        });
+      });
+    });
+    it('【正常系】送信者本人 (Alice) は自分のメッセージを削除できること (Must Pass)', async () => {
+      const aliceDb = getDb({ uid: 'alice' });
+      await assertSucceeds(deleteDoc(doc(aliceDb, msgPath)));
+    });
+    it('【正常系】サーバーモデレーター (moderator) は他人の不適切メッセージを削除できること (Must Pass)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertSucceeds(deleteDoc(doc(modDb, msgPath)));
+    });
+    it('【正常系】全体管理者 (super_admin) は他人のメッセージを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, msgPath)));
+    });
+    it('【異常系】一般メンバー (Bob) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const bobDb = getDb({ uid: 'bob' });
+      await assertFails(deleteDoc(doc(bobDb, msgPath)));
+    });
+    it('【異常系】リスト管理者 (list_admin) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
+      const listAdminDb = getDb({ uid: 'list_admin' });
+      await assertFails(deleteDoc(doc(listAdminDb, msgPath)));
+    });
+    it('【異常系】モデレーターや一般ユーザーが他人のメッセージ本文を改ざんしようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(updateDoc(doc(modDb, msgPath), {
+        text: 'Tampered malicious message by moderator'
+      }));
+    });
+  });
+  // -----------------------------------------------------------------------
+  // 【新セキュリティ検証】サーバー・ルーム・管理者昇格の保護 (Discord標準)
+  // -----------------------------------------------------------------------
+  describe('サーバー・ルーム保護: オーナーシップ保護と権限昇格防止', () => {
+    const serverId = "server1";
+    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
+    const roomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/room1`;
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
+          admins: ['super_admin']
+        });
+        await setDoc(doc(db, serverPath), {
+          joinedUsers: ['owner_user', 'moderator', 'regular_user'],
+          serverAdmins: ['moderator'],
+          createdBy: 'owner_user',
+          name: 'Original Server'
+        });
+        await setDoc(doc(db, roomPath), {
+          name: 'General',
+          createdBy: 'owner_user'
+        });
+      });
+    });
+    it('【正常系】サーバーオーナー (owner_user) はサーバーを削除できること (Must Pass)', async () => {
+      const ownerDb = getDb({ uid: 'owner_user' });
+      await assertSucceeds(deleteDoc(doc(ownerDb, serverPath)));
+    });
+    it('【正常系】全体管理者 (super_admin) はサーバーを削除できること (Must Pass)', async () => {
+      const adminDb = getDb({ uid: 'super_admin' });
+      await assertSucceeds(deleteDoc(doc(adminDb, serverPath)));
+    });
+    it('【異常系】モデレーター (moderator) や一般ユーザーがサーバー自体を削除しようとすると弾かれること (Must Fail)', async () => {
+      const modDb = getDb({ uid: 'moderator' });
+      await assertFails(deleteDoc(doc(modDb, serverPath)));
+    });
+    it('【異常系】一般ユーザー (regular_user) がルームを作成・削除しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const newRoomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/hack_room`;
+      await assertFails(setDoc(doc(userDb, newRoomPath), { name: 'Hack' }));
+      await assertFails(deleteDoc(doc(userDb, roomPath)));
+    });
+    it('【異常系】一般ユーザーやリスト管理者が全体管理者リスト (adminList) を書き換えて特権奪取しようとすると弾かれること (Must Fail)', async () => {
+      const userDb = getDb({ uid: 'regular_user' });
+      const adminListPath = `artifacts/${APP_ID}/settings/adminList`;
+      await assertFails(setDoc(doc(userDb, adminListPath), { admins: ['regular_user'] }));
+    });
+  });
+});
 </file>
 
-<file path="server/wrangler.toml">
-name = "simplechat-api"
-main = "src/index.js"
-compatibility_date = "2024-04-28"
+<file path="deploy.ps1">
+# Covo Deploy Script
+# Usage: .\deploy.ps1       (interactive confirm)
+#        .\deploy.ps1 -y    (skip confirm)
+#        npm run deploy      (deploy update)
 
-[[kv_namespaces]]
-binding = "FILES"
-id = "cb436609107e4f9e9aca4610dd4e100a"
+param(
+    [switch]$y
+)
 
-[vars]
-# Firebase REST API
-FIREBASE_API_KEY = "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY"
-FIREBASE_PROJECT_ID = "simplechat-65a0d"
-FIREBASE_APP_ID = "simplechat-65a0d" # Firestoreの /artifacts/{appId} で使用する値
-CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
+$ErrorActionPreference = 'Stop'
 
-# --- 以下の変数はシークレットとして設定する必要があります ---
-# wrangler secret put FIREBASE_API_KEY
-# wrangler secret put WORKER_AUTH_EMAIL
-# wrangler secret put WORKER_AUTH_PASSWORD
-# wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
-# wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
 
-# [dev]
-# ローカル開発用のポート
-# port = 8787
-
-[[d1_databases]]
-binding = "DB"
-database_name = "covo-db"
-database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
-</file>
-
-<file path="src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml">
-<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-  <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-  <background android:drawable="@color/ic_launcher_background"/>
-</adaptive-icon>
-</file>
-
-<file path="src-tauri/icons/android/values/ic_launcher_background.xml">
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-  <color name="ic_launcher_background">#fff</color>
-</resources>
-</file>
-
-<file path="src-tauri/scripts/draw.ps1">
-Add-Type -AssemblyName System.Drawing
-
-$srcPath = "C:\Users\qwert\Desktop\covo\src-tauri\icons\icon.png"
-$dstPath = "C:\Users\qwert\Desktop\covo\src-tauri\icons\icon-unread.png"
-
-$img = [System.Drawing.Image]::FromFile($srcPath)
-$bmp = New-Object System.Drawing.Bitmap($img.Width, $img.Height)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-
-# Draw original image
-$g.DrawImage($img, 0, 0, $img.Width, $img.Height)
-
-# Calculate badge size and position
-# User wants it smaller (e.g. 15% instead of a huge one) and top right.
-$diameter = [int]($img.Width * 0.18)
-$margin = [int]($img.Width * 0.04)
-$x = $img.Width - $diameter - $margin
-$y = $margin
-
-$brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Red)
-$g.FillEllipse($brush, $x, $y, $diameter, $diameter)
-
-# White border for better quality look
-$pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, [float]($img.Width * 0.02))
-$g.DrawEllipse($pen, $x, $y, $diameter, $diameter)
-
-$bmp.Save($dstPath, [System.Drawing.Imaging.ImageFormat]::Png)
-
-$g.Dispose()
-$bmp.Dispose()
-$img.Dispose()
-$brush.Dispose()
-$pen.Dispose()
-
-Write-Host "icon-unread.png generated successfully."
-</file>
-
-<file path="src-tauri/src/main.rs">
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-fn main() {
-  app_lib::run();
+$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
+if (-not (Test-Path $versionJsonPath)) {
+    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
+    exit 1
 }
-</file>
 
-<file path="src-tauri/.gitignore">
-# Generated by Cargo
-# will have compiled files and executables
-/target/
-/gen/schemas
-</file>
+$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$currentVersion = $versionData.version
+Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
 
-<file path="src-tauri/build.rs">
-fn main() {
-  tauri_build::build()
+$versionParts = $currentVersion.Split('.')
+if ($versionParts.Length -ne 3) {
+    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
+    exit 1
 }
-</file>
 
-<file path="src-tauri/Cargo.toml">
-[package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
-edition = "2021"
-rust-version = "1.77.2"
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+$patch = [int]$versionParts[2] + 1
+$newVersion = "$major.$minor.$patch"
+$tagName    = "v$newVersion"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+Write-Host "New version : $newVersion" -ForegroundColor Green
+Write-Host "Tag name    : $tagName"    -ForegroundColor Green
+Write-Host ''
 
-[lib]
-name = "app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2.5.6", features = [] }
-
-[dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
-tauri = { version = "2.10.3", features = ["tray-icon", "devtools"] }
-tauri-plugin-log = "2"
-tauri-plugin-updater = "2.10.1"
-tauri-plugin-single-instance = "2.4.1"
-tauri-plugin-autostart = "2.5.1"
-tauri-plugin-global-shortcut = "2.2.0"
-urlencoding = "2.1.3"
-url = "2"
-uuid = { version = "1.0", features = ["v4"] }
-image = "0.24"
-windows = { version = "0.61.3", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_System_Com"] }
-notify-rust = "4.17.0"
-tauri-plugin-notification = "2.0.0"
-reqwest = { version = "0.12", features = ["blocking", "stream"] }
-tokio = { version = "1", features = ["time"] }
-</file>
-
-<file path=".firebaserc">
-{
-  "projects": {
-    "default": "simplechat-65a0d"
-  }
+if (-not $y) {
+    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
+    try {
+        $confirm = [Console]::ReadLine()
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
+            exit 0
+        }
+    } catch {
+        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
+        exit 1
+    }
 }
-</file>
 
-<file path=".gitignore">
-# Logs & Debug
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-firebase-debug.log*
-firebase-debug.*.log*
-.git_diff.txt
-.git_diff_snav.txt
+Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
+Write-Host ''
 
-# Firebase & Server Cache / Local State
-.firebase/
-.dataconnect/
-server/.wrangler/
-.wrangler/
+# [0/5] Tailwind CSS
+Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
 
-# Dependency directories
-node_modules/
-bower_components/
+# [1/5] version.json + tauri.conf.json + index.html
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
 
-# Environment variables & Keys
-.env
-.env.*
-keys/
-.claude/
-serviceAccountKey.json
+$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
+if (Test-Path $indexHtmlPath) {
+    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
+    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
 
-# Build & Test outputs
-build/Release/
-coverage/
-.nyc_output/
-.grunt/
-.npm/
-.eslintcache/
-.node_repl_history
-*.tgz
-.yarn-integrity
-*.lock-wscript
+$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
+if (Test-Path $tauriConfPath) {
+    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
+    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
+        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
+} else {
+    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
+}
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# [2/5] git commit
+Write-Host '[2/5] Committing changes...' -ForegroundColor Green
+git add -A
+git commit -m "Release v$newVersion"
 
-# Tools, Backups & Generated Files
-tools/backups/
-tools/logs/
-*.bak
-*.diff
-*.patch
-public/repomix-output.xml
-scratch/
-</file>
+# [3/5] git tag
+Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
+git tag $tagName
 
-<file path=".jshintrc">
-{
-  "esversion": 11,
-  "browser": true,
-  "devel": true,
-  "undef": true,
-  "unused": false,
-  "globals": {
-    "firebase": false,
-    "db": false,
-    "auth": false,
-    "storage": false,
-    "Tailwind": false,
-    "$": false,
-    "moment": false,
-    "DOMPurify": false,
-    "marked": false,
-    "hljs": false,
-    "JSEncrypt": false,
-    "CryptoJS": false,
-    "RTCPeerConnection": false,
-    "RTCSessionDescription": false,
-    "RTCIceCandidate": false
-  }
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+firebase deploy --only "hosting,firestore:rules,database"
+
+# [5/5] git push
+Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
+git push origin HEAD --tags
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# ===========================================================================
+# GitHub Actions real-time build monitor
+# ===========================================================================
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
+Write-Host ''
+
+$REPO = 'qwertyuiop1229/Covo'
+
+# Retrieve GITHUB_TOKEN directly from environment or registry
+$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+
+# Move cursor up N lines (ANSI)
+function Move-CursorUp {
+    param([int]$Lines)
+    if ($Lines -gt 0) {
+        $esc = [char]27
+        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
+        [Console]::Write($seq)
+    }
+}
+
+# ASCII progress bar  [####....] 64%
+function Draw-Bar {
+    param([int]$Pct, [int]$W = 24)
+    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
+    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
+    $empty  = $W - $filled
+    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
+}
+
+# GitHub REST API helper
+function Invoke-GHApi {
+    param([string]$Path)
+    $url     = 'https://api.github.com' + $Path
+    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
+    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
+}
+
+function Get-LatestRun {
+    param([string]$Tag)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    if (-not $res) { return $null }
+    $run = $res.workflow_runs | Where-Object {
+        ($_.head_branch -eq $Tag) -or
+        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
+        ($_.display_title -like ('*' + $Tag + '*'))
+    } | Select-Object -First 1
+    return $run
+}
+
+function Get-RunJobs {
+    param([string]$RunId)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
+    if ($res -and $res.jobs) { return @($res.jobs) }
+    return @()
+}
+
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
+$run = $null
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 3
+    $run = Get-LatestRun -Tag $tagName
+    if ($run) { break }
+    if ($global:RateLimitHit) { break }
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
+}
+
+if (-not $run) {
+    Write-Host ''
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    exit 0
+}
+
+$runId  = $run.id
+$runUrl = $run.html_url
+Write-Host ''
+Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ''
+
+
+$StepDefs = @(
+    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
+    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
+    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
+    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
+    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
+)
+$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
+
+$Spinners   = @('-', '\', '|', '/')
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
+
+Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
+Write-Host ''
+
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
+
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
+
+    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+    $firstDraw = $false
+
+    if ($job) {
+        $steps = @($job.steps)
+        $completedWeight    = 0
+        $completedStepCount = 0
+        $currentLabel       = ''
+        $currentStep        = $null
+        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
+
+        if ($steps) {
+            foreach ($step in $steps) {
+                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
+                $w   = if ($def) { $def.Weight } else { 2 }
+                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
+                    $completedWeight    += $w
+                    $completedStepCount++
+                } elseif ($step.status -eq 'in_progress') {
+                    $completedWeight += [int]($w * 0.5)
+                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
+                }
+            }
+        }
+
+        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
+        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
+        $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'Preparing logs...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
+            } catch {}
+        }
+
+        if ($jobStatus -eq 'completed') {
+            if ($jobConclusion -eq 'success') {
+                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
+            } else {
+                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
+            }
+        } elseif ($jobStatus -eq 'queued') {
+            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
+        } else {
+            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
+        }
+
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
+
+        Write-Host $l1 -ForegroundColor $col
+        Write-Host $l2 -ForegroundColor White
+        Write-Host $l3 -ForegroundColor DarkCyan
+        Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
+
+        if ($jobStatus -eq 'completed') {
+            Write-Host ''
+            if ($jobConclusion -eq 'success') {
+                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
+                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
+            } else {
+                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
+            }
+            Write-Host ''
+            break
+        }
+
+    } else {
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+    }
+
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
 }
 </file>
 
@@ -5406,1989 +7389,6 @@ scratch/
 ]
 </file>
 
-<file path="package.json">
-{
-  "name": "simplechat",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "tauri": "tauri",
-    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
-    "test:web": "firebase serve --only hosting",
-    "test:win": "tauri dev"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/qwertyuiop1229/simplechat.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/qwertyuiop1229/simplechat/issues"
-  },
-  "homepage": "https://github.com/qwertyuiop1229/simplechat#readme",
-  "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.1",
-    "@tauri-apps/cli": "^2.10.1",
-    "firebase": "^12.14.0",
-    "jest": "^30.4.2",
-    "tailwindcss": "^3.4.19"
-  },
-  "dependencies": {
-    "firebase-admin": "^14.1.0",
-    "jimp": "^1.6.1"
-  }
-}
-</file>
-
-<file path="README.md">
-# Covo プロジェクト構成メモ
-
-このファイルは「どこに何があるか」を日本語でまとめたメモです。
-整理された新しいフォルダ構成を反映しています。
-
----
-
-## 🚀 デプロイ方法
-
-```
-npm run deploy
-```
-
-これ一発で以下が全部公開されます（`deploy.ps1` が実行される）:
-1. バージョン番号を自動で +0.0.1 する
-2. Tailwind CSS をビルド
-3. Cloudflare Worker（`server/`）をデプロイ
-4. Firebase Hosting（`public/`）と Firestore ルールをデプロイ
-5. git コミット＋タグ＋GitHub へ push
-
-公開先: https://simplechat-65a0d.web.app
-
----
-
-## 📁 フォルダ・ファイルの役割
-
-### アプリ本体 (フロントエンド)
-| 場所 | 役割 |
-|------|------|
-| `public/` | **アプリ本体**。Firebase Hosting で公開される |
-| `public/index.html` | メインのHTMLファイル。CSSやJSは外部ファイルとして読み込む |
-| `public/css/` | CSSフォルダ。抽出された `main.css` や Tailwindが生成した `styles.css` など |
-| `public/js/` | JavaScriptフォルダ。抽出されたメインロジック `main.js` が入る |
-| `public/img/` | 画像・アイコン類 (`favicon.ico`, `icon-*.png` など) |
-| `public/firebase-messaging-sw.js` | プッシュ通知用の Service Worker（バックグラウンド通知用） |
-| `public/manifest.json` | PWA設定（ホーム画面追加時の名前・アイコン等） |
-| `public/version.json` | 現在のバージョン番号（デプロイ時に自動更新） |
-| `public/404.html` | 404エラーページ |
-| `public/recovery.html` | アカウント・E2EE鍵復元用のページ |
-
-### サーバー（バックエンド）
-| 場所 | 役割 |
-|------|------|
-| `server/` | **Cloudflare Worker（バックエンドAPI）** |
-| `server/src/index.js` | Worker の本体。プッシュ通知の送信等のAPI。※UTF-16LEで保存されている点に注意 |
-| `server/wrangler.toml` | Worker の設定（KV・環境変数・シークレット） |
-
-### 補助ツール・ログ・バックアップ
-| 場所 | 役割 |
-|------|------|
-| `tools/scripts/` | プロジェクト整理・バグ修正などに使われた Python/JS スクリプト群 |
-| `tools/logs/` | 過去の差分ログ (`*.diff`, `*.patch`, `*.txt`) |
-| `tools/snippets/` | 一時的に抽出・作成された HTMLスニペットなど |
-| `tools/backups/` | 古い index.html のバックアップなど |
-| `scripts/` | デプロイ補助スクリプト（バージョン更新など npm scripts で呼ばれるもの） |
-
-### デスクトップアプリ
-| 場所 | 役割 |
-|------|------|
-| `src-tauri/` | **Tauri（Windows等のデスクトップEXE）の設定**。`public/` を中身として表示する |
-| `src-tauri/tauri.conf.json` | Tauri の設定（バージョンは deploy 時に自動同期） |
-
-### 設定・ツール（ルートに置く必要があるもの＝動かさない）
-| ファイル | 役割 |
-|----------|------|
-| `firebase.json` | Firebase Hosting / Firestore の設定。デプロイ対象や predeploy 処理を定義 |
-| `.firebaserc` | Firebase プロジェクトID（simplechat-65a0d） |
-| `firestore.rules` | **Firestore のセキュリティルール**。誰が何を読み書きできるか。E2EE鍵の保護もここ |
-| `deploy.ps1` | デプロイ手順をまとめた PowerShell スクリプト（`npm run deploy` の中身） |
-| `package.json` / `package-lock.json` | npm の設定・依存関係 |
-| `tailwind.config.js` / `tailwind.input.css` | Tailwind CSS の設定（`public/css/styles.css` を生成する元） |
-| `.github/` | GitHub Actions（Windowsインストーラーの自動ビルド等） |
-| `.gitignore` | git で無視するファイルの一覧 |
-
-### その他
-| 場所 | 役割 |
-|------|------|
-| `assets/` | コードから参照されない素材ファイル置き場（スクショ等） |
-| `covo スタンプ/` | スタンプ用画像群（ルート） |
-| `keys/` | 鍵ファイル置き場。⚠️ 下の「注意」参照 |
-| `.backups/` | 手動バックアップ置き場（公開されない） |
-| `node_modules/` | npm が入れた依存ライブラリ（自動生成・git管理外） |
-| `.firebase/` | Firebase のキャッシュ（自動生成） |
-
----
-
-## 🛠 開発者ツール（アプリ内）
-
-iPhone等で開発者コンソールが無くてもデバッグできるよう、アプリ内に診断機能を入れてある。
-**設定 → あなた → 開発者ツール** から:
-- **要素を検査**: ONにして画面を長押しすると、その要素の情報を調べてコピー
-- **レイアウト診断**: safe-area やナビ位置、影の有無などを表示
-- **コンソール**: `console.log` 等を画面で見られる
-- **診断情報をまとめてコピー**: バージョン・ログをまとめてコピー
-
----
-
-## ⚠️ 注意
-
-- **`keys/` の鍵ファイルは過去に git にコミットされている**ため、GitHub の履歴に残っている可能性があります。もし秘密の鍵なら、新しい鍵に作り直す（ローテーションする）ことを検討してください。
-- `server/src/index.js` は **UTF-16LE** で保存されています（通常のエディタで文字化けする場合あり）。
-</file>
-
-<file path="tailwind.config.js">
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: 'class',
-  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
-  theme: {
-    extend: {
-      transitionTimingFunction: {
-        'spring-bounce': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-        'spring-smooth': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
-      },
-      keyframes: {
-        'fade-in-up': {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'fade-in-down': {
-          '0%': { opacity: '0', transform: 'translateY(-10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        'pop-in': {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
-        }
-      },
-      animation: {
-        'fade-in-up': 'fade-in-up 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'fade-in-down': 'fade-in-down 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards',
-        'pop-in': 'pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-      }
-    },
-  },
-  plugins: [],
-}
-</file>
-
-<file path="public/css/modules/animations.css">
-/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
-.splash-icon-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s ease;
-}
-@media (max-width: 768px) {
-  .splash-icon-container {
-    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
-  }
-}
-/* === サーバーリスト画面 === */
-    #serverListScreen {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #f3f4f6;
-      overflow-y: auto;
-    }
-    #serverListScreen.hidden {
-      display: none !important;
-    }
-    /* === アニメーション定義 === */
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
-    }
-    @keyframes slideUpFade {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    @keyframes scaleInFade {
-      from {
-        opacity: 0;
-        transform: scale(0.96) translateY(6px);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-    @keyframes cardIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .anim-fade-in {
-      animation: fadeIn 0.18s ease both;
-    }
-    .anim-slide-up {
-      animation: slideUpFade 0.22s ease both;
-    }
-    .anim-scale-in {
-      animation: scaleInFade 0.22s ease both;
-    }
-    .anim-card {
-      animation: cardIn 0.28s ease both;
-      opacity: 0;
-    }
-    /* === サーバーリスト画面 === */
-    .server-list-header {
-      background: #1f2937;
-      color: white;
-      padding: 0.875rem 1.25rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    .server-list-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-    }
-    .server-list-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .server-list-actions button:not(.server-list-user-btn) {
-      padding: 7px 13px;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #joinServerBtn {
-      background: rgba(255, 255, 255, 0.12);
-      color: white;
-    }
-    #joinServerBtn:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-    #createServerBtn {
-      background: #f3f4f6;
-      color: #1f2937;
-    }
-    #createServerBtn:hover {
-      background: #e5e7eb;
-    }
-    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
-    .server-list-user-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s, transform 0.12s;
-      flex-shrink: 0;
-    }
-    .server-list-user-btn:hover {
-      background: rgba(255, 255, 255, 0.28);
-      transform: scale(1.07);
-    }
-    .server-list-user-btn:active {
-      transform: scale(0.95);
-    }
-    .server-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 14px;
-      padding: 1.25rem 1.25rem 0 1.25rem;
-    }
-    .server-section-label {
-      grid-column: 1 / -1;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #9ca3af;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 0 2px 2px;
-      border-bottom: 1px solid #f3f4f6;
-      margin-bottom: 2px;
-      margin-top: 4px;
-    }
-    .server-section-label:first-child {
-      margin-top: 0;
-    }
-    .admin-join-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: white;
-      border: 1px solid #f3f4f6;
-      cursor: pointer;
-      width: 100%;
-      text-align: left;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .admin-join-item:hover {
-      background: #f9fafb;
-      border-color: #e5e7eb;
-    }
-    .admin-join-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      flex-shrink: 0;
-      font-size: 0.85rem;
-    }
-    .admin-join-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #111827;
-    }
-    .admin-join-meta {
-      font-size: 0.72rem;
-      color: #9ca3af;
-      margin-top: 1px;
-    }
-    .admin-join-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      background: #e0e7ff;
-      color: #3730a3;
-      padding: 3px 9px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-    .server-card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 16px;
-      padding: 1.25rem;
-      cursor: pointer;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      position: relative;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-    .server-card:hover {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      transform: translateY(-2px);
-      border-color: #cbd5e1;
-    }
-    .server-card:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-    .server-card-icon {
-      width: 44px;
-      height: 44px;
-      background: #4f46e5;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: white;
-      margin-bottom: 2px;
-      font-weight: 700;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-    .server-card-icon img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: inherit;
-    }
-    .server-card:hover .server-card-icon {
-      border-radius: 14px;
-      transform: translateY(-1px);
-      background: #4338ca;
-    }
-    .server-card-name {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #111827;
-      line-height: 1.2;
-    }
-    .server-card-meta {
-      font-size: 0.73rem;
-      color: #6b7280;
-    }
-    .server-card-admin-badge {
-      display: inline-block;
-      background: #e5e7eb;
-      color: #374151;
-      font-size: 0.63rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 99px;
-      border: 1px solid #d1d5db;
-    }
-    .server-list-empty {
-      text-align: center;
-      padding: 3rem 1.5rem;
-      color: #6b7280;
-      animation: fadeIn 0.3s ease;
-    }
-    .server-list-empty i {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      color: #d1d5db;
-    }
-    /* === ルームリストアイテムアニメーション === */
-    @keyframes roomSlideIn {
-      from {
-        opacity: 0;
-        transform: translateX(-8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-    .room-list-anim {
-      animation: roomSlideIn 0.2s ease both;
-    }
-    /* === メンバーリストアイテムアニメーション === */
-    @keyframes memberFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .member-anim {
-      animation: memberFadeIn 0.18s ease both;
-    }
-    /* === スムーズなアニメーション（UIの触り心地向上） === */
-    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
-      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
-    }
-    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
-      transform: scale(0.96);
-    }
-    /* Mobile full-screen pages (スライドインアニメーション対応) */
-    #mobileProfileScreen,
-    #mobileNotifScreen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      -webkit-overflow-scrolling: touch;
-      z-index: 300;
-      overflow-y: auto;
-      flex-direction: column;
-    }
-    #mobileProfileScreen.active,
-    #mobileNotifScreen.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    #mobileProfileScreen.closing,
-    #mobileNotifScreen.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-profile-header {
-      background: #1f2937;
-      padding: 1.25rem;
-      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-    .mobile-profile-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 1.3rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .mobile-profile-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .mobile-profile-name {
-      font-size: 1rem;
-      font-weight: 700;
-      color: white;
-    }
-    .mobile-profile-sub {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-    .mobile-settings-section {
-      margin: 1rem;
-    }
-    .mobile-settings-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #6b7280;
-      padding: 0 4px;
-      margin-bottom: 6px;
-    }
-    .mobile-settings-group {
-      background: white;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid #e5e7eb;
-    }
-    .mobile-settings-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 13px 16px;
-      cursor: pointer;
-      transition: background 0.12s;
-      border-bottom: 1px solid #f3f4f6;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-settings-row:last-child {
-      border-bottom: none;
-    }
-    .mobile-settings-row:active {
-      background: #f9fafb;
-    }
-    .mobile-settings-row-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.85rem;
-      flex-shrink: 0;
-    }
-    .mobile-settings-row-text {
-      flex: 1;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: #111827;
-    }
-    .mobile-settings-row-arrow {
-      color: #d1d5db;
-      font-size: 0.8rem;
-    }
-    .mobile-settings-row.danger .mobile-settings-row-text {
-      color: #ef4444;
-    }
-    /* Mobile settings slide-in detail */
-    .mobile-settings-detail {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      z-index: 300;
-      flex-direction: column;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mobile-settings-detail.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    @keyframes slideInFromRight {
-      from { transform: translateX(100%); opacity: 0.7; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOutToRight {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0.7; }
-    }
-    .mobile-settings-detail.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-detail-header {
-      background: #1f2937;
-      color: white;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0.875rem 1rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      flex-shrink: 0;
-    }
-    .mobile-detail-back {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
-    .mobile-detail-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-    .mobile-notif-item {
-      background: white;
-      margin: 0 1rem 0.75rem;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      color: #374151;
-    }
-</file>
-
-<file path="public/css/modules/components.css">
-/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
-    .flipped {
-      transform: scaleY(-1);
-    }
-    .message-bubble {
-      max-width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      margin-bottom: 0;
-      word-wrap: break-word;
-      -webkit-touch-callout: none;
-      /* iOS長押しメニュー防止 */
-    }
-    .msg-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      cursor: pointer;
-      overflow: hidden;
-      transition: opacity 0.15s;
-    }
-    .msg-avatar:hover {
-      opacity: 0.85;
-    }
-    .msg-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .my-message {
-      background-color: #e0e0e0;
-      /* 薄いグレー */
-      border-top-right-radius: 0.25rem;
-    }
-    .other-message {
-      background-color: #f0f0f0;
-      /* 非常に薄いグレー */
-      border-top-left-radius: 0.25rem;
-    }
-    .scrollable {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
-    #updateOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(16px);
-      flex-direction: column;
-    }
-    #updateOverlay.show {
-      display: flex;
-    }
-    .update-card {
-      position: relative;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.75rem;
-      padding: 2.75rem 2.25rem;
-      max-width: 420px;
-      width: 90%;
-      text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .update-close-btn {
-      position: absolute;
-      top: 1.25rem;
-      right: 1.25rem;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .update-close-btn.hidden {
-      display: none !important;
-    }
-    .update-close-btn:hover {
-      background: rgba(0, 0, 0, 0.1);
-      color: #111827;
-      transform: scale(1.05);
-    }
-    @keyframes updateCardPopIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-    .update-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 1.25rem;
-      background: #4f46e5;
-      border-radius: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    }
-    .update-title {
-      color: #111827;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-    }
-    .update-version {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-    .update-body {
-      color: #4b5563;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      margin-bottom: 1.75rem;
-      max-height: 140px;
-      overflow-y: auto;
-      text-align: left;
-      padding: 1rem;
-      background: #f3f4f6;
-      border-radius: 1rem;
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-    .update-btn {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: #4f46e5;
-      color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    .update-btn:hover {
-      background: #4338ca;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
-    }
-    .update-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .update-progress {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.85rem;
-      display: none;
-    }
-    .update-progress.show {
-      display: block;
-    }
-    .update-spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e2e8f0;
-      border-top-color: #4f46e5;
-      border-radius: 50%;
-      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-    /* === 設定トグルスイッチ === */
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .setting-row:last-child {
-      border-bottom: none;
-    }
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-    .setting-label i {
-      width: 18px;
-      text-align: center;
-      color: #6b7280;
-    }
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background-color: #d1d5db;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: background-color 0.25s;
-    }
-    .toggle-slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-    .toggle-switch input:checked+.toggle-slider {
-      background-color: #374151;
-    }
-    .toggle-switch input:checked+.toggle-slider::before {
-      transform: translateX(20px);
-    }
-    #updateErrorBox textarea {
-      width: 100%;
-      height: 80px;
-      padding: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
-      font-size: 0.7rem;
-      background: #1e293b;
-      color: #fca5a5;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      resize: vertical;
-      margin-bottom: 8px;
-      white-space: pre;
-      overflow: auto;
-    }
-    #updateErrorBox button {
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f1f5f9;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #updateErrorBox button:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-    /* === モーダルアニメーション === */
-    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-    /* .modal-box { placeholder } */
-    .modal-opening {
-      animation: scaleInFade 0.22s ease both;
-    }
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
-    /* === ルームリストアイテムのフェード === */
-    .room-item-animate {
-      animation: fadeIn 0.15s ease both;
-    }
-    /* === ボタン全般のactiveフィードバック === */
-    button:not(.server-list-user-btn):active {
-      opacity: 0.8;
-    }
-    #backToServerListBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-    /* サーバー設定モーダル内のタブ */
-    .ss-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .ss-tab.active {
-      background: #1f2937;
-      color: white;
-    }
-    .ss-tab:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-    .ss-tab:not(.active):hover {
-      background: #f3f4f6;
-    }
-    /* 招待コード表示 */
-    .invite-code-item {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-    .invite-code-text {
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-      flex: 1;
-      letter-spacing: 2px;
-    }
-    .invite-code-meta {
-      font-size: 0.7rem;
-      color: #9ca3af;
-    }
-    /* === サーバービュー用ニックネームヘッダー === */
-    #globalAppHeader {
-      display: none;
-      background: #374151;
-      color: white;
-      padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    #globalAppHeader.server-mode {
-      display: flex;
-    }
-    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
-    body.discord-ui-mode #globalAppHeader {
-      display: none !important;
-    }
-    #headerTitle {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.88;
-    }
-    /* === カスタム確認ダイアログ === */
-    #customConfirmModal {
-      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
-    }
-    #customConfirmModal .confirm-box {
-      text-align: left;
-    }
-    /* === モーダル角丸崩れ防止 === */
-    .modal-dark-header {
-      border-radius: inherit;
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-    /* === メンションバッジ通知 === */
-    .mention-toast {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .mention-toast-badge {
-      background: #4f46e5;
-      color: white;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 99px;
-      flex-shrink: 0;
-      letter-spacing: 0.03em;
-    }
-    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
-    .whatsnew-card {
-      background-color: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
-      border-radius: 1.5rem;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    }
-    body.dark-server-theme .whatsnew-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-      color: #f8fafc !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    body.discord-dark-theme .whatsnew-card {
-      background-color: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    .whatsnew-header {
-      padding: 1.25rem 1.5rem 1rem;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-header {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-header {
-      background-color: #242629 !important;
-      border-bottom-color: #1f2023 !important;
-    }
-    .whatsnew-body-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 1.25rem;
-      font-size: 0.875rem;
-      line-height: 1.65;
-      color: #334155;
-    }
-    body.dark-server-theme .whatsnew-body-box {
-      background-color: rgba(15, 23, 42, 0.6) !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme .whatsnew-body-box {
-      background-color: #1e1f22 !important;
-      border-color: #1f2023 !important;
-      color: #dbdee1 !important;
-    }
-    .whatsnew-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-footer {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-footer {
-      background-color: #242629 !important;
-      border-top-color: #1f2023 !important;
-    }
-</file>
-
-<file path="public/css/geo_study.css">
-/* geo_study.css - 隠し機能用スタイル */
-#geoStudyContainer {
-  /* Tailwindのユーティリティでカバーしきれない部分を補完 */
-  font-family: 'Inter', sans-serif;
-}
-/* モジュール起動時のフェードインアニメーション */
-.gs-fade-in {
-  animation: gsFadeIn 0.4s ease-out forwards;
-}
-@keyframes gsFadeIn {
-  from { opacity: 0; transform: scale(1.02); }
-  to { opacity: 1; transform: scale(1); }
-}
-#gs-minimap-container {
-  /* ホバー時やアクティブ時に少し広がるようなエフェクト */
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-#gs-minimap-container:hover, #gs-minimap-container.active-map {
-  opacity: 1 !important;
-  transform: scale(1.1) !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-  border-color: #4f46e5; /* indigo-600 */
-}
-/* スマホ用により大きく展開するクラス */
-@media (max-width: 768px) {
-  #gs-minimap-container.active-map {
-    width: calc(100vw - 2rem) !important;
-    height: 50vh !important;
-    transform: scale(1) !important;
-    bottom: 1rem !important;
-    right: 1rem !important;
-    z-index: 500;
-  }
-}
-/* 読み込みスピナー用 */
-.gs-spinner {
-  border: 3px solid rgba(255,255,255,0.1);
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border-left-color: #3b82f6; /* blue-500 */
-  animation: gs-spin 1s linear infinite;
-}
-@keyframes gs-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-/* 写真モード用の画像表示調整（見切れないようにcontainを使用） */
-#gs-photo-container {
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-  transition: opacity 0.6s ease-in-out;
-  opacity: 1;
-}
-#gs-photo-container.loading {
-  opacity: 0.3;
-  filter: blur(5px);
-}
-/* スワップ時のアニメーション用 */
-.gs-swap-transition {
-  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
-}
-/* 写真がミニサイズになる状態 */
-#gs-photo-container.is-minimap {
-  width: 12rem !important;
-  height: 8rem !important;
-  bottom: 1rem !important;
-  right: 1rem !important;
-  top: auto !important;
-  left: auto !important;
-  z-index: 999 !important;
-  border-radius: 0.75rem !important;
-  border: 2px solid #4b5563 !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
-  cursor: pointer;
-  background-size: cover !important;
-  background-color: #1f2937 !important;
-}
-@media (min-width: 768px) {
-  #gs-photo-container.is-minimap {
-    width: 20rem !important;
-    height: 16rem !important;
-  }
-}
-#gs-photo-container.is-minimap:hover {
-  transform: scale(1.05);
-  border-color: #4f46e5 !important;
-}
-/* 地図が全画面になる状態 */
-#gs-minimap-container.is-fullscreen {
-  width: 100% !important;
-  height: 100% !important;
-  bottom: 0 !important;
-  right: 0 !important;
-  border-radius: 0 !important;
-  border: none !important;
-  z-index: 0 !important;
-  transform: none !important;
-}
-/* Leaflet DivIconのデフォルト枠・白背景の除去 */
-.gs-custom-marker-wrapper {
-  background: transparent !important;
-  border: none !important;
-}
-</file>
-
-<file path="tests/security.test.js">
-const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
-const fs = require('fs');
-const PROJECT_ID = "demo-covo-security-test";
-const APP_ID = "testApp";
-let testEnv;
-// ============================================================================
-// セットアップ & クリーンアップ
-// ============================================================================
-beforeAll(async () => {
-  testEnv = await initializeTestEnvironment({
-    projectId: PROJECT_ID,
-    firestore: {
-      rules: fs.readFileSync('firestore.rules', 'utf8'),
-    },
-  });
-});
-beforeEach(async () => {
-  await testEnv.clearFirestore();
-});
-afterAll(async () => {
-  await testEnv.cleanup();
-});
-const getDb = (auth) => {
-  return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
-};
-// ============================================================================
-// テストスイート
-// ============================================================================
-describe('Firestore Security Rules Testing', () => {
-  // ★これでJestが「テストがある」と必ず認識します
-  it('【環境確認】Jestが正しく動いているか (Must Pass)', () => {
-    expect(true).toBe(true);
-  });
-  // -----------------------------------------------------------------------
-  // 【脆弱性1】退出ロジックの欠陥 (Server Leave)
-  // -----------------------------------------------------------------------
-  describe('脆弱性1: サーバー退出時の破壊行為防止', () => {
-    const serverId = "server1";
-    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, serverPath), {
-          joinedUsers: ['alice', 'bob', 'admin'],
-          serverAdmins: ['admin'],
-          memberCount: 3,
-          createdBy: 'admin'
-        });
-      });
-    });
-    it('【正常系】Aliceが自分自身のみを配列から削除して退出できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, serverPath);
-      await assertSucceeds(updateDoc(ref, {
-        joinedUsers: ['bob', 'admin'],
-        serverAdmins: ['admin'],
-        memberCount: 2
-      }));
-    });
-    it('【異常系】Aliceが退出時にBob等も一緒に削除しようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, serverPath);
-      await assertFails(updateDoc(ref, {
-        joinedUsers: ['admin'],
-        serverAdmins: ['admin'],
-        memberCount: 1
-      }));
-    });
-  });
-  // -----------------------------------------------------------------------
-  // 【脆弱性2】サーバー作成時の強制参加スパム (Forced Join)
-  // -----------------------------------------------------------------------
-  describe('脆弱性2: サーバー作成時の他者強制参加防止', () => {
-    const newServerId = "newServer";
-    const serverPath = `artifacts/${APP_ID}/servers/${newServerId}`;
-    it('【正常系】Aliceが自分だけを参加者としてサーバーを作成できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      await assertSucceeds(setDoc(doc(aliceDb, serverPath), {
-        createdBy: 'alice',
-        serverAdmins: ['alice'],
-        joinedUsers: ['alice'],
-        memberCount: 1
-      }));
-    });
-    it('【異常系】Aliceが他人のUID(Bob)を勝手に追加して作成しようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      await assertFails(setDoc(doc(aliceDb, serverPath), {
-        createdBy: 'alice',
-        serverAdmins: ['alice'],
-        joinedUsers: ['alice', 'bob'],
-        memberCount: 2
-      }));
-    });
-  });
-  // -----------------------------------------------------------------------
-  // 【脆弱性3】E2EEルームキーの暗号化DoS (Room Keys)
-  // -----------------------------------------------------------------------
-  describe('脆弱性3: E2EEルームキーの不正上書き/削除防止', () => {
-    const serverId = "server1";
-    const roomId = "room1";
-    const keyId = "bob_key";
-    const keyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/${keyId}`;
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
-          joinedUsers: ['alice', 'bob'],
-          serverAdmins: ['alice']
-        });
-        await setDoc(doc(db, keyPath), {
-          keyData: 'encrypted_data_for_bob'
-        });
-      });
-    });
-    it('【正常系】参加メンバー(Bob)が新しいメンバー(Charlie)用の鍵を作成(create)できること (Must Pass)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const newKeyPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/roomKeys/charlie_key`;
-      await assertSucceeds(setDoc(doc(bobDb, newKeyPath), {
-        keyData: 'encrypted_data_for_charlie'
-      }));
-    });
-    it('【異常系】一般メンバー(Bob)が既存の鍵を削除(delete)・上書き(update)しようとすると弾かれること (Must Fail)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const ref = doc(bobDb, keyPath);
-      await assertFails(updateDoc(ref, { keyData: 'malicious_garbage_data' }));
-      await assertFails(deleteDoc(ref));
-    });
-  });
-  // -----------------------------------------------------------------------
-  // 【脆弱性5】P2Pシグナリングのなりすまし (Signaling Spoofing)
-  // -----------------------------------------------------------------------
-  describe('脆弱性5: P2PシグナリングID改ざん防止', () => {
-    const shareId = "share1";
-    const sharePath = `artifacts/${APP_ID}/fileshares/${shareId}`;
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, sharePath), {
-          sender: { uid: 'alice' },
-          receiverUid: 'bob',
-          status: 'init'
-        });
-      });
-    });
-    it('【正常系】Aliceが自分とBob間のシグナリングデータを更新(SDP追加など)できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, sharePath);
-      await assertSucceeds(updateDoc(ref, { status: 'connecting', sdp: 'dummy_sdp_data' }));
-    });
-    it('【異常系】Aliceが更新時に送信者(sender)をCharlieにすり替えようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const ref = doc(aliceDb, sharePath);
-      await assertFails(updateDoc(ref, { sender: { uid: 'charlie' }, status: 'connecting' }));
-    });
-    it('【異常系】Bobが更新時に受信者(receiverUid)を自分以外にすり替えようとすると弾かれること (Must Fail)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      const ref = doc(bobDb, sharePath);
-      await assertFails(updateDoc(ref, { receiverUid: 'charlie' }));
-    });
-  });
-  // -----------------------------------------------------------------------
-  // 【新セキュリティ検証】メッセージ削除・改ざん防止と権限階層の検証 (Discord標準)
-  // -----------------------------------------------------------------------
-  describe('メッセージセキュリティ: 他人の発言削除・本文改ざん防止', () => {
-    const serverId = "server1";
-    const roomId = "room1";
-    const msgId = "msg_alice_1";
-    const msgPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/${roomId}/messages/${msgId}`;
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
-          admins: ['super_admin'],
-          emails: ['superadmin@covo.app']
-        });
-        await setDoc(doc(db, `artifacts/${APP_ID}/settings/listAdminList`), {
-          admins: ['list_admin'],
-          emails: ['listadmin@covo.app']
-        });
-        await setDoc(doc(db, `artifacts/${APP_ID}/servers/${serverId}`), {
-          joinedUsers: ['alice', 'bob', 'moderator', 'list_admin', 'super_admin'],
-          serverAdmins: ['moderator'],
-          createdBy: 'owner_user'
-        });
-        await setDoc(doc(db, msgPath), {
-          senderId: 'alice',
-          text: 'Hello from Alice',
-          createdAt: 1000,
-          timestamp: 1000,
-          isPinned: false
-        });
-      });
-    });
-    it('【正常系】送信者本人 (Alice) は自分のメッセージを削除できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      await assertSucceeds(deleteDoc(doc(aliceDb, msgPath)));
-    });
-    it('【正常系】サーバーモデレーター (moderator) は他人の不適切メッセージを削除できること (Must Pass)', async () => {
-      const modDb = getDb({ uid: 'moderator' });
-      await assertSucceeds(deleteDoc(doc(modDb, msgPath)));
-    });
-    it('【正常系】全体管理者 (super_admin) は他人のメッセージを削除できること (Must Pass)', async () => {
-      const adminDb = getDb({ uid: 'super_admin' });
-      await assertSucceeds(deleteDoc(doc(adminDb, msgPath)));
-    });
-    it('【異常系】一般メンバー (Bob) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
-      const bobDb = getDb({ uid: 'bob' });
-      await assertFails(deleteDoc(doc(bobDb, msgPath)));
-    });
-    it('【異常系】リスト管理者 (list_admin) がAliceのメッセージを削除しようとすると弾かれること (Must Fail)', async () => {
-      const listAdminDb = getDb({ uid: 'list_admin' });
-      await assertFails(deleteDoc(doc(listAdminDb, msgPath)));
-    });
-    it('【異常系】モデレーターや一般ユーザーが他人のメッセージ本文を改ざんしようとすると弾かれること (Must Fail)', async () => {
-      const modDb = getDb({ uid: 'moderator' });
-      await assertFails(updateDoc(doc(modDb, msgPath), {
-        text: 'Tampered malicious message by moderator'
-      }));
-    });
-  });
-  // -----------------------------------------------------------------------
-  // 【新セキュリティ検証】サーバー・ルーム・管理者昇格の保護 (Discord標準)
-  // -----------------------------------------------------------------------
-  describe('サーバー・ルーム保護: オーナーシップ保護と権限昇格防止', () => {
-    const serverId = "server1";
-    const serverPath = `artifacts/${APP_ID}/servers/${serverId}`;
-    const roomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/room1`;
-    beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        const db = context.firestore();
-        await setDoc(doc(db, `artifacts/${APP_ID}/settings/adminList`), {
-          admins: ['super_admin']
-        });
-        await setDoc(doc(db, serverPath), {
-          joinedUsers: ['owner_user', 'moderator', 'regular_user'],
-          serverAdmins: ['moderator'],
-          createdBy: 'owner_user',
-          name: 'Original Server'
-        });
-        await setDoc(doc(db, roomPath), {
-          name: 'General',
-          createdBy: 'owner_user'
-        });
-      });
-    });
-    it('【正常系】サーバーオーナー (owner_user) はサーバーを削除できること (Must Pass)', async () => {
-      const ownerDb = getDb({ uid: 'owner_user' });
-      await assertSucceeds(deleteDoc(doc(ownerDb, serverPath)));
-    });
-    it('【正常系】全体管理者 (super_admin) はサーバーを削除できること (Must Pass)', async () => {
-      const adminDb = getDb({ uid: 'super_admin' });
-      await assertSucceeds(deleteDoc(doc(adminDb, serverPath)));
-    });
-    it('【異常系】モデレーター (moderator) や一般ユーザーがサーバー自体を削除しようとすると弾かれること (Must Fail)', async () => {
-      const modDb = getDb({ uid: 'moderator' });
-      await assertFails(deleteDoc(doc(modDb, serverPath)));
-    });
-    it('【異常系】一般ユーザー (regular_user) がルームを作成・削除しようとすると弾かれること (Must Fail)', async () => {
-      const userDb = getDb({ uid: 'regular_user' });
-      const newRoomPath = `artifacts/${APP_ID}/servers/${serverId}/rooms/hack_room`;
-      await assertFails(setDoc(doc(userDb, newRoomPath), { name: 'Hack' }));
-      await assertFails(deleteDoc(doc(userDb, roomPath)));
-    });
-    it('【異常系】一般ユーザーやリスト管理者が全体管理者リスト (adminList) を書き換えて特権奪取しようとすると弾かれること (Must Fail)', async () => {
-      const userDb = getDb({ uid: 'regular_user' });
-      const adminListPath = `artifacts/${APP_ID}/settings/adminList`;
-      await assertFails(setDoc(doc(userDb, adminListPath), { admins: ['regular_user'] }));
-    });
-  });
-});
-</file>
-
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
-</file>
-
 <file path="patch.bat">
 @echo off
 chcp 65001 >nul
@@ -7462,6 +7462,50 @@ exit
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+}
+</file>
+
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
 }
 </file>
 
@@ -8349,50 +8393,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
-</file>
-
 <file path="firebase.json">
 {
   "database": {
@@ -8467,384 +8467,6 @@ if (typeof window !== 'undefined') {
     ]
   }
 }
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      fileContent = fs.readFileSync(fullPath, 'utf-8');
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      fs.writeFileSync(fullPath, modified, 'utf-8');
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
 </file>
 
 <file path="public/css/modules/base.css">
@@ -9797,6 +9419,384 @@ if (typeof window !== 'undefined') {
   </script>
 </body>
 </html>
+</file>
+
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
+    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
+    }
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
+    }
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
+}
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      fileContent = fs.readFileSync(fullPath, 'utf-8');
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      fs.writeFileSync(fullPath, modified, 'utf-8');
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
+}
+run();
 </file>
 
 <file path="public/auth-desktop.html">
@@ -22260,13 +22260,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.148" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.150" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.148" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.150" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
@@ -25013,7 +25013,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.148"></script>
+  <script type="module" src="js/main.js?v=1.1.150"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -25185,6 +25185,9 @@ async function handleD1Api(request, env, url) {
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button type="button" class="discord-call-top-btn" onclick="toggleCallFullscreen()" title="全画面表示切替">
+          <i class="fas fa-expand" id="callFullscreenIcon"></i>
+        </button>
         <button type="button" class="discord-call-top-btn" onclick="minimizeCallOverlay()" title="チャットに戻る (通話を最小化)">
           <i class="fas fa-compress-alt"></i>
         </button>
@@ -42411,6 +42414,7 @@ function setupAgoraClientEvents(client) {
   client.on("user-published", async (user, mediaType) => {
     try {
       await client.subscribe(user, mediaType);
+      _remoteUsers.set(user.uid, user);
       if (mediaType === "audio") {
         user.audioTrack?.play();
       }
@@ -42427,7 +42431,6 @@ function setupAgoraClientEvents(client) {
     } catch (subErr) {
       console.error("Agora subscribe error:", subErr);
     }
-    _remoteUsers.set(user.uid, user);
     renderParticipantTiles();
   });
   client.on("user-unpublished", (user, mediaType) => {
@@ -42636,9 +42639,11 @@ window.toggleScreenShare = async function () {
       if (_isVideoEnabled) {
         await toggleCamera(); // カメラONなら停止
       }
-      _localScreenTrack = await AgoraRTC.createScreenVideoTrack({
+      const trackRes = await AgoraRTC.createScreenVideoTrack({
         encoderConfig: "1080p_1"
       }, "auto");
+      const screenTrack = Array.isArray(trackRes) ? trackRes[0] : trackRes;
+      _localScreenTrack = screenTrack;
       _localScreenTrack.on("track-ended", () => {
         if (_isScreenSharing) toggleScreenShare();
       });
@@ -42677,6 +42682,12 @@ window.toggleCallFullscreen = function () {
     if (icon) icon.className = "fas fa-expand text-xs";
   }
 };
+document.addEventListener("fullscreenchange", () => {
+  const icon = document.getElementById("callFullscreenIcon");
+  if (icon) {
+    icon.className = document.fullscreenElement ? "fas fa-compress text-xs" : "fas fa-expand text-xs";
+  }
+});
 window.toggleCallDeviceMenu = async function (e) {
   if (e && e.stopPropagation) e.stopPropagation();
   let menu = document.getElementById("callDeviceMenu");
@@ -42796,9 +42807,12 @@ async function endCall(skipFirestore, reason) {
       await cleanupWebRtcDoc('calls', callIdCopy);
     } catch (_) { }
   }
+  if (document.fullscreenElement) {
+    try { document.exitFullscreen().catch(() => {}); } catch (_) {}
+  }
   hideCallOverlay();
   if (reason) showCallEndedReason(reason);
-}
+  }
 async function handleCallNotificationClick(data) {
   if (!data.callId) return;
   const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
@@ -45882,7 +45896,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.148",
+  "version": "1.1.150",
   "force": false
 }
 </file>
@@ -45891,7 +45905,7 @@ window.saveViewerMessagesAsTxt = function () {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.148",
+  "version": "1.1.150",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

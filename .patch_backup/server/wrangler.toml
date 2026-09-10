@@ -19,8 +19,6 @@ CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
 # wrangler secret put WORKER_AUTH_PASSWORD
 # wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
 # wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
-# wrangler secret put AGORA_APP_ID           (Agora SD-RTN 音声通話トークン生成に必要)
-# wrangler secret put AGORA_PRIMARY_CERTIFICATE (Agora SD-RTN 音声通話トークン生成に必要)
 
 # [dev]
 # ローカル開発用のポート
