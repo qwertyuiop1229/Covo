@@ -859,48 +859,158 @@
       from { opacity: 0; transform: scale(0.95) translateY(6px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
-    /* === モバイル (スマホ) 専用 Discord 通話画面 最適化 === */
+    /* === Discord 本家風 着信ポップアップカード === */
+    #discordCallIncomingModal {
+      z-index: 100005 !important;
+    }
+    .discord-incoming-card {
+      background: rgba(43, 45, 49, 0.95);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      width: min(90vw, 360px);
+      max-width: 360px;
+      padding: 1.75rem 1.5rem;
+      color: #f2f3f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: discordCallFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .discord-incoming-avatar-wrap {
+      position: relative;
+      margin-bottom: 1.25rem;
+    }
+    .discord-incoming-avatar {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      background: #1e1f22;
+      border: 4px solid #23a55a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      overflow: hidden;
+      box-shadow: 0 0 0 4px rgba(35, 165, 90, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4);
+      animation: incomingAvatarPulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    @keyframes incomingAvatarPulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(35, 165, 90, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4); transform: scale(1); }
+      50% { box-shadow: 0 0 0 10px rgba(35, 165, 90, 0.15), 0 12px 32px rgba(0, 0, 0, 0.5); transform: scale(1.03); }
+    }
+    .discord-incoming-badge {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #23a55a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      border: 3px solid #2b2d31;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    .discord-action-btn-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .discord-call-action-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .discord-call-action-btn:active {
+      transform: scale(0.90);
+    }
+    .discord-call-action-btn.decline {
+      background: #da373c;
+    }
+    .discord-call-action-btn.decline:hover {
+      background: #b82e34;
+    }
+    .discord-call-action-btn.accept {
+      background: #23a55a;
+      box-shadow: 0 8px 24px rgba(35, 165, 90, 0.4);
+    }
+    .discord-call-action-btn.accept:hover {
+      background: #1f934f;
+    }
+
+    /* === モバイル (スマホ iOS / Android) 専用 Discord 通話画面 最適化 === */
     @media (max-width: 768px) {
       .discord-call-header {
-        height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-top: var(--safe-top, env(safe-area-inset-top, 0px)) !important;
-        padding-left: 12px !important;
-        padding-right: 12px !important;
+        height: calc(50px + max(8px, env(safe-area-inset-top, 0px))) !important;
+        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+        padding-left: max(12px, env(safe-area-inset-left, 12px)) !important;
+        padding-right: max(12px, env(safe-area-inset-right, 12px)) !important;
       }
       .discord-call-header .text-sm {
-        font-size: 0.8rem !important;
+        font-size: 0.85rem !important;
       }
       .discord-call-grid-wrap {
-        padding: 10px 10px calc(86px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) 10px !important;
+        padding: 8px 12px calc(92px + max(12px, env(safe-area-inset-bottom, 0px))) 12px !important;
       }
       .discord-call-grid {
         grid-template-columns: 1fr !important;
         grid-template-rows: 1fr 1fr !important;
-        gap: 10px !important;
+        gap: 12px !important;
         height: 100% !important;
+        min-height: 0 !important;
+      }
+      .discord-call-grid.single-participant {
+        grid-template-rows: 1fr !important;
+      }
+      .discord-call-grid.single-participant .discord-participant-tile {
+        max-height: 80% !important;
       }
       .discord-participant-tile {
         min-height: 0 !important;
         max-height: 100% !important;
         height: 100% !important;
-        border-radius: 16px !important;
+        border-radius: 20px !important;
       }
       .discord-tile-avatar {
-        width: 80px !important;
-        height: 80px !important;
-        font-size: 1.8rem !important;
+        width: 88px !important;
+        height: 88px !important;
+        font-size: 2rem !important;
       }
       .discord-call-control-bar {
-        bottom: max(14px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-        padding: 6px 14px !important;
-        gap: 8px !important;
+        bottom: max(18px, calc(10px + env(safe-area-inset-bottom, 0px))) !important;
+        padding: 8px 16px !important;
+        gap: 12px !important;
         width: max-content !important;
-        max-width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 24px) !important;
       }
       .discord-control-btn {
-        width: 44px !important;
-        height: 44px !important;
-        font-size: 16px !important;
+        width: 48px !important;
+        height: 48px !important;
+        font-size: 18px !important;
+        -webkit-tap-highlight-color: transparent;
       }
       #callScreenBtn {
         display: none !important; /* モバイルでは画面共有を非表示にし、Discord本家同様の4ボタン配置に整理 */
@@ -908,6 +1018,7 @@
       .discord-device-menu {
         width: calc(100vw - 24px) !important;
         left: 12px !important;
+        bottom: calc(76px + max(12px, env(safe-area-inset-bottom, 0px))) !important;
       }
     }
     #callEndedToast {

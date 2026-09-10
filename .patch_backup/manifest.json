@@ -1,6 +1,10 @@
 {
-  "date": "2026-09-10T13:25:41.183Z",
+  "date": "2026-09-10T15:08:15.366Z",
   "files": [
+    "server/src/index.js",
+    "public/css/modules/mobile.css",
+    "public/css/modules/chat.css",
+    "public/index.html",
     "public/js/main.js"
   ]
 }

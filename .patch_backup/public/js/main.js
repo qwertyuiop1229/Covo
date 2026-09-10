@@ -634,13 +634,6 @@ function toggleCallDeviceMenu(...args) { return window.toggleCallDeviceMenu ? wi
 function openDeviceSettingsModal(...args) { return window.openDeviceSettingsModal ? window.openDeviceSettingsModal(...args) : (window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null); }
 function minimizeCallOverlay(...args) { return window.minimizeCallOverlay ? window.minimizeCallOverlay(...args) : null; }
 function restoreCallOverlay(...args) { return window.restoreCallOverlay ? window.restoreCallOverlay(...args) : null; }
-function toggleCallVideo(...args) { return window.toggleCallVideo ? window.toggleCallVideo(...args) : (window.toggleCamera ? window.toggleCamera(...args) : null); }
-function toggleScreenShare(...args) { return window.toggleScreenShare ? window.toggleScreenShare(...args) : null; }
-function toggleCallScreenShare(...args) { return window.toggleCallScreenShare ? window.toggleCallScreenShare(...args) : (window.toggleScreenShare ? window.toggleScreenShare(...args) : null); }
-function toggleCallFullscreen(...args) { return window.toggleCallFullscreen ? window.toggleCallFullscreen(...args) : null; }
-function toggleCallDeviceMenu(...args) { return window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null; }
-function openDeviceSettingsModal(...args) { return window.openDeviceSettingsModal ? window.openDeviceSettingsModal(...args) : (window.toggleCallDeviceMenu ? window.toggleCallDeviceMenu(...args) : null); }
-
 // ファイルアップローダー
 function checkFileAllowed(file) { return _checkFileAllowed(file); }
 function uploadToExternalService(file, onProgress, _folder, _serverId = currentServerId) {
@@ -6120,17 +6113,6 @@ window.closeCallPicker = closeCallPicker;
 window.acceptCall = acceptCall;
 window.declineCall = declineCall;
 window.endCall = endCall;
-window.toggleMute = toggleMute;
-window.toggleCamera = toggleCamera;
-window.toggleCallVideo = toggleCallVideo;
-window.toggleScreenShare = toggleScreenShare;
-window.toggleCallScreenShare = toggleCallScreenShare;
-window.toggleCallFullscreen = toggleCallFullscreen;
-window.toggleCallDeviceMenu = toggleCallDeviceMenu;
-window.openDeviceSettingsModal = openDeviceSettingsModal;
-window.minimizeCallOverlay = minimizeCallOverlay;
-window.restoreCallOverlay = restoreCallOverlay;
-
 function setCallReconnectStatus(isReconnecting) {}
 function setCallConnectionType(type) {}
 
@@ -17788,8 +17770,11 @@ async function startCall(uid, name, avatar) {
   // 相手の応答（active）、拒否（declined）、キャンセル（ended）を監視
   const unsubAnswer = onSnapshot(newCallRef, async (snap) => {
     const d = snap.data();
-    if (!d) return;
-
+    if (!d) {
+      unsubAnswer();
+      endCall(true, 'declined');
+      return;
+    }
     if (d.status === 'declined') {
       unsubAnswer();
       endCall(true, 'declined');
@@ -17803,6 +17788,7 @@ async function startCall(uid, name, avatar) {
     if (d.status === 'active') {
       unsubAnswer();
       stopCallRingSound();
+      if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
       showCallOverlay('active', { name, avatar, channelName });
       try {
         await joinAgoraChannel(channelName);
@@ -17915,10 +17901,14 @@ async function acceptCall() {
 
 async function declineCall() {
   if (!_callId) return;
+  const targetCallId = _callId;
   stopCallRingSound();
   try {
     const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    await cleanupWebRtcDoc('calls', _callId);
+    await updateDoc(doc(db, 'artifacts', appId, 'calls', targetCallId), { status: 'declined' }).catch(() => {});
+    setTimeout(() => {
+      cleanupWebRtcDoc('calls', targetCallId).catch(() => {});
+    }, 1500);
   } catch (_) { }
   endCall(true, 'declined');
 }
@@ -18019,7 +18009,8 @@ function setupAgoraClientEvents(client) {
           pipAvatar.classList.toggle("speaking", isSpeaking && !_isAudioMuted);
         }
       } else {
-        const remoteTile = document.getElementById(`participant-tile-${vol.uid}`);
+        const remoteTile = document.getElementById(`participant-tile-${vol.uid}`) ||
+          document.querySelector('.discord-participant-tile:not(#participant-tile-local)');
         if (remoteTile) {
           remoteTile.classList.toggle("speaking", isSpeaking);
         }
@@ -18190,11 +18181,9 @@ window.toggleCamera = async function () {
     console.error("Camera toggle error:", err);
     alertMessage("カメラの起動に失敗しました", "error");
   }
-};
-window.toggleCamera = toggleCamera;
-window.toggleCallVideo = toggleCamera;
-
-async function toggleScreenShare() {
+  };
+  window.toggleCallVideo = window.toggleCamera;
+  window.toggleScreenShare = async function () {
   if (!_agoraClient) return;
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
   try {
@@ -18243,11 +18232,9 @@ async function toggleScreenShare() {
       alertMessage("画面共有を開始できませんでした", "error");
     }
   }
-}
-window.toggleScreenShare = toggleScreenShare;
-window.toggleCallScreenShare = toggleScreenShare;
-
-function toggleCallFullscreen() {
+  };
+  window.toggleCallScreenShare = window.toggleScreenShare;
+  window.toggleCallFullscreen = function () {
   const overlay = document.getElementById("callOverlay");
   const icon = document.getElementById("callFullscreenIcon");
   if (!document.fullscreenElement) {
@@ -18259,17 +18246,14 @@ function toggleCallFullscreen() {
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     if (icon) icon.className = "fas fa-expand text-xs";
   }
-}
-window.toggleCallFullscreen = toggleCallFullscreen;
-
-document.addEventListener("fullscreenchange", () => {
+  };
+  document.addEventListener("fullscreenchange", () => {
   const icon = document.getElementById("callFullscreenIcon");
   if (icon) {
     icon.className = document.fullscreenElement ? "fas fa-compress text-xs" : "fas fa-expand text-xs";
   }
-});
-
-async function toggleCallDeviceMenu(e) {
+  });
+  window.toggleCallDeviceMenu = async function (e) {
   if (e && e.stopPropagation) e.stopPropagation();
   let menu = document.getElementById("callDeviceMenu");
   if (!menu) {
@@ -18359,28 +18343,22 @@ async function toggleCallDeviceMenu(e) {
   } catch (err) {
     menu.innerHTML = `<div class="p-3 text-xs text-rose-400">デバイス取得エラー: ${escapeHtml(err.message || String(err))}</div>`;
   }
-}
-window.toggleCallDeviceMenu = toggleCallDeviceMenu;
-window.openDeviceSettingsModal = toggleCallDeviceMenu;
-
-async function endCall(skipFirestore, reason) {
+  };
+  window.openDeviceSettingsModal = window.toggleCallDeviceMenu;
+  async function endCall(skipFirestore, reason) {
   const overlay = document.getElementById('callOverlay');
   if (!_callId && !_agoraClient && !(overlay?.classList.contains('show'))) return;
-
   const callIdCopy = _callId;
   _callId = null;
   _callRole = null;
   _pendingCallerData = null;
   _activeCallTarget = null;
   _agoraChannelName = null;
-
   stopCallRingSound();
   stopCallTimer();
-
   if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
   if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
   if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
-
   // Agora トラックとクライアントの切断・停止
   if (_localAudioTrack) {
     try { _localAudioTrack.stop(); _localAudioTrack.close(); } catch (_) {}
@@ -18398,17 +18376,17 @@ async function endCall(skipFirestore, reason) {
     try { await _agoraClient.leave(); } catch (_) {}
     _agoraClient = null;
   }
-
   _remoteUsers.clear();
   _isAudioMuted = false;
   _isVideoEnabled = false;
   _isScreenSharing = false;
-
   // ボタン状態リセット
   const muteBtn = document.getElementById("callMuteBtn") || document.getElementById("muteButton");
   const muteIcon = document.getElementById("callMuteIcon");
+  const pipMuteBtn = document.getElementById("callPipMuteBtn");
   if (muteBtn) { muteBtn.classList.remove("active", "muted"); muteBtn.title = "マイクミュート切替"; }
   if (muteIcon) { muteIcon.className = "fas fa-microphone"; }
+  if (pipMuteBtn) { pipMuteBtn.classList.remove("active"); pipMuteBtn.innerHTML = '<i class="fas fa-microphone"></i>'; }
   const camBtn = document.getElementById("callVideoBtn") || document.getElementById("callCameraBtn");
   if (camBtn) { camBtn.classList.remove("active"); camBtn.innerHTML = '<i class="fas fa-video"></i>'; camBtn.title = "カメラ (ビデオ)"; }
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");

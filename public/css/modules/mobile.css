@@ -700,16 +700,16 @@
       #feedbackModal:not(.hidden),
       #windowsDownloadModal:not(.hidden),
       #whatsNewModal:not(.hidden),
-      #avatarLightbox:not(.hidden) {
+      #avatarLightbox:not(.hidden),
+      #discordCallIncomingModal:not(.hidden) {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         padding: 16px !important;
         position: fixed !important;
         inset: 0 !important;
-        z-index: 99998 !important;
+        z-index: 100005 !important;
       }
-
       #customConfirmModal:not(.hidden) .modal-box,
       #customAlertModal:not(.hidden) .modal-box,
       #messagePreviewModal:not(.hidden) .modal-box,
@@ -720,7 +720,9 @@
       #feedbackModal:not(.hidden) .modal-box,
       #windowsDownloadModal:not(.hidden) .modal-box,
       #whatsNewModal:not(.hidden) .modal-box,
-      #avatarLightbox:not(.hidden) .modal-box {
+      #avatarLightbox:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .discord-incoming-card {
         max-width: 380px !important;
         width: min(92vw, 380px) !important;
         padding: 20px !important;

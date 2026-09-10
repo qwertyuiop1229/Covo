@@ -859,6 +859,57 @@
       from { opacity: 0; transform: scale(0.95) translateY(6px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
+    /* === モバイル (スマホ) 専用 Discord 通話画面 最適化 === */
+    @media (max-width: 768px) {
+      .discord-call-header {
+        height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: var(--safe-top, env(safe-area-inset-top, 0px)) !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+      }
+      .discord-call-header .text-sm {
+        font-size: 0.8rem !important;
+      }
+      .discord-call-grid-wrap {
+        padding: 10px 10px calc(86px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) 10px !important;
+      }
+      .discord-call-grid {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: 1fr 1fr !important;
+        gap: 10px !important;
+        height: 100% !important;
+      }
+      .discord-participant-tile {
+        min-height: 0 !important;
+        max-height: 100% !important;
+        height: 100% !important;
+        border-radius: 16px !important;
+      }
+      .discord-tile-avatar {
+        width: 80px !important;
+        height: 80px !important;
+        font-size: 1.8rem !important;
+      }
+      .discord-call-control-bar {
+        bottom: max(14px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+        padding: 6px 14px !important;
+        gap: 8px !important;
+        width: max-content !important;
+        max-width: calc(100vw - 20px) !important;
+      }
+      .discord-control-btn {
+        width: 44px !important;
+        height: 44px !important;
+        font-size: 16px !important;
+      }
+      #callScreenBtn {
+        display: none !important; /* モバイルでは画面共有を非表示にし、Discord本家同様の4ボタン配置に整理 */
+      }
+      .discord-device-menu {
+        width: calc(100vw - 24px) !important;
+        left: 12px !important;
+      }
+    }
     #callEndedToast {
       position: fixed;
       bottom: max(100px, calc(84px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))));
@@ -1410,6 +1461,22 @@
       cursor: pointer;
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
+    }
+    /* スマホ画面でのPiPミニバー: 入力欄やボタンを隠さないよう画面上部に配置 */
+    @media (max-width: 768px) {
+      #callPipBar {
+        top: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px)) + 8px) !important;
+        bottom: auto !important;
+        left: 10px !important;
+        right: 10px !important;
+        border-radius: 12px !important;
+        padding: 6px 12px !important;
+        gap: 8px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+      }
+      #callPipBar .pip-name {
+        max-width: 100px !important;
+      }
     }
     #callPipBar.active {
       display: flex !important;

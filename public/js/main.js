@@ -18060,7 +18060,7 @@ function renderParticipantTiles() {
       videoTrack: remoteUser?.videoTrack
     });
   }
-  grid.className = "discord-call-grid";
+  grid.className = "discord-call-grid" + (participants.length === 1 ? " single-participant" : "");
   grid.innerHTML = participants.map(p => {
     const safeName = escapeHtml(p.name);
     const initial = safeName.charAt(0).toUpperCase();

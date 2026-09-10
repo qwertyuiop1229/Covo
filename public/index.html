@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.154" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.154" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -2979,7 +2979,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.153"></script>
+  <script type="module" src="js/main.js?v=1.1.154"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3114,36 +3114,38 @@
     </div>
     <!-- Discord 完全準拠 通話UI (Agora SD-RTN™ 音声通話システム) -->
     <!-- 1. 着信ダイアログ (Discord 本家風 着信ポップアップカード) -->
-  <div id="discordCallIncomingModal" class="fixed inset-0 z-[100002] modal-overlay items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);">
-    <div class="bg-[#2b2d31] text-gray-200 rounded-3xl shadow-2xl p-6 max-w-sm w-full border border-white/10 flex flex-col items-center text-center animate-pop-in">
-      <div class="relative mb-4">
-        <div class="w-24 h-24 rounded-full bg-[#1e1f22] border-4 border-[#23a55a] flex items-center justify-center text-3xl font-bold shadow-xl overflow-hidden" id="discordIncomingAvatar">
+    <div id="discordCallIncomingModal" class="fixed inset-0 z-[100005] modal-overlay flex items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+    <div class="discord-incoming-card">
+      <div class="discord-incoming-avatar-wrap">
+        <div class="discord-incoming-avatar" id="discordIncomingAvatar">
           U
         </div>
-        <div class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#23a55a] text-white flex items-center justify-center text-xs shadow-md border-2 border-[#2b2d31] animate-bounce">
+        <div class="discord-incoming-badge animate-bounce">
           <i class="fas fa-phone"></i>
         </div>
       </div>
-      <div class="text-xs font-extrabold text-[#23a55a] tracking-wider uppercase mb-1">音声着信中...</div>
+      <div class="text-[11px] font-extrabold text-[#23a55a] tracking-wider uppercase mb-1 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-[#23a55a] inline-block animate-ping"></span>
+        <span>音声着信中...</span>
+      </div>
       <div class="text-xl font-black text-white truncate max-w-full mb-1" id="discordIncomingName">ユーザー</div>
       <p class="text-xs text-gray-400 mb-6" id="discordIncomingChannel">ダイレクト通話</p>
-      
-      <div class="flex items-center justify-center gap-6 w-full">
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="declineCall()" class="w-14 h-14 rounded-full bg-[#da373c] hover:bg-[#c02e34] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg transition-all cursor-pointer" title="拒否">
+      <div class="flex items-center justify-center gap-8 w-full">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="declineCall()" class="discord-call-action-btn decline" title="拒否">
             <i class="fas fa-phone-slash"></i>
           </button>
           <span class="text-[11px] font-bold text-gray-400">拒否</span>
         </div>
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="acceptCall()" class="w-14 h-14 rounded-full bg-[#23a55a] hover:bg-[#1f934f] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg shadow-[#23a55a]/30 transition-all cursor-pointer animate-pulse" title="応答">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="acceptCall()" class="discord-call-action-btn accept animate-pulse" title="応答">
             <i class="fas fa-phone"></i>
           </button>
-          <span class="text-[11px] font-bold text-gray-400">応答</span>
+          <span class="text-[11px] font-bold text-[#23a55a]">応答</span>
         </div>
       </div>
     </div>
-  </div>
+    </div>
 
   <!-- 2. Discord 本家完全準拠 フルスクリーン通話画面 (#callOverlay) -->
   <div id="callOverlay" class="select-none">
