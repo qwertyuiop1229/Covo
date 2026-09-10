@@ -17960,10 +17960,10 @@ async function joinAgoraChannel(channelName) {
 
 function setupAgoraClientEvents(client) {
   _remoteUsers.clear();
-
   client.on("user-published", async (user, mediaType) => {
     try {
       await client.subscribe(user, mediaType);
+      _remoteUsers.set(user.uid, user);
       if (mediaType === "audio") {
         user.audioTrack?.play();
       }
@@ -17980,7 +17980,6 @@ function setupAgoraClientEvents(client) {
     } catch (subErr) {
       console.error("Agora subscribe error:", subErr);
     }
-    _remoteUsers.set(user.uid, user);
     renderParticipantTiles();
   });
 
@@ -18240,6 +18239,12 @@ window.toggleCallFullscreen = function () {
     if (icon) icon.className = "fas fa-expand text-xs";
   }
 };
+document.addEventListener("fullscreenchange", () => {
+  const icon = document.getElementById("callFullscreenIcon");
+  if (icon) {
+    icon.className = document.fullscreenElement ? "fas fa-compress text-xs" : "fas fa-expand text-xs";
+  }
+});
 
 window.toggleCallDeviceMenu = async function (e) {
   if (e && e.stopPropagation) e.stopPropagation();
@@ -18375,10 +18380,12 @@ async function endCall(skipFirestore, reason) {
       await cleanupWebRtcDoc('calls', callIdCopy);
     } catch (_) { }
   }
-
+  if (document.fullscreenElement) {
+    try { document.exitFullscreen().catch(() => {}); } catch (_) {}
+  }
   hideCallOverlay();
   if (reason) showCallEndedReason(reason);
-}
+  }
 
 async function handleCallNotificationClick(data) {
   if (!data.callId) return;

@@ -18196,9 +18196,11 @@ window.toggleScreenShare = async function () {
       if (_isVideoEnabled) {
         await toggleCamera(); // カメラONなら停止
       }
-      _localScreenTrack = await AgoraRTC.createScreenVideoTrack({
+      const trackRes = await AgoraRTC.createScreenVideoTrack({
         encoderConfig: "1080p_1"
       }, "auto");
+      const screenTrack = Array.isArray(trackRes) ? trackRes[0] : trackRes;
+      _localScreenTrack = screenTrack;
       _localScreenTrack.on("track-ended", () => {
         if (_isScreenSharing) toggleScreenShare();
       });
