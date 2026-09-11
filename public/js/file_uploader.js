@@ -13,14 +13,11 @@ const BLOCKED_EXTENSIONS = new Set([
  */
 export function checkFileAllowed(file) {
   if (!file || !file.name) return false;
-
-  // 1. ファイルサイズ上限チェック (動画・音声は100MB、その他ファイルは50MB) (#60)
-  const isVideoOrAudio = file.type && (file.type.startsWith('video/') || file.type.startsWith('audio/'));
-  const MAX_FILE_SIZE = isVideoOrAudio ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
   if (file.size > MAX_FILE_SIZE) {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    const limitMb = isVideoOrAudio ? 100 : 50;
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限${limitMb}MB)`, "error");
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
     return false;
   }
 

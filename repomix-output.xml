@@ -1492,504 +1492,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/css/modules/components.css">
-/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
-    .flipped {
-      transform: scaleY(-1);
-    }
-    .message-bubble {
-      max-width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      margin-bottom: 0;
-      word-wrap: break-word;
-      -webkit-touch-callout: none;
-      /* iOS長押しメニュー防止 */
-    }
-    .msg-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      cursor: pointer;
-      overflow: hidden;
-      transition: opacity 0.15s;
-    }
-    .msg-avatar:hover {
-      opacity: 0.85;
-    }
-    .msg-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .my-message {
-      background-color: #e0e0e0;
-      /* 薄いグレー */
-      border-top-right-radius: 0.25rem;
-    }
-    .other-message {
-      background-color: #f0f0f0;
-      /* 非常に薄いグレー */
-      border-top-left-radius: 0.25rem;
-    }
-    .scrollable {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
-    #updateOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(16px);
-      flex-direction: column;
-    }
-    #updateOverlay.show {
-      display: flex;
-    }
-    .update-card {
-      position: relative;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.75rem;
-      padding: 2.75rem 2.25rem;
-      max-width: 420px;
-      width: 90%;
-      text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .update-close-btn {
-      position: absolute;
-      top: 1.25rem;
-      right: 1.25rem;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .update-close-btn.hidden {
-      display: none !important;
-    }
-    .update-close-btn:hover {
-      background: rgba(0, 0, 0, 0.1);
-      color: #111827;
-      transform: scale(1.05);
-    }
-    @keyframes updateCardPopIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-    .update-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 1.25rem;
-      background: #4f46e5;
-      border-radius: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    }
-    .update-title {
-      color: #111827;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-    }
-    .update-version {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-    .update-body {
-      color: #4b5563;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      margin-bottom: 1.75rem;
-      max-height: 140px;
-      overflow-y: auto;
-      text-align: left;
-      padding: 1rem;
-      background: #f3f4f6;
-      border-radius: 1rem;
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-    .update-btn {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: #4f46e5;
-      color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    .update-btn:hover {
-      background: #4338ca;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
-    }
-    .update-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .update-progress {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.85rem;
-      display: none;
-    }
-    .update-progress.show {
-      display: block;
-    }
-    .update-spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e2e8f0;
-      border-top-color: #4f46e5;
-      border-radius: 50%;
-      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-    /* === 設定トグルスイッチ === */
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .setting-row:last-child {
-      border-bottom: none;
-    }
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-    .setting-label i {
-      width: 18px;
-      text-align: center;
-      color: #6b7280;
-    }
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background-color: #d1d5db;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: background-color 0.25s;
-    }
-    .toggle-slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-    .toggle-switch input:checked+.toggle-slider {
-      background-color: #374151;
-    }
-    .toggle-switch input:checked+.toggle-slider::before {
-      transform: translateX(20px);
-    }
-    #updateErrorBox textarea {
-      width: 100%;
-      height: 80px;
-      padding: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
-      font-size: 0.7rem;
-      background: #1e293b;
-      color: #fca5a5;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      resize: vertical;
-      margin-bottom: 8px;
-      white-space: pre;
-      overflow: auto;
-    }
-    #updateErrorBox button {
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f1f5f9;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #updateErrorBox button:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-    /* === モーダルアニメーション === */
-    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-    /* .modal-box { placeholder } */
-    .modal-opening {
-      animation: scaleInFade 0.22s ease both;
-    }
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
-    /* === ルームリストアイテムのフェード === */
-    .room-item-animate {
-      animation: fadeIn 0.15s ease both;
-    }
-    /* === ボタン全般のactiveフィードバック === */
-    button:not(.server-list-user-btn):active {
-      opacity: 0.8;
-    }
-    #backToServerListBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-    /* サーバー設定モーダル内のタブ */
-    .ss-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .ss-tab.active {
-      background: #1f2937;
-      color: white;
-    }
-    .ss-tab:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-    .ss-tab:not(.active):hover {
-      background: #f3f4f6;
-    }
-    /* 招待コード表示 */
-    .invite-code-item {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-    .invite-code-text {
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-      flex: 1;
-      letter-spacing: 2px;
-    }
-    .invite-code-meta {
-      font-size: 0.7rem;
-      color: #9ca3af;
-    }
-    /* === サーバービュー用ニックネームヘッダー === */
-    #globalAppHeader {
-      display: none;
-      background: #374151;
-      color: white;
-      padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    #globalAppHeader.server-mode {
-      display: flex;
-    }
-    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
-    body.discord-ui-mode #globalAppHeader {
-      display: none !important;
-    }
-    #headerTitle {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.88;
-    }
-    /* === カスタム確認ダイアログ === */
-    #customConfirmModal,
-    #customPromptModal,
-    #customAlertModal {
-      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
-    }
-    #customConfirmModal .confirm-box {
-      text-align: left;
-    }
-    /* === モーダル角丸崩れ防止 === */
-    .modal-dark-header {
-      border-radius: inherit;
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-    /* === メンションバッジ通知 === */
-    .mention-toast {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .mention-toast-badge {
-      background: #4f46e5;
-      color: white;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 99px;
-      flex-shrink: 0;
-      letter-spacing: 0.03em;
-    }
-    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
-    .whatsnew-card {
-      background-color: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
-      border-radius: 1.5rem;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    }
-    body.dark-server-theme .whatsnew-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-      color: #f8fafc !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    body.discord-dark-theme .whatsnew-card {
-      background-color: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    .whatsnew-header {
-      padding: 1.25rem 1.5rem 1rem;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-header {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-header {
-      background-color: #242629 !important;
-      border-bottom-color: #1f2023 !important;
-    }
-    .whatsnew-body-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 1.25rem;
-      font-size: 0.875rem;
-      line-height: 1.65;
-      color: #334155;
-    }
-    body.dark-server-theme .whatsnew-body-box {
-      background-color: rgba(15, 23, 42, 0.6) !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme .whatsnew-body-box {
-      background-color: #1e1f22 !important;
-      border-color: #1f2023 !important;
-      color: #dbdee1 !important;
-    }
-    .whatsnew-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-footer {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-footer {
-      background-color: #242629 !important;
-      border-top-color: #1f2023 !important;
-    }
-</file>
-
 <file path="public/css/geo_study.css">
 /* geo_study.css - 隠し機能用スタイル */
 #geoStudyContainer {
@@ -7469,6 +6971,504 @@ exit
 }
 </file>
 
+<file path="public/css/modules/components.css">
+/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
+    .flipped {
+      transform: scaleY(-1);
+    }
+    .message-bubble {
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      margin-bottom: 0;
+      word-wrap: break-word;
+      -webkit-touch-callout: none;
+      /* iOS長押しメニュー防止 */
+    }
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+      transition: opacity 0.15s;
+    }
+    .msg-avatar:hover {
+      opacity: 0.85;
+    }
+    .msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .my-message {
+      background-color: #e0e0e0;
+      /* 薄いグレー */
+      border-top-right-radius: 0.25rem;
+    }
+    .other-message {
+      background-color: #f0f0f0;
+      /* 非常に薄いグレー */
+      border-top-left-radius: 0.25rem;
+    }
+    .scrollable {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
+    #updateOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      flex-direction: column;
+    }
+    #updateOverlay.show {
+      display: flex;
+    }
+    .update-card {
+      position: relative;
+      background: #ffffff;
+      color: #1f2937;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+    .update-close-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #111827;
+      transform: scale(1.05);
+    }
+    @keyframes updateCardPopIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .update-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #4f46e5;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: white;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+    }
+    .update-title {
+      color: #111827;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .update-version {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .update-body {
+      color: #4b5563;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      padding: 1rem;
+      background: #f3f4f6;
+      border-radius: 1rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .update-btn {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #4f46e5;
+      color: white;
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .update-btn:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    }
+    .update-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .update-progress {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .update-progress.show {
+      display: block;
+    }
+    .update-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    /* === 設定トグルスイッチ === */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+    .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+    .setting-label i {
+      width: 18px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background-color: #d1d5db;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background-color 0.25s;
+    }
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #374151;
+    }
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+    #updateErrorBox textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      font-size: 0.7rem;
+      background: #1e293b;
+      color: #fca5a5;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 8px;
+      white-space: pre;
+      overflow: auto;
+    }
+    #updateErrorBox button {
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #updateErrorBox button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    /* === モーダルアニメーション === */
+    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
+    /* .modal-box { placeholder } */
+    .modal-opening {
+      animation: scaleInFade 0.22s ease both;
+    }
+    /* === メッセージバブルフェードイン === */
+    .message-bubble {
+      animation: slideUpFade 0.18s ease both;
+    }
+    /* === ルームリストアイテムのフェード === */
+    .room-item-animate {
+      animation: fadeIn 0.15s ease both;
+    }
+    /* === ボタン全般のactiveフィードバック === */
+    button:not(.server-list-user-btn):active {
+      opacity: 0.8;
+    }
+    #backToServerListBtn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    /* サーバー設定モーダル内のタブ */
+    .ss-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .ss-tab.active {
+      background: #1f2937;
+      color: white;
+    }
+    .ss-tab:not(.active) {
+      background: transparent;
+      color: #6b7280;
+    }
+    .ss-tab:not(.active):hover {
+      background: #f3f4f6;
+    }
+    /* 招待コード表示 */
+    .invite-code-item {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .invite-code-text {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+      letter-spacing: 2px;
+    }
+    .invite-code-meta {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+    /* === サーバービュー用ニックネームヘッダー === */
+    #globalAppHeader {
+      display: none;
+      background: #374151;
+      color: white;
+      padding: 0.45rem 1rem;
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #globalAppHeader.server-mode {
+      display: flex;
+    }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
+    #headerTitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.88;
+    }
+    /* === カスタム確認ダイアログ === */
+    #customConfirmModal,
+    #customPromptModal,
+    #customAlertModal {
+      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
+    }
+    #customConfirmModal .confirm-box {
+      text-align: left;
+    }
+    /* === モーダル角丸崩れ防止 === */
+    .modal-dark-header {
+      border-radius: inherit;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    /* === メンションバッジ通知 === */
+    .mention-toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mention-toast-badge {
+      background: #4f46e5;
+      color: white;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 99px;
+      flex-shrink: 0;
+      letter-spacing: 0.03em;
+    }
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
+    }
+</file>
+
 <file path="src-tauri/capabilities/default.json">
 {
   "$schema": "../gen/schemas/desktop-schema.json",
@@ -7511,6 +7511,333 @@ exit
     "notification:default"
   ]
 }
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用（今まで通りの回転付きポップな揺れ） */
+    .stamp-jump-anim {
+      animation: stampWiggle 0.8s ease-in-out !important;
+      will-change: transform;
+    }
+    @keyframes stampWiggle {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px) rotate(-5deg); }
+      30% { transform: translateX(8px) rotate(3deg); }
+      45% { transform: translateX(-6px) rotate(-2deg); }
+      60% { transform: translateX(4px) rotate(1deg); }
+      75% { transform: translateX(-2px); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の上品な微小シェイク */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageWiggle 0.5s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageWiggle {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-5px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-2px); }
+      80% { transform: translateX(1px); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
 </file>
 
 <file path="public/js/local_store.js">
@@ -8471,333 +8798,6 @@ if (typeof window !== 'undefined') {
     ]
   }
 }
-</file>
-
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用（今まで通りの回転付きポップな揺れ） */
-    .stamp-jump-anim {
-      animation: stampWiggle 0.8s ease-in-out !important;
-      will-change: transform;
-    }
-    @keyframes stampWiggle {
-      0%, 100% { transform: translateX(0); }
-      15% { transform: translateX(-10px) rotate(-5deg); }
-      30% { transform: translateX(8px) rotate(3deg); }
-      45% { transform: translateX(-6px) rotate(-2deg); }
-      60% { transform: translateX(4px) rotate(1deg); }
-      75% { transform: translateX(-2px); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の上品な微小シェイク */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.5s cubic-bezier(0.25, 1, 0.5, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageWiggle {
-      0%, 100% { transform: translateX(0); }
-      20% { transform: translateX(-5px); }
-      40% { transform: translateX(4px); }
-      60% { transform: translateX(-2px); }
-      80% { transform: translateX(1px); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
 </file>
 
 <file path="public/js/debug_ui.js">
@@ -13796,6 +13796,226 @@ self.addEventListener('notificationclick', (event) => {
     }
 </file>
 
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  // 1. コードブロック退避（コピーボタン付き）
+  const codeBlocks = [];
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
+    return id;
+  });
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
+      }
+    }
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!cleanUrl) return rawUrl;
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
+    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
+      return escapeHtml(rawUrl);
+    }
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  return escapedText;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
+</file>
+
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -14720,226 +14940,6 @@ self.addEventListener('notificationclick', (event) => {
     body.discord-dark-theme #userProfileBanner {
       background-color: #5865f2 !important;
     }
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
-    if (!isSafeHttp && !isSafeDataImage) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
-  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
-  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
-  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  // 1. コードブロック退避（コピーボタン付き）
-  const codeBlocks = [];
-  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1.trim());
-    codeBlocks.push(
-      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
-        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
-          `<span>Code</span>` +
-          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
-            `<i class="far fa-copy"></i> コピー` +
-          `</button>` +
-        `</div>` +
-        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
-      `</div>`
-    );
-    return id;
-  });
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
-    }
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
-      }
-    }
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    if (!cleanUrl) return rawUrl;
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
-    }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
-    }
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  // 5. 書式装飾
-  // スポイラー記法 (||ネタバレ||)
-  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
-  let mentionCount = 0;
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    if (mentionCount >= 10) return match;
-    mentionCount++;
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  return escapedText;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -18447,12 +18447,18 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
     }
     // 指定ユーザーの公開鍵(CryptoKey)を取得（キャッシュ付き・ネガティブキャッシュ対応）。無ければnull。
-    export async function __getUserPublicKey(uid) {
+    export async function __getUserPublicKey(uid, forceRefresh = false) {
       if (!uid || typeof uid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(uid)) return null;
-      if (uid in _e2ee.pubKeyCache && _e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
+      if (!forceRefresh && uid in _e2ee.pubKeyCache && _e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
       try {
         const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`));
-        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        let jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        if (!jwk) {
+          const pSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}/profile/nicknameDoc`)).catch(() => null);
+          if (pSnap && pSnap.exists() && pSnap.data().publicKeyJwk) {
+            jwk = pSnap.data().publicKeyJwk;
+          }
+        }
         // 🔒 公開鍵JWKの構造検証（RSA-OAEP, kty: RSA, 必須パラメータ n, e）
         if (!jwk || typeof jwk !== 'object' || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
           return null;
@@ -18978,32 +18984,41 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      * @param {Array<string>} participants - 参加者2名のUID
      * @returns {Promise<Object|null>} keysObj { latest, latestVersion, "1": CryptoKey, ... }
      */
-    export async function _backfillDmKeysForParticipant(dmId, targetUid) {
+    export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
       const cached = _e2ee.dmKeyCache[dmId];
       if (!cached) return;
       try {
-        // 相手が既に鍵を持っているか確認
-        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`)).catch(() => null);
-        if (targetWrapSnap && targetWrapSnap.exists()) {
-          const data = targetWrapSnap.data() || {};
-          if (data.wrappedKey || (data.versions && Object.keys(data.versions).length > 0)) {
-            return; // 既に保持している
-          }
-        }
-        const targetPub = await __getUserPublicKey(targetUid);
+        const targetPub = await __getUserPublicKey(targetUid, forceUpdate);
         if (!targetPub) return;
-        const versionsMap = {};
+        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`)).catch(() => null);
+        const existingData = (targetWrapSnap && targetWrapSnap.exists()) ? targetWrapSnap.data() || {} : {};
+        const existingVersions = existingData.versions ? { ...existingData.versions } : {};
+        if (existingData.wrappedKey && !existingVersions["1"]) {
+          existingVersions["1"] = existingData.wrappedKey;
+        }
+        const myUid = _getUserId();
+        const versionsMap = { ...existingVersions };
+        let hasNewKeys = false;
         for (const ver of Object.keys(cached)) {
-          if (ver === 'latest' || ver === 'latestVersion') continue;
+          if (ver === 'latest' || ver === 'latestVersion' || ver === '_dmId') continue;
           try {
             const rawKey = await window.crypto.subtle.exportKey("raw", cached[ver]);
             const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, targetPub, rawKey);
-            versionsMap[ver] = _abToB64(wrapped);
+            const b64 = _abToB64(wrapped);
+            if (!existingVersions[ver] || forceUpdate) {
+              versionsMap[ver] = b64;
+              hasNewKeys = true;
+            }
+            const aliasKey = `${ver}_from_${myUid.slice(0, 8)}`;
+            if (!existingVersions[aliasKey]) {
+              versionsMap[aliasKey] = b64;
+              hasNewKeys = true;
+            }
           } catch (_) {}
         }
-        if (Object.keys(versionsMap).length > 0) {
-          const latestVer = cached.latestVersion || "1";
+        if (hasNewKeys && Object.keys(versionsMap).length > 0) {
+          const latestVer = cached.latestVersion || existingData.latestVersion || "1";
           const wrappedLatest = versionsMap[latestVer] || Object.values(versionsMap)[0];
           await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`), {
             versions: versionsMap,
@@ -19011,7 +19026,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             wrappedKey: wrappedLatest,
             updatedAt: serverTimestamp()
           }, { merge: true });
-          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィルしました (dmId=${dmId})`);
+          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${dmId})`);
         }
       } catch (err) {
         console.warn(`[E2EE] DM鍵バックフィル失敗 (target=${targetUid}):`, err);
@@ -19038,7 +19053,20 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const rawMembers = participants && participants.length ? participants : dmId.split('_');
         const memberUids = Array.from(new Set(rawMembers.filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
         const otherUid = memberUids.find(uid => uid !== currentUid) || null;
-        const keysObj = {};
+        const keysObj = { _dmId: dmId };
+        // 0) レガシー共有キー (dm_channels/${dmId} 直下に sharedKey がある初期形式) の確認
+        try {
+          const dmSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+          const dmData = dmSnap && dmSnap.exists() ? dmSnap.data() : null;
+          if (dmData && dmData.sharedKey) {
+            try {
+              const raw = _b64ToAb(dmData.sharedKey);
+              const legKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+              keysObj["1"] = legKey;
+              keysObj["legacy_shared"] = legKey;
+            } catch (_) {}
+          }
+        } catch (_) {}
         // 1) Firestoreの自分宛て wrappedKey から復元を試行
         const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${currentUid}`));
         if (myWrapSnap.exists()) {
@@ -19061,23 +19089,36 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
             } catch (_) {}
           }
-          if (Object.keys(keysObj).length > 0) {
-            const sortedVers = Object.keys(keysObj).sort((a, b) => Number(b) - Number(a));
-            keysObj.latest = keysObj[sortedVers[0]];
-            keysObj.latestVersion = sortedVers[0];
+          const validVers = Object.keys(keysObj).filter(k => k !== '_dmId');
+          if (validVers.length > 0) {
+            const sortedVers = validVers.sort((a, b) => {
+              const numA = Number(a), numB = Number(b);
+              if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
+              return b.localeCompare(a);
+            });
+            const activeVer = (data.latestVersion && keysObj[data.latestVersion]) ? String(data.latestVersion) : sortedVers[0];
+            keysObj.latest = keysObj[activeVer];
+            keysObj.latestVersion = activeVer;
             _e2ee.dmKeyCache[dmId] = keysObj;
-            // 自分が鍵を持っている場合、相手にも確実に鍵をバックフィル（配布）
+            // 自分が鍵を持っている場合、相手にも確実に鍵をバックフィル（配布・相互同期）
             if (otherUid) {
               _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
             }
             return keysObj;
           }
         }
-        // 2) 自分宛ての鍵が見つからない場合、相手が既に鍵を生成済みかチェック（鍵のSplit-Brain/上書きを完全防止）
+        // 2) 自分宛ての鍵が見つからない、または秘密鍵で復号できなかった場合
         if (otherUid) {
           const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${otherUid}`)).catch(() => null);
           if (otherWrapSnap && otherWrapSnap.exists()) {
-            console.warn(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。新規上書きを中止し、相手からの共有または公開鍵の到着を待機します (dmId=${dmId})`);
+            console.warn(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${dmId})`);
+            // レガシー共有キーがステップ0で取得できていればそれを返す
+            if (keysObj["legacy_shared"]) {
+              keysObj.latest = keysObj["legacy_shared"];
+              keysObj.latestVersion = "1";
+              _e2ee.dmKeyCache[dmId] = keysObj;
+              return keysObj;
+            }
             return null;
           }
         }
@@ -19153,11 +19194,15 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       try {
         let dmKeyObj = null;
         let dmId = null;
-        if (dmIdOrKey && typeof dmIdOrKey === 'object' && (dmIdOrKey.latest || dmIdOrKey['1'])) {
+        if (dmIdOrKey && typeof dmIdOrKey === 'object') {
           dmKeyObj = dmIdOrKey;
+          dmId = dmKeyObj._dmId || null;
         } else if (typeof dmIdOrKey === 'string') {
           dmId = dmIdOrKey;
           dmKeyObj = _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmIdOrKey, participants, 2500);
+        }
+        if (!dmId && typeof participants === 'object' && Array.isArray(participants) && participants.length === 2) {
+          dmId = [...participants].sort().join('_');
         }
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
         const parts = text.split("::");
@@ -19174,20 +19219,44 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         // バージョン不一致時の総当たり復号フォールバック
         for (const ver in dmKeyObj) {
-          if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          if (ver === 'latest' || ver === 'latestVersion' || ver === version || ver === '_dmId') continue;
           try {
             const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, dmKeyObj[ver], ctBuf);
             return _td.decode(pt);
           } catch(e) {}
         }
+        // それでも復号できない場合：オンデマンドでFirestoreから最新のキーを再読み込みしてリトライ
         if (dmId) {
-          delete _e2ee.dmKeyCache[dmId];
+          try {
+            const currentUid = _getUserId();
+            const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${currentUid}`)).catch(() => null);
+            if (myWrapSnap && myWrapSnap.exists()) {
+              const data = myWrapSnap.data() || {};
+              const versionsMap = data.versions ? { ...data.versions } : {};
+              if (data.wrappedKey && !versionsMap["1"]) versionsMap["1"] = data.wrappedKey;
+              for (const ver in versionsMap) {
+                if (!dmKeyObj[ver]) {
+                  try {
+                    const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(versionsMap[ver]));
+                    const imported = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                    dmKeyObj[ver] = imported;
+                    try {
+                      const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, imported, ctBuf);
+                      return _td.decode(pt);
+                    } catch (_) {}
+                  } catch (_) {}
+                }
+              }
+            }
+          } catch (_) {}
+          // 相手側にも自分の鍵をバックフィルして相互治癒を促す
+          const otherUid = (participants || dmId.split('_')).find(id => id !== _getUserId());
+          if (otherUid) {
+            _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
+          }
         }
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
-        if (typeof dmIdOrKey === 'string') {
-          delete _e2ee.dmKeyCache[dmIdOrKey];
-        }
         return "（復号化エラー：メッセージを解読できません）";
       }
     }
@@ -19197,6 +19266,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptDmMessagesInPlace(messages, dmId, participants) {
       if (!_subtleOK || !Array.isArray(messages)) return;
       const dmKeyObj = await _getDmKeyWithWait(dmId, participants, 2500);
+      if (dmKeyObj && dmId) dmKeyObj._dmId = dmId;
       await Promise.all(messages.map(async (m) => {
         if (!m) return;
         // DMリプライ引用先テキストが暗号化されていた場合の安全な復号
@@ -21102,7 +21172,7 @@ async function handleDownloadProxy(request, env, url) {
   }
 }
 async function handleDeleteFile(request, env, url) {
-  const cors = getCorsHeaders(request);
+  const cors = getFileCorsHeaders(request);
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
@@ -21134,8 +21204,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認
-        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
+        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId、またはmeta.serverIdが未設定・空文字のレガシー添付ファイル）を確認
+        if (serverId && meta && (!meta.serverId || meta.serverId === serverId)) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
@@ -22488,13 +22558,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.154" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.155" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.154" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.155" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
@@ -25241,7 +25311,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.154"></script>
+  <script type="module" src="js/main.js?v=1.1.155"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -27300,6 +27370,7 @@ function initializeFirebase() {
     function cleanupAllActiveFirestoreListeners() {
       try {
         cleanupGlobalNotificationListeners();
+        if (typeof window._activeDmKeyUnsub === 'function') { window._activeDmKeyUnsub(); window._activeDmKeyUnsub = null; }
         if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
@@ -33355,11 +33426,33 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     clearInterval(window._activeDmKeyCheckTimer);
     window._activeDmKeyCheckTimer = null;
   }
+  if (window._activeDmKeyUnsub) {
+    window._activeDmKeyUnsub();
+    window._activeDmKeyUnsub = null;
+  }
   try {
     await _getDmKeyWithWait(dmId, currentDmParticipants, 2500);
+    // 入室時に相手へ自分の持っている鍵を即時バックフィル・相互同期
+    _backfillDmKeysForParticipant(dmId, targetUid).catch(() => {});
   } catch (e) {
     console.warn('[E2EE] DM key init error:', e);
   }
+  // DM鍵のリアルタイム監視リスナー（相手が新しい鍵をバックフィルした瞬間、即座に再復号・画面更新）
+  try {
+    const { doc: fsDoc, onSnapshot: fsOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const myDmKeyRef = fsDoc(db, `artifacts/${appId}/dm_channels/${dmId}/keys/${userId}`);
+    window._activeDmKeyUnsub = fsOnSnapshot(myDmKeyRef, async (keySnap) => {
+      if (currentDmId !== dmId || !keySnap.exists()) return;
+      delete _e2ee.dmKeyCache[dmId];
+      const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
+      if (freshKey && allLoadedMessages.length > 0) {
+        await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
+        renderMessagesWithReadReceipts();
+      }
+    }, (err) => {
+      console.warn('[DM Key onSnapshot] notice:', err?.message || err);
+    });
+  } catch (_) {}
   // DM鍵がまだ到着していない場合、自動監視タイマーを起動して鍵到着時に一括復号
   (async () => {
     try {
@@ -33389,6 +33482,55 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       }
     } catch (e) {}
   })();
+  これですべての修正パッチと整合性確認が完了した。 回答を組み立てよう。### 第1部: 発見された問題点の一覧
+  1. Cloudflare Worker 側の CORS プリフライトによる DELETE メソッド拒否（サーバー・個チャ共通）
+  - 重大度: 最重要 (CRITICAL)
+  - 発生箇所: server/src/index.js (getFileCorsHeaders, handleDeleteFile)
+  - 原因と影響:
+    ブラウザから Cloudflare Worker に対し DELETE /api/file/{key}
+    を送信する際、クロスオリジン仕様（CORS）に従いブラウザは必ず事前に OPTIONS
+    プリフライトリクエストを送信します。ファイル用ルーティングにおいて、handleDeleteFile 内で許可オリジン判定を行う
+    getCorsHeaders が混在していたため、プリフライトで返された getFileCorsHeaders との不整合やブラウザの CORS
+    破棄が発生し、ファイル削除リクエストが正常に完了しない要因となっていました。
+  2. サーバー管理者・モデレーターによるファイル削除時のメタデータ不整合 (403 Forbidden)
+  - 重大度: 高 (HIGH)
+  - 発生箇所: server/src/index.js (handleDeleteFile)
+  - 原因と影響:
+    サーバー管理者が他人の添付ファイル付きメッセージをモデレーション削除する際、Worker 側で if (serverId && meta &&
+    meta.serverId && meta.serverId === serverId)
+    による照合を行っていました。しかし、メッセージ添付ファイルのアップロード時に meta.serverId
+    が未設定または空文字だった場合、条件が不成立となって isServerAdminCheck がスキップされ、アップロード所有者でもないため 403
+    Forbidden で削除が拒否されていました。
+  3. フロントエンド側のファイル削除処理における await 待機漏れと正規表現の制限
+  - 重大度: 中 (MEDIUM)
+  - 発生箇所: public/js/main.js (cleanupFile in deleteMsgBtn,
+    saDeleteIndividualStamp, saDeleteGroup, sendMessage)
+  - 原因と影響:
+    メッセージ削除時やスタンプ削除時に Worker への DELETE リクエストを await
+    せずに非同期で投げ放しにしていたため、通信完了前にメッセージの削除や画面遷移・リロードが行われるとブラウザによって fetch
+    通信が中断（Abort）され、KV 上にファイル実体が孤立残存する原因になっていました。また、ファイルキー抽出正規表現が [A-Za-z0-9_]+
+    となっており、ハイフンを含む UUID 形式のキーを正しく抽出できていませんでした。さらに sendMessage 呼び出し時にも
+    snapServerId の渡し漏れがありました。
+  4. 初期実装テストアカウント間における個チャ (DM) 暗号化鍵の分裂 (Split-Brain) と復号不能障害
+  - 重大度: 最重要 (CRITICAL)
+  - 発生箇所: public/js/crypto_helpers.js (_backfillDmKeysForParticipant,
+    __getOrCreateDmKeyImpl, _decryptDmText, _decryptDmMessagesInPlace),
+    public/js/main.js (openDm)
+  - 原因と影響:
+    個チャ（DM）初期実装当時に使っていたテストアカウントとメインアカウントの間で、以下の要因が重なり DM鍵の分裂（Split-Brain）
+    が発生していました：
+    1.  初期鍵の片方向生成: アカウントAが個チャを開いた際、相手Bの公開鍵が取得できず自分用キー（Key A）のみが
+        dm_channels/${dmId}/keys/${uidA}
+        に作成された。その後、相手Bが開いた際も相手宛てのキーが無かったため、相手B側で独立して別のキー（Key B）が生成され
+        keys/${uidB} に保存された。
+    2.  バックフィル拒否ガードの欠陥: _backfillDmKeysForParticipant に「相手のドキュメント
+        keys/${targetUid} が既に存在する場合は即座に return; する」というガードがあり、相手が別の鍵（Key
+        B）を持っていたとしても、自分の鍵（Key A）が相手のドキュメントに永久に追加・共有されない状態に陥っていた。
+    3.  自分しか見えない現象の発生: Aは Key A で暗号化し、Bは Key B で暗号化するため、Aから見ると A の発言は Key A
+        で復号でき相手 B の発言は Key A と不一致で復号エラー。Bから見ると B の発言は Key B で復号でき A の発言は Key B
+        と不一致で復号エラーとなり、「どちらからも相手のメッセージが見えず、自分が送ったメッセージしか見えない」状態が固定化されていた。
+    4.  自己治癒・鍵到着リスナーの欠如: 復号エラー発生時にオンデマンドで相手から共有された新キーを Firestore
+        から再取得するフォールバックや、DM 入室時に相手からキーが届いた瞬間に全メッセージをリアルタイムで再復号するリスナーが存在していなかった。
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
@@ -34702,12 +34844,12 @@ window.saDeleteIndividualStamp = async function (targetServerId, groupId, isLega
   if (!await showCustomConfirm("このスタンプを一つ削除しますか？", "削除確認")) return;
   try {
     if (stampUrl) {
-      const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
       if (m) {
         const fileKey = m[1];
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+        await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
       }
     }
     const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
@@ -34754,11 +34896,11 @@ window.saDeleteGroup = async function (targetServerId, groupId, isLegacy) {
       }
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       for (const u of urlsToDelete) {
-        const m = u.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
         if (m) {
           const fileKey = m[1];
           const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
-          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+          await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
         }
       }
     }
@@ -37820,7 +37962,8 @@ async function sendMessage() {
             if (progressFill) progressFill.style.width = pct + "%";
             if (progressText) progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
           },
-          "simplechat/messages"
+          "simplechat/messages",
+          snapServerId
         );
         Object.assign(data, {
           fileData: fileUrl,
@@ -39781,8 +39924,9 @@ if (deleteMsgBtn) {
       );
       if (!ok) return;
     }
-    // 1. 添付ファイルの削除（非同期試行・ファイル削除エラーでもメッセージ削除は妨げない）
-    const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
+    // 1. 添付ファイルの削除（完了を待機し、通信中断を防止）
+    const targetServerId = currentServerId || msgToDelete.serverId || '';
+    const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${targetServerId ? `&serverId=${encodeURIComponent(targetServerId)}` : ''}`;
     const cleanupFile = async (url) => {
       if (!url) return;
       const m = url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
@@ -39791,18 +39935,25 @@ if (deleteMsgBtn) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
           const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
-          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(err => {
-            console.warn('[deleteMessage] KV cleanup warn:', fileKey, err);
-          });
-        } catch (_) {}
+          const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+          if (!res.ok) {
+            console.warn('[deleteMessage] KV delete failed:', res.status, fileKey);
+          }
+        } catch (err) {
+          console.warn('[deleteMessage] KV cleanup warn:', fileKey, err);
+        }
       }
     };
-    if (msgToDelete.kvFileUrl) cleanupFile(msgToDelete.kvFileUrl);
-    if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) cleanupFile(msgToDelete.fileData);
+    const fileCleanupPromises = [];
+    if (msgToDelete.kvFileUrl) fileCleanupPromises.push(cleanupFile(msgToDelete.kvFileUrl));
+    if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) fileCleanupPromises.push(cleanupFile(msgToDelete.fileData));
     if (msgToDelete.text) {
       const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_\-]+)', 'g');
       const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
-      kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
+      kvMatches.forEach(m => fileCleanupPromises.push(cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`)));
+    }
+    if (fileCleanupPromises.length > 0) {
+      await Promise.allSettled(fileCleanupPromises);
     }
     const loadingOverlayEl = document.getElementById("loadingOverlay");
     if (loadingOverlayEl && isPrivilegedDelete) loadingOverlayEl.classList.remove("hidden");
@@ -46184,7 +46335,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.154",
+  "version": "1.1.155",
   "force": false
 }
 </file>
@@ -46193,7 +46344,7 @@ window.saveViewerMessagesAsTxt = function () {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.154",
+  "version": "1.1.155",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

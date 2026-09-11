@@ -66,11 +66,11 @@ import {
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
 import * as LocalStore from './local_store.js';
 import { _abToB64, _b64ToAb, formatBytes, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
-import { alertMessage, openAvatarLightbox, playNotificationSound } from './ui_helpers.js';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 
@@ -7694,71 +7694,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
               renderMessagesWithReadReceipts();
             }
           }
-        }, 2000);
-      }
-    } catch (e) {}
-  })();
-
-  これですべての修正パッチと整合性確認が完了した。 回答を組み立てよう。### 第1部: 発見された問題点の一覧
-
-  1. Cloudflare Worker 側の CORS プリフライトによる DELETE メソッド拒否（サーバー・個チャ共通）
-
-  - 重大度: 最重要 (CRITICAL)
-  - 発生箇所: server/src/index.js (getFileCorsHeaders, handleDeleteFile)
-  - 原因と影響:
-    ブラウザから Cloudflare Worker に対し DELETE /api/file/{key}
-    を送信する際、クロスオリジン仕様（CORS）に従いブラウザは必ず事前に OPTIONS
-    プリフライトリクエストを送信します。ファイル用ルーティングにおいて、handleDeleteFile 内で許可オリジン判定を行う
-    getCorsHeaders が混在していたため、プリフライトで返された getFileCorsHeaders との不整合やブラウザの CORS
-    破棄が発生し、ファイル削除リクエストが正常に完了しない要因となっていました。
-
-  2. サーバー管理者・モデレーターによるファイル削除時のメタデータ不整合 (403 Forbidden)
-
-  - 重大度: 高 (HIGH)
-  - 発生箇所: server/src/index.js (handleDeleteFile)
-  - 原因と影響:
-    サーバー管理者が他人の添付ファイル付きメッセージをモデレーション削除する際、Worker 側で if (serverId && meta &&
-    meta.serverId && meta.serverId === serverId)
-    による照合を行っていました。しかし、メッセージ添付ファイルのアップロード時に meta.serverId
-    が未設定または空文字だった場合、条件が不成立となって isServerAdminCheck がスキップされ、アップロード所有者でもないため 403
-    Forbidden で削除が拒否されていました。
-
-  3. フロントエンド側のファイル削除処理における await 待機漏れと正規表現の制限
-
-  - 重大度: 中 (MEDIUM)
-  - 発生箇所: public/js/main.js (cleanupFile in deleteMsgBtn,
-    saDeleteIndividualStamp, saDeleteGroup, sendMessage)
-  - 原因と影響:
-    メッセージ削除時やスタンプ削除時に Worker への DELETE リクエストを await
-    せずに非同期で投げ放しにしていたため、通信完了前にメッセージの削除や画面遷移・リロードが行われるとブラウザによって fetch
-    通信が中断（Abort）され、KV 上にファイル実体が孤立残存する原因になっていました。また、ファイルキー抽出正規表現が [A-Za-z0-9_]+
-    となっており、ハイフンを含む UUID 形式のキーを正しく抽出できていませんでした。さらに sendMessage 呼び出し時にも
-    snapServerId の渡し漏れがありました。
-
-  4. 初期実装テストアカウント間における個チャ (DM) 暗号化鍵の分裂 (Split-Brain) と復号不能障害
-
-  - 重大度: 最重要 (CRITICAL)
-  - 発生箇所: public/js/crypto_helpers.js (_backfillDmKeysForParticipant,
-    __getOrCreateDmKeyImpl, _decryptDmText, _decryptDmMessagesInPlace),
-    public/js/main.js (openDm)
-  - 原因と影響:
-    個チャ（DM）初期実装当時に使っていたテストアカウントとメインアカウントの間で、以下の要因が重なり DM鍵の分裂（Split-Brain）
-    が発生していました：
-    1.  初期鍵の片方向生成: アカウントAが個チャを開いた際、相手Bの公開鍵が取得できず自分用キー（Key A）のみが
-        dm_channels/${dmId}/keys/${uidA}
-        に作成された。その後、相手Bが開いた際も相手宛てのキーが無かったため、相手B側で独立して別のキー（Key B）が生成され
-        keys/${uidB} に保存された。
-    2.  バックフィル拒否ガードの欠陥: _backfillDmKeysForParticipant に「相手のドキュメント
-        keys/${targetUid} が既に存在する場合は即座に return; する」というガードがあり、相手が別の鍵（Key
-        B）を持っていたとしても、自分の鍵（Key A）が相手のドキュメントに永久に追加・共有されない状態に陥っていた。
-    3.  自分しか見えない現象の発生: Aは Key A で暗号化し、Bは Key B で暗号化するため、Aから見ると A の発言は Key A
-        で復号でき相手 B の発言は Key A と不一致で復号エラー。Bから見ると B の発言は Key B で復号でき A の発言は Key B
-        と不一致で復号エラーとなり、「どちらからも相手のメッセージが見えず、自分が送ったメッセージしか見えない」状態が固定化されていた。
-    4.  自己治癒・鍵到着リスナーの欠如: 復号エラー発生時にオンデマンドで相手から共有された新キーを Firestore
-        から再取得するフォールバックや、DM 入室時に相手からキーが届いた瞬間に全メッセージをリアルタイムで再復号するリスナーが存在していなかった。
-
-  subscribeToMessages();
-  subscribeToPinnedMessages(null, null, dmId);
+          }, 2000);
+          }
+          } catch (e) {}
+          })();
+          subscribeToMessages();
+          subscribeToPinnedMessages(null, null, dmId);
 
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
   try {
@@ -12288,10 +12229,9 @@ if (messageInpEl) {
         if (!f) return;
         f = await processHeicFile(f);
         if (!checkFileAllowed(f)) return;
-        // 上限を統一（動画・音声100MB / その他ファイル50MB: file_uploader.jsと完全整合）
-        const isMedia = f.type.startsWith('video/') || f.type.startsWith('audio/');
-        const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
-        if (f.size > MAX) { alertMessage(isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです", "error"); return; }
+        // 上限を統一（KVストレージ仕様に準拠: 最大25MB）
+        const MAX = 25 * 1024 * 1024;
+        if (f.size > MAX) { alertMessage("ファイルは25MBまでです", "error"); return; }
         attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type || 'application/octet-stream', size: f.size };
         updateFilePreview();
         e.preventDefault();
@@ -12999,10 +12939,9 @@ async function handleFilesSelected(filesList) {
   for (let rawFile of Array.from(filesList)) {
     let f = await processHeicFile(rawFile);
     if (!checkFileAllowed(f)) continue;
-    const isMedia = f.type && (f.type.startsWith('video/') || f.type.startsWith('audio/'));
-    const MAX = isMedia ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+    const MAX = 25 * 1024 * 1024;
     if (f.size > MAX) {
-      alertMessage(`${f.name}: ` + (isMedia ? "動画・音声は100MBまでです" : "ファイルは50MBまでです"), "error");
+      alertMessage(`${f.name}: ファイルは25MBまでです`, "error");
       continue;
     }
     processed.push({ file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size });
@@ -16944,6 +16883,10 @@ window.openDmCallPicker = function () {
 function closeCallPicker() {
   const modal = document.getElementById('callPickerModal');
   if (!modal) return;
+  const FS_CHUNK = 64 * 1024;          // 64KB チャンク（WebRTC仕様・MTUに最適化）
+  const FS_BUFFER_HIGH = 1024 * 1024;  // 送信バッファ上限 1MB（SCTPキュー溢れを防止）
+
+
   if (window.innerWidth < 768) {
     const box = modal.querySelector('.call-picker-box');
     modal.classList.add('closing');
@@ -16961,15 +16904,22 @@ function closeCallPicker() {
     modal.classList.remove('show');
     modal.classList.add('hidden');
   }
-}
-
-
-/* =====================================================================
+  }
+  // P2P通信用 STUNサーバー構成
+  const STUN_ONLY_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+  };
+  /* =====================================================================
    P2P ファイル共有（WebRTC DataChannel）
    - シグナリングだけ Firestore (fileshares/{id}) を経由（データ量ごく僅か）
    - STUN/TURN は接続安定化の補助。ファイル本体は P2P DataChannel で直送
    - 大容量も16KBチャンク分割＋バックプレッシャ制御で送れる
    - 通話用の peerConnection とは完全に別系統（衝突しない）
+  const FS_CHUNK = 64 * 1024;          // 64KB チャンク（WebRTC仕様・MTUに最適化）
+  const FS_BUFFER_HIGH = 1024 * 1024;  // 送信バッファ上限 1MB（SCTPキュー溢れを防止）
    ===================================================================== */
 const FS_CHUNK = 64 * 1024;          // 64KB チャンク（WebRTC仕様・MTUに最適化）
 const FS_BUFFER_HIGH = 1024 * 1024;  // 送信バッファ上限 1MB（SCTPキュー溢れを防止）
