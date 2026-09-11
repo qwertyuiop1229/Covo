@@ -365,10 +365,28 @@ function run() {
     console.log(`\n📁 対象ファイル: ${relPath}`);
 
     let fileContent = '';
+    let fileEncoding = 'utf-8';
     const exists = fs.existsSync(fullPath);
 
     if (exists) {
-      fileContent = fs.readFileSync(fullPath, 'utf-8');
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
     } else {
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       console.log(`   📁 新規ファイルを作成します`);
@@ -399,8 +417,22 @@ function run() {
     }
 
     if (fileSuccessCount > 0) {
-      fs.writeFileSync(fullPath, modified, 'utf-8');
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
       console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
     } else {
       console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
     }

@@ -107,7 +107,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                 // 🔒 新形式: AES-GCM暗号化済み → 復号
                 privJwk = await __decryptPrivKeyFromBackup(snapData);
                 if (!privJwk) {
-                  console.warn("[E2EE] 暗号化秘密鍵の復号に失敗。鍵を再生成します。");
+                  console.error("[E2EE] 暗号化秘密鍵の復号に失敗しました。既存データの保護のためキーの上書きを阻止します。");
+                  return false;
                 }
               } else if (snapData.privateKeyJwk) {
                 // 旧形式: 平文保存 → 使用後に暗号化して移行
@@ -118,6 +119,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                 if (pubJwk) {
                   __backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
                 }
+              } else {
+                console.error("[E2EE] 秘密鍵ドキュメントの形式が不正です。上書きを阻止します。");
+                return false;
               }
 
               if (privJwk) {
@@ -525,8 +529,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          versions: { [version]: b64Wrapped },
-          latestVersion: version,
+          versions: { [String(version)]: b64Wrapped },
+          [`versions.${version}`]: b64Wrapped,
+          latestVersion: String(version),
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
         }, { merge: true }

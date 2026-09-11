@@ -1754,9 +1754,9 @@
     body.screen-locked #appContainer,
     body.screen-locked #mainContent,
     body.screen-locked #serverListScreen,
-    body.screen-locked .container > *:not(#appPinLockOverlay):not(#appLoadingSplash),
-    body.screen-locked .modal-overlay:not(#appPinLockOverlay),
-    body.screen-locked .modal-box:not(#appPinLockOverlay .modal-box),
+    body.screen-locked .container > *:not(#appPinLockOverlay):not(#appLoadingSplash):not(#customConfirmModal):not(#customAlertModal):not(#customPromptModal),
+    body.screen-locked .modal-overlay:not(#appPinLockOverlay):not(#customConfirmModal):not(#customAlertModal):not(#customPromptModal),
+    body.screen-locked .modal-box:not(#appPinLockOverlay .modal-box):not(#customConfirmModal .modal-box):not(#customAlertModal .modal-box):not(#customPromptModal .modal-box),
     body.screen-locked #mobileProfileScreen,
     body.screen-locked #mobileNotifScreen,
     body.screen-locked .mobile-settings-detail {
@@ -1765,6 +1765,17 @@
       filter: blur(50px) !important;
       pointer-events: none !important;
       user-select: none !important;
+    }
+    /* 画面PINロック中でも最前面に確認・警告ダイアログを操作可能に表示 */
+    body.screen-locked #customConfirmModal:not(.hidden),
+    body.screen-locked #customAlertModal:not(.hidden),
+    body.screen-locked #customPromptModal:not(.hidden) {
+      z-index: 130000 !important;
+      display: flex !important;
+      visibility: visible !important;
+      filter: none !important;
+      pointer-events: auto !important;
+      user-select: auto !important;
     }
 
 

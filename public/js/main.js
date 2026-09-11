@@ -152,6 +152,8 @@ function isTransientTelemetryError(args) {
     }
     // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
     if (
+      str.includes('auth/network-request-failed') ||
+      str.includes('network-request-failed') ||
       str.includes('load failed') ||
       str.includes('failed to fetch') ||
       str.includes('network error') ||
@@ -906,7 +908,11 @@ function initializeFirebase() {
     }
     onIdTokenChanged(auth, async (user) => {
       if (user) {
-        _cachedIdToken = await user.getIdToken();
+        try {
+          _cachedIdToken = await user.getIdToken();
+        } catch (_) {
+          _cachedIdToken = null;
+        }
       } else {
         _cachedIdToken = null;
       }
@@ -924,6 +930,7 @@ function initializeFirebase() {
     function cleanupAllActiveFirestoreListeners() {
       try {
         cleanupGlobalNotificationListeners();
+        if (typeof window._activeDmKeyUnsub === 'function') { window._activeDmKeyUnsub(); window._activeDmKeyUnsub = null; }
         if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
@@ -969,10 +976,8 @@ function initializeFirebase() {
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
-
-          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
-          await user.getIdToken();
-
+          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策・一時的通信切断時のエラー抑止）
+          await user.getIdToken().catch(() => {});
           const rawEmail = user.email || "";
           const cleanEmail = rawEmail.toLowerCase().trim();
 
@@ -5202,75 +5207,71 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
   });
 }
 
-if (logoutBtnInModalEl) {
-  logoutBtnInModalEl.addEventListener("click", async () => {
+window.executeLogout = async function (skipConfirm = false) {
+  if (!skipConfirm) {
     if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
-    closeCropModal();
-    if (settingsModalEl) settingsModalEl.classList.add("hidden");
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
-    try {
-      if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
-      if (typeof endCall === 'function') endCall(false);
-      if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
-      if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
-      await updateUserStatus('offline');
-      if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
-
-      // Service Worker にユーザー消去とバッジクリアを通知
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then(reg => {
-          if (reg.active) {
-            reg.active.postMessage({ type: 'CLEAR_USER_ID' });
-            reg.active.postMessage({ type: 'CLEAR_BADGE' });
-          }
-        }).catch(() => {});
-      }
-
-      // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
-      if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
-        await LocalStore.clearAllLocalData().catch(() => {});
-      }
-
-      // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
-      const preserveKeys = new Set([
-        'covo_app_theme',
-        'covo_dark_server',
-        'covo_dark_server_theme',
-        'covo_discord_ui_mode',
-        'covo_server_view',
-        'covo_close_behavior',
-        'simplechat_sound',
-        'simplechat_browser_notif',
-        'simplechat_desktop_notif',
-        'simplechat_shortcut_key',
-        'covo_ignore_force_update',
-        'covo_modern_ui_migrated_v2'
-      ]);
-
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && !preserveKeys.has(k)) {
-          keysToRemove.push(k);
+  }
+  closeCropModal();
+  if (settingsModalEl) settingsModalEl.classList.add("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+  try {
+    if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
+    if (typeof endCall === 'function') endCall(false);
+    if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
+    if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
+    await updateUserStatus('offline');
+    if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
+    // Service Worker にユーザー消去とバッジクリアを通知
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg.active) {
+          reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+          reg.active.postMessage({ type: 'CLEAR_BADGE' });
         }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-
-      // セッションストレージを全クリア
-      try { sessionStorage.clear(); } catch (_) {}
-
-      await signOut(auth);
-
-      // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
-      window.location.reload();
-    } catch (error) {
-      console.error("Logout Error:", error);
-      window.location.reload();
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+      }).catch(() => {});
     }
-  });
+    // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+    if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
+      await LocalStore.clearAllLocalData().catch(() => {});
+    }
+    // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
+    const preserveKeys = new Set([
+      'covo_app_theme',
+      'covo_dark_server',
+      'covo_dark_server_theme',
+      'covo_discord_ui_mode',
+      'covo_server_view',
+      'covo_close_behavior',
+      'simplechat_sound',
+      'simplechat_browser_notif',
+      'simplechat_desktop_notif',
+      'simplechat_shortcut_key',
+      'covo_ignore_force_update',
+      'covo_modern_ui_migrated_v2'
+    ]);
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && !preserveKeys.has(k)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    // セッションストレージを全クリア
+    try { sessionStorage.clear(); } catch (_) {}
+    await signOut(auth);
+    // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
+    window.location.reload();
+  } catch (error) {
+    console.error("Logout Error:", error);
+    window.location.reload();
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+  }
+};
+if (logoutBtnInModalEl) {
+  logoutBtnInModalEl.addEventListener("click", () => window.executeLogout(false));
 }
 
 if (setNicknameBtnEl && nicknameInpEl) {
@@ -7637,18 +7638,37 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   renderPinnedMessages();
 
   renderDmConversationsList();
-
   if (window._activeDmKeyCheckTimer) {
     clearInterval(window._activeDmKeyCheckTimer);
     window._activeDmKeyCheckTimer = null;
   }
-
+  if (window._activeDmKeyUnsub) {
+    window._activeDmKeyUnsub();
+    window._activeDmKeyUnsub = null;
+  }
   try {
     await _getDmKeyWithWait(dmId, currentDmParticipants, 2500);
+    // 入室時に相手へ自分の持っている鍵を即時バックフィル・相互同期
+    _backfillDmKeysForParticipant(dmId, targetUid).catch(() => {});
   } catch (e) {
     console.warn('[E2EE] DM key init error:', e);
   }
-
+  // DM鍵のリアルタイム監視リスナー（相手が新しい鍵をバックフィルした瞬間、即座に再復号・画面更新）
+  try {
+    const { doc: fsDoc, onSnapshot: fsOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const myDmKeyRef = fsDoc(db, `artifacts/${appId}/dm_channels/${dmId}/keys/${userId}`);
+    window._activeDmKeyUnsub = fsOnSnapshot(myDmKeyRef, async (keySnap) => {
+      if (currentDmId !== dmId || !keySnap.exists()) return;
+      delete _e2ee.dmKeyCache[dmId];
+      const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
+      if (freshKey && allLoadedMessages.length > 0) {
+        await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
+        renderMessagesWithReadReceipts();
+      }
+    }, (err) => {
+      console.warn('[DM Key onSnapshot] notice:', err?.message || err);
+    });
+  } catch (_) {}
   // DM鍵がまだ到着していない場合、自動監視タイマーを起動して鍵到着時に一括復号
   (async () => {
     try {
@@ -7678,6 +7698,64 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       }
     } catch (e) {}
   })();
+
+  これですべての修正パッチと整合性確認が完了した。 回答を組み立てよう。### 第1部: 発見された問題点の一覧
+
+  1. Cloudflare Worker 側の CORS プリフライトによる DELETE メソッド拒否（サーバー・個チャ共通）
+
+  - 重大度: 最重要 (CRITICAL)
+  - 発生箇所: server/src/index.js (getFileCorsHeaders, handleDeleteFile)
+  - 原因と影響:
+    ブラウザから Cloudflare Worker に対し DELETE /api/file/{key}
+    を送信する際、クロスオリジン仕様（CORS）に従いブラウザは必ず事前に OPTIONS
+    プリフライトリクエストを送信します。ファイル用ルーティングにおいて、handleDeleteFile 内で許可オリジン判定を行う
+    getCorsHeaders が混在していたため、プリフライトで返された getFileCorsHeaders との不整合やブラウザの CORS
+    破棄が発生し、ファイル削除リクエストが正常に完了しない要因となっていました。
+
+  2. サーバー管理者・モデレーターによるファイル削除時のメタデータ不整合 (403 Forbidden)
+
+  - 重大度: 高 (HIGH)
+  - 発生箇所: server/src/index.js (handleDeleteFile)
+  - 原因と影響:
+    サーバー管理者が他人の添付ファイル付きメッセージをモデレーション削除する際、Worker 側で if (serverId && meta &&
+    meta.serverId && meta.serverId === serverId)
+    による照合を行っていました。しかし、メッセージ添付ファイルのアップロード時に meta.serverId
+    が未設定または空文字だった場合、条件が不成立となって isServerAdminCheck がスキップされ、アップロード所有者でもないため 403
+    Forbidden で削除が拒否されていました。
+
+  3. フロントエンド側のファイル削除処理における await 待機漏れと正規表現の制限
+
+  - 重大度: 中 (MEDIUM)
+  - 発生箇所: public/js/main.js (cleanupFile in deleteMsgBtn,
+    saDeleteIndividualStamp, saDeleteGroup, sendMessage)
+  - 原因と影響:
+    メッセージ削除時やスタンプ削除時に Worker への DELETE リクエストを await
+    せずに非同期で投げ放しにしていたため、通信完了前にメッセージの削除や画面遷移・リロードが行われるとブラウザによって fetch
+    通信が中断（Abort）され、KV 上にファイル実体が孤立残存する原因になっていました。また、ファイルキー抽出正規表現が [A-Za-z0-9_]+
+    となっており、ハイフンを含む UUID 形式のキーを正しく抽出できていませんでした。さらに sendMessage 呼び出し時にも
+    snapServerId の渡し漏れがありました。
+
+  4. 初期実装テストアカウント間における個チャ (DM) 暗号化鍵の分裂 (Split-Brain) と復号不能障害
+
+  - 重大度: 最重要 (CRITICAL)
+  - 発生箇所: public/js/crypto_helpers.js (_backfillDmKeysForParticipant,
+    __getOrCreateDmKeyImpl, _decryptDmText, _decryptDmMessagesInPlace),
+    public/js/main.js (openDm)
+  - 原因と影響:
+    個チャ（DM）初期実装当時に使っていたテストアカウントとメインアカウントの間で、以下の要因が重なり DM鍵の分裂（Split-Brain）
+    が発生していました：
+    1.  初期鍵の片方向生成: アカウントAが個チャを開いた際、相手Bの公開鍵が取得できず自分用キー（Key A）のみが
+        dm_channels/${dmId}/keys/${uidA}
+        に作成された。その後、相手Bが開いた際も相手宛てのキーが無かったため、相手B側で独立して別のキー（Key B）が生成され
+        keys/${uidB} に保存された。
+    2.  バックフィル拒否ガードの欠陥: _backfillDmKeysForParticipant に「相手のドキュメント
+        keys/${targetUid} が既に存在する場合は即座に return; する」というガードがあり、相手が別の鍵（Key
+        B）を持っていたとしても、自分の鍵（Key A）が相手のドキュメントに永久に追加・共有されない状態に陥っていた。
+    3.  自分しか見えない現象の発生: Aは Key A で暗号化し、Bは Key B で暗号化するため、Aから見ると A の発言は Key A
+        で復号でき相手 B の発言は Key A と不一致で復号エラー。Bから見ると B の発言は Key B で復号でき A の発言は Key B
+        と不一致で復号エラーとなり、「どちらからも相手のメッセージが見えず、自分が送ったメッセージしか見えない」状態が固定化されていた。
+    4.  自己治癒・鍵到着リスナーの欠如: 復号エラー発生時にオンデマンドで相手から共有された新キーを Firestore
+        から再取得するフォールバックや、DM 入室時に相手からキーが届いた瞬間に全メッセージをリアルタイムで再復号するリスナーが存在していなかった。
 
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -9144,12 +9222,12 @@ window.saDeleteIndividualStamp = async function (targetServerId, groupId, isLega
   if (!await showCustomConfirm("このスタンプを一つ削除しますか？", "削除確認")) return;
   try {
     if (stampUrl) {
-      const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      const m = stampUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
       if (m) {
         const fileKey = m[1];
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
         const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+        await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
       }
     }
     const path = isLegacy ? `artifacts/${appId}/servers/${targetServerId}/stamps/${groupId}` : `artifacts/${appId}/servers/${targetServerId}/stampGroups/${groupId}`;
@@ -9199,11 +9277,11 @@ window.saDeleteGroup = async function (targetServerId, groupId, isLegacy) {
 
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       for (const u of urlsToDelete) {
-        const m = u.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+        const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
         if (m) {
           const fileKey = m[1];
           const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(targetServerId)}`;
-          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
+          await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(e => console.warn('KV delete error', e));
         }
       }
     }
@@ -12608,7 +12686,8 @@ async function sendMessage() {
             if (progressFill) progressFill.style.width = pct + "%";
             if (progressText) progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
           },
-          "simplechat/messages"
+          "simplechat/messages",
+          snapServerId
         );
         Object.assign(data, {
           fileData: fileUrl,
@@ -14543,15 +14622,17 @@ function showContextMenu(bubble, clientX, clientY) {
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
   // （自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能）
   const isMsgSender = msgData.senderId === userId || msgData.userId === userId;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = typeof isCurrentUserServerAdmin === 'function'
+    ? isCurrentUserServerAdmin(currentServerData)
+    : Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = typeof isCurrentUserServerOwner === 'function'
+    ? isCurrentUserServerOwner(currentServerData)
+    : Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
-
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
     deleteBtn.style.display = canDeleteMsg ? 'block' : 'none';
   }
-
   const canPinMsg = currentDmId
     ? true
     : (isSvAdmin || isSvOwner || isAdmin || isMsgSender);
@@ -14753,29 +14834,36 @@ if (deleteMsgBtn) {
       if (!ok) return;
     }
 
-    // 1. 添付ファイルの削除（非同期試行・ファイル削除エラーでもメッセージ削除は妨げない）
-    const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
+    // 1. 添付ファイルの削除（完了を待機し、通信中断を防止）
+    const targetServerId = currentServerId || msgToDelete.serverId || '';
+    const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${targetServerId ? `&serverId=${encodeURIComponent(targetServerId)}` : ''}`;
     const cleanupFile = async (url) => {
       if (!url) return;
-      const m = url.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      const m = url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
       if (m) {
         const fileKey = m[1];
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
           const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
-          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(err => {
-            console.warn('[deleteMessage] KV cleanup warn:', fileKey, err);
-          });
-        } catch (_) {}
+          const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
+          if (!res.ok) {
+            console.warn('[deleteMessage] KV delete failed:', res.status, fileKey);
+          }
+        } catch (err) {
+          console.warn('[deleteMessage] KV cleanup warn:', fileKey, err);
+        }
       }
     };
-
-    if (msgToDelete.kvFileUrl) cleanupFile(msgToDelete.kvFileUrl);
-    if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) cleanupFile(msgToDelete.fileData);
+    const fileCleanupPromises = [];
+    if (msgToDelete.kvFileUrl) fileCleanupPromises.push(cleanupFile(msgToDelete.kvFileUrl));
+    if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) fileCleanupPromises.push(cleanupFile(msgToDelete.fileData));
     if (msgToDelete.text) {
-      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
+      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_\-]+)', 'g');
       const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
-      kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
+      kvMatches.forEach(m => fileCleanupPromises.push(cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`)));
+    }
+    if (fileCleanupPromises.length > 0) {
+      await Promise.allSettled(fileCleanupPromises);
     }
 
     const loadingOverlayEl = document.getElementById("loadingOverlay");
@@ -15464,20 +15552,18 @@ async function notifyNewMessage({
   bodyText = formatNotificationBody(bodyText, sticker);
 
   const isCurrentChannel = (channelId === currentRoomId) || (isDm && channelId === currentDmId);
-  const isAppVisible = (document.visibilityState === 'visible');
-
-  // チャット欄を開いていてアプリが画面上にあるときはWindows通知もアプリ内通知も送らない（直接メッセージが表示されるため）
-  if (isCurrentChannel && isAppVisible) {
+  // アプリが最前面でアクティブにフォーカスされているかを厳密に判定
+  const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+  // チャット欄を開いていて、かつアプリが最前面でフォーカスされている時のみ通知不要（見ているため）
+  if (isCurrentChannel && isAppActiveAndFocused) {
     return;
   }
-
   const isMention = userNickname && bodyText && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
   const notifTitle = isMention
     ? `[@メンション] ${serverName} › #${channelName}`
     : `${serverName} › #${channelName}`;
-
-  if (isAppVisible) {
-    // アプリを開いているときはWindowsプッシュ通知は送らず、アプリ内通知（トースト）のみを表示＆アプリ内音を1回再生
+  if (isAppActiveAndFocused) {
+    // アプリが最前面でアクティブ操作中の時は、別チャンネルの新着をアプリ内通知（トースト）として表示
     showInAppNotification(
       serverName,
       channelName,
@@ -15491,7 +15577,7 @@ async function notifyNewMessage({
       targetAvatarUrl
     );
   } else {
-    // アプリが最小化または非表示のときはWindows通知（OS通知）のみを1回送信（アプリ側Web Audio音は二重鳴動防止のため鳴らさない）
+    // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、Windowsデスクトップ通知（OS通知）を送信
     showNotification(notifTitle, `${senderName}: ${bodyText}`, channelId);
   }
 
@@ -18430,9 +18516,8 @@ function handleCallDeclinedFromNotification(data) {
 async function showNotification(title, body, roomId) {
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
   if (!notifEnabled) return;
-
-  // アプリが画面上に表示されている（オンライン・チャット中）場合は、OS通知（Windows通知）は絶対に送らない
-  if (document.visibilityState === 'visible') return;
+  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
 
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);
@@ -21132,11 +21217,15 @@ window.clearAppPinInput = function () {
 };
 
 window.emergencyLogoutFromPinLock = async function () {
-  if (await showCustomConfirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？', 'ログアウト', 'キャンセル')) {
+  const confirmed = await showCustomConfirm(
+    'PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？',
+    'ログアウト',
+    'キャンセル',
+    'アカウントからログアウトします'
+  );
+  if (confirmed) {
     unlockAppScreen();
-    const logoutBtn = document.getElementById('logoutButtonInModal');
-    if (logoutBtn) logoutBtn.click();
-    else if (typeof logout === 'function') logout();
+    await window.executeLogout(true);
   }
 };
 

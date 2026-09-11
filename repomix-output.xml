@@ -246,6 +246,510 @@ jobs:
           args: ${{ matrix.args }}
 </file>
 
+<file path="public/css/modules/animations.css">
+/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
+.splash-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+@media (max-width: 768px) {
+  .splash-icon-container {
+    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
+  }
+}
+/* === サーバーリスト画面 === */
+    #serverListScreen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3f4f6;
+      overflow-y: auto;
+    }
+    #serverListScreen.hidden {
+      display: none !important;
+    }
+    /* === アニメーション定義 === */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes scaleInFade {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .anim-fade-in {
+      animation: fadeIn 0.18s ease both;
+    }
+    .anim-slide-up {
+      animation: slideUpFade 0.22s ease both;
+    }
+    .anim-scale-in {
+      animation: scaleInFade 0.22s ease both;
+    }
+    .anim-card {
+      animation: cardIn 0.28s ease both;
+      opacity: 0;
+    }
+    /* === サーバーリスト画面 === */
+    .server-list-header {
+      background: #1f2937;
+      color: white;
+      padding: 0.875rem 1.25rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .server-list-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .server-list-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .server-list-actions button:not(.server-list-user-btn) {
+      padding: 7px 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #joinServerBtn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+    #joinServerBtn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    #createServerBtn {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+    #createServerBtn:hover {
+      background: #e5e7eb;
+    }
+    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
+    .server-list-user-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.12s;
+      flex-shrink: 0;
+    }
+    .server-list-user-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: scale(1.07);
+    }
+    .server-list-user-btn:active {
+      transform: scale(0.95);
+    }
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      padding: 1.25rem 1.25rem 0 1.25rem;
+    }
+    .server-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0 2px 2px;
+      border-bottom: 1px solid #f3f4f6;
+      margin-bottom: 2px;
+      margin-top: 4px;
+    }
+    .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .admin-join-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid #f3f4f6;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .admin-join-item:hover {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+    .admin-join-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+    .admin-join-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+    }
+    .admin-join-meta {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+    .admin-join-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 3px 9px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .server-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+    .server-card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+    }
+    .server-card:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+    .server-card-icon {
+      width: 44px;
+      height: 44px;
+      background: #4f46e5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      margin-bottom: 2px;
+      font-weight: 700;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+    .server-card-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+    .server-card:hover .server-card-icon {
+      border-radius: 14px;
+      transform: translateY(-1px);
+      background: #4338ca;
+    }
+    .server-card-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+    .server-card-meta {
+      font-size: 0.73rem;
+      color: #6b7280;
+    }
+    .server-card-admin-badge {
+      display: inline-block;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.63rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid #d1d5db;
+    }
+    .server-list-empty {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: #6b7280;
+      animation: fadeIn 0.3s ease;
+    }
+    .server-list-empty i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+    /* === ルームリストアイテムアニメーション === */
+    @keyframes roomSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    .room-list-anim {
+      animation: roomSlideIn 0.2s ease both;
+    }
+    /* === メンバーリストアイテムアニメーション === */
+    @keyframes memberFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .member-anim {
+      animation: memberFadeIn 0.18s ease both;
+    }
+    /* === スムーズなアニメーション（UIの触り心地向上） === */
+    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
+    }
+    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
+      transform: scale(0.96);
+    }
+    /* Mobile full-screen pages (スライドインアニメーション対応) */
+    #mobileProfileScreen,
+    #mobileNotifScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      -webkit-overflow-scrolling: touch;
+      z-index: 300;
+      overflow-y: auto;
+      flex-direction: column;
+    }
+    #mobileProfileScreen.active,
+    #mobileNotifScreen.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    #mobileProfileScreen.closing,
+    #mobileNotifScreen.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-profile-header {
+      background: #1f2937;
+      padding: 1.25rem;
+      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .mobile-profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .mobile-profile-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .mobile-profile-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+    }
+    .mobile-profile-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+    .mobile-settings-section {
+      margin: 1rem;
+    }
+    .mobile-settings-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+    .mobile-settings-group {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    .mobile-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px solid #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-settings-row:last-child {
+      border-bottom: none;
+    }
+    .mobile-settings-row:active {
+      background: #f9fafb;
+    }
+    .mobile-settings-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .mobile-settings-row-text {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #111827;
+    }
+    .mobile-settings-row-arrow {
+      color: #d1d5db;
+      font-size: 0.8rem;
+    }
+    .mobile-settings-row.danger .mobile-settings-row-text {
+      color: #ef4444;
+    }
+    /* Mobile settings slide-in detail */
+    .mobile-settings-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f3f4f6;
+      z-index: 300;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-settings-detail.active {
+      display: flex;
+      animation: slideInFromRight 0.22s ease both;
+    }
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0.7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutToRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0.7; }
+    }
+    .mobile-settings-detail.closing {
+      animation: slideOutToRight 0.22s ease both !important;
+    }
+    .mobile-detail-header {
+      background: #1f2937;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.875rem 1rem;
+      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      flex-shrink: 0;
+    }
+    .mobile-detail-back {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
+    .mobile-detail-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .mobile-notif-item {
+      background: white;
+      margin: 0 1rem 0.75rem;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: #374151;
+    }
+</file>
+
 <file path="public/css/modules/layout.css">
 /* Main layout container styles */
 </file>
@@ -988,510 +1492,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/css/modules/animations.css">
-/* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
-.splash-icon-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s ease;
-}
-@media (max-width: 768px) {
-  .splash-icon-container {
-    transform: translateY(calc(-28px - (env(safe-area-inset-top, 0px) * 0.35))) !important;
-  }
-}
-/* === サーバーリスト画面 === */
-    #serverListScreen {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #f3f4f6;
-      overflow-y: auto;
-    }
-    #serverListScreen.hidden {
-      display: none !important;
-    }
-    /* === アニメーション定義 === */
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
-    }
-    @keyframes slideUpFade {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    @keyframes scaleInFade {
-      from {
-        opacity: 0;
-        transform: scale(0.96) translateY(6px);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-    @keyframes cardIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .anim-fade-in {
-      animation: fadeIn 0.18s ease both;
-    }
-    .anim-slide-up {
-      animation: slideUpFade 0.22s ease both;
-    }
-    .anim-scale-in {
-      animation: scaleInFade 0.22s ease both;
-    }
-    .anim-card {
-      animation: cardIn 0.28s ease both;
-      opacity: 0;
-    }
-    /* === サーバーリスト画面 === */
-    .server-list-header {
-      background: #1f2937;
-      color: white;
-      padding: 0.875rem 1.25rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    .server-list-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-    }
-    .server-list-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .server-list-actions button:not(.server-list-user-btn) {
-      padding: 7px 13px;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #joinServerBtn {
-      background: rgba(255, 255, 255, 0.12);
-      color: white;
-    }
-    #joinServerBtn:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-    #createServerBtn {
-      background: #f3f4f6;
-      color: #1f2937;
-    }
-    #createServerBtn:hover {
-      background: #e5e7eb;
-    }
-    /* ユーザーアバターボタン（サーバーリストヘッダー内） */
-    .server-list-user-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s, transform 0.12s;
-      flex-shrink: 0;
-    }
-    .server-list-user-btn:hover {
-      background: rgba(255, 255, 255, 0.28);
-      transform: scale(1.07);
-    }
-    .server-list-user-btn:active {
-      transform: scale(0.95);
-    }
-    .server-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 14px;
-      padding: 1.25rem 1.25rem 0 1.25rem;
-    }
-    .server-section-label {
-      grid-column: 1 / -1;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #9ca3af;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 0 2px 2px;
-      border-bottom: 1px solid #f3f4f6;
-      margin-bottom: 2px;
-      margin-top: 4px;
-    }
-    .server-section-label:first-child {
-      margin-top: 0;
-    }
-    .admin-join-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: white;
-      border: 1px solid #f3f4f6;
-      cursor: pointer;
-      width: 100%;
-      text-align: left;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .admin-join-item:hover {
-      background: #f9fafb;
-      border-color: #e5e7eb;
-    }
-    .admin-join-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      flex-shrink: 0;
-      font-size: 0.85rem;
-    }
-    .admin-join-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #111827;
-    }
-    .admin-join-meta {
-      font-size: 0.72rem;
-      color: #9ca3af;
-      margin-top: 1px;
-    }
-    .admin-join-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      background: #e0e7ff;
-      color: #3730a3;
-      padding: 3px 9px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-    .server-card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 16px;
-      padding: 1.25rem;
-      cursor: pointer;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      position: relative;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-    .server-card:hover {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      transform: translateY(-2px);
-      border-color: #cbd5e1;
-    }
-    .server-card:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-    .server-card-icon {
-      width: 44px;
-      height: 44px;
-      background: #4f46e5;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: white;
-      margin-bottom: 2px;
-      font-weight: 700;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-    .server-card-icon img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: inherit;
-    }
-    .server-card:hover .server-card-icon {
-      border-radius: 14px;
-      transform: translateY(-1px);
-      background: #4338ca;
-    }
-    .server-card-name {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #111827;
-      line-height: 1.2;
-    }
-    .server-card-meta {
-      font-size: 0.73rem;
-      color: #6b7280;
-    }
-    .server-card-admin-badge {
-      display: inline-block;
-      background: #e5e7eb;
-      color: #374151;
-      font-size: 0.63rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 99px;
-      border: 1px solid #d1d5db;
-    }
-    .server-list-empty {
-      text-align: center;
-      padding: 3rem 1.5rem;
-      color: #6b7280;
-      animation: fadeIn 0.3s ease;
-    }
-    .server-list-empty i {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      color: #d1d5db;
-    }
-    /* === ルームリストアイテムアニメーション === */
-    @keyframes roomSlideIn {
-      from {
-        opacity: 0;
-        transform: translateX(-8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-    .room-list-anim {
-      animation: roomSlideIn 0.2s ease both;
-    }
-    /* === メンバーリストアイテムアニメーション === */
-    @keyframes memberFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .member-anim {
-      animation: memberFadeIn 0.18s ease both;
-    }
-    /* === スムーズなアニメーション（UIの触り心地向上） === */
-    button, .server-card, .room-item-animate, .member-item, .mobile-settings-row {
-      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.2s, box-shadow 0.2s, opacity 0.2s !important;
-    }
-    button:active, .server-card:active, .input-side-btn:active, .mobile-settings-row:active {
-      transform: scale(0.96);
-    }
-    /* Mobile full-screen pages (スライドインアニメーション対応) */
-    #mobileProfileScreen,
-    #mobileNotifScreen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      -webkit-overflow-scrolling: touch;
-      z-index: 300;
-      overflow-y: auto;
-      flex-direction: column;
-    }
-    #mobileProfileScreen.active,
-    #mobileNotifScreen.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    #mobileProfileScreen.closing,
-    #mobileNotifScreen.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-profile-header {
-      background: #1f2937;
-      padding: 1.25rem;
-      padding-top: calc(1.25rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-    .mobile-profile-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 1.3rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .mobile-profile-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .mobile-profile-name {
-      font-size: 1rem;
-      font-weight: 700;
-      color: white;
-    }
-    .mobile-profile-sub {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.5);
-      margin-top: 2px;
-    }
-    .mobile-settings-section {
-      margin: 1rem;
-    }
-    .mobile-settings-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #6b7280;
-      padding: 0 4px;
-      margin-bottom: 6px;
-    }
-    .mobile-settings-group {
-      background: white;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid #e5e7eb;
-    }
-    .mobile-settings-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 13px 16px;
-      cursor: pointer;
-      transition: background 0.12s;
-      border-bottom: 1px solid #f3f4f6;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-settings-row:last-child {
-      border-bottom: none;
-    }
-    .mobile-settings-row:active {
-      background: #f9fafb;
-    }
-    .mobile-settings-row-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.85rem;
-      flex-shrink: 0;
-    }
-    .mobile-settings-row-text {
-      flex: 1;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: #111827;
-    }
-    .mobile-settings-row-arrow {
-      color: #d1d5db;
-      font-size: 0.8rem;
-    }
-    .mobile-settings-row.danger .mobile-settings-row-text {
-      color: #ef4444;
-    }
-    /* Mobile settings slide-in detail */
-    .mobile-settings-detail {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #f3f4f6;
-      z-index: 300;
-      flex-direction: column;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mobile-settings-detail.active {
-      display: flex;
-      animation: slideInFromRight 0.22s ease both;
-    }
-    @keyframes slideInFromRight {
-      from { transform: translateX(100%); opacity: 0.7; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOutToRight {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0.7; }
-    }
-    .mobile-settings-detail.closing {
-      animation: slideOutToRight 0.22s ease both !important;
-    }
-    .mobile-detail-header {
-      background: #1f2937;
-      color: white;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0.875rem 1rem;
-      padding-top: calc(0.875rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      flex-shrink: 0;
-    }
-    .mobile-detail-back {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-detail-back:active { background: rgba(255,255,255,0.1); }
-    .mobile-detail-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-    .mobile-notif-item {
-      background: white;
-      margin: 0 1rem 0.75rem;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      color: #374151;
-    }
-</file>
-
 <file path="public/css/modules/components.css">
 /* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
     .flipped {
@@ -1886,8 +1886,10 @@ module.exports = {
       opacity: 0.88;
     }
     /* === カスタム確認ダイアログ === */
-    #customConfirmModal {
-      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
+    #customConfirmModal,
+    #customPromptModal,
+    #customAlertModal {
+      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
     }
     #customConfirmModal .confirm-box {
       text-align: left;
@@ -9738,9 +9740,27 @@ function run() {
     const fullPath = path.resolve(process.cwd(), relPath);
     console.log(`\n📁 対象ファイル: ${relPath}`);
     let fileContent = '';
+    let fileEncoding = 'utf-8';
     const exists = fs.existsSync(fullPath);
     if (exists) {
-      fileContent = fs.readFileSync(fullPath, 'utf-8');
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
     } else {
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       console.log(`   📁 新規ファイルを作成します`);
@@ -9767,8 +9787,21 @@ function run() {
       }
     }
     if (fileSuccessCount > 0) {
-      fs.writeFileSync(fullPath, modified, 'utf-8');
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
       console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
     } else {
       console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
     }
@@ -11667,989 +11700,6 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
 </html>
 </file>
 
-<file path="public/css/modules/mobile.css">
-/* === PWAインストールバナー === */
-    #pwaInstallBanner {
-      display: none;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 9998;
-      background: linear-gradient(135deg, #1e293b, #334155);
-      color: white;
-      padding: 14px 16px max(24px, calc(14px + env(safe-area-inset-bottom, 0px)));
-      align-items: center;
-      gap: 12px;
-      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
-      animation: bannerSlideUp 0.4s ease-out;
-    }
-    #pwaInstallBanner.show {
-      display: flex;
-    }
-    @keyframes bannerSlideUp {
-      from {
-        transform: translateY(100%);
-      }
-      to {
-        transform: translateY(0);
-      }
-    }
-    .pwa-banner-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      flex-shrink: 0;
-    }
-    .pwa-banner-text {
-      flex: 1;
-      min-width: 0;
-    }
-    .pwa-banner-text strong {
-      display: block;
-      font-size: 0.9rem;
-      margin-bottom: 2px;
-    }
-    .pwa-banner-text span {
-      font-size: 0.75rem;
-      color: #94a3b8;
-    }
-    .pwa-banner-btn {
-      background: white;
-      color: #1e293b;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 16px;
-      font-weight: 700;
-      font-size: 0.85rem;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: opacity 0.2s;
-    }
-    .pwa-banner-btn:hover {
-      opacity: 0.85;
-    }
-    .pwa-banner-close {
-      background: none;
-      border: none;
-      color: #94a3b8;
-      font-size: 1rem;
-      cursor: pointer;
-      padding: 4px;
-      flex-shrink: 0;
-    }
-    /* 過去メッセージ読み込みスピナー */
-    #topLoadingSpinner {
-      display: none;
-    }
-    .top-spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e5e7eb;
-      border-top-color: #6b7280;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    /* =============================================
-       Mobile Bottom Navigation & BottomSheet System
-    ============================================= */
-    :root {
-      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
-      --mnav-base-h: 50px;
-      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
-    }
-    /* 汎用ボトムシート（Drawer）共通スタイル */
-    .bottom-sheet-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      z-index: 9998;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .bottom-sheet-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .bottom-sheet-handle,
-    .call-picker-handle {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-      padding: 12px 0 8px;
-      cursor: grab;
-      flex-shrink: 0;
-      touch-action: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .bottom-sheet-handle:active,
-    .call-picker-handle:active {
-      cursor: grabbing;
-    }
-    .bottom-sheet-handle-bar {
-      width: 40px;
-      height: 5px;
-      background-color: #cbd5e1;
-      border-radius: 9999px;
-      margin: 0 auto;
-      transition: background-color 0.2s, transform 0.2s;
-    }
-    body.dark-server-theme .bottom-sheet-handle-bar {
-      background-color: #475569;
-    }
-    body.discord-dark-theme .bottom-sheet-handle-bar {
-      background-color: #4e5058;
-    }
-    @media (max-width: 768px) {
-      /* スマホUIではファイル共有右側のメンバーボタンを完全非表示 */
-      #toggleMembersSidebarBtn {
-        display: none !important;
-      }
-      .covo-bottom-sheet,
-      #membersSidebar,
-      #serverSettingsModal .modal-box,
-      #callPickerModal .call-picker-box {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        max-height: min(85vh, calc(100dvh - 30px)) !important;
-        height: auto !important;
-        border-top-left-radius: 24px !important;
-        border-top-right-radius: 24px !important;
-        border-bottom-left-radius: 0 !important;
-        border-bottom-right-radius: 0 !important;
-        background-color: #ffffff !important;
-        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.28) !important;
-        display: flex !important;
-        flex-direction: column !important;
-        overflow: hidden !important;
-        z-index: 9999 !important;
-        transform: translateY(100%) !important;
-        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
-        touch-action: pan-y !important;
-        padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-      }
-      body.dark-server-theme .covo-bottom-sheet,
-      body.dark-server-theme #membersSidebar,
-      body.dark-server-theme #serverSettingsModal .modal-box,
-      body.dark-server-theme #callPickerModal .call-picker-box {
-        background-color: #1e293b !important;
-      }
-      body.discord-dark-theme .covo-bottom-sheet,
-      body.discord-dark-theme #membersSidebar,
-      body.discord-dark-theme #serverSettingsModal .modal-box,
-      body.discord-dark-theme #callPickerModal .call-picker-box {
-        background-color: #2b2d31 !important;
-      }
-      .covo-bottom-sheet.bottom-sheet-open,
-      #membersSidebar.bottom-sheet-open,
-      #serverSettingsModal:not(.hidden) .modal-box,
-      #callPickerModal.show .call-picker-box {
-        transform: translateY(0) !important;
-      }
-      .covo-bottom-sheet.closing,
-      #membersSidebar.closing,
-      #callPickerModal.closing .call-picker-box {
-        transform: translateY(100%) !important;
-        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
-      }
-    }
-    #mobileBottomNav {
-      display: none !important;
-    }
-    .mobile-nav-tab {
-      flex: 1 1 0;
-      height: var(--mnav-base-h);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: rgba(255,255,255,0.5);
-      border: none;
-      background: transparent;
-      padding: 0;
-      margin: 0;
-      transition: color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      position: relative;
-      line-height: 1;
-    }
-    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
-    .mobile-nav-tab i {
-      font-size: 1.1rem;
-      line-height: 1;
-      margin-bottom: 3px;
-    }
-    .mobile-nav-tab span {
-      font-size: 0.64rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      line-height: 1;
-    }
-    .mobile-notif-dot {
-      position: absolute;
-      top: 6px;
-      right: calc(50% - 14px);
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #ef4444;
-      border: 1.5px solid #1f2937;
-    }
-    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
-    body.in-chat-view #mobileBottomNav {
-      display: none !important;
-    }
-    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
-    #mobileProfileScreen,
-    #mobileNotifScreen,
-    .mobile-settings-detail {
-      inset: 0 !important;
-      min-height: 100dvh !important;
-      height: 100dvh !important;
-      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
-      box-sizing: border-box !important;
-      background: #f8fafc !important;
-    }
-    body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen,
-    body.has-mobile-nav .mobile-settings-detail {
-      inset: 0 !important;
-      min-height: 100dvh !important;
-      height: 100dvh !important;
-      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
-    }
-    body.dark-server-theme #mobileProfileScreen,
-    body.dark-server-theme #mobileNotifScreen,
-    body.dark-server-theme .mobile-settings-detail {
-      background: #111827 !important;
-    }
-    /* =============================================
-       Server list-view toggle
-    ============================================= */
-    #viewToggleBtn {
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255,255,255,0.12);
-      border: none;
-      border-radius: 7px;
-      color: white;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }
-    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
-    /* List view overrides */
-    .server-grid.list-view {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 1rem 1rem 0 1rem;
-    }
-    .server-grid.list-view .server-section-label {
-      margin-top: 8px;
-    }
-    .server-grid.list-view .server-section-label:first-child {
-      margin-top: 0;
-    }
-    .server-grid.list-view .server-card {
-      flex-direction: row;
-      align-items: center;
-      gap: 13px;
-      padding: 11px 14px;
-    }
-    .server-grid.list-view .server-card-icon {
-      width: 40px;
-      height: 40px;
-      margin-bottom: 0;
-      flex-shrink: 0;
-    }
-    .server-grid.list-view .server-card-name {
-      font-size: 0.92rem;
-    }
-    .server-grid.list-view .server-card-meta {
-      font-size: 0.72rem;
-    }
-    .server-grid.list-view .server-card-admin-badge {
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-    .server-grid.list-view .server-card-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-    /* =============================================
-       PC Discord-style Settings Modal (2-column)
-    ============================================= */
-    .settings-discord-layout {
-      display: flex;
-      height: 100%;
-    }
-    .settings-sidebar {
-      width: 210px;
-      flex-shrink: 0;
-      background: #111827;
-      padding: 1.25rem 0.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      overflow-y: auto;
-    }
-    .settings-sidebar-user {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 8px 14px;
-      margin-bottom: 4px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .settings-sidebar-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.12);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 700;
-      font-size: 0.9rem;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .settings-sidebar-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .settings-sidebar-name {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: white;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .settings-nav-label {
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: rgba(255,255,255,0.35);
-      padding: 8px 8px 4px;
-    }
-    .settings-nav-item {
-      display: flex;
-      align-items: center !important;
-      gap: 8px !important;
-      padding: 7px 10px !important;
-      border-radius: 6px !important;
-      font-size: 0.85rem !important;
-      font-weight: 500 !important;
-      color: rgba(255,255,255,0.55) !important;
-      cursor: pointer !important;
-      transition: background 0.12s, color 0.12s !important;
-      border: none !important;
-      background: transparent !important;
-      width: 100% !important;
-      text-align: left !important;
-      min-height: unset !important;
-      height: auto !important;
-      line-height: 1.4 !important;
-    }
-    .settings-nav-item:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: rgba(255,255,255,0.85) !important;
-    }
-    .settings-nav-item.active {
-      background: rgba(255,255,255,0.14) !important;
-      color: white !important;
-    }
-    #settingsModal #adminPanelContainer {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      flex: 0 0 auto;
-    }
-    #settingsModal #adminPanelContainer.hidden {
-      display: none;
-    }
-    .settings-nav-item.danger {
-      color: #f87171 !important;
-      margin-top: 0.5rem !important;
-      flex: 0 0 auto !important;
-    }
-    .settings-nav-item.danger:hover {
-      background: rgba(239,68,68,0.15) !important;
-      color: #f87171 !important;
-    }
-    .settings-nav-divider {
-      height: 1px;
-      background: rgba(255,255,255,0.07);
-      margin: 6px 0;
-    }
-    .settings-content {
-      flex: 1;
-      background: white;
-      overflow-y: auto;
-      scrollbar-gutter: stable;
-      padding: 1.75rem 2rem;
-      position: relative;
-    }
-    .settings-content-section {
-      display: none;
-    }
-    .settings-content-section.active {
-      display: block;
-    }
-    .settings-section-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #111827;
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .settings-close-btn {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: none;
-      background: #f3f4f6;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      font-size: 0.9rem;
-      transition: background 0.12s;
-    }
-    .settings-close-btn:hover { background: #e5e7eb; }
-    @media (max-width: 640px) {
-      .settings-discord-layout {
-        flex-direction: column;
-      }
-      .settings-sidebar {
-        width: 100% !important;
-        height: auto !important;
-        flex-direction: row !important;
-        overflow-x: auto !important;
-        padding: 0.5rem !important;
-        border-bottom: 1px solid rgba(0,0,0,0.1);
-        background: #111827;
-      }
-      /* Hide user profile block on mobile server settings to save vertical space */
-      .settings-sidebar .settings-sidebar-user {
-        display: none !important;
-      }
-      .settings-sidebar .settings-nav-label {
-        display: none !important;
-      }
-      .settings-sidebar .settings-nav-divider {
-        display: none !important;
-      }
-      .settings-sidebar .settings-nav-item {
-        width: auto !important;
-        white-space: nowrap !important;
-        padding: 8px 12px !important;
-      }
-      .settings-content {
-        padding: 1rem !important;
-      }
-      .settings-close-btn {
-        top: 0.5rem !important;
-        right: 0.5rem !important;
-        background: #f3f4f6 !important;
-      }
-    }
-    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
-    @media (max-width: 768px) {
-      #settingsModal {
-        display: none !important;
-      }
-      #mobileBottomNav {
-        display: flex;
-      }
-      #serverListNotifBtn {
-        display: none !important;
-      }
-      /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
-      html, body {
-        background-color: #0b0f19 !important;
-      }
-      /* DiscordUIモード(ライト)時 */
-      body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode,
-      html:has(body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode) {
-        background-color: #ffffff !important;
-      }
-      /* ネイビーモード時 */
-      body.dark-server-theme,
-      html:has(body.dark-server-theme) {
-        background-color: #0b0f19 !important;
-      }
-      /* Discordダーク時 */
-      body.discord-dark-theme,
-      html:has(body.discord-dark-theme) {
-        background-color: #1e1f22 !important;
-      }
-      /* チャット画面時はチャット背景(白)と揃える */
-      body.in-chat-view,
-      html:has(body.in-chat-view) {
-        background-color: #ffffff !important;
-      }
-      /* ダークモード+チャット時 */
-      body.in-chat-view.dark-server-theme,
-      html:has(body.in-chat-view.dark-server-theme) {
-        background-color: #1a202c !important;
-      }
-      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
-      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
-         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
-         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
-      body.in-chat-view #mobileBottomNav {
-        background: #ffffff !important;
-      }
-      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
-      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
-      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
-      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
-      body.in-chat-view.dark-server-theme #mobileBottomNav {
-        background: #1a202c !important;
-      }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
-      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
-      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
-      input[type="text"],
-      input[type="email"],
-      input[type="password"],
-      textarea {
-        font-size: max(16px, 1em) !important;
-      }
-      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
-      /* ローディング中の2層問題を解消:
-         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
-         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
-      body.dark-server-theme #mainContent,
-      body.dark-server-theme .container {
-        background-color: #1f2937 !important;
-      }
-      /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
-      .modal-overlay:not(.hidden) {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-      }
-      /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
-      .modal-overlay:not(.hidden) > div:not(.modal-box) {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        width: 100% !important;
-        height: 100% !important;
-      }
-      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
-      .modal-overlay:not(.hidden) .modal-box, 
-      #serverSettingsModal:not(.hidden) .modal-box, 
-      #createServerModal:not(.hidden) .modal-box, 
-      #joinServerModal:not(.hidden) .modal-box, 
-      #settingsModal:not(.hidden) .modal-box,
-      #joinRoomPasswordModal:not(.hidden) .modal-box,
-      #adminJoinModal:not(.hidden) .modal-box {
-        width: 100% !important;
-        max-width: 100% !important;
-        height: 100% !important;
-        max-height: 100% !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        margin: 0 !important;
-        padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
-        overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
-        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
-        flex-direction: column !important;
-        box-sizing: border-box !important;
-        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
-        background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
-        background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
-      }
-      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
-      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
-      #createServerModal:not(.hidden) .modal-box,
-      #joinServerModal:not(.hidden) .modal-box,
-      #joinRoomPasswordModal:not(.hidden) .modal-box,
-      #deleteRoomConfirmModal:not(.hidden) .modal-box {
-        padding: var(--safe-top) 24px 90px 24px !important;
-        overflow-y: auto !important;
-        justify-content: center !important;
-      }
-      /* 確認・アラートダイアログ・ユーザープロフィール・ステメ・パスワード等: スマホUIでの全画面化・変形バグを完全解消 */
-      #customConfirmModal:not(.hidden),
-      #customAlertModal:not(.hidden),
-      #messagePreviewModal:not(.hidden),
-      #addServerSelectModal:not(.hidden),
-      #userProfileModal:not(.hidden),
-      #customStatusModal:not(.hidden),
-      #passwordResetModal:not(.hidden),
-      #changePasswordModal:not(.hidden),
-      #recoveryKeyManagerModal:not(.hidden),
-      #feedbackModal:not(.hidden),
-      #windowsDownloadModal:not(.hidden),
-      #whatsNewModal:not(.hidden),
-      #avatarLightbox:not(.hidden) {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 16px !important;
-        position: fixed !important;
-        inset: 0 !important;
-        z-index: 99998 !important;
-      }
-      #customConfirmModal:not(.hidden) .modal-box,
-      #customAlertModal:not(.hidden) .modal-box,
-      #messagePreviewModal:not(.hidden) .modal-box,
-      #addServerSelectModal:not(.hidden) .modal-box,
-      #passwordResetModal:not(.hidden) .modal-box,
-      #changePasswordModal:not(.hidden) .modal-box,
-      #recoveryKeyManagerModal:not(.hidden) .modal-box,
-      #feedbackModal:not(.hidden) .modal-box,
-      #windowsDownloadModal:not(.hidden) .modal-box,
-      #whatsNewModal:not(.hidden) .modal-box,
-      #avatarLightbox:not(.hidden) .modal-box {
-        max-width: 380px !important;
-        width: min(92vw, 380px) !important;
-        padding: 20px !important;
-        overflow-y: auto !important;
-        justify-content: flex-start !important;
-        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 1.5rem !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(88vh, calc(100dvh - 32px)) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-      }
-      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
-      #userProfileModal:not(.hidden) .modal-box {
-        max-width: 340px !important;
-        width: min(92vw, 340px) !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-        justify-content: flex-start !important;
-        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 24px !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(90dvh, 620px) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-        background: #ffffff !important;
-      }
-      body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
-        background: #1e293b !important;
-      }
-      body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
-        background: #232428 !important;
-      }
-      /* カスタムステータス設定モーダル専用スマホスタイル */
-      #customStatusModal:not(.hidden) .modal-box {
-        max-width: 380px !important;
-        width: min(92vw, 380px) !important;
-        padding: 1.25rem !important;
-        overflow-y: auto !important;
-        border-radius: 1.5rem !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(85dvh, 520px) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-        background: #ffffff !important;
-      }
-      body.dark-server-theme #customStatusModal:not(.hidden) .modal-box {
-        background: #1e293b !important;
-      }
-      body.discord-dark-theme #customStatusModal:not(.hidden) .modal-box {
-        background: #2b2d31 !important;
-      }
-      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
-      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 60 !important;
-        width: 100% !important;
-        padding: var(--safe-top) 24px 20px 24px !important;
-        background: rgba(255, 255, 255, 0.94) !important;
-        backdrop-filter: blur(16px) !important;
-        -webkit-backdrop-filter: blur(16px) !important;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        box-sizing: border-box !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
-        background: rgba(30, 41, 59, 0.94) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
-        color: #ffffff !important;
-      }
-      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
-        width: 38px !important;
-        height: 38px !important;
-        border-radius: 50% !important;
-        background: rgba(100, 116, 139, 0.15) !important;
-        color: #64748b !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
-        background: rgba(255, 255, 255, 0.18) !important;
-        color: #ffffff !important;
-      }
-      /* スタンプ管理画面のコンテンツエリア */
-      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
-        flex: 1 1 auto !important;
-        max-height: none !important;
-        padding: 20px 20px 90px 20px !important;
-        overflow-y: auto !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      /* =======================================
-         ★スマホ設定画面の息をのむほど美しいパーツ群
-         ======================================= */
-      /* 1. Safe Areaを配慮したモーダルヘッダー */
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
-      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 40 !important;
-        width: 100% !important;
-        padding-top: max(12px, var(--safe-top)) !important;
-        padding-bottom: 14px !important;
-        padding-left: 20px !important;
-        padding-right: 20px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        align-items: flex-start !important;
-        background: rgba(30, 41, 59, 0.94) !important;
-        backdrop-filter: blur(16px) !important;
-        -webkit-backdrop-filter: blur(16px) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
-      }
-      /* ヘッダー内部のテキストのプロフェッショナルな質感強化 */
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:first-child {
-        font-size: 0.75rem !important;
-        letter-spacing: 0.1em !important;
-        color: rgba(255, 255, 255, 0.6) !important;
-        margin-bottom: 4px !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:last-child {
-        font-size: 1.35rem !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.02em !important;
-        color: #ffffff !important;
-      }
-      /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
-      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
-      .modal-overlay:not(.hidden) .modal-box button.modal-close {
-        /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
-        top: calc(var(--safe-top) + 4px) !important;
-        right: 22px !important;
-        width: 38px !important;
-        height: 38px !important;
-        border-radius: 50% !important;
-        background: rgba(255, 255, 255, 0.18) !important;
-        color: #ffffff !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        z-index: 50 !important;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
-      .modal-overlay:not(.hidden) .modal-box button.modal-close:hover {
-        background: rgba(255, 255, 255, 0.28) !important;
-        transform: scale(0.95) !important;
-      }
-      /* 2. iOSのセグメントコントロール風！圧倒的な洗練度を誇るリッチなタブエリア */
-      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
-        background: inherit !important;
-        border-bottom: none !important;
-        padding: 16px 24px 12px 24px !important; /* 左右の余白とバランスを完璧に揃える */
-        display: flex !important;
-        gap: 8px !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        overflow-x: auto !important;
-        flex-shrink: 0 !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .ss-tab {
-        flex: 1 0 auto !important;
-        padding: 12px 18px !important;
-        border-radius: 1.25rem !important;
-        font-weight: 700 !important;
-        font-size: 0.9rem !important;
-        color: #64748b !important;
-        background: rgba(100, 116, 139, 0.12) !important;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
-        color: #ffffff !important;
-        background: #334155 !important;
-        box-shadow: 0 4px 15px -3px rgba(51, 65, 85, 0.35) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
-        color: #94a3b8 !important;
-        background: rgba(255, 255, 255, 0.06) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
-        color: #ffffff !important;
-        background: #475569 !important;
-        box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.5) !important;
-      }
-      /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
-      .modal-overlay:not(.hidden) .modal-box .p-6 {
-        flex: 1 1 auto !important;
-        max-height: none !important; /* 60vhの強制カットを消去！！！ */
-        padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
-        overflow-y: auto !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
-      .modal-overlay:not(.hidden) .modal-box input[type="text"],
-      .modal-overlay:not(.hidden) .modal-box input[type="password"],
-      .modal-overlay:not(.hidden) .modal-box input[type="email"],
-      .modal-overlay:not(.hidden) .modal-box select,
-      .modal-overlay:not(.hidden) .modal-box textarea {
-        border-radius: 0.85rem !important;
-        padding: 12px 16px !important;
-        font-size: 16px !important;
-        background: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
-        background: #1e293b !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: #f1f5f9 !important;
-        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
-      }
-      /* ボタン群のリッチで指に吸い付くようなデザイン */
-      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
-      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
-      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
-      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
-      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
-        border-radius: 0.85rem !important;
-        padding: 12px 20px !important;
-        font-weight: 700 !important;
-        box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.15) !important;
-      }
-    }
-    @keyframes mobileFullscreenOpen {
-      0% { transform: translateY(100%); opacity: 0; }
-      100% { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes modalScaleUp {
-      0% { transform: scale(0.85); opacity: 0; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    @media (max-width: 640px) {
-      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
-      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
-      #joinServerBtn, #createServerBtn {
-        width: 32px !important;
-        height: 32px !important;
-        border-radius: 50% !important;
-        background: rgba(255, 255, 255, 0.15) !important;
-        color: white !important;
-        font-size: 0.82rem !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        flex-shrink: 0 !important;
-        min-width: unset !important;
-      }
-      #joinServerBtn:hover, #createServerBtn:hover {
-        background: rgba(255, 255, 255, 0.28) !important;
-      }
-    }
-</file>
-
 <file path="public/js/file_uploader.js">
 import { alertMessage } from './ui_helpers.js';
 const BLOCKED_EXTENSIONS = new Set([
@@ -13758,6 +12808,992 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+</file>
+
+<file path="public/css/modules/mobile.css">
+/* === PWAインストールバナー === */
+    #pwaInstallBanner {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: white;
+      padding: 14px 16px max(24px, calc(14px + env(safe-area-inset-bottom, 0px)));
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+      animation: bannerSlideUp 0.4s ease-out;
+    }
+    #pwaInstallBanner.show {
+      display: flex;
+    }
+    @keyframes bannerSlideUp {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+    .pwa-banner-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .pwa-banner-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .pwa-banner-text strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+    .pwa-banner-text span {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+    .pwa-banner-btn {
+      background: white;
+      color: #1e293b;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.2s;
+    }
+    .pwa-banner-btn:hover {
+      opacity: 0.85;
+    }
+    .pwa-banner-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    /* 過去メッセージ読み込みスピナー */
+    #topLoadingSpinner {
+      display: none;
+    }
+    .top-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #6b7280;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    /* =============================================
+       Mobile Bottom Navigation & BottomSheet System
+    ============================================= */
+    :root {
+      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
+      --mnav-base-h: 50px;
+      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
+    }
+    /* 汎用ボトムシート（Drawer）共通スタイル */
+    .bottom-sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9998;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .bottom-sheet-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .bottom-sheet-handle,
+    .call-picker-handle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      padding: 12px 0 8px;
+      cursor: grab;
+      flex-shrink: 0;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-sheet-handle:active,
+    .call-picker-handle:active {
+      cursor: grabbing;
+    }
+    .bottom-sheet-handle-bar {
+      width: 40px;
+      height: 5px;
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+      margin: 0 auto;
+      transition: background-color 0.2s, transform 0.2s;
+    }
+    body.dark-server-theme .bottom-sheet-handle-bar {
+      background-color: #475569;
+    }
+    body.discord-dark-theme .bottom-sheet-handle-bar {
+      background-color: #4e5058;
+    }
+    @media (max-width: 768px) {
+      /* スマホUIではファイル共有右側のメンバーボタンを完全非表示 */
+      #toggleMembersSidebarBtn {
+        display: none !important;
+      }
+      .covo-bottom-sheet,
+      #membersSidebar,
+      #serverSettingsModal .modal-box,
+      #callPickerModal .call-picker-box {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: min(85vh, calc(100dvh - 30px)) !important;
+        height: auto !important;
+        border-top-left-radius: 24px !important;
+        border-top-right-radius: 24px !important;
+        border-bottom-left-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.28) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        z-index: 9999 !important;
+        transform: translateY(100%) !important;
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+        touch-action: pan-y !important;
+        padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+      }
+      body.dark-server-theme .covo-bottom-sheet,
+      body.dark-server-theme #membersSidebar,
+      body.dark-server-theme #serverSettingsModal .modal-box,
+      body.dark-server-theme #callPickerModal .call-picker-box {
+        background-color: #1e293b !important;
+      }
+      body.discord-dark-theme .covo-bottom-sheet,
+      body.discord-dark-theme #membersSidebar,
+      body.discord-dark-theme #serverSettingsModal .modal-box,
+      body.discord-dark-theme #callPickerModal .call-picker-box {
+        background-color: #2b2d31 !important;
+      }
+      .covo-bottom-sheet.bottom-sheet-open,
+      #membersSidebar.bottom-sheet-open,
+      #serverSettingsModal:not(.hidden) .modal-box,
+      #callPickerModal.show .call-picker-box {
+        transform: translateY(0) !important;
+      }
+      .covo-bottom-sheet.closing,
+      #membersSidebar.closing,
+      #callPickerModal.closing .call-picker-box {
+        transform: translateY(100%) !important;
+        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+      }
+    }
+    #mobileBottomNav {
+      display: none !important;
+    }
+    .mobile-nav-tab {
+      flex: 1 1 0;
+      height: var(--mnav-base-h);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: rgba(255,255,255,0.5);
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      transition: color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      line-height: 1;
+    }
+    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
+    .mobile-nav-tab i {
+      font-size: 1.1rem;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+    .mobile-nav-tab span {
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+    .mobile-notif-dot {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 14px);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 1.5px solid #1f2937;
+    }
+    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
+    body.in-chat-view #mobileBottomNav {
+      display: none !important;
+    }
+    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
+    #mobileProfileScreen,
+    #mobileNotifScreen,
+    .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+      box-sizing: border-box !important;
+      background: #f8fafc !important;
+    }
+    body.has-mobile-nav #mobileProfileScreen,
+    body.has-mobile-nav #mobileNotifScreen,
+    body.has-mobile-nav .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+    }
+    body.dark-server-theme #mobileProfileScreen,
+    body.dark-server-theme #mobileNotifScreen,
+    body.dark-server-theme .mobile-settings-detail {
+      background: #111827 !important;
+    }
+    /* =============================================
+       Server list-view toggle
+    ============================================= */
+    #viewToggleBtn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      border-radius: 7px;
+      color: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
+    /* List view overrides */
+    .server-grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 1rem 1rem 0 1rem;
+    }
+    .server-grid.list-view .server-section-label {
+      margin-top: 8px;
+    }
+    .server-grid.list-view .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .server-grid.list-view .server-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 13px;
+      padding: 11px 14px;
+    }
+    .server-grid.list-view .server-card-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-name {
+      font-size: 0.92rem;
+    }
+    .server-grid.list-view .server-card-meta {
+      font-size: 0.72rem;
+    }
+    .server-grid.list-view .server-card-admin-badge {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    /* =============================================
+       PC Discord-style Settings Modal (2-column)
+    ============================================= */
+    .settings-discord-layout {
+      display: flex;
+      height: 100%;
+    }
+    .settings-sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: #111827;
+      padding: 1.25rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+    .settings-sidebar-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px 14px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .settings-sidebar-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .settings-sidebar-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .settings-sidebar-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: white;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .settings-nav-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.35);
+      padding: 8px 8px 4px;
+    }
+    .settings-nav-item {
+      display: flex;
+      align-items: center !important;
+      gap: 8px !important;
+      padding: 7px 10px !important;
+      border-radius: 6px !important;
+      font-size: 0.85rem !important;
+      font-weight: 500 !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      transition: background 0.12s, color 0.12s !important;
+      border: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      text-align: left !important;
+      min-height: unset !important;
+      height: auto !important;
+      line-height: 1.4 !important;
+    }
+    .settings-nav-item:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(255,255,255,0.85) !important;
+    }
+    .settings-nav-item.active {
+      background: rgba(255,255,255,0.14) !important;
+      color: white !important;
+    }
+    #settingsModal #adminPanelContainer {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    #settingsModal #adminPanelContainer.hidden {
+      display: none;
+    }
+    .settings-nav-item.danger {
+      color: #f87171 !important;
+      margin-top: 0.5rem !important;
+      flex: 0 0 auto !important;
+    }
+    .settings-nav-item.danger:hover {
+      background: rgba(239,68,68,0.15) !important;
+      color: #f87171 !important;
+    }
+    .settings-nav-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 6px 0;
+    }
+    .settings-content {
+      flex: 1;
+      background: white;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding: 1.75rem 2rem;
+      position: relative;
+    }
+    .settings-content-section {
+      display: none;
+    }
+    .settings-content-section.active {
+      display: block;
+    }
+    .settings-section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .settings-close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: #f3f4f6;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      font-size: 0.9rem;
+      transition: background 0.12s;
+    }
+    .settings-close-btn:hover { background: #e5e7eb; }
+    @media (max-width: 640px) {
+      .settings-discord-layout {
+        flex-direction: column;
+      }
+      .settings-sidebar {
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        padding: 0.5rem !important;
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+        background: #111827;
+      }
+      /* Hide user profile block on mobile server settings to save vertical space */
+      .settings-sidebar .settings-sidebar-user {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-label {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-divider {
+        display: none !important;
+      }
+      .settings-sidebar .settings-nav-item {
+        width: auto !important;
+        white-space: nowrap !important;
+        padding: 8px 12px !important;
+      }
+      .settings-content {
+        padding: 1rem !important;
+      }
+      .settings-close-btn {
+        top: 0.5rem !important;
+        right: 0.5rem !important;
+        background: #f3f4f6 !important;
+      }
+    }
+    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
+    @media (max-width: 768px) {
+      #settingsModal {
+        display: none !important;
+      }
+      #mobileBottomNav {
+        display: flex;
+      }
+      #serverListNotifBtn {
+        display: none !important;
+      }
+      /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
+      html, body {
+        background-color: #0b0f19 !important;
+      }
+      /* DiscordUIモード(ライト)時 */
+      body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode,
+      html:has(body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode) {
+        background-color: #ffffff !important;
+      }
+      /* ネイビーモード時 */
+      body.dark-server-theme,
+      html:has(body.dark-server-theme) {
+        background-color: #0b0f19 !important;
+      }
+      /* Discordダーク時 */
+      body.discord-dark-theme,
+      html:has(body.discord-dark-theme) {
+        background-color: #1e1f22 !important;
+      }
+      /* チャット画面時はチャット背景(白)と揃える */
+      body.in-chat-view,
+      html:has(body.in-chat-view) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード+チャット時 */
+      body.in-chat-view.dark-server-theme,
+      html:has(body.in-chat-view.dark-server-theme) {
+        background-color: #1a202c !important;
+      }
+      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
+      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
+         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
+         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
+      body.in-chat-view #mobileBottomNav {
+        background: #ffffff !important;
+      }
+      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
+      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
+      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
+      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
+      body.in-chat-view.dark-server-theme #mobileBottomNav {
+        background: #1a202c !important;
+      }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
+      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
+      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
+      input[type="text"],
+      input[type="email"],
+      input[type="password"],
+      textarea {
+        font-size: max(16px, 1em) !important;
+      }
+      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
+      /* ローディング中の2層問題を解消:
+         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
+         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
+      body.dark-server-theme #mainContent,
+      body.dark-server-theme .container {
+        background-color: #1f2937 !important;
+      }
+      /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
+      .modal-overlay:not(.hidden) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
+      .modal-overlay:not(.hidden) > div:not(.modal-box) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
+      .modal-overlay:not(.hidden) .modal-box, 
+      #serverSettingsModal:not(.hidden) .modal-box, 
+      #createServerModal:not(.hidden) .modal-box, 
+      #joinServerModal:not(.hidden) .modal-box, 
+      #settingsModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #adminJoinModal:not(.hidden) .modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
+        overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
+        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
+        background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
+      }
+      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
+      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
+      #createServerModal:not(.hidden) .modal-box,
+      #joinServerModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #deleteRoomConfirmModal:not(.hidden) .modal-box {
+        padding: var(--safe-top) 24px 90px 24px !important;
+        overflow-y: auto !important;
+        justify-content: center !important;
+      }
+      /* 確認・アラートダイアログ・ユーザープロフィール・ステメ・パスワード等: スマホUIでの全画面化・変形バグを完全解消 */
+      #customConfirmModal:not(.hidden),
+      #customAlertModal:not(.hidden),
+      #messagePreviewModal:not(.hidden),
+      #addServerSelectModal:not(.hidden),
+      #userProfileModal:not(.hidden),
+      #customStatusModal:not(.hidden),
+      #passwordResetModal:not(.hidden),
+      #changePasswordModal:not(.hidden),
+      #recoveryKeyManagerModal:not(.hidden),
+      #feedbackModal:not(.hidden),
+      #windowsDownloadModal:not(.hidden),
+      #whatsNewModal:not(.hidden),
+      #avatarLightbox:not(.hidden),
+      #discordCallIncomingModal:not(.hidden) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 16px !important;
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 100005 !important;
+      }
+      #customConfirmModal:not(.hidden) .modal-box,
+      #customAlertModal:not(.hidden) .modal-box,
+      #messagePreviewModal:not(.hidden) .modal-box,
+      #addServerSelectModal:not(.hidden) .modal-box,
+      #passwordResetModal:not(.hidden) .modal-box,
+      #changePasswordModal:not(.hidden) .modal-box,
+      #recoveryKeyManagerModal:not(.hidden) .modal-box,
+      #feedbackModal:not(.hidden) .modal-box,
+      #windowsDownloadModal:not(.hidden) .modal-box,
+      #whatsNewModal:not(.hidden) .modal-box,
+      #avatarLightbox:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .discord-incoming-card {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 20px !important;
+        overflow-y: auto !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(88vh, calc(100dvh - 32px)) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+      }
+      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
+      #userProfileModal:not(.hidden) .modal-box {
+        max-width: 340px !important;
+        width: min(92vw, 340px) !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 24px !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(90dvh, 620px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #232428 !important;
+      }
+      /* カスタムステータス設定モーダル専用スマホスタイル */
+      #customStatusModal:not(.hidden) .modal-box {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 1.25rem !important;
+        overflow-y: auto !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(85dvh, 520px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #2b2d31 !important;
+      }
+      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 60 !important;
+        width: 100% !important;
+        padding: var(--safe-top) 24px 20px 24px !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        box-sizing: border-box !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        background: rgba(30, 41, 59, 0.94) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
+        color: #ffffff !important;
+      }
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(100, 116, 139, 0.15) !important;
+        color: #64748b !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+      }
+      /* スタンプ管理画面のコンテンツエリア */
+      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
+        flex: 1 1 auto !important;
+        max-height: none !important;
+        padding: 20px 20px 90px 20px !important;
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      /* =======================================
+         ★スマホ設定画面の息をのむほど美しいパーツ群
+         ======================================= */
+      /* 1. Safe Areaを配慮したモーダルヘッダー */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
+      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 40 !important;
+        width: 100% !important;
+        padding-top: max(12px, var(--safe-top)) !important;
+        padding-bottom: 14px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        background: rgba(30, 41, 59, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      /* ヘッダー内部のテキストのプロフェッショナルな質感強化 */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:first-child {
+        font-size: 0.75rem !important;
+        letter-spacing: 0.1em !important;
+        color: rgba(255, 255, 255, 0.6) !important;
+        margin-bottom: 4px !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:last-child {
+        font-size: 1.35rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.02em !important;
+        color: #ffffff !important;
+      }
+      /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close {
+        /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
+        top: calc(var(--safe-top) + 4px) !important;
+        right: 22px !important;
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 50 !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+        transform: scale(0.95) !important;
+      }
+      /* 2. iOSのセグメントコントロール風！圧倒的な洗練度を誇るリッチなタブエリア */
+      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
+        background: inherit !important;
+        border-bottom: none !important;
+        padding: 16px 24px 12px 24px !important; /* 左右の余白とバランスを完璧に揃える */
+        display: flex !important;
+        gap: 8px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        overflow-x: auto !important;
+        flex-shrink: 0 !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        flex: 1 0 auto !important;
+        padding: 12px 18px !important;
+        border-radius: 1.25rem !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        color: #64748b !important;
+        background: rgba(100, 116, 139, 0.12) !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #334155 !important;
+        box-shadow: 0 4px 15px -3px rgba(51, 65, 85, 0.35) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        color: #94a3b8 !important;
+        background: rgba(255, 255, 255, 0.06) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #475569 !important;
+        box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.5) !important;
+      }
+      /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
+      .modal-overlay:not(.hidden) .modal-box .p-6 {
+        flex: 1 1 auto !important;
+        max-height: none !important; /* 60vhの強制カットを消去！！！ */
+        padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
+      .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      .modal-overlay:not(.hidden) .modal-box select,
+      .modal-overlay:not(.hidden) .modal-box textarea {
+        border-radius: 0.85rem !important;
+        padding: 12px 16px !important;
+        font-size: 16px !important;
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
+        background: #1e293b !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #f1f5f9 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
+      }
+      /* ボタン群のリッチで指に吸い付くようなデザイン */
+      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
+      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
+      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
+        border-radius: 0.85rem !important;
+        padding: 12px 20px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.15) !important;
+      }
+    }
+    @keyframes mobileFullscreenOpen {
+      0% { transform: translateY(100%); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes modalScaleUp {
+      0% { transform: scale(0.85); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @media (max-width: 640px) {
+      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
+      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
+      #joinServerBtn, #createServerBtn {
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: white !important;
+        font-size: 0.82rem !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex-shrink: 0 !important;
+        min-width: unset !important;
+      }
+      #joinServerBtn:hover, #createServerBtn:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+      }
+    }
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -16959,48 +16995,157 @@ pub fn run() {
       from { opacity: 0; transform: scale(0.95) translateY(6px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
-    /* === モバイル (スマホ) 専用 Discord 通話画面 最適化 === */
+    /* === Discord 本家風 着信ポップアップカード === */
+    #discordCallIncomingModal {
+      z-index: 100005 !important;
+    }
+    .discord-incoming-card {
+      background: rgba(43, 45, 49, 0.95);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      width: min(90vw, 360px);
+      max-width: 360px;
+      padding: 1.75rem 1.5rem;
+      color: #f2f3f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: discordCallFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .discord-incoming-avatar-wrap {
+      position: relative;
+      margin-bottom: 1.25rem;
+    }
+    .discord-incoming-avatar {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      background: #1e1f22;
+      border: 4px solid #23a55a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      overflow: hidden;
+      box-shadow: 0 0 0 4px rgba(35, 165, 90, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4);
+      animation: incomingAvatarPulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    @keyframes incomingAvatarPulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(35, 165, 90, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4); transform: scale(1); }
+      50% { box-shadow: 0 0 0 10px rgba(35, 165, 90, 0.15), 0 12px 32px rgba(0, 0, 0, 0.5); transform: scale(1.03); }
+    }
+    .discord-incoming-badge {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #23a55a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      border: 3px solid #2b2d31;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    .discord-action-btn-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .discord-call-action-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .discord-call-action-btn:active {
+      transform: scale(0.90);
+    }
+    .discord-call-action-btn.decline {
+      background: #da373c;
+    }
+    .discord-call-action-btn.decline:hover {
+      background: #b82e34;
+    }
+    .discord-call-action-btn.accept {
+      background: #23a55a;
+      box-shadow: 0 8px 24px rgba(35, 165, 90, 0.4);
+    }
+    .discord-call-action-btn.accept:hover {
+      background: #1f934f;
+    }
+    /* === モバイル (スマホ iOS / Android) 専用 Discord 通話画面 最適化 === */
     @media (max-width: 768px) {
       .discord-call-header {
-        height: calc(48px + var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-top: var(--safe-top, env(safe-area-inset-top, 0px)) !important;
-        padding-left: 12px !important;
-        padding-right: 12px !important;
+        height: calc(50px + max(8px, env(safe-area-inset-top, 0px))) !important;
+        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+        padding-left: max(12px, env(safe-area-inset-left, 12px)) !important;
+        padding-right: max(12px, env(safe-area-inset-right, 12px)) !important;
       }
       .discord-call-header .text-sm {
-        font-size: 0.8rem !important;
+        font-size: 0.85rem !important;
       }
       .discord-call-grid-wrap {
-        padding: 10px 10px calc(86px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) 10px !important;
+        padding: 8px 12px calc(92px + max(12px, env(safe-area-inset-bottom, 0px))) 12px !important;
       }
       .discord-call-grid {
         grid-template-columns: 1fr !important;
         grid-template-rows: 1fr 1fr !important;
-        gap: 10px !important;
+        gap: 12px !important;
         height: 100% !important;
+        min-height: 0 !important;
+      }
+      .discord-call-grid.single-participant {
+        grid-template-rows: 1fr !important;
+      }
+      .discord-call-grid.single-participant .discord-participant-tile {
+        max-height: 80% !important;
       }
       .discord-participant-tile {
         min-height: 0 !important;
         max-height: 100% !important;
         height: 100% !important;
-        border-radius: 16px !important;
+        border-radius: 20px !important;
       }
       .discord-tile-avatar {
-        width: 80px !important;
-        height: 80px !important;
-        font-size: 1.8rem !important;
+        width: 88px !important;
+        height: 88px !important;
+        font-size: 2rem !important;
       }
       .discord-call-control-bar {
-        bottom: max(14px, calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-        padding: 6px 14px !important;
-        gap: 8px !important;
+        bottom: max(18px, calc(10px + env(safe-area-inset-bottom, 0px))) !important;
+        padding: 8px 16px !important;
+        gap: 12px !important;
         width: max-content !important;
-        max-width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 24px) !important;
       }
       .discord-control-btn {
-        width: 44px !important;
-        height: 44px !important;
-        font-size: 16px !important;
+        width: 48px !important;
+        height: 48px !important;
+        font-size: 18px !important;
+        -webkit-tap-highlight-color: transparent;
       }
       #callScreenBtn {
         display: none !important; /* モバイルでは画面共有を非表示にし、Discord本家同様の4ボタン配置に整理 */
@@ -17008,6 +17153,7 @@ pub fn run() {
       .discord-device-menu {
         width: calc(100vw - 24px) !important;
         left: 12px !important;
+        bottom: calc(76px + max(12px, env(safe-area-inset-bottom, 0px))) !important;
       }
     }
     #callEndedToast {
@@ -17729,9 +17875,9 @@ pub fn run() {
     body.screen-locked #appContainer,
     body.screen-locked #mainContent,
     body.screen-locked #serverListScreen,
-    body.screen-locked .container > *:not(#appPinLockOverlay):not(#appLoadingSplash),
-    body.screen-locked .modal-overlay:not(#appPinLockOverlay),
-    body.screen-locked .modal-box:not(#appPinLockOverlay .modal-box),
+    body.screen-locked .container > *:not(#appPinLockOverlay):not(#appLoadingSplash):not(#customConfirmModal):not(#customAlertModal):not(#customPromptModal),
+    body.screen-locked .modal-overlay:not(#appPinLockOverlay):not(#customConfirmModal):not(#customAlertModal):not(#customPromptModal),
+    body.screen-locked .modal-box:not(#appPinLockOverlay .modal-box):not(#customConfirmModal .modal-box):not(#customAlertModal .modal-box):not(#customPromptModal .modal-box),
     body.screen-locked #mobileProfileScreen,
     body.screen-locked #mobileNotifScreen,
     body.screen-locked .mobile-settings-detail {
@@ -17740,6 +17886,17 @@ pub fn run() {
       filter: blur(50px) !important;
       pointer-events: none !important;
       user-select: none !important;
+    }
+    /* 画面PINロック中でも最前面に確認・警告ダイアログを操作可能に表示 */
+    body.screen-locked #customConfirmModal:not(.hidden),
+    body.screen-locked #customAlertModal:not(.hidden),
+    body.screen-locked #customPromptModal:not(.hidden) {
+      z-index: 130000 !important;
+      display: flex !important;
+      visibility: visible !important;
+      filter: none !important;
+      pointer-events: auto !important;
+      user-select: auto !important;
     }
 </file>
 
@@ -19655,11 +19812,11 @@ function getCorsHeaders(request) {
   }
   return headers;
 }
-// 静的ファイル配信・ダウンロード用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号に対応）
+// 静的ファイル配信・ダウンロード・削除用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号、ファイル削除に対応）
 function getFileCorsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, DELETE",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
     "Access-Control-Max-Age": "86400",
@@ -20355,14 +20512,15 @@ async function handleAgoraToken(request, env, url) {
     }
     const currentTs = Math.floor(Date.now() / 1000);
     const privilegeTs = currentTs + 7200; // 2時間有効
-    const salt = Math.floor(Math.random() * 99999999) + 1;
+    const msgExpireTs = currentTs + (24 * 3600); // トークン全体の有効期限（24時間）
+    const salt = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
     const uidStr = String(uid || "");
     const privileges = [1, 2, 3, 4].map(k => ({ key: k, val: privilegeTs }));
     const msgBuf = new ArrayBuffer(4 + 4 + 2 + privileges.length * 6);
     const msgView = new DataView(msgBuf);
     let offset = 0;
     msgView.setUint32(offset, salt, true); offset += 4;
-    msgView.setUint32(offset, currentTs, true); offset += 4;
+    msgView.setUint32(offset, msgExpireTs, true); offset += 4; // Agora 006 仕様: 有効期限を設定（現在時刻ではなく期限を設定してタイムアウトを防止）
     msgView.setUint16(offset, privileges.length, true); offset += 2;
     for (const p of privileges) {
       msgView.setUint16(offset, p.key, true); offset += 2;
@@ -20982,7 +21140,8 @@ async function handleDeleteFile(request, env, url) {
         }
       }
     }
-    const isOwner = meta && meta.uploaderId === requesterId;
+    // 所有者確認: アップロード者本人、または所有者未記録ファイル（レガシー）、または特権管理者
+    const isOwner = meta && (meta.uploaderId === requesterId || !meta.uploaderId);
     if (!isOwner && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden: Not authorized to delete this file" }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
@@ -22329,13 +22488,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.154" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.154" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
@@ -25082,7 +25241,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.153"></script>
+  <script type="module" src="js/main.js?v=1.1.154"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -25209,35 +25368,38 @@ async function handleD1Api(request, env, url) {
     </div>
     <!-- Discord 完全準拠 通話UI (Agora SD-RTN™ 音声通話システム) -->
     <!-- 1. 着信ダイアログ (Discord 本家風 着信ポップアップカード) -->
-  <div id="discordCallIncomingModal" class="fixed inset-0 z-[100002] modal-overlay items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);">
-    <div class="bg-[#2b2d31] text-gray-200 rounded-3xl shadow-2xl p-6 max-w-sm w-full border border-white/10 flex flex-col items-center text-center animate-pop-in">
-      <div class="relative mb-4">
-        <div class="w-24 h-24 rounded-full bg-[#1e1f22] border-4 border-[#23a55a] flex items-center justify-center text-3xl font-bold shadow-xl overflow-hidden" id="discordIncomingAvatar">
+    <div id="discordCallIncomingModal" class="fixed inset-0 z-[100005] modal-overlay flex items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+    <div class="discord-incoming-card">
+      <div class="discord-incoming-avatar-wrap">
+        <div class="discord-incoming-avatar" id="discordIncomingAvatar">
           U
         </div>
-        <div class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#23a55a] text-white flex items-center justify-center text-xs shadow-md border-2 border-[#2b2d31] animate-bounce">
+        <div class="discord-incoming-badge animate-bounce">
           <i class="fas fa-phone"></i>
         </div>
       </div>
-      <div class="text-xs font-extrabold text-[#23a55a] tracking-wider uppercase mb-1">音声着信中...</div>
+      <div class="text-[11px] font-extrabold text-[#23a55a] tracking-wider uppercase mb-1 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-[#23a55a] inline-block animate-ping"></span>
+        <span>音声着信中...</span>
+      </div>
       <div class="text-xl font-black text-white truncate max-w-full mb-1" id="discordIncomingName">ユーザー</div>
       <p class="text-xs text-gray-400 mb-6" id="discordIncomingChannel">ダイレクト通話</p>
-      <div class="flex items-center justify-center gap-6 w-full">
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="declineCall()" class="w-14 h-14 rounded-full bg-[#da373c] hover:bg-[#c02e34] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg transition-all cursor-pointer" title="拒否">
+      <div class="flex items-center justify-center gap-8 w-full">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="declineCall()" class="discord-call-action-btn decline" title="拒否">
             <i class="fas fa-phone-slash"></i>
           </button>
           <span class="text-[11px] font-bold text-gray-400">拒否</span>
         </div>
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="acceptCall()" class="w-14 h-14 rounded-full bg-[#23a55a] hover:bg-[#1f934f] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg shadow-[#23a55a]/30 transition-all cursor-pointer animate-pulse" title="応答">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="acceptCall()" class="discord-call-action-btn accept animate-pulse" title="応答">
             <i class="fas fa-phone"></i>
           </button>
-          <span class="text-[11px] font-bold text-gray-400">応答</span>
+          <span class="text-[11px] font-bold text-[#23a55a]">応答</span>
         </div>
       </div>
     </div>
-  </div>
+    </div>
   <!-- 2. Discord 本家完全準拠 フルスクリーン通話画面 (#callOverlay) -->
   <div id="callOverlay" class="select-none">
     <!-- 最上部ヘッダーバー -->
@@ -26414,6 +26576,8 @@ function isTransientTelemetryError(args) {
     }
     // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
     if (
+      str.includes('auth/network-request-failed') ||
+      str.includes('network-request-failed') ||
       str.includes('load failed') ||
       str.includes('failed to fetch') ||
       str.includes('network error') ||
@@ -27116,7 +27280,11 @@ function initializeFirebase() {
     }
     onIdTokenChanged(auth, async (user) => {
       if (user) {
-        _cachedIdToken = await user.getIdToken();
+        try {
+          _cachedIdToken = await user.getIdToken();
+        } catch (_) {
+          _cachedIdToken = null;
+        }
       } else {
         _cachedIdToken = null;
       }
@@ -27175,8 +27343,8 @@ function initializeFirebase() {
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
-          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
-          await user.getIdToken();
+          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策・一時的通信切断時のエラー抑止）
+          await user.getIdToken().catch(() => {});
           const rawEmail = user.email || "";
           const cleanEmail = rawEmail.toLowerCase().trim();
           // プロバイダ情報の検証（Googleログイン vs パスワード登録）
@@ -31008,68 +31176,71 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
     }
   });
 }
-if (logoutBtnInModalEl) {
-  logoutBtnInModalEl.addEventListener("click", async () => {
+window.executeLogout = async function (skipConfirm = false) {
+  if (!skipConfirm) {
     if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
-    closeCropModal();
-    if (settingsModalEl) settingsModalEl.classList.add("hidden");
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
-    try {
-      if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
-      if (typeof endCall === 'function') endCall(false);
-      if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
-      if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
-      await updateUserStatus('offline');
-      if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
-      // Service Worker にユーザー消去とバッジクリアを通知
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then(reg => {
-          if (reg.active) {
-            reg.active.postMessage({ type: 'CLEAR_USER_ID' });
-            reg.active.postMessage({ type: 'CLEAR_BADGE' });
-          }
-        }).catch(() => {});
-      }
-      // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
-      if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
-        await LocalStore.clearAllLocalData().catch(() => {});
-      }
-      // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
-      const preserveKeys = new Set([
-        'covo_app_theme',
-        'covo_dark_server',
-        'covo_dark_server_theme',
-        'covo_discord_ui_mode',
-        'covo_server_view',
-        'covo_close_behavior',
-        'simplechat_sound',
-        'simplechat_browser_notif',
-        'simplechat_desktop_notif',
-        'simplechat_shortcut_key',
-        'covo_ignore_force_update',
-        'covo_modern_ui_migrated_v2'
-      ]);
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && !preserveKeys.has(k)) {
-          keysToRemove.push(k);
+  }
+  closeCropModal();
+  if (settingsModalEl) settingsModalEl.classList.add("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+  try {
+    if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
+    if (typeof endCall === 'function') endCall(false);
+    if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
+    if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
+    await updateUserStatus('offline');
+    if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
+    // Service Worker にユーザー消去とバッジクリアを通知
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg.active) {
+          reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+          reg.active.postMessage({ type: 'CLEAR_BADGE' });
         }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-      // セッションストレージを全クリア
-      try { sessionStorage.clear(); } catch (_) {}
-      await signOut(auth);
-      // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
-      window.location.reload();
-    } catch (error) {
-      console.error("Logout Error:", error);
-      window.location.reload();
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+      }).catch(() => {});
     }
-  });
+    // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+    if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
+      await LocalStore.clearAllLocalData().catch(() => {});
+    }
+    // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
+    const preserveKeys = new Set([
+      'covo_app_theme',
+      'covo_dark_server',
+      'covo_dark_server_theme',
+      'covo_discord_ui_mode',
+      'covo_server_view',
+      'covo_close_behavior',
+      'simplechat_sound',
+      'simplechat_browser_notif',
+      'simplechat_desktop_notif',
+      'simplechat_shortcut_key',
+      'covo_ignore_force_update',
+      'covo_modern_ui_migrated_v2'
+    ]);
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && !preserveKeys.has(k)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    // セッションストレージを全クリア
+    try { sessionStorage.clear(); } catch (_) {}
+    await signOut(auth);
+    // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
+    window.location.reload();
+  } catch (error) {
+    console.error("Logout Error:", error);
+    window.location.reload();
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+  }
+};
+if (logoutBtnInModalEl) {
+  logoutBtnInModalEl.addEventListener("click", () => window.executeLogout(false));
 }
 if (setNicknameBtnEl && nicknameInpEl) {
   setNicknameBtnEl.addEventListener("click", async () => {
@@ -39418,8 +39589,12 @@ function showContextMenu(bubble, clientX, clientY) {
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
   // （自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能）
   const isMsgSender = msgData.senderId === userId || msgData.userId === userId;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = typeof isCurrentUserServerAdmin === 'function'
+    ? isCurrentUserServerAdmin(currentServerData)
+    : Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = typeof isCurrentUserServerOwner === 'function'
+    ? isCurrentUserServerOwner(currentServerData)
+    : Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
@@ -39610,7 +39785,7 @@ if (deleteMsgBtn) {
     const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
     const cleanupFile = async (url) => {
       if (!url) return;
-      const m = url.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      const m = url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
       if (m) {
         const fileKey = m[1];
         try {
@@ -39625,7 +39800,7 @@ if (deleteMsgBtn) {
     if (msgToDelete.kvFileUrl) cleanupFile(msgToDelete.kvFileUrl);
     if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) cleanupFile(msgToDelete.fileData);
     if (msgToDelete.text) {
-      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
+      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_\-]+)', 'g');
       const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
       kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
     }
@@ -40245,17 +40420,18 @@ async function notifyNewMessage({
   }
   bodyText = formatNotificationBody(bodyText, sticker);
   const isCurrentChannel = (channelId === currentRoomId) || (isDm && channelId === currentDmId);
-  const isAppVisible = (document.visibilityState === 'visible');
-  // チャット欄を開いていてアプリが画面上にあるときはWindows通知もアプリ内通知も送らない（直接メッセージが表示されるため）
-  if (isCurrentChannel && isAppVisible) {
+  // アプリが最前面でアクティブにフォーカスされているかを厳密に判定
+  const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+  // チャット欄を開いていて、かつアプリが最前面でフォーカスされている時のみ通知不要（見ているため）
+  if (isCurrentChannel && isAppActiveAndFocused) {
     return;
   }
   const isMention = userNickname && bodyText && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
   const notifTitle = isMention
     ? `[@メンション] ${serverName} › #${channelName}`
     : `${serverName} › #${channelName}`;
-  if (isAppVisible) {
-    // アプリを開いているときはWindowsプッシュ通知は送らず、アプリ内通知（トースト）のみを表示＆アプリ内音を1回再生
+  if (isAppActiveAndFocused) {
+    // アプリが最前面でアクティブ操作中の時は、別チャンネルの新着をアプリ内通知（トースト）として表示
     showInAppNotification(
       serverName,
       channelName,
@@ -40269,7 +40445,7 @@ async function notifyNewMessage({
       targetAvatarUrl
     );
   } else {
-    // アプリが最小化または非表示のときはWindows通知（OS通知）のみを1回送信（アプリ側Web Audio音は二重鳴動防止のため鳴らさない）
+    // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、Windowsデスクトップ通知（OS通知）を送信
     showNotification(notifTitle, `${senderName}: ${bodyText}`, channelId);
   }
   updateGlobalNotifUI();
@@ -42580,7 +42756,7 @@ function renderParticipantTiles() {
       videoTrack: remoteUser?.videoTrack
     });
   }
-  grid.className = "discord-call-grid";
+  grid.className = "discord-call-grid" + (participants.length === 1 ? " single-participant" : "");
   grid.innerHTML = participants.map(p => {
     const safeName = escapeHtml(p.name);
     const initial = safeName.charAt(0).toUpperCase();
@@ -42944,8 +43120,8 @@ function handleCallDeclinedFromNotification(data) {
 async function showNotification(title, body, roomId) {
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
   if (!notifEnabled) return;
-  // アプリが画面上に表示されている（オンライン・チャット中）場合は、OS通知（Windows通知）は絶対に送らない
-  if (document.visibilityState === 'visible') return;
+  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);
   if (typeof displayBody === 'string' && (displayBody.includes('enc::v') || displayBody.startsWith('enc::'))) {
@@ -45422,11 +45598,15 @@ window.clearAppPinInput = function () {
   if (errMsg) errMsg.textContent = '';
 };
 window.emergencyLogoutFromPinLock = async function () {
-  if (await showCustomConfirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？', 'ログアウト', 'キャンセル')) {
+  const confirmed = await showCustomConfirm(
+    'PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？',
+    'ログアウト',
+    'キャンセル',
+    'アカウントからログアウトします'
+  );
+  if (confirmed) {
     unlockAppScreen();
-    const logoutBtn = document.getElementById('logoutButtonInModal');
-    if (logoutBtn) logoutBtn.click();
-    else if (typeof logout === 'function') logout();
+    await window.executeLogout(true);
   }
 };
 // キーボード入力・無操作タイマー・アプリ離脱（バックグラウンド移行）検知
@@ -46004,7 +46184,7 @@ window.saveViewerMessagesAsTxt = function () {
 
 <file path="public/version.json">
 {
-  "version": "1.1.153",
+  "version": "1.1.154",
   "force": false
 }
 </file>
@@ -46013,7 +46193,7 @@ window.saveViewerMessagesAsTxt = function () {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.153",
+  "version": "1.1.154",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

@@ -42,11 +42,11 @@ function getCorsHeaders(request) {
   return headers;
 }
 
-// 静的ファイル配信・ダウンロード用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号に対応）
+// 静的ファイル配信・ダウンロード・削除用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号、ファイル削除に対応）
 function getFileCorsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, DELETE",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
     "Access-Control-Max-Age": "86400",
@@ -1504,7 +1504,7 @@ async function handleDownloadProxy(request, env, url) {
 }
 
 async function handleDeleteFile(request, env, url) {
-  const cors = getCorsHeaders(request);
+  const cors = getFileCorsHeaders(request);
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
@@ -1541,14 +1541,15 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認
-        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
+        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId、またはmeta.serverIdが未設定・空文字のレガシー添付ファイル）を確認
+        if (serverId && meta && (!meta.serverId || meta.serverId === serverId)) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
     }
 
-    const isOwner = meta && meta.uploaderId === requesterId;
+    // 所有者確認: アップロード者本人、または所有者未記録ファイル（レガシー）、または特権管理者
+    const isOwner = meta && (meta.uploaderId === requesterId || !meta.uploaderId);
     if (!isOwner && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden: Not authorized to delete this file" }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }

@@ -1,10 +1,8 @@
 {
-  "date": "2026-09-10T15:08:15.366Z",
+  "date": "2026-09-11T08:08:43.416Z",
   "files": [
     "server/src/index.js",
-    "public/css/modules/mobile.css",
-    "public/css/modules/chat.css",
-    "public/index.html",
+    "public/js/crypto_helpers.js",
     "public/js/main.js"
   ]
 }

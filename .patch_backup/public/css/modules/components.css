@@ -444,10 +444,8 @@
     }
 
     /* === カスタム確認ダイアログ === */
-    #customConfirmModal,
-    #customPromptModal,
-    #customAlertModal {
-      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
+    #customConfirmModal {
+      z-index: 99999 !important; /* スマホのボトムナビやフルスクリーン画面より確実に前に出す */
     }
     #customConfirmModal .confirm-box {
       text-align: left;

@@ -152,6 +152,8 @@ function isTransientTelemetryError(args) {
     }
     // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
     if (
+      str.includes('auth/network-request-failed') ||
+      str.includes('network-request-failed') ||
       str.includes('load failed') ||
       str.includes('failed to fetch') ||
       str.includes('network error') ||
@@ -906,7 +908,11 @@ function initializeFirebase() {
     }
     onIdTokenChanged(auth, async (user) => {
       if (user) {
-        _cachedIdToken = await user.getIdToken();
+        try {
+          _cachedIdToken = await user.getIdToken();
+        } catch (_) {
+          _cachedIdToken = null;
+        }
       } else {
         _cachedIdToken = null;
       }
@@ -969,10 +975,8 @@ function initializeFirebase() {
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
-
-          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策）
-          await user.getIdToken();
-
+          // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策・一時的通信切断時のエラー抑止）
+          await user.getIdToken().catch(() => {});
           const rawEmail = user.email || "";
           const cleanEmail = rawEmail.toLowerCase().trim();
 
@@ -5202,75 +5206,71 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
   });
 }
 
-if (logoutBtnInModalEl) {
-  logoutBtnInModalEl.addEventListener("click", async () => {
+window.executeLogout = async function (skipConfirm = false) {
+  if (!skipConfirm) {
     if (!await showCustomConfirm("本当にログアウトしますか？", "ログアウト", "キャンセル")) return;
-    closeCropModal();
-    if (settingsModalEl) settingsModalEl.classList.add("hidden");
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
-    try {
-      if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
-      if (typeof endCall === 'function') endCall(false);
-      if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
-      if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
-      await updateUserStatus('offline');
-      if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
-
-      // Service Worker にユーザー消去とバッジクリアを通知
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then(reg => {
-          if (reg.active) {
-            reg.active.postMessage({ type: 'CLEAR_USER_ID' });
-            reg.active.postMessage({ type: 'CLEAR_BADGE' });
-          }
-        }).catch(() => {});
-      }
-
-      // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
-      if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
-        await LocalStore.clearAllLocalData().catch(() => {});
-      }
-
-      // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
-      const preserveKeys = new Set([
-        'covo_app_theme',
-        'covo_dark_server',
-        'covo_dark_server_theme',
-        'covo_discord_ui_mode',
-        'covo_server_view',
-        'covo_close_behavior',
-        'simplechat_sound',
-        'simplechat_browser_notif',
-        'simplechat_desktop_notif',
-        'simplechat_shortcut_key',
-        'covo_ignore_force_update',
-        'covo_modern_ui_migrated_v2'
-      ]);
-
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && !preserveKeys.has(k)) {
-          keysToRemove.push(k);
+  }
+  closeCropModal();
+  if (settingsModalEl) settingsModalEl.classList.add("hidden");
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+  try {
+    if (typeof cleanupAllActiveFirestoreListeners === 'function') cleanupAllActiveFirestoreListeners();
+    if (typeof endCall === 'function') endCall(false);
+    if (typeof cancelMigrationReceive === 'function') cancelMigrationReceive();
+    if (typeof stopPresenceSystem === 'function') stopPresenceSystem();
+    await updateUserStatus('offline');
+    if (typeof sendOfflineBeacon === 'function') sendOfflineBeacon();
+    // Service Worker にユーザー消去とバッジクリアを通知
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg.active) {
+          reg.active.postMessage({ type: 'CLEAR_USER_ID' });
+          reg.active.postMessage({ type: 'CLEAR_BADGE' });
         }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-
-      // セッションストレージを全クリア
-      try { sessionStorage.clear(); } catch (_) {}
-
-      await signOut(auth);
-
-      // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
-      window.location.reload();
-    } catch (error) {
-      console.error("Logout Error:", error);
-      window.location.reload();
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+      }).catch(() => {});
     }
-  });
+    // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+    if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
+      await LocalStore.clearAllLocalData().catch(() => {});
+    }
+    // LocalStorage からユーザー固有データを安全に削除（端末の共通設定のみ維持）
+    const preserveKeys = new Set([
+      'covo_app_theme',
+      'covo_dark_server',
+      'covo_dark_server_theme',
+      'covo_discord_ui_mode',
+      'covo_server_view',
+      'covo_close_behavior',
+      'simplechat_sound',
+      'simplechat_browser_notif',
+      'simplechat_desktop_notif',
+      'simplechat_shortcut_key',
+      'covo_ignore_force_update',
+      'covo_modern_ui_migrated_v2'
+    ]);
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && !preserveKeys.has(k)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    // セッションストレージを全クリア
+    try { sessionStorage.clear(); } catch (_) {}
+    await signOut(auth);
+    // キャッシュ混在・状態不整合を完全防止するため、クリーンな状態で即座に再読み込み
+    window.location.reload();
+  } catch (error) {
+    console.error("Logout Error:", error);
+    window.location.reload();
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+  }
+};
+if (logoutBtnInModalEl) {
+  logoutBtnInModalEl.addEventListener("click", () => window.executeLogout(false));
 }
 
 if (setNicknameBtnEl && nicknameInpEl) {
@@ -14543,15 +14543,17 @@ function showContextMenu(bubble, clientX, clientY) {
   // 権限検証: 削除可能な場合のみコンテキストメニューに「削除」ボタンを表示
   // （自分のメッセージ、またはサーバー管理者・オーナー、全体管理者は削除可能）
   const isMsgSender = msgData.senderId === userId || msgData.userId === userId;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = typeof isCurrentUserServerAdmin === 'function'
+    ? isCurrentUserServerAdmin(currentServerData)
+    : Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const isSvOwner = typeof isCurrentUserServerOwner === 'function'
+    ? isCurrentUserServerOwner(currentServerData)
+    : Boolean(currentServerData?.createdBy === userId);
   const canDeleteMsg = isMsgSender || isSvAdmin || isSvOwner || isAdmin;
-
   const deleteBtn = document.getElementById("deleteMessageButton");
   if (deleteBtn) {
     deleteBtn.style.display = canDeleteMsg ? 'block' : 'none';
   }
-
   const canPinMsg = currentDmId
     ? true
     : (isSvAdmin || isSvOwner || isAdmin || isMsgSender);
@@ -14757,7 +14759,7 @@ if (deleteMsgBtn) {
     const deleteExtraParams = `&appId=${encodeURIComponent(appId)}${currentServerId ? `&serverId=${encodeURIComponent(currentServerId)}` : ''}`;
     const cleanupFile = async (url) => {
       if (!url) return;
-      const m = url.match(/\/api\/file\/([A-Za-z0-9_]+)/);
+      const m = url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
       if (m) {
         const fileKey = m[1];
         try {
@@ -14769,11 +14771,10 @@ if (deleteMsgBtn) {
         } catch (_) {}
       }
     };
-
     if (msgToDelete.kvFileUrl) cleanupFile(msgToDelete.kvFileUrl);
     if (msgToDelete.fileData && msgToDelete.fileData.includes('/api/file/')) cleanupFile(msgToDelete.fileData);
     if (msgToDelete.text) {
-      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_]+)', 'g');
+      const kvPattern = new RegExp(WORKER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/file/([A-Za-z0-9_\-]+)', 'g');
       const kvMatches = [...msgToDelete.text.matchAll(kvPattern)];
       kvMatches.forEach(m => cleanupFile(`${WORKER_BASE_URL}/api/file/${m[1]}`));
     }
@@ -15464,20 +15465,18 @@ async function notifyNewMessage({
   bodyText = formatNotificationBody(bodyText, sticker);
 
   const isCurrentChannel = (channelId === currentRoomId) || (isDm && channelId === currentDmId);
-  const isAppVisible = (document.visibilityState === 'visible');
-
-  // チャット欄を開いていてアプリが画面上にあるときはWindows通知もアプリ内通知も送らない（直接メッセージが表示されるため）
-  if (isCurrentChannel && isAppVisible) {
+  // アプリが最前面でアクティブにフォーカスされているかを厳密に判定
+  const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+  // チャット欄を開いていて、かつアプリが最前面でフォーカスされている時のみ通知不要（見ているため）
+  if (isCurrentChannel && isAppActiveAndFocused) {
     return;
   }
-
   const isMention = userNickname && bodyText && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
   const notifTitle = isMention
     ? `[@メンション] ${serverName} › #${channelName}`
     : `${serverName} › #${channelName}`;
-
-  if (isAppVisible) {
-    // アプリを開いているときはWindowsプッシュ通知は送らず、アプリ内通知（トースト）のみを表示＆アプリ内音を1回再生
+  if (isAppActiveAndFocused) {
+    // アプリが最前面でアクティブ操作中の時は、別チャンネルの新着をアプリ内通知（トースト）として表示
     showInAppNotification(
       serverName,
       channelName,
@@ -15491,7 +15490,7 @@ async function notifyNewMessage({
       targetAvatarUrl
     );
   } else {
-    // アプリが最小化または非表示のときはWindows通知（OS通知）のみを1回送信（アプリ側Web Audio音は二重鳴動防止のため鳴らさない）
+    // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、Windowsデスクトップ通知（OS通知）を送信
     showNotification(notifTitle, `${senderName}: ${bodyText}`, channelId);
   }
 
@@ -18060,7 +18059,7 @@ function renderParticipantTiles() {
       videoTrack: remoteUser?.videoTrack
     });
   }
-  grid.className = "discord-call-grid";
+  grid.className = "discord-call-grid" + (participants.length === 1 ? " single-participant" : "");
   grid.innerHTML = participants.map(p => {
     const safeName = escapeHtml(p.name);
     const initial = safeName.charAt(0).toUpperCase();
@@ -18430,9 +18429,8 @@ function handleCallDeclinedFromNotification(data) {
 async function showNotification(title, body, roomId) {
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
   if (!notifEnabled) return;
-
-  // アプリが画面上に表示されている（オンライン・チャット中）場合は、OS通知（Windows通知）は絶対に送らない
-  if (document.visibilityState === 'visible') return;
+  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
 
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);
@@ -21132,11 +21130,15 @@ window.clearAppPinInput = function () {
 };
 
 window.emergencyLogoutFromPinLock = async function () {
-  if (await showCustomConfirm('PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？', 'ログアウト', 'キャンセル')) {
+  const confirmed = await showCustomConfirm(
+    'PINコードを忘れた場合、一度ログアウトして再ログインする必要があります。\nログアウトしますか？',
+    'ログアウト',
+    'キャンセル',
+    'アカウントからログアウトします'
+  );
+  if (confirmed) {
     unlockAppScreen();
-    const logoutBtn = document.getElementById('logoutButtonInModal');
-    if (logoutBtn) logoutBtn.click();
-    else if (typeof logout === 'function') logout();
+    await window.executeLogout(true);
   }
 };
 

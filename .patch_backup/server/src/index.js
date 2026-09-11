@@ -42,11 +42,11 @@ function getCorsHeaders(request) {
   return headers;
 }
 
-// 静的ファイル配信・ダウンロード用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号に対応）
+// 静的ファイル配信・ダウンロード・削除用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号、ファイル削除に対応）
 function getFileCorsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, DELETE",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
     "Access-Control-Max-Age": "86400",
@@ -840,15 +840,15 @@ async function handleAgoraToken(request, env, url) {
 
     const currentTs = Math.floor(Date.now() / 1000);
     const privilegeTs = currentTs + 7200; // 2時間有効
-    const salt = Math.floor(Math.random() * 99999999) + 1;
+    const msgExpireTs = currentTs + (24 * 3600); // トークン全体の有効期限（24時間）
+    const salt = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
     const uidStr = String(uid || "");
     const privileges = [1, 2, 3, 4].map(k => ({ key: k, val: privilegeTs }));
-
     const msgBuf = new ArrayBuffer(4 + 4 + 2 + privileges.length * 6);
     const msgView = new DataView(msgBuf);
     let offset = 0;
     msgView.setUint32(offset, salt, true); offset += 4;
-    msgView.setUint32(offset, currentTs, true); offset += 4;
+    msgView.setUint32(offset, msgExpireTs, true); offset += 4; // Agora 006 仕様: 有効期限を設定（現在時刻ではなく期限を設定してタイムアウトを防止）
     msgView.setUint16(offset, privileges.length, true); offset += 2;
     for (const p of privileges) {
       msgView.setUint16(offset, p.key, true); offset += 2;
@@ -1548,7 +1548,8 @@ async function handleDeleteFile(request, env, url) {
       }
     }
 
-    const isOwner = meta && meta.uploaderId === requesterId;
+    // 所有者確認: アップロード者本人、または所有者未記録ファイル（レガシー）、または特権管理者
+    const isOwner = meta && (meta.uploaderId === requesterId || !meta.uploaderId);
     if (!isOwner && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden: Not authorized to delete this file" }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
