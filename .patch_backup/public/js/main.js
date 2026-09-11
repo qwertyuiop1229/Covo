@@ -7163,8 +7163,10 @@ function createFriendCardHtml(friend, online) {
   return `
     <div class="friend-card" onclick="openUserProfileModal('${friend.targetUid}', '${escapeHtml(friend.targetNickname || '')}', '${escapeHtml(friend.targetAvatarUrl || '')}')">
       <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
-        <div class="relative w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
-          ${safeAvatar}
+        <div class="relative w-10 h-10 flex-shrink-0">
+          <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
+            ${safeAvatar}
+          </div>
           <div class="status-indicator ${online ? 'status-online' : 'status-offline'}"></div>
         </div>
         <div class="min-w-0 flex-1">
@@ -7529,8 +7531,10 @@ function renderDmConversationsList() {
 
     return `
       <div class="dm-sidebar-item ${isActive ? 'active' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
-        <div class="relative w-8 h-8 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs flex-shrink-0">
-          ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full rounded-full object-cover">` : escapeHtml(nickname.charAt(0))}
+        <div class="relative w-8 h-8 flex-shrink-0">
+          <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
+            ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
+          </div>
           <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
         </div>
         <div class="flex-1 min-w-0">
@@ -16568,7 +16572,9 @@ function showCallOverlay(mode, opts = {}) {
     renderParticipantTiles();
   } else if (mode === 'active') {
     if (headerTitle) headerTitle.textContent = opts.channelName || (opts.name ? `@${opts.name}` : '音声通話');
-    if (rtcText) rtcText.textContent = 'RTC 接続完了';
+    const currentMode = opts.mode || window._voiceEngine?.mode;
+    const modeStatusText = opts.status || (currentMode === 'p2p' ? 'P2P (TURN) 接続完了' : (currentMode === 'agora' ? 'Agora SFU 接続完了' : '接続完了'));
+    if (rtcText) rtcText.textContent = modeStatusText;
     if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     if (timerDisplay) timerDisplay.textContent = '00:00';
     renderParticipantTiles();
@@ -16790,66 +16796,71 @@ function initCallListener() {
 
 function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
   listContainer.innerHTML = '';
-
   const processedMembers = memberIds.map(uid => {
     const user = (cachedUsers || []).find(u => u.id === uid) || { id: uid };
     let computedState = user.computedState || user.state || 'offline';
     return { ...user, id: uid, computedState };
   });
-
-  const onlineMembers = processedMembers.filter(u => u.computedState === 'online');
-  const awayMembers = processedMembers.filter(u => u.computedState === 'away');
+  const onlineMembers = processedMembers.filter(u => u.computedState === 'online' || u.computedState === 'away');
   const offlineMembers = processedMembers.filter(u => u.computedState === 'offline');
-
   onlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
-  awayMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
   offlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
 
-  const sortedList = [...onlineMembers, ...awayMembers, ...offlineMembers];
+  const renderGroup = (label, members, isOnline) => {
+    if (members.length === 0) return;
+    const header = document.createElement("div");
+    header.className = "px-3 py-1.5 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5" + (isOnline ? "" : " mt-3 pt-2 border-t border-gray-100 dark:border-gray-800");
+    header.innerHTML = `<span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'} inline-block"></span><span>${escapeHtml(label)} — ${members.length}人</span>`;
+    listContainer.appendChild(header);
 
-  sortedList.forEach(member => {
-    const nameRaw = member.nickname || member.displayName || member.id.slice(0, 8);
-    const item = document.createElement("div");
-    item.className = "call-picker-item";
+    members.forEach(member => {
+      const nameRaw = member.nickname || member.displayName || member.id.slice(0, 8);
+      const item = document.createElement("div");
+      item.className = "call-picker-item";
 
-    const avatar = document.createElement("div");
-    avatar.className = "call-picker-avatar relative";
-    if (isUsableAvatarUrl(member.avatarUrl)) {
-      __setAvatarImg(avatar, member.avatarUrl, nameRaw, { style: 'width:100%;height:100%;object-fit:cover;' });
-    } else {
-      avatar.textContent = (nameRaw || " ").charAt(0).toUpperCase();
-    }
+      const avatarWrap = document.createElement("div");
+      avatarWrap.className = "relative w-9 h-9 flex-shrink-0";
 
-    const statusDot = document.createElement("div");
-    statusDot.className = `status-indicator status-${member.computedState}`;
-    avatar.appendChild(statusDot);
+      const avatar = document.createElement("div");
+      avatar.className = "call-picker-avatar w-full h-full";
+      if (isUsableAvatarUrl(member.avatarUrl)) {
+        __setAvatarImg(avatar, member.avatarUrl, nameRaw, { style: 'width:100%;height:100%;object-fit:cover;border-radius:50%;' });
+      } else {
+        avatar.textContent = (nameRaw || " ").charAt(0).toUpperCase();
+      }
 
-    const info = document.createElement("div");
-    info.className = "flex-1 min-w-0";
+      const statusDot = document.createElement("div");
+      statusDot.className = `status-indicator status-${member.computedState}`;
+      avatarWrap.appendChild(avatar);
+      avatarWrap.appendChild(statusDot);
 
-    const name = document.createElement("div");
-    name.className = "call-picker-name truncate";
-    name.textContent = nameRaw;
-    info.appendChild(name);
+      const info = document.createElement("div");
+      info.className = "flex-1 min-w-0";
+      const name = document.createElement("div");
+      name.className = "call-picker-name truncate";
+      name.textContent = nameRaw;
+      info.appendChild(name);
 
-    let statusTextVal = "オフライン";
-    if (member.computedState === 'online') statusTextVal = "オンライン";
-    else if (member.computedState === 'away') statusTextVal = "離席中";
-    else if (member.last_changed) statusTextVal = formatTimeAgo(member.last_changed);
+      let statusTextVal = "オフライン";
+      if (member.computedState === 'online') statusTextVal = "オンライン";
+      else if (member.computedState === 'away') statusTextVal = "離席中";
+      else if (member.last_changed) statusTextVal = formatTimeAgo(member.last_changed);
+      const statusText = document.createElement("div");
+      statusText.className = "call-picker-status";
+      statusText.textContent = statusTextVal;
+      info.appendChild(statusText);
 
-    const statusText = document.createElement("div");
-    statusText.className = "call-picker-status";
-    statusText.textContent = statusTextVal;
-    info.appendChild(statusText);
+      item.appendChild(avatarWrap);
+      item.appendChild(info);
+      item.onclick = () => {
+        onClickCallback(member.id, nameRaw, member.avatarUrl || '');
+      };
+      listContainer.appendChild(item);
+    });
+  };
 
-    item.appendChild(avatar);
-    item.appendChild(info);
-
-    item.onclick = () => {
-      onClickCallback(member.id, nameRaw, member.avatarUrl || '');
-    };
-    listContainer.appendChild(item);
-  });
+  renderGroup("オンライン", onlineMembers, true);
+  renderGroup("オフライン", offlineMembers, false);
 }
 
 async function openCallPicker() {
@@ -17860,10 +17871,12 @@ async function startCall(uid, name, avatar) {
       if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
       showCallOverlay('active', { name, avatar, channelName });
       try {
-        await joinAgoraChannel(channelName);
-      } catch (agoraErr) {
-        console.error("Agora join error on caller:", agoraErr);
-        endCall(false, agoraErr.message || 'connectionLost');
+        const callServerId = currentServerId || 'direct';
+        const callChannelId = `call_${_callId}`;
+        await window._voiceEngine.join(callServerId, callChannelId, channelName);
+      } catch (callErr) {
+        console.error("VoiceEngine join error on caller:", callErr);
+        endCall(false, callErr.message || 'connectionLost');
         return;
       }
       // 通話中も相手の終了検知を監視
@@ -17950,9 +17963,15 @@ async function acceptCall() {
 
     // Firestoreステータスを active に更新
     await updateDoc(callRef, { status: 'active' });
-
-    // Agora チャンネルに参加！
-    await joinAgoraChannel(channelName);
+    try {
+      const callServerId = currentServerId || 'direct';
+      const callChannelId = `call_${_callId}`;
+      await window._voiceEngine.join(callServerId, callChannelId, channelName);
+    } catch (callErr) {
+      console.error("VoiceEngine join error on callee:", callErr);
+      endCall(false, callErr.message || 'connectionLost');
+      return;
+    }
 
     // 通話中も発信者の終了検知を監視
     _callEndUnsub = onSnapshot(callRef, (snap2) => {
@@ -18174,6 +18193,10 @@ function renderParticipantTiles() {
 }
 
 window.toggleMute = async function () {
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    await window._voiceEngine.toggleMute();
+    return;
+  }
   if (!_localAudioTrack) return;
   _isAudioMuted = !_isAudioMuted;
   await _localAudioTrack.setEnabled(!_isAudioMuted);
@@ -18207,6 +18230,10 @@ window.toggleMute = async function () {
 };
 
 window.toggleCamera = async function () {
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    await window._voiceEngine.toggleCamera();
+    return;
+  }
   if (!_agoraClient) return;
   const camBtn = document.getElementById("callVideoBtn") || document.getElementById("callCameraBtn");
   try {
@@ -18253,6 +18280,10 @@ window.toggleCamera = async function () {
   };
   window.toggleCallVideo = window.toggleCamera;
   window.toggleScreenShare = async function () {
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    await window._voiceEngine.toggleScreen();
+    return;
+  }
   if (!_agoraClient) return;
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
   try {
@@ -18428,6 +18459,9 @@ window.toggleCamera = async function () {
   if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
   if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
   if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    try { await window._voiceEngine.leave(); } catch (_) {}
+  }
   // Agora トラックとクライアントの切断・停止
   if (_localAudioTrack) {
     try { _localAudioTrack.stop(); _localAudioTrack.close(); } catch (_) {}
@@ -21893,7 +21927,7 @@ const VC_TURN_INFO = {
 
 const VC_ICE_TIMEOUT_MS = 30000; // 30秒でタイムアウト
 const VC_ICE_MAX_RESTARTS = 3;
-const VC_P2P_MAX_PEERS = 4;     // 4人以下はP2P
+const VC_P2P_MAX_PEERS = 3;     // 1〜3人はP2P+TURN、4人以上はAgora SFUへ自動切替
 
 // ================================================================
 class VoiceEngine {
@@ -22063,34 +22097,32 @@ class VoiceEngine {
       pc.createDataChannel('__vc_turn_check__');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          pc.close();
+        const timer = setTimeout(() => {
+          pc.onicecandidate = null;
+          try { pc.close(); } catch(_){}
           reject(new Error('timeout'));
-        }, 8000);
-
+        }, 12000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
           if (e.candidate?.type === 'relay') {
             foundRelay = true;
-            clearTimeout(timeout);
-            pc.close();
+            clearTimeout(timer);
+            pc.onicecandidate = null;
+            try { pc.close(); } catch(_){}
             resolve();
           }
           if (e.candidate === null && !foundRelay) {
-            clearTimeout(timeout);
-            pc.close();
+            clearTimeout(timer);
+            pc.onicecandidate = null;
+            try { pc.close(); } catch(_){}
             reject(new Error('no relay candidate'));
           }
         };
       });
-
       console.log('[VoiceEngine] ✅ TURN 疎通確認: openrelay.metered.ca 接続可能');
     } catch (e) {
-      console.warn(`[VoiceEngine] ⚠️ TURN 疎通チェック失敗: ${e.message}`);
-      console.warn('[VoiceEngine]   → P2P直接接続（STUN）にフォールバックします');
-      console.warn('[VoiceEngine]   → 対称型NATの場合、接続できない可能性があります');
+      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
     }
   }
 
@@ -22126,62 +22158,96 @@ class VoiceEngine {
 
           // ハイブリッド切替判定（切替中は無視）
           if (!this._modeSwitching) {
-            if (count <= VC_P2P_MAX_PEERS && this.mode !== 'p2p') {
-              console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
-              this._switchToP2P(data);
+            if (count <= VC_P2P_MAX_PEERS) {
+              if (this.mode !== 'p2p') {
+                console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
+                this._switchToP2P(data);
+              } else {
+                // すでにP2Pモードの場合は新規参加・退出ピアの差分同期（デッドロック解消）
+                this._syncP2PPeers(data);
+              }
             } else if (count > VC_P2P_MAX_PEERS && this.mode !== 'agora') {
               console.log(`[VoiceEngine] ⚠️ 参加者 ${count}人 → Agora SFU へ自動切替`);
               this._switchToAgora();
             }
           }
-        };
+          };
+          onValue(stateRef, handler);
+          this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
+          });
+          }).catch(e => {
+          console.error('[VoiceEngine] RTDB 初期化失敗:', e);
+          });
+          }
+          // ================================================================
+          // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
+          // ================================================================
+          async _syncP2PPeers(currentStates) {
+          if (this.mode !== 'p2p' || !this.isActive || this._modeSwitching) return;
+          const currentUids = new Set(Object.keys(currentStates || {}).filter(uid => uid !== this._myUid));
 
-        onValue(stateRef, handler);
-        this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
-      });
-    }).catch(e => {
-      console.error('[VoiceEngine] RTDB 初期化失敗:', e);
-    });
-  }
+          // 1. 退出したピアを削除
+          for (const [peerUid] of this._peers) {
+          if (!currentUids.has(peerUid)) {
+          console.log(`[VoiceEngine] 👋 ピア退出検知 (${peerUid.slice(0,8)}) → 削除`);
+          this._removePeer(peerUid);
+          }
+          }
 
-  // ================================================================
-  // P2P モード切替
-  // ================================================================
-  async _switchToP2P(currentStates) {
-    if (this._modeSwitching) return;
-    this._modeSwitching = true;
-
-    if (this.mode === 'agora') {
-      console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
-      await this._cleanupAgora();
-    }
-
-    this.mode = 'p2p';
-    this._modeSwitching = false;
-
-    console.log('[VoiceEngine] 🔵 P2P + OpenRelay TURN モード');
-    console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
-
-    // 既存ピア接続をクリーンアップしてから再構築
-    this._cleanupAllPeers();
-
-    // 決定論的 Offer 方向：
-    //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
-    //   これにより両端が同時にOfferを送るグリッチを防止
-    const others = Object.keys(currentStates).filter(uid => uid !== this._myUid);
-    for (const peerUid of others) {
-      const iAmOfferer = this._myUid < peerUid;
-      if (iAmOfferer) {
-        await this._createOffer(peerUid).catch(e =>
+          // 2. 新規参加したピアへ接続開始
+          for (const peerUid of currentUids) {
+          if (!this._peers.has(peerUid)) {
+          const iAmOfferer = this._myUid < peerUid;
+          console.log(`[VoiceEngine] 🤝 新規ピア検知 (${peerUid.slice(0,8)}): ${iAmOfferer ? '自分がOfferer' : '相手のOfferを待機'}`);
+          if (iAmOfferer) {
+          await this._createOffer(peerUid).catch(e =>
+            console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
+          );
+          } else {
+          // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
+          this._createPeerConnection(peerUid);
+          }
+          }
+          }
+          }
+          // ================================================================
+          // P2P モード切替
+          // ================================================================
+          async _switchToP2P(currentStates) {
+          if (this._modeSwitching) return;
+          this._modeSwitching = true;
+          if (this.mode === 'agora') {
+          console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
+          await this._cleanupAgora();
+          }
+          this.mode = 'p2p';
+          this._modeSwitching = false;
+          console.log('[VoiceEngine] 🔵 P2P + OpenRelay TURN モード');
+          console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
+          const rtcText = document.getElementById('discordCallRtcText');
+          const rtcBadge = document.getElementById('discordCallRtcStatus');
+          if (rtcText) rtcText.textContent = 'P2P (TURN) 接続完了';
+          if (rtcBadge) rtcBadge.classList.remove('reconnecting');
+          // 既存ピア接続をクリーンアップしてから再構築
+          this._cleanupAllPeers();
+          // シグナリングリスナーを先行起動（高速なAnswer/Candidateの受信漏れ防止）
+          this._setupSignalingListener();
+          // 決定論的 Offer 方向：
+          //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
+          //   これにより両端が同時にOfferを送るグリッチを防止
+          const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+          for (const peerUid of others) {
+          const iAmOfferer = this._myUid < peerUid;
+          if (iAmOfferer) {
+          await this._createOffer(peerUid).catch(e =>
           console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
-        );
-      }
-      // iAmOfferer=false の場合は相手からのOfferを待つ（_setupSignalingListener で処理）
-    }
-
-    // シグナリングリスナーを（再）設定
-    this._setupSignalingListener();
-  }
+          );
+          } else {
+          // Answerer側も先行してピア接続オブジェクトを準備
+          this._createPeerConnection(peerUid);
+          }
+          }
+          }
 
   // ================================================================
   // P2P Offer 作成
@@ -22213,8 +22279,7 @@ class VoiceEngine {
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-
-    const peerInfo = { pc, iceRestarts: 0, iceTimer: null };
+    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, pendingCandidates: [] };
     this._peers.set(peerUid, peerInfo);
 
     // ローカルトラックを追加
@@ -22247,8 +22312,20 @@ class VoiceEngine {
         console.log(`[VoiceEngine] 🔈 音声受信: ${peerUid.slice(0,8)}`);
       }
       if (e.track.kind === 'video') {
-        // P2P ビデオは将来拡張
         console.log(`[VoiceEngine] 📹 映像受信: ${peerUid.slice(0,8)}`);
+        const remContainer = document.getElementById(`remote-video-${peerUid}`) || document.getElementById('remote-video-container');
+        if (remContainer) {
+          let videoEl = remContainer.querySelector('video');
+          if (!videoEl) {
+            videoEl = document.createElement('video');
+            videoEl.autoplay = true;
+            videoEl.playsInline = true;
+            videoEl.className = 'w-full h-full object-cover';
+            remContainer.appendChild(videoEl);
+          }
+          videoEl.srcObject = e.streams[0];
+          remContainer.classList.remove('hidden');
+        }
       }
     };
 
@@ -22323,10 +22400,10 @@ class VoiceEngine {
   async _iceRestart(peerUid) {
     const peerInfo = this._peers.get(peerUid);
     if (!peerInfo || !this.isActive || this.mode !== 'p2p') return;
-
     if (peerInfo.iceRestarts >= VC_ICE_MAX_RESTARTS) {
-      console.error(`[VoiceEngine] ❌ ICE Restart 上限 (${peerUid.slice(0,8)}) → ピア除去`);
+      console.warn(`[VoiceEngine] ⚠️ ICE Restart 上限 (${peerUid.slice(0,8)}) → Agora SFU へ自動フォールバック`);
       this._removePeer(peerUid);
+      this._switchToAgora();
       return;
     }
 
@@ -22353,14 +22430,29 @@ class VoiceEngine {
     const peerInfo = this._peers.get(peerUid);
     if (peerInfo) {
       if (peerInfo.iceTimer) clearTimeout(peerInfo.iceTimer);
-      try { peerInfo.pc.close(); } catch(_){}
+      try {
+        peerInfo.pc.onicecandidate = null;
+        peerInfo.pc.ontrack = null;
+        peerInfo.pc.oniceconnectionstatechange = null;
+        peerInfo.pc.close();
+      } catch(_){}
       this._peers.delete(peerUid);
     }
-    // Audio 要素をDOMから除去
+    // Audio 要素をDOMから安全に停止・消去
     const audioEl = this._audioElements.get(peerUid);
     if (audioEl) {
-      try { audioEl.srcObject = null; audioEl.remove(); } catch(_){}
+      try {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        audioEl.remove();
+      } catch(_){}
       this._audioElements.delete(peerUid);
+    }
+    // リモートビデオコンテナもクリア
+    const remVideo = document.getElementById(`remote-video-${peerUid}`);
+    if (remVideo) {
+      remVideo.innerHTML = '';
+      remVideo.classList.add('hidden');
     }
   }
 
@@ -22381,7 +22473,8 @@ class VoiceEngine {
       // ドキュメントIDに特殊文字が入らないよう両端のUIDのみ使用
       const docId = [this._myUid, targetUid].sort().join('_') +
         '_' + (this.channelId || '').replace(/[^a-zA-Z0-9]/g, '');
-      const sigRef = doc(db, `artifacts/${appId}/vc_signaling/${docId}_${payload.type}`);
+      const candSuffix = payload.type === 'candidate' ? `_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : '';
+      const sigRef = doc(db, `artifacts/${appId}/vc_signaling/${docId}_${payload.type}${candSuffix}`);
       await setDoc(sigRef, {
         ...payload,
         fromUid: this._myUid,
@@ -22393,28 +22486,23 @@ class VoiceEngine {
       console.warn('[VoiceEngine] シグナリング送信エラー:', e.code || e.message);
     }
   }
-
   // ================================================================
   // Firestore シグナリング受信リスナー
   // ================================================================
   _setupSignalingListener() {
     if (this._signalingUnsub) { try { this._signalingUnsub(); } catch(_){} }
-
     const sigQuery = query(
       collection(db, `artifacts/${appId}/vc_signaling`),
-      where('toUid', '==', this._myUid),
-      where('channelId', '==', this.channelId)
+      where('toUid', '==', this._myUid)
     );
-
     this._signalingUnsub = onSnapshot(sigQuery, async (snap) => {
       for (const change of snap.docChanges()) {
         if (!['added', 'modified'].includes(change.type)) continue;
         const data = change.doc.data();
         if (!data || data.toUid !== this._myUid || !this.isActive) continue;
-
+        if (data.channelId !== this.channelId) continue;
         const fromUid = data.fromUid;
         if (!fromUid || fromUid === this._myUid) continue;
-
         try {
           if (data.type === 'offer') {
             await this._handleOffer(fromUid, data);
@@ -22425,36 +22513,39 @@ class VoiceEngine {
                 new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
               );
               console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
+              while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
+                const cand = peerInfo.pendingCandidates.shift();
+                try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+              }
             }
           } else if (data.type === 'candidate') {
-            const peerInfo = this._peers.get(fromUid);
+            let peerInfo = this._peers.get(fromUid);
+            if (!peerInfo) {
+              peerInfo = this._createPeerConnection(fromUid);
+            }
             if (peerInfo && data.candidate) {
-              try {
-                await peerInfo.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-              } catch(e) {
-                // 無効な候補は無視（signalingState不一致など）
+              if (peerInfo.pc.remoteDescription && peerInfo.pc.remoteDescription.type) {
+                try {
+                  await peerInfo.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch(e) {
+                  // 無効な候補は無視
+                }
+              } else {
+                if (!peerInfo.pendingCandidates) peerInfo.pendingCandidates = [];
+                peerInfo.pendingCandidates.push(data.candidate);
               }
             }
           }
         } catch(e) {
           console.error('[VoiceEngine] シグナリング処理エラー:', e);
         }
-
         // 処理済みドキュメントを削除
         try { await deleteDoc(change.doc.ref); } catch(_){}
       }
     }, (e) => {
       console.error('[VoiceEngine] シグナリングリスナーエラー:', e.code, e.message);
-      if (e.code === 'permission-denied') {
-        console.error('[VoiceEngine] → firestore.rules の vc_signaling ルールを確認してください');
-      }
-      if (e.code === 'failed-precondition') {
-        console.error('[VoiceEngine] → Firestore インデックスが不足しています。Firebase Console で以下のインデックスを作成:');
-        console.error('  コレクション: vc_signaling, フィールド: toUid (昇順), channelId (昇順)');
-      }
     });
   }
-
   // ================================================================
   // Offer 受信処理（Answerer 側）
   // ================================================================
@@ -22464,7 +22555,6 @@ class VoiceEngine {
       peerInfo = this._createPeerConnection(fromUid);
     } else if (peerInfo.pc.signalingState === 'have-local-offer') {
       // Glare（両端がOfferを同時送信）: 決定論的ルールで解決
-      // 自分のUIDが大きい場合は自分がAnswererになる（相手のOfferを優先）
       if (this._myUid > fromUid) {
         console.log(`[VoiceEngine] Glare検知: ${fromUid.slice(0,8)}のOfferを優先`);
         peerInfo.pc.close();
@@ -22473,11 +22563,14 @@ class VoiceEngine {
         return; // 自分がOfferer、相手のOfferは無視
       }
     }
-
     try {
       await peerInfo.pc.setRemoteDescription(
         new RTCSessionDescription({ type: 'offer', sdp: data.sdp })
       );
+      while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
+        const cand = peerInfo.pendingCandidates.shift();
+        try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+      }
       const answer = await peerInfo.pc.createAnswer();
       await peerInfo.pc.setLocalDescription(answer);
       await this._sendSignal(fromUid, { type: 'answer', sdp: answer.sdp });
@@ -22515,13 +22608,11 @@ class VoiceEngine {
   async _switchToAgora() {
     if (this._modeSwitching) return;
     this._modeSwitching = true;
-
     if (this.mode === 'p2p') {
-      console.log('[VoiceEngine] 🔄 P2P → Agora SFU 切替中...');
+      console.log('[VoiceEngine] 🔄 P2P → Agora SFU 切替中 (P2P接続とオーディオを完全解放)...');
       this._cleanupAllPeers();
       if (this._signalingUnsub) { try { this._signalingUnsub(); } catch(_){} this._signalingUnsub = null; }
     }
-
     if (typeof AgoraRTC === 'undefined') {
       console.error('[VoiceEngine] ❌ Agora RTC SDK が読み込まれていません');
       this.mode = 'p2p';
@@ -22529,14 +22620,11 @@ class VoiceEngine {
       await this._switchToP2P(this._voiceStates);
       return;
     }
-
     this.mode = 'agora';
-
     try {
       // Agora チャンネル名（64文字制限あり）
       const agoraChannel = `vc_${this.serverId}_${this.channelId}`.slice(0, 64);
       console.log(`[VoiceEngine] 🟣 Agora SFU: チャンネル "${agoraChannel}"`);
-
       let tokenData;
       try {
         tokenData = await fetchAgoraToken(agoraChannel, this._myUid);
@@ -22548,9 +22636,7 @@ class VoiceEngine {
         }
         throw e;
       }
-
       this._agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-
       // イベントハンドラ設定
       this._agoraClient.on('user-published', async (user, mediaType) => {
         await this._agoraClient.subscribe(user, mediaType).catch(e =>
@@ -22565,16 +22651,13 @@ class VoiceEngine {
         }
         this._agoraRemote.set(String(user.uid), user);
       });
-
       this._agoraClient.on('user-unpublished', (user, mediaType) => {
         if (mediaType === 'video') this._renderGrid();
       });
-
       this._agoraClient.on('user-left', (user) => {
         this._agoraRemote.delete(String(user.uid));
         this._renderGrid();
       });
-
       // ボリュームインジケーター（デバウンス100ms）
       this._agoraClient.enableAudioVolumeIndicator();
       this._agoraClient.on('volume-indicator', (volumes) => {
@@ -22589,43 +22672,51 @@ class VoiceEngine {
           });
         }, 100);
       });
-
       // チャンネル参加
       await this._agoraClient.join(tokenData.appId, agoraChannel, tokenData.token, this._myUid);
-
       // マイクトラック公開
       this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
         AEC: true, ANS: true, AGC: true
       });
       if (this._isMuted) await this._agoraAudio.setEnabled(false);
       await this._agoraClient.publish([this._agoraAudio]);
-
       console.log('[VoiceEngine] ✅ Agora SFU 接続完了');
+      const rtcText = document.getElementById('discordCallRtcText');
+      const rtcBadge = document.getElementById('discordCallRtcStatus');
+      if (rtcText) rtcText.textContent = 'Agora SFU 接続完了';
+      if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     } catch(e) {
       console.error('[VoiceEngine] ❌ Agora接続失敗:', e.message || e);
       if (typeof alertMessage === 'function') {
         alertMessage('Agora SFU 接続に失敗しました。P2P モードを継続します。', 'warning');
       }
+      await this._cleanupAgora();
       this.mode = 'p2p';
       this._modeSwitching = false;
-      this._switchToP2P(this._voiceStates);
+      await this._switchToP2P(this._voiceStates);
       return;
     }
-
     this._modeSwitching = false;
   }
-
   // ================================================================
   // Agora クリーンアップ
   // ================================================================
   async _cleanupAgora() {
     if (this._agoraVolumeDebounceTimer) { clearTimeout(this._agoraVolumeDebounceTimer); this._agoraVolumeDebounceTimer = null; }
     for (const track of [this._agoraAudio, this._agoraVideo, this._agoraScreen]) {
-      if (track) try { track.stop(); track.close(); } catch(_){}
+      if (track) {
+        try {
+          track.stop();
+          track.close();
+        } catch(_){}
+      }
     }
     this._agoraAudio = this._agoraVideo = this._agoraScreen = null;
     if (this._agoraClient) {
-      try { await this._agoraClient.leave(); } catch(_){}
+      try {
+        this._agoraClient.removeAllListeners();
+        await this._agoraClient.leave();
+      } catch(_){}
       this._agoraClient = null;
     }
     this._agoraRemote.clear();
@@ -22673,7 +22764,7 @@ class VoiceEngine {
   async toggleCamera() {
     if (this.mode === 'p2p') {
       if (typeof alertMessage === 'function') {
-        alertMessage('📷 カメラは Agora モード（5人以上）でご利用いただけます', 'info');
+        alertMessage('📷 カメラは Agora モード（4人以上）でご利用いただけます', 'info');
       }
       return;
     }
@@ -22807,33 +22898,39 @@ class VoiceEngine {
   // ================================================================
   _updateMuteUI() {
     const muted = this._isMuted;
-    ['vcBarMuteIcon','vcGridMuteIcon'].forEach(id => {
+    ['vcBarMuteIcon','vcGridMuteIcon','callMuteIcon'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.className = muted ? 'fas fa-microphone-slash' : 'fas fa-microphone';
     });
-    ['vcBarMuteBtn','vcGridMuteBtn'].forEach(id => {
+    ['vcBarMuteBtn','vcGridMuteBtn','callMuteBtn'].forEach(id => {
       document.getElementById(id)?.classList.toggle('muted', muted);
+      document.getElementById(id)?.classList.toggle('active', muted);
     });
+    const pipMuteBtn = document.getElementById('callPipMuteBtn');
+    if (pipMuteBtn) {
+      pipMuteBtn.classList.toggle('active', muted);
+      pipMuteBtn.innerHTML = muted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+    }
+    const localMuteBadge = document.getElementById('localMuteBadge');
+    if (localMuteBadge) localMuteBadge.classList.toggle('hidden', !muted);
   }
-
   _updateCamUI() {
     const on = this._isVideoOn;
     ['vcBarCamIcon','vcGridCamIcon'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.className = on ? 'fas fa-video-slash' : 'fas fa-video';
     });
-    ['vcBarCamBtn','vcGridCamBtn'].forEach(id => {
+    ['vcBarCamBtn','vcGridCamBtn','callVideoBtn'].forEach(id => {
       document.getElementById(id)?.classList.toggle('active', on);
     });
   }
-
   _updateScreenUI() {
     const on = this._isScreenOn;
     ['vcBarScreenIcon','vcGridScreenIcon'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.className = on ? 'fas fa-stop-circle' : 'fas fa-desktop';
     });
-    ['vcBarScreenBtn','vcGridScreenBtn'].forEach(id => {
+    ['vcBarScreenBtn','vcGridScreenBtn','callScreenBtn'].forEach(id => {
       document.getElementById(id)?.classList.toggle('active', on);
     });
   }
@@ -22930,13 +23027,13 @@ class VoiceEngine {
   // RTDB voiceState 書き込み + onDisconnect 設定
   // ================================================================
   async _setVoiceState(extra = {}) {
-    if (!this._myUid || !this.serverId || !this.channelId) return;
+    if (!this._myUid || !this.channelId) return;
+    const sId = this.serverId || 'direct';
     try {
       const rtdb = await _getOrInitRTDB();
       const { ref, set, onDisconnect: rtdbOnDisconnect } =
         await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-
-      const stateRef = ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}/${this._myUid}`);
+      const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}/${this._myUid}`);
       const stateData = {
         uid: this._myUid,
         nickname: this._myNickname,
@@ -22965,17 +23062,17 @@ class VoiceEngine {
   // voiceState 削除
   // ================================================================
   async _clearVoiceState() {
-    if (!this._myUid || !this.serverId || !this.channelId) return;
+    if (!this._myUid || !this.channelId) return;
+    const sId = this.serverId || 'direct';
     try {
       const rtdb = await _getOrInitRTDB();
       const { ref, remove } =
         await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-
       if (this._onDisconnectRef) {
         try { await this._onDisconnectRef.cancel(); } catch(_){}
         this._onDisconnectRef = null;
       }
-      await remove(ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}/${this._myUid}`));
+      await remove(ref(rtdb, `voiceStates/${sId}/${this.channelId}/${this._myUid}`));
     } catch(e) {
       console.warn('[VoiceEngine] voiceState削除エラー:', e.message);
     }

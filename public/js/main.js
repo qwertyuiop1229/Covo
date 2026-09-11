@@ -6120,6 +6120,7 @@ function setCallConnectionType(type) {}
 function showCallEndedReason(reason) {
   const msgs = {
     declined: '通話が拒否されました',
+    busy: '相手が他の通話中のため繋がりませんでした',
     remoteEnded: '相手が通話を終了しました',
     callerCancelled: '発信者がキャンセルしました',
     connectionLost: '接続が切れました',
@@ -16572,7 +16573,9 @@ function showCallOverlay(mode, opts = {}) {
     renderParticipantTiles();
   } else if (mode === 'active') {
     if (headerTitle) headerTitle.textContent = opts.channelName || (opts.name ? `@${opts.name}` : '音声通話');
-    if (rtcText) rtcText.textContent = 'RTC 接続完了';
+    const currentMode = opts.mode || window._voiceEngine?.mode;
+    const modeStatusText = opts.status || (currentMode === 'p2p' ? 'P2P (TURN) 接続完了' : (currentMode === 'agora' ? 'Agora SFU 接続完了' : '接続完了'));
+    if (rtcText) rtcText.textContent = modeStatusText;
     if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     if (timerDisplay) timerDisplay.textContent = '00:00';
     renderParticipantTiles();
@@ -16633,16 +16636,17 @@ window.restoreCallOverlay = function () {
   }
 };
 
+let _callStartTime = 0;
 function startCallTimer() {
   stopCallTimer();
+  _callStartTime = Date.now();
   _callElapsedSeconds = 0;
   const display = document.getElementById('callTimerDisplay');
   const pipTimer = document.getElementById('callPipTimer');
   if (display) display.textContent = '00:00';
   if (pipTimer) pipTimer.textContent = '00:00';
-
   _callTimerInterval = setInterval(() => {
-    _callElapsedSeconds++;
+    _callElapsedSeconds = Math.floor((Date.now() - _callStartTime) / 1000);
     const m = String(Math.floor(_callElapsedSeconds / 60)).padStart(2, '0');
     const s = String(_callElapsedSeconds % 60).padStart(2, '0');
     const timeStr = `${m}:${s}`;
@@ -16781,8 +16785,16 @@ function initCallListener() {
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          if (data.status === 'ringing' && !_callId) {
-            handleIncomingCall(change.doc.id, data.caller);
+          if (data.status === 'ringing') {
+            const isCurrentlyInCall = Boolean(_callId || (window._voiceEngine && window._voiceEngine.isActive));
+            if (isCurrentlyInCall) {
+              // 通話中のため自動的にbusy（お話し中）を相手へ返答
+              import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, updateDoc }) => {
+                updateDoc(doc(db, 'artifacts', appId, 'calls', change.doc.id), { status: 'busy' }).catch(() => {});
+              });
+            } else {
+              handleIncomingCall(change.doc.id, data.caller);
+            }
           }
         }
       });
@@ -16818,26 +16830,36 @@ function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
 
       const avatarWrap = document.createElement("div");
       avatarWrap.className = "relative w-9 h-9 flex-shrink-0";
-
       const avatar = document.createElement("div");
-      avatar.className = "call-picker-avatar w-full h-full";
+      avatar.className = "call-picker-avatar w-full h-full rounded-full overflow-hidden";
       if (isUsableAvatarUrl(member.avatarUrl)) {
         __setAvatarImg(avatar, member.avatarUrl, nameRaw, { style: 'width:100%;height:100%;object-fit:cover;border-radius:50%;' });
       } else {
         avatar.textContent = (nameRaw || " ").charAt(0).toUpperCase();
       }
-
       const statusDot = document.createElement("div");
       statusDot.className = `status-indicator status-${member.computedState}`;
+      statusDot.style.cssText = "position:absolute;bottom:0px;right:0px;width:12px;height:12px;border-radius:50%;z-index:20;";
       avatarWrap.appendChild(avatar);
       avatarWrap.appendChild(statusDot);
-
       const info = document.createElement("div");
       info.className = "flex-1 min-w-0";
       const name = document.createElement("div");
       name.className = "call-picker-name truncate";
       name.textContent = nameRaw;
       info.appendChild(name);
+      if (!member.nickname && window.getUserProfile) {
+        window.getUserProfile(member.id).then(p => {
+          if (p && p.nickname) {
+            name.textContent = p.nickname;
+            if (isUsableAvatarUrl(p.avatarUrl)) {
+              __setAvatarImg(avatar, p.avatarUrl, p.nickname, { style: 'width:100%;height:100%;object-fit:cover;border-radius:50%;' });
+            } else {
+              avatar.textContent = p.nickname.charAt(0).toUpperCase();
+            }
+          }
+        }).catch(() => {});
+      }
 
       let statusTextVal = "オフライン";
       if (member.computedState === 'online') statusTextVal = "オンライン";
@@ -17856,6 +17878,12 @@ async function startCall(uid, name, avatar) {
     if (d.status === 'declined') {
       unsubAnswer();
       endCall(true, 'declined');
+      return;
+    }
+    if (d.status === 'busy') {
+      unsubAnswer();
+      stopCallRingSound();
+      endCall(true, 'busy');
       return;
     }
     if (d.status === 'ended' || d.status === 'missed') {
@@ -20764,6 +20792,18 @@ document.addEventListener("keydown", (e) => {
       callPicker.classList.remove('show');
       return;
     }
+    // 5b. フルスクリーン通話画面（切断せず最小化/PiPに安全退避）
+    const callOverlay = document.getElementById('callOverlay');
+    if (callOverlay && callOverlay.classList.contains('show') && callOverlay.style.display !== 'none') {
+      window.minimizeCallOverlay();
+      return;
+    }
+    // 5c. VC通話グリッド画面（最小化してチャンネルに戻る）
+    const vcGrid = document.getElementById('vcGridOverlay');
+    if (vcGrid && !vcGrid.classList.contains('hidden') && vcGrid.style.display !== 'none') {
+      window.vcOpenGrid();
+      return;
+    }
     // 6. 各種ライトボックス (画像・PDF)
     const imageLb = document.getElementById('imageLightbox');
     const pdfLb = document.getElementById('pdfLightbox');
@@ -22077,12 +22117,14 @@ class VoiceEngine {
     this._setChannelActive(channelId, false);
     this._renderMemberTree(channelId, []);
     this._renderGrid();
-
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = '通話終了';
+    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     if (this._boundBeforeUnload) {
       window.removeEventListener('beforeunload', this._boundBeforeUnload);
       this._boundBeforeUnload = null;
     }
-
     console.log('[VoiceEngine] 👋 退出完了');
   }
 
@@ -22095,34 +22137,32 @@ class VoiceEngine {
       pc.createDataChannel('__vc_turn_check__');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          pc.close();
+        const timer = setTimeout(() => {
+          pc.onicecandidate = null;
+          try { pc.close(); } catch(_){}
           reject(new Error('timeout'));
-        }, 8000);
-
+        }, 12000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
           if (e.candidate?.type === 'relay') {
             foundRelay = true;
-            clearTimeout(timeout);
-            pc.close();
+            clearTimeout(timer);
+            pc.onicecandidate = null;
+            try { pc.close(); } catch(_){}
             resolve();
           }
           if (e.candidate === null && !foundRelay) {
-            clearTimeout(timeout);
-            pc.close();
+            clearTimeout(timer);
+            pc.onicecandidate = null;
+            try { pc.close(); } catch(_){}
             reject(new Error('no relay candidate'));
           }
         };
       });
-
       console.log('[VoiceEngine] ✅ TURN 疎通確認: openrelay.metered.ca 接続可能');
     } catch (e) {
-      console.warn(`[VoiceEngine] ⚠️ TURN 疎通チェック失敗: ${e.message}`);
-      console.warn('[VoiceEngine]   → P2P直接接続（STUN）にフォールバックします');
-      console.warn('[VoiceEngine]   → 対称型NATの場合、接続できない可能性があります');
+      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
     }
   }
 
@@ -22158,63 +22198,96 @@ class VoiceEngine {
 
           // ハイブリッド切替判定（切替中は無視）
           if (!this._modeSwitching) {
-            if (count <= VC_P2P_MAX_PEERS && this.mode !== 'p2p') {
-              console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
-              this._switchToP2P(data);
+            if (count <= VC_P2P_MAX_PEERS) {
+              if (this.mode !== 'p2p') {
+                console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
+                this._switchToP2P(data);
+              } else {
+                // すでにP2Pモードの場合は新規参加・退出ピアの差分同期（デッドロック解消）
+                this._syncP2PPeers(data);
+              }
             } else if (count > VC_P2P_MAX_PEERS && this.mode !== 'agora') {
               console.log(`[VoiceEngine] ⚠️ 参加者 ${count}人 → Agora SFU へ自動切替`);
               this._switchToAgora();
             }
           }
-        };
+          };
+          onValue(stateRef, handler);
+          this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
+          });
+          }).catch(e => {
+          console.error('[VoiceEngine] RTDB 初期化失敗:', e);
+          });
+          }
+          // ================================================================
+          // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
+          // ================================================================
+          async _syncP2PPeers(currentStates) {
+          if (this.mode !== 'p2p' || !this.isActive || this._modeSwitching) return;
+          const currentUids = new Set(Object.keys(currentStates || {}).filter(uid => uid !== this._myUid));
 
-        onValue(stateRef, handler);
-        this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
-      });
-    }).catch(e => {
-      console.error('[VoiceEngine] RTDB 初期化失敗:', e);
-    });
-  }
+          // 1. 退出したピアを削除
+          for (const [peerUid] of this._peers) {
+          if (!currentUids.has(peerUid)) {
+          console.log(`[VoiceEngine] 👋 ピア退出検知 (${peerUid.slice(0,8)}) → 削除`);
+          this._removePeer(peerUid);
+          }
+          }
 
-  // ================================================================
-  // P2P モード切替
-  // ================================================================
-  async _switchToP2P(currentStates) {
-    if (this._modeSwitching) return;
-    this._modeSwitching = true;
-    if (this.mode === 'agora') {
-      console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
-      await this._cleanupAgora();
-    }
-    this.mode = 'p2p';
-    this._modeSwitching = false;
-    console.log('[VoiceEngine] 🔵 P2P + OpenRelay TURN モード');
-    console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
-    const rtcText = document.getElementById('discordCallRtcText');
-    const rtcBadge = document.getElementById('discordCallRtcStatus');
-    if (rtcText) rtcText.textContent = 'P2P (TURN) 接続完了';
-    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
-
-    // 既存ピア接続をクリーンアップしてから再構築
-    this._cleanupAllPeers();
-
-    // 決定論的 Offer 方向：
-    //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
-    //   これにより両端が同時にOfferを送るグリッチを防止
-    const others = Object.keys(currentStates).filter(uid => uid !== this._myUid);
-    for (const peerUid of others) {
-      const iAmOfferer = this._myUid < peerUid;
-      if (iAmOfferer) {
-        await this._createOffer(peerUid).catch(e =>
+          // 2. 新規参加したピアへ接続開始
+          for (const peerUid of currentUids) {
+          if (!this._peers.has(peerUid)) {
+          const iAmOfferer = this._myUid < peerUid;
+          console.log(`[VoiceEngine] 🤝 新規ピア検知 (${peerUid.slice(0,8)}): ${iAmOfferer ? '自分がOfferer' : '相手のOfferを待機'}`);
+          if (iAmOfferer) {
+          await this._createOffer(peerUid).catch(e =>
+            console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
+          );
+          } else {
+          // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
+          this._createPeerConnection(peerUid);
+          }
+          }
+          }
+          }
+          // ================================================================
+          // P2P モード切替
+          // ================================================================
+          async _switchToP2P(currentStates) {
+          if (this._modeSwitching) return;
+          this._modeSwitching = true;
+          if (this.mode === 'agora') {
+          console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
+          await this._cleanupAgora();
+          }
+          this.mode = 'p2p';
+          this._modeSwitching = false;
+          console.log('[VoiceEngine] 🔵 P2P + OpenRelay TURN モード');
+          console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
+          const rtcText = document.getElementById('discordCallRtcText');
+          const rtcBadge = document.getElementById('discordCallRtcStatus');
+          if (rtcText) rtcText.textContent = 'P2P (TURN) 接続完了';
+          if (rtcBadge) rtcBadge.classList.remove('reconnecting');
+          // 既存ピア接続をクリーンアップしてから再構築
+          this._cleanupAllPeers();
+          // シグナリングリスナーを先行起動（高速なAnswer/Candidateの受信漏れ防止）
+          this._setupSignalingListener();
+          // 決定論的 Offer 方向：
+          //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
+          //   これにより両端が同時にOfferを送るグリッチを防止
+          const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+          for (const peerUid of others) {
+          const iAmOfferer = this._myUid < peerUid;
+          if (iAmOfferer) {
+          await this._createOffer(peerUid).catch(e =>
           console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
-        );
-      }
-      // iAmOfferer=false の場合は相手からのOfferを待つ（_setupSignalingListener で処理）
-    }
-
-    // シグナリングリスナーを（再）設定
-    this._setupSignalingListener();
-  }
+          );
+          } else {
+          // Answerer側も先行してピア接続オブジェクトを準備
+          this._createPeerConnection(peerUid);
+          }
+          }
+          }
 
   // ================================================================
   // P2P Offer 作成
@@ -22246,8 +22319,7 @@ class VoiceEngine {
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-
-    const peerInfo = { pc, iceRestarts: 0, iceTimer: null };
+    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, pendingCandidates: [] };
     this._peers.set(peerUid, peerInfo);
 
     // ローカルトラックを追加
@@ -22398,14 +22470,29 @@ class VoiceEngine {
     const peerInfo = this._peers.get(peerUid);
     if (peerInfo) {
       if (peerInfo.iceTimer) clearTimeout(peerInfo.iceTimer);
-      try { peerInfo.pc.close(); } catch(_){}
+      try {
+        peerInfo.pc.onicecandidate = null;
+        peerInfo.pc.ontrack = null;
+        peerInfo.pc.oniceconnectionstatechange = null;
+        peerInfo.pc.close();
+      } catch(_){}
       this._peers.delete(peerUid);
     }
-    // Audio 要素をDOMから除去
+    // Audio 要素をDOMから安全に停止・消去
     const audioEl = this._audioElements.get(peerUid);
     if (audioEl) {
-      try { audioEl.srcObject = null; audioEl.remove(); } catch(_){}
+      try {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        audioEl.remove();
+      } catch(_){}
       this._audioElements.delete(peerUid);
+    }
+    // リモートビデオコンテナもクリア
+    const remVideo = document.getElementById(`remote-video-${peerUid}`);
+    if (remVideo) {
+      remVideo.innerHTML = '';
+      remVideo.classList.add('hidden');
     }
   }
 
@@ -22472,9 +22559,12 @@ class VoiceEngine {
               }
             }
           } else if (data.type === 'candidate') {
-            const peerInfo = this._peers.get(fromUid);
+            let peerInfo = this._peers.get(fromUid);
+            if (!peerInfo) {
+              peerInfo = this._createPeerConnection(fromUid);
+            }
             if (peerInfo && data.candidate) {
-              if (peerInfo.pc.remoteDescription) {
+              if (peerInfo.pc.remoteDescription && peerInfo.pc.remoteDescription.type) {
                 try {
                   await peerInfo.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                 } catch(e) {
@@ -22558,13 +22648,11 @@ class VoiceEngine {
   async _switchToAgora() {
     if (this._modeSwitching) return;
     this._modeSwitching = true;
-
     if (this.mode === 'p2p') {
-      console.log('[VoiceEngine] 🔄 P2P → Agora SFU 切替中...');
+      console.log('[VoiceEngine] 🔄 P2P → Agora SFU 切替中 (P2P接続とオーディオを完全解放)...');
       this._cleanupAllPeers();
       if (this._signalingUnsub) { try { this._signalingUnsub(); } catch(_){} this._signalingUnsub = null; }
     }
-
     if (typeof AgoraRTC === 'undefined') {
       console.error('[VoiceEngine] ❌ Agora RTC SDK が読み込まれていません');
       this.mode = 'p2p';
@@ -22572,14 +22660,11 @@ class VoiceEngine {
       await this._switchToP2P(this._voiceStates);
       return;
     }
-
     this.mode = 'agora';
-
     try {
       // Agora チャンネル名（64文字制限あり）
       const agoraChannel = `vc_${this.serverId}_${this.channelId}`.slice(0, 64);
       console.log(`[VoiceEngine] 🟣 Agora SFU: チャンネル "${agoraChannel}"`);
-
       let tokenData;
       try {
         tokenData = await fetchAgoraToken(agoraChannel, this._myUid);
@@ -22591,9 +22676,7 @@ class VoiceEngine {
         }
         throw e;
       }
-
       this._agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-
       // イベントハンドラ設定
       this._agoraClient.on('user-published', async (user, mediaType) => {
         await this._agoraClient.subscribe(user, mediaType).catch(e =>
@@ -22608,16 +22691,13 @@ class VoiceEngine {
         }
         this._agoraRemote.set(String(user.uid), user);
       });
-
       this._agoraClient.on('user-unpublished', (user, mediaType) => {
         if (mediaType === 'video') this._renderGrid();
       });
-
       this._agoraClient.on('user-left', (user) => {
         this._agoraRemote.delete(String(user.uid));
         this._renderGrid();
       });
-
       // ボリュームインジケーター（デバウンス100ms）
       this._agoraClient.enableAudioVolumeIndicator();
       this._agoraClient.on('volume-indicator', (volumes) => {
@@ -22632,10 +22712,8 @@ class VoiceEngine {
           });
         }, 100);
       });
-
       // チャンネル参加
       await this._agoraClient.join(tokenData.appId, agoraChannel, tokenData.token, this._myUid);
-
       // マイクトラック公開
       this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
         AEC: true, ANS: true, AGC: true
@@ -22647,30 +22725,38 @@ class VoiceEngine {
       const rtcBadge = document.getElementById('discordCallRtcStatus');
       if (rtcText) rtcText.textContent = 'Agora SFU 接続完了';
       if (rtcBadge) rtcBadge.classList.remove('reconnecting');
-      } catch(e) {
+    } catch(e) {
       console.error('[VoiceEngine] ❌ Agora接続失敗:', e.message || e);
       if (typeof alertMessage === 'function') {
         alertMessage('Agora SFU 接続に失敗しました。P2P モードを継続します。', 'warning');
       }
+      await this._cleanupAgora();
       this.mode = 'p2p';
       this._modeSwitching = false;
-      this._switchToP2P(this._voiceStates);
+      await this._switchToP2P(this._voiceStates);
       return;
-      }
-      this._modeSwitching = false;
-      }
-
+    }
+    this._modeSwitching = false;
+  }
   // ================================================================
   // Agora クリーンアップ
   // ================================================================
   async _cleanupAgora() {
     if (this._agoraVolumeDebounceTimer) { clearTimeout(this._agoraVolumeDebounceTimer); this._agoraVolumeDebounceTimer = null; }
     for (const track of [this._agoraAudio, this._agoraVideo, this._agoraScreen]) {
-      if (track) try { track.stop(); track.close(); } catch(_){}
+      if (track) {
+        try {
+          track.stop();
+          track.close();
+        } catch(_){}
+      }
     }
     this._agoraAudio = this._agoraVideo = this._agoraScreen = null;
     if (this._agoraClient) {
-      try { await this._agoraClient.leave(); } catch(_){}
+      try {
+        this._agoraClient.removeAllListeners();
+        await this._agoraClient.leave();
+      } catch(_){}
       this._agoraClient = null;
     }
     this._agoraRemote.clear();
@@ -22718,7 +22804,7 @@ class VoiceEngine {
   async toggleCamera() {
     if (this.mode === 'p2p') {
       if (typeof alertMessage === 'function') {
-        alertMessage('📷 カメラは Agora モード（5人以上）でご利用いただけます', 'info');
+        alertMessage('📷 カメラは Agora モード（4人以上）でご利用いただけます', 'info');
       }
       return;
     }

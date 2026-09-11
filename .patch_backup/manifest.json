@@ -1,9 +1,7 @@
 {
-  "date": "2026-09-11T16:03:51.664Z",
+  "date": "2026-09-11T16:33:04.560Z",
   "files": [
-    "firestore.rules",
-    "public/css/modules/chat.css",
-    "public/css/modules/sidebar.css",
-    "public/js/main.js"
+    "public/js/main.js",
+    "public/js/voice_engine_v2.js"
   ]
 }
