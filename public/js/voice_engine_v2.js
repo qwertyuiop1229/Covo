@@ -111,11 +111,11 @@ class VoiceEngine {
       console.warn('[VoiceEngine] 既にVC参加中。退出してから再参加します。');
       await this.leave();
     }
-
     this.serverId = serverId;
     this.channelId = channelId;
     this.channelName = channelName;
     this.isActive = true;
+    this._directCallConnected = false;
     this._myUid = userId;
     this._myNickname = currentServerNickname || userNickname || 'ユーザー';
     this._myAvatar = userAvatarUrl || '';
@@ -175,10 +175,9 @@ class VoiceEngine {
     const channelId = this.channelId;
     const channelName = this.channelName;
     console.log(`[VoiceEngine] 📴 VC退出: #${channelName}`);
-
     this.isActive = false;
     this._modeSwitching = false;
-
+    this._directCallConnected = false;
     // P2P クリーンアップ
     this._cleanupAllPeers();
 
@@ -279,14 +278,26 @@ class VoiceEngine {
           const count = Object.keys(data).length;
 
           console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'}`);
-
           // サイドバーと グリッドを更新
           this._renderMemberTree(this.channelId, Object.values(data));
           this._renderGrid();
-
           const countEl = document.getElementById('vcGridParticipantCount');
           if (countEl) countEl.textContent = `${count}人`;
-
+          // 個別通話 (call_*) の場合、一度2人以上で接続された後に相手が退出したら自動終了
+          if (this.channelId && this.channelId.startsWith('call_')) {
+            if (count >= 2) {
+              this._directCallConnected = true;
+            } else if (this._directCallConnected && count <= 1) {
+              console.log('[VoiceEngine] 📴 個別通話で相手の退出を検知しました');
+              this._directCallConnected = false;
+              if (typeof endCall === 'function') {
+                endCall(true, 'remoteEnded');
+              } else {
+                this.leave();
+              }
+              return;
+            }
+          }
           // ハイブリッド切替判定（切替中は無視）
           if (!this._modeSwitching) {
             if (count <= VC_P2P_MAX_PEERS) {

@@ -6120,6 +6120,7 @@ function setCallConnectionType(type) {}
 function showCallEndedReason(reason) {
   const msgs = {
     declined: '通話が拒否されました',
+    busy: '相手が他の通話中のため繋がりませんでした',
     remoteEnded: '相手が通話を終了しました',
     callerCancelled: '発信者がキャンセルしました',
     connectionLost: '接続が切れました',
@@ -16635,16 +16636,17 @@ window.restoreCallOverlay = function () {
   }
 };
 
+let _callStartTime = 0;
 function startCallTimer() {
   stopCallTimer();
+  _callStartTime = Date.now();
   _callElapsedSeconds = 0;
   const display = document.getElementById('callTimerDisplay');
   const pipTimer = document.getElementById('callPipTimer');
   if (display) display.textContent = '00:00';
   if (pipTimer) pipTimer.textContent = '00:00';
-
   _callTimerInterval = setInterval(() => {
-    _callElapsedSeconds++;
+    _callElapsedSeconds = Math.floor((Date.now() - _callStartTime) / 1000);
     const m = String(Math.floor(_callElapsedSeconds / 60)).padStart(2, '0');
     const s = String(_callElapsedSeconds % 60).padStart(2, '0');
     const timeStr = `${m}:${s}`;
@@ -16783,8 +16785,16 @@ function initCallListener() {
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          if (data.status === 'ringing' && !_callId) {
-            handleIncomingCall(change.doc.id, data.caller);
+          if (data.status === 'ringing') {
+            const isCurrentlyInCall = Boolean(_callId || (window._voiceEngine && window._voiceEngine.isActive));
+            if (isCurrentlyInCall) {
+              // 通話中のため自動的にbusy（お話し中）を相手へ返答
+              import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, updateDoc }) => {
+                updateDoc(doc(db, 'artifacts', appId, 'calls', change.doc.id), { status: 'busy' }).catch(() => {});
+              });
+            } else {
+              handleIncomingCall(change.doc.id, data.caller);
+            }
           }
         }
       });
@@ -16820,26 +16830,36 @@ function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
 
       const avatarWrap = document.createElement("div");
       avatarWrap.className = "relative w-9 h-9 flex-shrink-0";
-
       const avatar = document.createElement("div");
-      avatar.className = "call-picker-avatar w-full h-full";
+      avatar.className = "call-picker-avatar w-full h-full rounded-full overflow-hidden";
       if (isUsableAvatarUrl(member.avatarUrl)) {
         __setAvatarImg(avatar, member.avatarUrl, nameRaw, { style: 'width:100%;height:100%;object-fit:cover;border-radius:50%;' });
       } else {
         avatar.textContent = (nameRaw || " ").charAt(0).toUpperCase();
       }
-
       const statusDot = document.createElement("div");
       statusDot.className = `status-indicator status-${member.computedState}`;
+      statusDot.style.cssText = "position:absolute;bottom:0px;right:0px;width:12px;height:12px;border-radius:50%;z-index:20;";
       avatarWrap.appendChild(avatar);
       avatarWrap.appendChild(statusDot);
-
       const info = document.createElement("div");
       info.className = "flex-1 min-w-0";
       const name = document.createElement("div");
       name.className = "call-picker-name truncate";
       name.textContent = nameRaw;
       info.appendChild(name);
+      if (!member.nickname && window.getUserProfile) {
+        window.getUserProfile(member.id).then(p => {
+          if (p && p.nickname) {
+            name.textContent = p.nickname;
+            if (isUsableAvatarUrl(p.avatarUrl)) {
+              __setAvatarImg(avatar, p.avatarUrl, p.nickname, { style: 'width:100%;height:100%;object-fit:cover;border-radius:50%;' });
+            } else {
+              avatar.textContent = p.nickname.charAt(0).toUpperCase();
+            }
+          }
+        }).catch(() => {});
+      }
 
       let statusTextVal = "オフライン";
       if (member.computedState === 'online') statusTextVal = "オンライン";
@@ -17858,6 +17878,12 @@ async function startCall(uid, name, avatar) {
     if (d.status === 'declined') {
       unsubAnswer();
       endCall(true, 'declined');
+      return;
+    }
+    if (d.status === 'busy') {
+      unsubAnswer();
+      stopCallRingSound();
+      endCall(true, 'busy');
       return;
     }
     if (d.status === 'ended' || d.status === 'missed') {
@@ -20766,6 +20792,18 @@ document.addEventListener("keydown", (e) => {
       callPicker.classList.remove('show');
       return;
     }
+    // 5b. フルスクリーン通話画面（切断せず最小化/PiPに安全退避）
+    const callOverlay = document.getElementById('callOverlay');
+    if (callOverlay && callOverlay.classList.contains('show') && callOverlay.style.display !== 'none') {
+      window.minimizeCallOverlay();
+      return;
+    }
+    // 5c. VC通話グリッド画面（最小化してチャンネルに戻る）
+    const vcGrid = document.getElementById('vcGridOverlay');
+    if (vcGrid && !vcGrid.classList.contains('hidden') && vcGrid.style.display !== 'none') {
+      window.vcOpenGrid();
+      return;
+    }
     // 6. 各種ライトボックス (画像・PDF)
     const imageLb = document.getElementById('imageLightbox');
     const pdfLb = document.getElementById('pdfLightbox');
@@ -22079,12 +22117,14 @@ class VoiceEngine {
     this._setChannelActive(channelId, false);
     this._renderMemberTree(channelId, []);
     this._renderGrid();
-
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = '通話終了';
+    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     if (this._boundBeforeUnload) {
       window.removeEventListener('beforeunload', this._boundBeforeUnload);
       this._boundBeforeUnload = null;
     }
-
     console.log('[VoiceEngine] 👋 退出完了');
   }
 

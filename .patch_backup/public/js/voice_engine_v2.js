@@ -208,12 +208,14 @@ class VoiceEngine {
     this._setChannelActive(channelId, false);
     this._renderMemberTree(channelId, []);
     this._renderGrid();
-
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = '通話終了';
+    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     if (this._boundBeforeUnload) {
       window.removeEventListener('beforeunload', this._boundBeforeUnload);
       this._boundBeforeUnload = null;
     }
-
     console.log('[VoiceEngine] 👋 退出完了');
   }
 

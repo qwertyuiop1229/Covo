@@ -768,7 +768,7 @@ let _callDoc = null, _callId = null;
 let _callRole = null, _pendingCallerData = null, _activeCallTarget = null;
 let _callTimerInterval = null, _callTimeoutHandle = null;
 let _callUnsubOffer = null, _callEndUnsub = null, _callIncomingUnsub = null;
-let _ringRepeatHandle = null, _ringCtx = null;
+let _ringRepeatHandle = null, _ringCtx = null, _ringMasterGain = null, _ringActiveNodes = [];
 let _callElapsedSeconds = 0;
 const CALL_TIMEOUT_MS = 30000;
 
@@ -16666,10 +16666,17 @@ function playCallRingSound() {
   stopCallRingSound();
   try {
     _ringCtx = new (window.AudioContext || window.webkitAudioContext)();
+    _ringMasterGain = _ringCtx.createGain();
+    _ringMasterGain.gain.setValueAtTime(1.0, _ringCtx.currentTime);
+    _ringMasterGain.connect(_ringCtx.destination);
   } catch (_) { return; }
+  _ringActiveNodes = [];
   const playTone = () => {
-    if (!_ringCtx || _ringCtx.state === 'closed') return;
+    if (!_ringCtx || _ringCtx.state === 'closed' || !_ringMasterGain) return;
     try {
+      if (_ringCtx.state === 'suspended') {
+        _ringCtx.resume().catch(() => {});
+      }
       const now = _ringCtx.currentTime;
       const freqs = [880, 1100];
       freqs.forEach((freq, i) => {
@@ -16681,20 +16688,51 @@ function playCallRingSound() {
         gain.gain.linearRampToValueAtTime(0.12, now + i * 0.08 + 0.04);
         gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.65);
         osc.connect(gain);
-        gain.connect(_ringCtx.destination);
+        gain.connect(_ringMasterGain);
         osc.start(now + i * 0.08);
         osc.stop(now + i * 0.08 + 0.7);
+        _ringActiveNodes.push(osc, gain);
+        osc.onended = () => {
+          try {
+            osc.disconnect();
+            gain.disconnect();
+          } catch (_) {}
+          const idx1 = _ringActiveNodes.indexOf(osc);
+          if (idx1 !== -1) _ringActiveNodes.splice(idx1, 1);
+          const idx2 = _ringActiveNodes.indexOf(gain);
+          if (idx2 !== -1) _ringActiveNodes.splice(idx2, 1);
+        };
       });
     } catch (_) { }
   };
   playTone();
   _ringRepeatHandle = setInterval(playTone, 2200);
 }
-
 function stopCallRingSound() {
   if (_ringRepeatHandle) { clearInterval(_ringRepeatHandle); _ringRepeatHandle = null; }
+  if (_ringMasterGain) {
+    try {
+      _ringMasterGain.gain.cancelScheduledValues(0);
+      _ringMasterGain.gain.setValueAtTime(0, 0);
+      _ringMasterGain.disconnect();
+    } catch (_) {}
+    _ringMasterGain = null;
+  }
+  if (_ringActiveNodes && _ringActiveNodes.length > 0) {
+    _ringActiveNodes.forEach(node => {
+      try {
+        if (node.stop) node.stop(0);
+        node.disconnect();
+      } catch (_) {}
+    });
+    _ringActiveNodes = [];
+  }
   if (_ringCtx) {
-    try { _ringCtx.close(); } catch (_) { }
+    try {
+      if (_ringCtx.state !== 'closed') {
+        _ringCtx.close().catch(() => {});
+      }
+    } catch (_) {}
     _ringCtx = null;
   }
 }
@@ -17826,20 +17864,16 @@ async function startCall(uid, name, avatar) {
   if (_callId) return;
   _callRole = 'caller';
   _activeCallTarget = { uid, name, avatar, nickname: name, avatarUrl: avatar };
-
   // ① Discord風発信中画面（呼び出し中カード）を即座に表示
   showCallOverlay('outgoing', { name, avatar, status: '呼び出し中...' });
   playCallRingSound();
-
   const { doc, setDoc, updateDoc, collection, serverTimestamp, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-
   const myUser = cachedUsers.find(u => u.id === userId) || {};
   const newCallRef = doc(collection(db, 'artifacts', appId, 'calls'));
   _callId = newCallRef.id;
   _callDoc = newCallRef;
   const channelName = `covo_call_${_callId}`;
   _agoraChannelName = channelName;
-
   // Firestoreに通話セッションを記録
   const callData = {
     caller: { uid: userId, nickname: currentServerNickname || userNickname || 'ユーザー', avatarUrl: userAvatarUrl || '' },
@@ -17850,7 +17884,6 @@ async function startCall(uid, name, avatar) {
     createdAt: serverTimestamp()
   };
   await setDoc(newCallRef, callData);
-
   // FCMプッシュ通知のトリガー
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
   fetch(`${WORKER_BASE_URL}/api/sendCallNotification`, {
@@ -17866,38 +17899,36 @@ async function startCall(uid, name, avatar) {
       idToken
     })
   }).catch(() => { });
-
-  // 相手の応答（active）、拒否（declined）、キャンセル（ended）を監視
-  const unsubAnswer = onSnapshot(newCallRef, async (snap) => {
+  // 単一リスナーで通話ライフサイクル（応答・拒否・終了）を常時監視（空白時間を完全排除）
+  let callActiveHandled = false;
+  const unsubCall = onSnapshot(newCallRef, async (snap) => {
     const d = snap.data();
-    if (!d) {
-      unsubAnswer();
-      endCall(true, 'declined');
+    if (!d || d.status === 'ended' || d.status === 'missed') {
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+      stopCallRingSound();
+      endCall(true, d?.status === 'ended' ? 'remoteEnded' : undefined);
       return;
     }
     if (d.status === 'declined') {
-      unsubAnswer();
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+      stopCallRingSound();
       endCall(true, 'declined');
       return;
     }
     if (d.status === 'busy') {
-      unsubAnswer();
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
       stopCallRingSound();
       endCall(true, 'busy');
       return;
     }
-    if (d.status === 'ended' || d.status === 'missed') {
-      unsubAnswer();
-      endCall(true);
-      return;
-    }
-    if (d.status === 'active') {
-      unsubAnswer();
+    if (d.status === 'active' && !callActiveHandled) {
+      callActiveHandled = true;
       stopCallRingSound();
       if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
       showCallOverlay('active', { name, avatar, channelName });
+      startCallTimer();
       try {
-        const callServerId = currentServerId || 'direct';
+        const callServerId = 'direct';
         const callChannelId = `call_${_callId}`;
         await window._voiceEngine.join(callServerId, callChannelId, channelName);
       } catch (callErr) {
@@ -17905,32 +17936,19 @@ async function startCall(uid, name, avatar) {
         endCall(false, callErr.message || 'connectionLost');
         return;
       }
-      // 通話中も相手の終了検知を監視
-      if (_callId) {
-        _callEndUnsub = onSnapshot(newCallRef, (snap2) => {
-          const d2 = snap2?.data();
-          if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
-            if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
-            if (_callId) endCall(true, 'remoteEnded');
-          }
-        });
-      }
     }
   }, (err) => {
     console.warn('[CallAnswer onSnapshot] error:', err);
   });
-  _callUnsubOffer = unsubAnswer;
-
+  _callUnsubOffer = unsubCall;
   // 30秒タイムアウト（相手が応答しない場合）
   _callTimeoutHandle = setTimeout(async () => {
     if (_callId) {
-      try { await cleanupWebRtcDoc('calls', _callId); } catch (_) { }
-      endCall(true);
+      endCall(false, 'noAnswer');
       alertMessage("応答がありませんでした", "info");
     }
   }, CALL_TIMEOUT_MS);
 }
-
 async function handleIncomingCall(callId, callerData) {
   if (_callId) return;
   _callId = callId;
@@ -17943,42 +17961,39 @@ async function handleIncomingCall(callId, callerData) {
     avatar: callerData.avatarUrl || '',
     avatarUrl: callerData.avatarUrl || ''
   };
-
   playCallRingSound();
   showCallOverlay('incoming', { name: callerData.nickname || '不明', avatar: callerData.avatarUrl || '' });
-
-  // 発信者がキャンセルしたかを監視
+  // 発信者がキャンセルまたは終了したかを監視（通話中も同一リスナーを継続）
   const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
   const unsub = onSnapshot(doc(db, 'artifacts', appId, 'calls', callId), (snap) => {
     const d = snap.data();
-    if (!d) { unsub(); endCall(true, 'callerCancelled'); return; }
-    if (d.status === 'ended' || d.status === 'missed') {
-      unsub();
+    if (!d || d.status === 'ended' || d.status === 'missed') {
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
       stopCallRingSound();
-      endCall(true, 'callerCancelled');
+      endCall(true, d?.status === 'ended' ? 'remoteEnded' : 'callerCancelled');
+      return;
+    }
+    if (d.status === 'declined') {
+      if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
+      stopCallRingSound();
+      endCall(true, 'declined');
+      return;
     }
   }, (err) => {
     console.warn('[IncomingCall onSnapshot] error:', err);
   });
   _callUnsubOffer = unsub;
 }
-
 async function acceptCall() {
   if (!_callId || _callRole !== 'callee') return;
   stopCallRingSound();
-
   const callerName = _pendingCallerData?.nickname || '不明';
   const callerAvatar = _pendingCallerData?.avatarUrl || '';
   const channelName = `covo_call_${_callId}`;
   _agoraChannelName = channelName;
-
   showCallOverlay('active', { name: callerName, avatar: callerAvatar, channelName });
-
-  if (_callUnsubOffer) { _callUnsubOffer(); _callUnsubOffer = null; }
-
-  const { doc, getDoc, updateDoc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+  const { doc, getDoc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
   const callRef = doc(db, 'artifacts', appId, 'calls', _callId);
-
   try {
     const snapResult = await getDoc(callRef);
     if (!snapResult.exists()) {
@@ -17986,11 +18001,11 @@ async function acceptCall() {
       alertMessage('通話はすでに終了またはキャンセルされています', 'info');
       return;
     }
-
     // Firestoreステータスを active に更新
     await updateDoc(callRef, { status: 'active' });
+    startCallTimer();
     try {
-      const callServerId = currentServerId || 'direct';
+      const callServerId = 'direct';
       const callChannelId = `call_${_callId}`;
       await window._voiceEngine.join(callServerId, callChannelId, channelName);
     } catch (callErr) {
@@ -17998,21 +18013,11 @@ async function acceptCall() {
       endCall(false, callErr.message || 'connectionLost');
       return;
     }
-
-    // 通話中も発信者の終了検知を監視
-    _callEndUnsub = onSnapshot(callRef, (snap2) => {
-      const d2 = snap2?.data();
-      if (!d2 || d2.status === 'ended' || d2.status === 'missed') {
-        if (_callEndUnsub) { _callEndUnsub(); _callEndUnsub = null; }
-        if (_callId) endCall(true, 'remoteEnded');
-      }
-    });
   } catch (e) {
     console.error("acceptCall error:", e);
     endCall(false, e.message || 'connectionLost');
   }
 }
-
 async function declineCall() {
   if (!_callId) return;
   const targetCallId = _callId;
@@ -18022,7 +18027,7 @@ async function declineCall() {
     await updateDoc(doc(db, 'artifacts', appId, 'calls', targetCallId), { status: 'declined' }).catch(() => {});
     setTimeout(() => {
       cleanupWebRtcDoc('calls', targetCallId).catch(() => {});
-    }, 1500);
+    }, 2000);
   } catch (_) { }
   endCall(true, 'declined');
 }
@@ -18520,12 +18525,15 @@ window.toggleCamera = async function () {
   if (camBtn) { camBtn.classList.remove("active"); camBtn.innerHTML = '<i class="fas fa-video"></i>'; camBtn.title = "カメラ (ビデオ)"; }
   const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
   if (shareBtn) { shareBtn.classList.remove("active"); shareBtn.title = "画面を共有"; }
-
-  // Firestore の通話ドキュメントをクリーンアップ
+  // Firestore の通話ステータスをまず 'ended' に更新して相手に確実に切断を通知
   if (!skipFirestore && callIdCopy) {
     try {
-      await cleanupWebRtcDoc('calls', callIdCopy);
-    } catch (_) { }
+      const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+      await updateDoc(doc(db, 'artifacts', appId, 'calls', callIdCopy), { status: 'ended' }).catch(() => {});
+    } catch (_) {}
+    setTimeout(() => {
+      cleanupWebRtcDoc('calls', callIdCopy).catch(() => {});
+    }, 2000);
   }
   if (document.fullscreenElement) {
     try { document.exitFullscreen().catch(() => {}); } catch (_) {}
@@ -22020,11 +22028,11 @@ class VoiceEngine {
       console.warn('[VoiceEngine] 既にVC参加中。退出してから再参加します。');
       await this.leave();
     }
-
     this.serverId = serverId;
     this.channelId = channelId;
     this.channelName = channelName;
     this.isActive = true;
+    this._directCallConnected = false;
     this._myUid = userId;
     this._myNickname = currentServerNickname || userNickname || 'ユーザー';
     this._myAvatar = userAvatarUrl || '';
@@ -22084,10 +22092,9 @@ class VoiceEngine {
     const channelId = this.channelId;
     const channelName = this.channelName;
     console.log(`[VoiceEngine] 📴 VC退出: #${channelName}`);
-
     this.isActive = false;
     this._modeSwitching = false;
-
+    this._directCallConnected = false;
     // P2P クリーンアップ
     this._cleanupAllPeers();
 
@@ -22188,14 +22195,26 @@ class VoiceEngine {
           const count = Object.keys(data).length;
 
           console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'}`);
-
           // サイドバーと グリッドを更新
           this._renderMemberTree(this.channelId, Object.values(data));
           this._renderGrid();
-
           const countEl = document.getElementById('vcGridParticipantCount');
           if (countEl) countEl.textContent = `${count}人`;
-
+          // 個別通話 (call_*) の場合、一度2人以上で接続された後に相手が退出したら自動終了
+          if (this.channelId && this.channelId.startsWith('call_')) {
+            if (count >= 2) {
+              this._directCallConnected = true;
+            } else if (this._directCallConnected && count <= 1) {
+              console.log('[VoiceEngine] 📴 個別通話で相手の退出を検知しました');
+              this._directCallConnected = false;
+              if (typeof endCall === 'function') {
+                endCall(true, 'remoteEnded');
+              } else {
+                this.leave();
+              }
+              return;
+            }
+          }
           // ハイブリッド切替判定（切替中は無視）
           if (!this._modeSwitching) {
             if (count <= VC_P2P_MAX_PEERS) {
