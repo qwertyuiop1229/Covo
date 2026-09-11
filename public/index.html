@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.156" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.157" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.156" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.157" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -2184,6 +2184,20 @@
                 <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
                   <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
                   <div class="flex flex-col gap-3">
+                    <!-- チャンネルタイプ選択 -->
+                    <div class="channel-type-selector" id="newRoomTypeSelector">
+                      <label class="channel-type-option active" data-type="text" onclick="selectChannelType('text')" title="テキストチャンネル">
+                        <i class="fas fa-hashtag channel-type-icon"></i>
+                        <div class="channel-type-label">テキスト</div>
+                        <div class="channel-type-desc">メッセージ・画像・ファイル</div>
+                      </label>
+                      <label class="channel-type-option" data-type="voice" onclick="selectChannelType('voice')" title="ボイスチャンネル">
+                        <i class="fas fa-volume-up channel-type-icon"></i>
+                        <div class="channel-type-label">ボイス</div>
+                        <div class="channel-type-desc">音声・ビデオ・画面共有</div>
+                      </label>
+                    </div>
+                    <input type="hidden" id="newRoomTypeInput" value="text" />
                     <input type="text" id="newRoomNameInput" placeholder="新しいルーム名"
                       class="w-full p-3 bg-white border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-sm text-gray-700" />
                     <div class="relative w-full" id="newRoomCategorySelectContainer">
@@ -2427,6 +2441,36 @@
           <!-- ルームリスト -->
           <div id="roomList" class="flex-1 scrollable p-3 pb-0">
             <!-- ルームはここに動的に追加されます -->
+          </div>
+
+          <!-- VC接続中バー (Discord左下バー完全準拠) -->
+          <div id="vcConnectionBar" class="vc-connection-bar hidden">
+            <div class="vc-bar-top">
+              <div class="vc-bar-status">
+                <span class="vc-bar-dot"></span>
+                <div class="vc-bar-text">
+                  <div class="vc-bar-label">接続完了</div>
+                  <div class="vc-bar-channel truncate" id="vcBarChannelName">ボイスチャンネル</div>
+                </div>
+              </div>
+              <button class="vc-bar-expand-btn" onclick="vcOpenGrid()" title="通話画面を開く">
+                <i class="fas fa-expand-alt"></i>
+              </button>
+            </div>
+            <div class="vc-bar-actions">
+              <button class="vc-bar-btn" id="vcBarMuteBtn" onclick="vcToggleMute()" title="マイク切替">
+                <i class="fas fa-microphone" id="vcBarMuteIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+                <i class="fas fa-video" id="vcBarCamIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+                <i class="fas fa-desktop" id="vcBarScreenIcon"></i>
+              </button>
+              <button class="vc-bar-btn vc-bar-hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">
+                <i class="fas fa-phone-slash"></i>
+              </button>
+            </div>
           </div>
 
           <!-- ユーザー情報ミニバー (添付画像0/1完全準拠のフローティングカード) -->
@@ -2979,7 +3023,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.156"></script>
+  <script type="module" src="js/main.js?v=1.1.157"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3221,6 +3265,48 @@
       </button>
       <button type="button" class="pip-btn expand" onclick="restoreCallOverlay()" title="最大化">
         <i class="fas fa-expand-alt"></i>
+      </button>
+    </div>
+    </div>
+
+  <!-- VC グリッドオーバーレイ (ボイスチャンネル参加時のフルスクリーン) -->
+  <div id="vcGridOverlay" class="hidden">
+    <!-- ヘッダー -->
+    <div class="vc-grid-header">
+      <div class="vc-grid-header-info">
+        <div class="vc-grid-header-dot"></div>
+        <i class="fas fa-volume-up text-[#23a55a] text-sm mx-1"></i>
+        <span class="vc-grid-header-name" id="vcGridChannelName">ボイスチャンネル</span>
+        <span class="vc-grid-header-count" id="vcGridParticipantCount">0人</span>
+      </div>
+      <div class="vc-grid-header-actions">
+        <button class="vc-ctrl-btn" onclick="vcOpenGrid()" title="最小化" style="width:2rem;height:2rem;font-size:0.75rem;">
+          <i class="fas fa-compress-alt"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 参加者グリッド -->
+    <div class="vc-grid-body" id="vcGridBody">
+      <!-- 動的生成 -->
+    </div>
+
+    <!-- 下部コントロールバー -->
+    <div class="vc-grid-controls">
+      <button class="vc-ctrl-btn" id="vcGridMuteBtn" onclick="vcToggleMute()" title="マイク切替">
+        <i class="fas fa-microphone" id="vcGridMuteIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+        <i class="fas fa-video" id="vcGridCamIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+        <i class="fas fa-desktop" id="vcGridScreenIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridDeviceBtn" onclick="toggleCallDeviceMenu(event)" title="デバイス設定">
+        <i class="fas fa-cog"></i>
+      </button>
+      <button class="vc-ctrl-btn hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">
+        <i class="fas fa-phone-slash"></i>
       </button>
     </div>
   </div>

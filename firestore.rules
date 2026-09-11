@@ -416,7 +416,7 @@ service cloud.firestore {
         match /rooms/{roomId} {
           allow read: if isJoinedServer(appId, serverId);
           allow create: if isServerAdmin(appId, serverId);
-          // ルーム更新: 管理者/モデレーターは設定変更、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
+          // ルーム更新: 管理者/モデレーターは設定変更（channelTypeを含む）、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
           allow update: if isServerAdmin(appId, serverId) || (
             isJoinedServer(appId, serverId) &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
@@ -527,6 +527,20 @@ service cloud.firestore {
           allow write: if isServerAdmin(appId, serverId);
         }
       }
+    }
+
+    // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換)
+    match /vc_signaling/{sigDocId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+      allow delete: if isAuthenticated() && (
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
     }
 
   }
