@@ -1,7 +1,9 @@
 {
-  "date": "2026-09-11T08:23:05.108Z",
+  "date": "2026-09-11T16:03:51.664Z",
   "files": [
-    "public/js/main.js",
-    "public/js/file_uploader.js"
+    "firestore.rules",
+    "public/css/modules/chat.css",
+    "public/css/modules/sidebar.css",
+    "public/js/main.js"
   ]
 }

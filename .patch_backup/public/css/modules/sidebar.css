@@ -64,7 +64,6 @@
       right: -1px;
       border: 2px solid #f9fafb;
       transition: all 0.2s ease-in-out;
-      z-index: 20;
     }
 
     .status-online {
