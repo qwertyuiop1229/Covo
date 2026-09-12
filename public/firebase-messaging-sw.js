@@ -19,16 +19,37 @@ self._cachedUserId  = null;
 self._cachedAppId   = null;
 self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
 self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+self._notifEnabled  = true; // 通知トグル状態
+
+// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+const _recentNotifs = new Map();
+function _isDuplicate(key) {
+  const now = Date.now();
+  for (const [k, time] of _recentNotifs.entries()) {
+    if (now - time > 15000) _recentNotifs.delete(k);
+  }
+  if (_recentNotifs.has(key)) return true;
+  _recentNotifs.set(key, now);
+  return false;
+}
 
 // ─── postMessage受信 ────────────────────────────────────────────
 self.addEventListener('message', (event) => {
   if (!event.data) return;
 
   switch (event.data.type) {
+    case 'SET_NOTIF_ENABLED':
+      self._notifEnabled = event.data.enabled !== false;
+      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
+      break;
+
     case 'SET_USER_ID':
       self._cachedUserId  = event.data.userId  || null;
       self._cachedAppId   = event.data.appId   || null;
       self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      if (typeof event.data.notifEnabled === 'boolean') {
+        self._notifEnabled = event.data.notifEnabled;
+      }
       console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
       break;
 
@@ -176,6 +197,22 @@ messaging.onBackgroundMessage((payload) => {
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
     console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+
+  // 通知設定がオフならスキップ
+  if (self._notifEnabled === false) {
+    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
+    return;
+  }
+
+  // 重複通知チェック (同一メッセージや同一ルーム・同一内容の多重表示防止)
+  const dedupKey = data.messageId
+    ? `msg-${data.messageId}`
+    : `${data.roomId || 'covo'}_${title}_${body}`;
+
+  if (_isDuplicate(dedupKey)) {
+    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
     return;
   }
 

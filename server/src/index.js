@@ -128,6 +128,9 @@ export default {
       if (url.pathname === "/api/admin/storageStats" && request.method === "GET") {
         return await handleStorageStats(request, env);
       }
+      if (url.pathname === "/api/admin/storageCategoryFiles" && request.method === "GET") {
+        return await handleStorageCategoryFiles(request, env, url);
+      }
       if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
         return await handleBulkDeleteFiles(request, env);
       }
@@ -1100,8 +1103,8 @@ async function handleSendNotification(request, env) {
               if (statusData && !statusData.error) {
                 const state = statusData.state || 'offline'; // RTDB形式
 
-                // オンラインかつ、今そのルームを見ているなら通知不要
-                // ただし last_changed が 5分以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
+                // オンラインかつ、今そのルームをフォアグラウンドで見ている場合のみ通知抑制
+                // スマホのスリープやバックグラウンド移行時の未達を防ぐため、判定猶予を45秒に短縮しinBackgroundも確認
                 if (state === 'online') {
                     const lastChangedRaw = statusData.fields?.last_changed?.timestampValue
                       || statusData.fields?.last_changed?.integerValue
@@ -1113,10 +1116,11 @@ async function handleSendNotification(request, env) {
                       lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
                     }
                     const ageMs = lastChangedMs > 0 ? (Date.now() - lastChangedMs) : 0;
-                    const isStale = lastChangedMs > 0 && (ageMs > 5 * 60 * 1000);
+                    const isStale = lastChangedMs > 0 && (ageMs > 45 * 1000);
+                    const inBackground = statusData.inBackground === true || statusData.visible === false;
                     const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
                       || statusData.currentRoomId; // RTDB形式
-                    if (!isStale && currentRoomIdStatus === roomId) {
+                    if (!isStale && !inBackground && currentRoomIdStatus === roomId) {
                         shouldSend = false;
                     }
                 }
@@ -1513,15 +1517,20 @@ async function handleDeleteFile(request, env, url) {
     }
     if (!env.FILES) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-    const requesterId = url.searchParams.get('userId') || '';
-    const idToken = url.searchParams.get('idToken') || '';
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = url.searchParams.get('idToken') || authHeader.replace("Bearer ", "").trim();
+    let requesterId = url.searchParams.get('userId') || '';
 
-    if (!requesterId || !idToken) {
+    if (!idToken) {
       return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUser || verifiedUser.uid !== requesterId) {
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    if (!requesterId) requesterId = verifiedUser.uid;
+    if (verifiedUser.uid !== requesterId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
@@ -1708,6 +1717,70 @@ async function handleStorageStats(request, env) {
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
       status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// 管理者: カテゴリ別ファイル一覧取得
+// -------------------------------------------------------------
+async function handleStorageCategoryFiles(request, env, url) {
+  const cors = getCorsHeaders(request);
+  try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim();
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+    const category = url.searchParams.get("category") || "images";
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+
+    const isAdmin = await isAppAdmin(appId, verifiedUser, env);
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const files = [];
+    if (env.FILES) {
+      let cursor;
+      do {
+        const listed = await env.FILES.list({ cursor, limit: 1000 });
+        for (const key of listed.keys) {
+          const meta = key.metadata || {};
+          const cat = categorizeKvFile(meta);
+          if (cat === category) {
+            files.push({
+              key: key.name,
+              name: meta.name || key.name,
+              type: meta.type || "application/octet-stream",
+              size: meta.size || 0,
+              folder: meta.folder || "",
+              uploadedAt: meta.uploadedAt || 0,
+              url: `/api/file/${encodeURIComponent(key.name)}`
+            });
+            if (files.length >= 600) break;
+          }
+        }
+        cursor = listed.cursor;
+        if (listed.list_complete || files.length >= 600) break;
+      } while (cursor);
+    }
+
+    // 新しい順にソート
+    files.sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0));
+
+    return new Response(JSON.stringify({ success: true, category, files }), {
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.toString() }), {
+      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }

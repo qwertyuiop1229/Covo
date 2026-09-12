@@ -1744,16 +1744,20 @@
       font-size: 20px;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.12s ease;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: transform 0.05s ease, background-color 0.05s ease;
       color: #ffffff;
     }
     .pin-keypad-btn:hover {
       background: rgba(255, 255, 255, 0.18);
-      transform: scale(1.04);
+      transform: scale(1.03);
     }
     .pin-keypad-btn:active {
       background: rgba(255, 255, 255, 0.28);
-      transform: scale(0.96);
+      transform: scale(0.95);
     }
 
     /* 画面PINロック中の機密コンテンツ完全隠蔽・アンチチート保護 */

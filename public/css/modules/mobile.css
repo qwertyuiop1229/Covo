@@ -743,6 +743,44 @@
         box-sizing: border-box !important;
       }
 
+      /* 確認ダイアログ・アラートダイアログ等のボタンが iPhone / iOS で巨大化・縦伸び・変形するバグを徹底防止 */
+      #customConfirmModal .confirm-box button,
+      #customPromptModal .confirm-box button,
+      #customAlertModal .confirm-box button,
+      #customConfirmModal button#customConfirmCancel,
+      #customConfirmModal button#customConfirmOk,
+      #customPromptModal button#customPromptCancel,
+      #customPromptModal button#customPromptOk,
+      #customAlertModal button#customAlertOk {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        max-height: 44px !important;
+        line-height: normal !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 8px 16px !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+        box-sizing: border-box !important;
+        flex: 1 1 0% !important;
+        margin: 0 !important;
+        width: auto !important;
+      }
+      #customConfirmModal .flex.gap-3,
+      #customPromptModal .flex.gap-3,
+      #customAlertModal .flex.gap-3 {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+        width: 100% !important;
+      }
+
       /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
       #userProfileModal:not(.hidden) .modal-box {
         max-width: 340px !important;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Covo Integrated Main Script (main.js)
  * 100% Fully Resolved Scope & All Discord Modern UI Enhancements
  */
@@ -3531,20 +3531,24 @@ async function loadStorageStats() {
       catDefs.forEach(def => {
         const catData = categories[def.key] || { bytes: 0, count: 0 };
         const row = document.createElement('div');
-        row.className = 'p-3 bg-white dark:bg-gray-800/80 rounded-xl border border-gray-100 dark:border-gray-700/60 flex items-center justify-between gap-3 shadow-xs';
+        row.className = 'p-3 bg-white dark:bg-gray-800/80 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer rounded-xl border border-gray-100 dark:border-gray-700/60 flex items-center justify-between gap-3 shadow-xs transition-colors group';
+        row.onclick = () => openStorageCategoryFiles(def.key, def.label);
         
         row.innerHTML = `
-          <div class="flex items-center gap-3 min-w-0">
+          <div class="flex items-center gap-3 min-w-0 flex-1 pointer-events-none">
             <div class="w-8 h-8 rounded-lg flex items-center justify-center text-sm ${def.color} flex-shrink-0">
               <i class="fas ${def.icon}"></i>
             </div>
-            <div class="min-w-0">
-              <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${def.label}</div>
+            <div class="min-w-0 flex-1">
+              <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1.5">
+                ${def.label}
+                <i class="fas fa-chevron-right text-[10px] text-gray-400 opacity-60 group-hover:opacity-100 transition-opacity"></i>
+              </div>
               <div class="text-[10px] text-gray-400 font-medium">${catData.count} 件 • ${formatBytes(catData.bytes)}</div>
             </div>
           </div>
-          <button onclick="deleteStorageCategory('${def.deleteType}', '${def.label}')" ${catData.count === 0 ? 'disabled' : ''} class="px-2.5 py-1 text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 dark:hover:bg-red-600 disabled:opacity-30 disabled:pointer-events-none rounded-lg border border-red-200 dark:border-red-800/40 transition-all flex items-center gap-1 flex-shrink-0">
-            <i class="fas fa-trash text-[10px]"></i> 削除
+          <button onclick="event.stopPropagation(); deleteStorageCategory('${def.deleteType}', '${def.label}')" ${catData.count === 0 ? 'disabled' : ''} class="px-2.5 py-1 text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 dark:hover:bg-red-600 disabled:opacity-30 disabled:pointer-events-none rounded-lg border border-red-200 dark:border-red-800/40 transition-all flex items-center gap-1 flex-shrink-0">
+            <i class="fas fa-trash text-[10px]"></i> 一括削除
           </button>
         `;
         catList.appendChild(row);
@@ -3555,6 +3559,256 @@ async function loadStorageStats() {
     console.error('[storageStats] fetch error:', e);
   }
 }
+
+let currentStorageCategory = null;
+let currentStorageFiles = [];
+let currentStorageViewMode = localStorage.getItem('covo_storage_view_mode') || 'square';
+
+window.setStorageViewMode = function(mode) {
+  currentStorageViewMode = mode;
+  localStorage.setItem('covo_storage_view_mode', mode);
+  const sqBtn = document.getElementById('storageViewSquareBtn');
+  const rcBtn = document.getElementById('storageViewRectBtn');
+  if (sqBtn && rcBtn) {
+    if (mode === 'square') {
+      sqBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs';
+      rcBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white';
+    } else {
+      rcBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs';
+      sqBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white';
+    }
+  }
+  renderStorageFilesGrid();
+};
+
+window.openStorageCategoryFiles = async function(categoryKey, categoryLabel) {
+  currentStorageCategory = { key: categoryKey, label: categoryLabel };
+  const modal = document.getElementById('storageCategoryFilesModal');
+  const titleEl = document.getElementById('storageCategoryModalTitle');
+  const subEl = document.getElementById('storageCategoryModalSub');
+  const loadingEl = document.getElementById('storageFilesLoading');
+  const emptyEl = document.getElementById('storageFilesEmpty');
+  const gridEl = document.getElementById('storageFilesGrid');
+
+  if (titleEl) titleEl.textContent = `${categoryLabel} 一覧`;
+  if (subEl) subEl.textContent = '読み込み中...';
+  if (loadingEl) loadingEl.classList.remove('hidden');
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (gridEl) gridEl.innerHTML = '';
+  if (modal) modal.classList.remove('hidden');
+
+  setStorageViewMode(currentStorageViewMode);
+
+  try {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    if (!idToken) throw new Error("未ログインです");
+
+    const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageCategoryFiles?appId=${appId}&category=${categoryKey}`, {
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    currentStorageFiles = data.files || [];
+
+    const totalBytes = currentStorageFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    if (subEl) subEl.textContent = `${currentStorageFiles.length} 件 • ${formatBytes(totalBytes)}`;
+
+    if (loadingEl) loadingEl.classList.add('hidden');
+    if (currentStorageFiles.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+    } else {
+      renderStorageFilesGrid();
+    }
+  } catch (err) {
+    console.error('[openStorageCategoryFiles]', err);
+    if (loadingEl) loadingEl.classList.add('hidden');
+    if (subEl) subEl.textContent = '取得に失敗しました';
+    alertMessage(err.message || 'ファイル一覧の取得に失敗しました', 'error');
+  }
+};
+
+window.closeStorageCategoryFilesModal = function() {
+  const modal = document.getElementById('storageCategoryFilesModal');
+  if (modal) modal.classList.add('hidden');
+  currentStorageFiles = [];
+};
+
+window.renderStorageFilesGrid = function() {
+  const gridEl = document.getElementById('storageFilesGrid');
+  if (!gridEl) return;
+  gridEl.innerHTML = '';
+
+  const isSquare = currentStorageViewMode === 'square';
+  if (isSquare) {
+    gridEl.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3';
+  } else {
+    gridEl.className = 'flex flex-col gap-2.5';
+  }
+
+  currentStorageFiles.forEach(file => {
+    const fileUrl = `${WORKER_BASE_URL}${file.url}?preview=1`;
+    const fullUrl = `${WORKER_BASE_URL}${file.url}`;
+    const safeName = escapeHtml(file.name || file.key);
+    const sizeStr = formatBytes(file.size || 0);
+    const isImg = file.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|heic|bmp|ico)$/i.test(file.name);
+    const isVid = file.type?.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name);
+    const isAud = file.type?.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|flac)$/i.test(file.name);
+    const dateStr = file.uploadedAt ? new Date(file.uploadedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+    const item = document.createElement('div');
+
+    if (isSquare) {
+      // 四角形タイル
+      item.className = 'group relative aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700/80 shadow-xs flex flex-col items-center justify-center transition-all hover:shadow-md';
+      
+      let previewHtml = '';
+      if (isImg) {
+        previewHtml = `<img src="${fileUrl}" alt="${safeName}" loading="lazy" class="w-full h-full object-cover cursor-pointer transition-transform duration-300 group-hover:scale-105" onclick="previewStorageFile('${fullUrl}', '${safeName}', 'image')" />`;
+      } else if (isVid) {
+        previewHtml = `
+          <div class="w-full h-full bg-slate-900 relative cursor-pointer flex items-center justify-center" onclick="previewStorageFile('${fullUrl}', '${safeName}', 'video')">
+            <video src="${fileUrl}" class="w-full h-full object-cover pointer-events-none opacity-80"></video>
+            <div class="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-colors">
+              <i class="fas fa-play text-white text-xl drop-shadow"></i>
+            </div>
+          </div>
+        `;
+      } else if (isAud) {
+        previewHtml = `
+          <div class="w-full h-full flex flex-col items-center justify-center p-3 text-center cursor-pointer bg-purple-50 dark:bg-purple-950/20 text-purple-500 dark:text-purple-400" onclick="previewStorageFile('${fullUrl}', '${safeName}', 'audio')">
+            <i class="fas fa-file-audio text-3xl mb-1.5"></i>
+            <span class="text-[10px] font-bold line-clamp-2">${safeName}</span>
+          </div>
+        `;
+      } else {
+        previewHtml = `
+          <div class="w-full h-full flex flex-col items-center justify-center p-3 text-center cursor-pointer bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400" onclick="window.open('${fullUrl}', '_blank')">
+            <i class="fas fa-file-lines text-3xl mb-1.5 text-amber-500"></i>
+            <span class="text-[10px] font-bold line-clamp-2">${safeName}</span>
+          </div>
+        `;
+      }
+
+      item.innerHTML = `
+        ${previewHtml}
+        <!-- ホバー/オーバーレイ情報バー -->
+        <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">
+          <div class="text-[11px] font-bold text-white truncate drop-shadow-sm">${safeName}</div>
+          <div class="text-[9px] text-white/70 font-mono">${sizeStr}</div>
+        </div>
+        <!-- 削除ボタン（右上） -->
+        <button onclick="deleteIndividualStorageFile('${file.key}', '${safeName}')" class="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 hover:bg-red-600 text-white flex items-center justify-center opacity-80 sm:opacity-0 group-hover:opacity-100 transition-all shadow-md active:scale-95" title="削除">
+          <i class="fas fa-trash text-xs"></i>
+        </button>
+      `;
+    } else {
+      // 長方形カード
+      item.className = 'w-full flex items-center gap-3 p-2.5 sm:p-3 rounded-2xl bg-gray-50 dark:bg-slate-800/80 border border-gray-200 dark:border-slate-700/60 shadow-xs hover:border-indigo-500/40 transition-all';
+      
+      let thumbHtml = '';
+      if (isImg) {
+        thumbHtml = `<img src="${fileUrl}" alt="${safeName}" loading="lazy" class="w-full h-full object-cover cursor-pointer" onclick="previewStorageFile('${fullUrl}', '${safeName}', 'image')" />`;
+      } else if (isVid) {
+        thumbHtml = `
+          <div class="w-full h-full bg-slate-900 relative cursor-pointer flex items-center justify-center" onclick="previewStorageFile('${fullUrl}', '${safeName}', 'video')">
+            <i class="fas fa-play text-white text-sm"></i>
+          </div>
+        `;
+      } else if (isAud) {
+        thumbHtml = `<div class="w-full h-full bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center text-purple-500"><i class="fas fa-file-audio text-lg"></i></div>`;
+      } else {
+        thumbHtml = `<div class="w-full h-full bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-500"><i class="fas fa-file-lines text-lg"></i></div>`;
+      }
+
+      item.innerHTML = `
+        <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-gray-200 dark:bg-slate-700/80 flex-shrink-0 flex items-center justify-center">
+          ${thumbHtml}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs sm:text-sm font-bold text-gray-900 dark:text-white truncate cursor-pointer hover:underline" onclick="previewStorageFile('${fullUrl}', '${safeName}', '${isImg ? 'image' : isVid ? 'video' : 'other'}')">
+            ${safeName}
+          </div>
+          <div class="text-[11px] text-gray-400 font-medium flex items-center gap-2 mt-0.5">
+            <span>${sizeStr}</span>
+            ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
+            <span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-gray-200/70 dark:bg-slate-700 text-gray-600 dark:text-gray-300 uppercase">${(file.name?.split('.').pop() || 'file').slice(0,4)}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button onclick="previewStorageFile('${fullUrl}', '${safeName}', '${isImg ? 'image' : isVid ? 'video' : 'other'}')" class="w-8 h-8 rounded-xl bg-gray-200/60 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-slate-700/60 dark:hover:bg-indigo-900/40 dark:hover:text-indigo-300 text-gray-600 dark:text-gray-300 flex items-center justify-center transition-all" title="プレビュー">
+            <i class="fas fa-eye text-xs"></i>
+          </button>
+          <button onclick="deleteIndividualStorageFile('${file.key}', '${safeName}')" class="w-8 h-8 rounded-xl bg-red-50 hover:bg-red-500 text-red-600 hover:text-white dark:bg-red-950/40 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white flex items-center justify-center transition-all" title="削除">
+            <i class="fas fa-trash text-xs"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    gridEl.appendChild(item);
+  });
+};
+
+window.previewStorageFile = function(url, name, type) {
+  if (type === 'image') {
+    const lb = document.getElementById('imageLightbox');
+    const lbImg = document.getElementById('lightboxImage');
+    const lbDl = document.getElementById('lightboxDownload');
+    if (lb && lbImg) {
+      lbImg.src = url;
+      if (lbDl) {
+        lbDl.onclick = () => {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name || 'image';
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        };
+      }
+      lb.style.display = 'flex';
+      return;
+    }
+  }
+  window.open(url, '_blank');
+};
+
+window.deleteIndividualStorageFile = async function(key, name) {
+  const confirmed = await showCustomConfirm(
+    `ファイル「${name}」を削除しますか？`,
+    '削除する',
+    'キャンセル',
+    'この操作は取り消せません。'
+  );
+  if (!confirmed) return;
+
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+  if (!idToken) return;
+
+  try {
+    const res = await fetch(`${WORKER_BASE_URL}/api/file/${encodeURIComponent(key)}?appId=${appId}`, {
+      method: 'DELETE',
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+    alertMessage('ファイルを削除しました', 'success');
+    currentStorageFiles = currentStorageFiles.filter(f => f.key !== key);
+    const subEl = document.getElementById('storageCategoryModalSub');
+    const emptyEl = document.getElementById('storageFilesEmpty');
+    const totalBytes = currentStorageFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    if (subEl) subEl.textContent = `${currentStorageFiles.length} 件 • ${formatBytes(totalBytes)}`;
+    if (currentStorageFiles.length === 0 && emptyEl) {
+      emptyEl.classList.remove('hidden');
+    }
+    renderStorageFilesGrid();
+    loadStorageStats().catch(() => {});
+  } catch (err) {
+    console.error('[deleteIndividualStorageFile]', err);
+    alertMessage(err.message || '削除に失敗しました', 'error');
+  }
+};
 
 window.deleteStorageCategory = async function(deleteType, label) {
   const confirmed = await showCustomConfirm(
@@ -5555,6 +5809,9 @@ window.openCustomStatusModal = function () {
   if (textInput) textInput.value = currentStatus.text || "";
   if (emojiDisplay) emojiDisplay.textContent = currentStatus.emoji || "💬";
 
+  // 過去のステータス履歴の即時描画
+  renderCustomStatusHistoryUI();
+
   openModal(modal);
   setTimeout(() => textInput?.focus(), 100);
 };
@@ -5564,12 +5821,147 @@ window.closeCustomStatusModal = function () {
   if (modal) modal.classList.add("hidden");
 };
 
-window.setCustomStatusPreset = function (emoji, text) {
+// --- ステータスメッセージ履歴管理 (ローカルキャッシュ + RTDB保存) ---
+function getStatusHistoryKey() {
+  return `covo_status_history_${userId || 'guest'}`;
+}
+
+function getLocalStatusHistory() {
+  try {
+    const raw = localStorage.getItem(getStatusHistoryKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalStatusHistory(history) {
+  try {
+    localStorage.setItem(getStatusHistoryKey(), JSON.stringify(history));
+  } catch (e) { }
+}
+
+async function syncStatusHistoryFromRTDB() {
+  if (!userId || !appId) return;
+  try {
+    const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const snap = await get(ref(rtdb, `users/${userId}/statusHistory`));
+    if (snap.exists()) {
+      const rtdbHistory = snap.val();
+      if (Array.isArray(rtdbHistory)) {
+        const local = getLocalStatusHistory();
+        // マージ（ローカルとRTDBで重複排除し最新順に最大10件）
+        const combined = [...local];
+        rtdbHistory.forEach(rh => {
+          if (rh && rh.text && !combined.some(c => c.text === rh.text && c.emoji === rh.emoji)) {
+            combined.push(rh);
+          }
+        });
+        const finalHistory = combined.slice(0, 10);
+        saveLocalStatusHistory(finalHistory);
+        renderCustomStatusHistoryUI();
+      }
+    }
+  } catch (e) {
+    console.warn('[statusHistory] RTDB sync error:', e);
+  }
+}
+
+async function saveStatusHistoryToRTDB(history) {
+  if (!userId || !appId) return;
+  try {
+    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    await set(ref(rtdb, `users/${userId}/statusHistory`), history);
+  } catch (e) {
+    console.warn('[statusHistory] RTDB save error:', e);
+  }
+}
+
+window.addCustomStatusHistory = function (emoji, text) {
+  if (!text) return;
+  let history = getLocalStatusHistory();
+  // 同一テキストは削除して先頭に再追加
+  history = history.filter(item => item.text !== text);
+  history.unshift({ emoji: emoji || '💬', text: text, usedAt: Date.now() });
+  if (history.length > 10) history = history.slice(0, 10);
+  saveLocalStatusHistory(history);
+  saveStatusHistoryToRTDB(history);
+  renderCustomStatusHistoryUI();
+};
+
+window.deleteCustomStatusHistoryItem = function (index, e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  let history = getLocalStatusHistory();
+  if (index >= 0 && index < history.length) {
+    history.splice(index, 1);
+    saveLocalStatusHistory(history);
+    saveStatusHistoryToRTDB(history);
+    renderCustomStatusHistoryUI();
+  }
+};
+
+window.applyStatusHistoryItem = function (emoji, text) {
   const textInput = document.getElementById("customStatusTextInput");
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
   if (textInput) textInput.value = text;
-  if (emojiDisplay) emojiDisplay.textContent = emoji;
+  if (emojiDisplay) emojiDisplay.textContent = emoji || '💬';
 };
+
+function renderCustomStatusHistoryUI() {
+  const container = document.getElementById('customStatusHistoryContainer');
+  const countEl = document.getElementById('customStatusHistoryCount');
+  if (!container) return;
+
+  const history = getLocalStatusHistory();
+  if (countEl) countEl.textContent = history.length > 0 ? `${history.length}件` : '';
+
+  if (history.length === 0) {
+    container.innerHTML = '<div class="text-[11px] text-gray-400 dark:text-gray-500 py-1.5 italic">過去に使ったステータス履歴はありません</div>';
+    return;
+  }
+
+  container.innerHTML = history.map((item, idx) => {
+    const safeText = escapeHtml(item.text);
+    const safeEmoji = escapeHtml(item.emoji || '💬');
+    return `
+      <div data-hist-idx="${idx}" class="covo-hist-item group px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs cursor-pointer select-none text-xs max-w-full">
+        <span>${safeEmoji}</span>
+        <span class="truncate max-w-[200px]">${safeText}</span>
+        <button type="button" data-del-idx="${idx}" title="履歴から削除" class="opacity-60 hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-red-500 transition-opacity ml-1 text-gray-400 p-0.5">
+          <i class="fas fa-times text-[10px]"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  if (!container._hasHistListener) {
+    container._hasHistListener = true;
+    container.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('[data-del-idx]');
+      if (delBtn) {
+        e.stopPropagation();
+        const dIdx = parseInt(delBtn.dataset.delIdx, 10);
+        window.deleteCustomStatusHistoryItem(dIdx, e);
+        return;
+      }
+      const itemEl = e.target.closest('[data-hist-idx]');
+      if (itemEl) {
+        const hIdx = parseInt(itemEl.dataset.histIdx, 10);
+        const curHistory = getLocalStatusHistory();
+        if (curHistory[hIdx]) {
+          window.applyStatusHistoryItem(curHistory[hIdx].emoji, curHistory[hIdx].text);
+        }
+      }
+    });
+  }
+}
+
+// 起動時にRTDBから履歴をバックグラウンド遅延同期
+setTimeout(() => {
+  if (userId) syncStatusHistoryFromRTDB();
+}, 4000);
 
 window.toggleStatusEmojiPicker = function (e) {
   if (e && e.stopPropagation) e.stopPropagation();
@@ -5679,6 +6071,10 @@ window.saveCustomStatus = async function () {
     } : null;
 
     window._currentUserCustomStatus = customStatus;
+
+    if (text) {
+      window.addCustomStatusHistory(emoji, text);
+    }
 
     // 1. Firestore に保存
     await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
@@ -6647,7 +7043,7 @@ async function enterServer(serverId, serverData) {
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
-  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+  if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
   if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
   
   currentServerId = serverId;
@@ -7561,6 +7957,8 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   currentServerData = null;
   currentServerNickname = null;
   currentHomeViewMode = 'dm';
+
+  if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
 
   try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
 
@@ -9319,6 +9717,243 @@ setTimeout(() => {
     };
   }
 
+  // ================================================================
+  // スタンプ正四角形トリミングモーダル (PC/スマホ両対応)
+  // ================================================================
+  window.openStampCropModal = function(file, titleText = "スタンプを正方形に調整", stepBadge = "") {
+    return new Promise((resolve, reject) => {
+      const modal = document.getElementById('stampCropModal');
+      const canvas = document.getElementById('stampCropCanvas');
+      const slider = document.getElementById('stampZoomSlider');
+      const titleEl = document.getElementById('stampCropTitle');
+      const badgeEl = document.getElementById('stampCropStepBadge');
+      const cancelBtn = document.getElementById('stampCropCancel');
+      const confirmBtn = document.getElementById('stampCropConfirm');
+
+      if (!modal || !canvas || !slider) {
+        return reject(new Error('クロップモーダルが見つかりません'));
+      }
+
+      if (titleEl) titleEl.textContent = titleText;
+      if (badgeEl) {
+        if (stepBadge) {
+          badgeEl.textContent = stepBadge;
+          badgeEl.classList.remove('hidden');
+        } else {
+          badgeEl.classList.add('hidden');
+        }
+      }
+
+      const CROP_CSS_SIZE = 260;
+      const CROP_DPR = Math.min(window.devicePixelRatio || 1, 3);
+      canvas.width = CROP_CSS_SIZE * CROP_DPR;
+      canvas.height = CROP_CSS_SIZE * CROP_DPR;
+      canvas.style.width = CROP_CSS_SIZE + 'px';
+      canvas.style.height = CROP_CSS_SIZE + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(CROP_DPR, CROP_DPR);
+
+      let cropImage = null;
+      let cropOffsetX = 0, cropOffsetY = 0, cropScale = 1, cropMinScale = 1;
+      let cropIsDragging = false, cropDragStartX = 0, cropDragStartY = 0;
+      let cropDragStartOffsetX = 0, cropDragStartOffsetY = 0;
+
+      const drawCropPreview = () => {
+        ctx.clearRect(0, 0, CROP_CSS_SIZE, CROP_CSS_SIZE);
+        if (!cropImage) return;
+        ctx.drawImage(
+          cropImage,
+          cropOffsetX,
+          cropOffsetY,
+          cropImage.naturalWidth * cropScale,
+          cropImage.naturalHeight * cropScale
+        );
+      };
+
+      const clampCropOffset = () => {
+        if (!cropImage) return;
+        const drawW = cropImage.naturalWidth * cropScale;
+        const drawH = cropImage.naturalHeight * cropScale;
+        cropOffsetX = Math.min(0, Math.max(CROP_CSS_SIZE - drawW, cropOffsetX));
+        cropOffsetY = Math.min(0, Math.max(CROP_CSS_SIZE - drawH, cropOffsetY));
+      };
+
+      const cleanup = () => {
+        modal.classList.add('hidden');
+        canvas.removeEventListener('mousedown', onMouseDown);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        canvas.removeEventListener('touchstart', onTouchStart);
+        canvas.removeEventListener('touchmove', onTouchMove);
+        canvas.removeEventListener('touchend', onTouchEnd);
+        canvas.removeEventListener('wheel', onWheel);
+        slider.removeEventListener('input', onSliderInput);
+        cancelBtn.onclick = null;
+        confirmBtn.onclick = null;
+        if (cropImage) {
+          try { URL.revokeObjectURL(cropImage.src); } catch (_) {}
+          cropImage = null;
+        }
+      };
+
+      const onMouseDown = (e) => {
+        e.preventDefault();
+        cropIsDragging = true;
+        cropDragStartX = e.clientX;
+        cropDragStartY = e.clientY;
+        cropDragStartOffsetX = cropOffsetX;
+        cropDragStartOffsetY = cropOffsetY;
+        canvas.style.cursor = 'grabbing';
+      };
+
+      const onMouseMove = (e) => {
+        if (!cropIsDragging || !cropImage) return;
+        cropOffsetX = cropDragStartOffsetX + (e.clientX - cropDragStartX);
+        cropOffsetY = cropDragStartOffsetY + (e.clientY - cropDragStartY);
+        clampCropOffset();
+        drawCropPreview();
+      };
+
+      const onMouseUp = () => {
+        if (cropIsDragging) {
+          cropIsDragging = false;
+          canvas.style.cursor = 'grab';
+        }
+      };
+
+      let lastTouchX = 0, lastTouchY = 0, lastPinchDist = 0;
+      const onTouchStart = (e) => {
+        e.preventDefault();
+        if (e.touches.length === 1) {
+          lastTouchX = e.touches[0].clientX;
+          lastTouchY = e.touches[0].clientY;
+        }
+        lastPinchDist = 0;
+      };
+
+      const onTouchMove = (e) => {
+        e.preventDefault();
+        if (!cropImage) return;
+        if (e.touches.length === 1) {
+          cropOffsetX += e.touches[0].clientX - lastTouchX;
+          cropOffsetY += e.touches[0].clientY - lastTouchY;
+          lastTouchX = e.touches[0].clientX;
+          lastTouchY = e.touches[0].clientY;
+          clampCropOffset();
+          drawCropPreview();
+        } else if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (lastPinchDist > 0) {
+            const ratio = dist / lastPinchDist;
+            const newScale = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max), cropScale * ratio));
+            const cx = CROP_CSS_SIZE / 2, cy = CROP_CSS_SIZE / 2;
+            cropOffsetX = cx - (cx - cropOffsetX) * (newScale / cropScale);
+            cropOffsetY = cy - (cy - cropOffsetY) * (newScale / cropScale);
+            cropScale = newScale;
+            slider.value = cropScale;
+            clampCropOffset();
+            drawCropPreview();
+          }
+          lastPinchDist = dist;
+        }
+      };
+
+      const onTouchEnd = () => { lastPinchDist = 0; };
+
+      const onWheel = (e) => {
+        e.preventDefault();
+        if (!cropImage) return;
+        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+        const newScale = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max), cropScale + delta * cropScale));
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        cropOffsetX = mx - (mx - cropOffsetX) * (newScale / cropScale);
+        cropOffsetY = my - (my - cropOffsetY) * (newScale / cropScale);
+        cropScale = newScale;
+        slider.value = cropScale;
+        clampCropOffset();
+        drawCropPreview();
+      };
+
+      const onSliderInput = () => {
+        if (!cropImage) return;
+        const newScale = parseFloat(slider.value);
+        const cx = CROP_CSS_SIZE / 2, cy = CROP_CSS_SIZE / 2;
+        cropOffsetX = cx - (cx - cropOffsetX) * (newScale / cropScale);
+        cropOffsetY = cy - (cy - cropOffsetY) * (newScale / cropScale);
+        cropScale = newScale;
+        clampCropOffset();
+        drawCropPreview();
+      };
+
+      canvas.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+      canvas.addEventListener('touchend', onTouchEnd, { passive: true });
+      canvas.addEventListener('wheel', onWheel, { passive: false });
+      slider.addEventListener('input', onSliderInput);
+
+      cancelBtn.onclick = () => {
+        cleanup();
+        reject(new Error('トリミングがキャンセルされました'));
+      };
+
+      confirmBtn.onclick = () => {
+        if (!cropImage) return;
+        const OUTPUT_SIZE = 256;
+        const offscreen = document.createElement('canvas');
+        offscreen.width = OUTPUT_SIZE;
+        offscreen.height = OUTPUT_SIZE;
+        const offCtx = offscreen.getContext('2d');
+        offCtx.imageSmoothingEnabled = true;
+        offCtx.imageSmoothingQuality = 'high';
+        const sf = OUTPUT_SIZE / CROP_CSS_SIZE;
+        offCtx.drawImage(
+          cropImage,
+          cropOffsetX * sf,
+          cropOffsetY * sf,
+          cropImage.naturalWidth * cropScale * sf,
+          cropImage.naturalHeight * cropScale * sf
+        );
+
+        offscreen.toBlob((blob) => {
+          cleanup();
+          if (!blob) return reject(new Error('クロップ画像の生成に失敗しました'));
+          const newName = (file.name ? file.name.replace(/\.[^.]+$/, '') : 'stamp') + '.png';
+          const croppedFile = new File([blob], newName, { type: 'image/png' });
+          resolve(croppedFile);
+        }, 'image/png', 0.95);
+      };
+
+      // 画像読み込み
+      cropImage = new Image();
+      const objUrl = URL.createObjectURL(file);
+      cropImage.onerror = () => {
+        cleanup();
+        reject(new Error('画像の読み込みに失敗しました'));
+      };
+      cropImage.onload = () => {
+        const scaleX = CROP_CSS_SIZE / cropImage.naturalWidth;
+        const scaleY = CROP_CSS_SIZE / cropImage.naturalHeight;
+        cropMinScale = Math.max(scaleX, scaleY);
+        cropScale = cropMinScale;
+        slider.min = cropMinScale;
+        slider.max = cropMinScale * 4;
+        slider.value = cropScale;
+        cropOffsetX = (CROP_CSS_SIZE - cropImage.naturalWidth * cropScale) / 2;
+        cropOffsetY = (CROP_CSS_SIZE - cropImage.naturalHeight * cropScale) / 2;
+        modal.classList.remove('hidden');
+        drawCropPreview();
+      };
+      cropImage.src = objUrl;
+    });
+  };
+
   document.getElementById("saUploadBtn")?.addEventListener("click", async () => {
     const targetServerId = document.getElementById('stampAdminServerSelect').value;
     if (!targetServerId) return alertMessage("サーバーが選択されていません", "error");
@@ -9326,8 +9961,8 @@ setTimeout(() => {
     const thumbInput = document.getElementById("saNewGroupThumb");
     const filesInput = document.getElementById("saNewGroupFiles");
     const name = nameInput.value.trim();
-    const thumbFile = thumbInput.files[0];
-    const stampFiles = Array.from(filesInput.files);
+    let thumbFile = thumbInput.files[0];
+    let stampFiles = Array.from(filesInput.files);
     if (!name || !thumbFile || stampFiles.length === 0) {
       return alertMessage("グループ名、アイコン画像、および1枚以上のスタンプ画像を選択してください", "warning");
     }
@@ -9336,30 +9971,38 @@ setTimeout(() => {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>処理中...';
     btn.disabled = true;
     try {
-      const uploadImage = async (file, checkSquare = true) => {
-        if (file.size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+      const uploadImage = async (file, title, badge = "") => {
+        if (file.size > 15 * 1024 * 1024) throw new Error("画像は15MB以下にしてください");
+        let processFile = file;
         const img = new Image();
         const objUrl = URL.createObjectURL(file);
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
-        if (checkSquare && img.width !== img.height) {
+        if (img.width !== img.height) {
           URL.revokeObjectURL(objUrl);
-          throw new Error("スタンプ画像とアイコン画像は完全な正方形である必要があります");
+          processFile = await openStampCropModal(file, title, badge);
+        } else {
+          URL.revokeObjectURL(objUrl);
         }
+
+        const finalImg = new Image();
+        const finalUrl = URL.createObjectURL(processFile);
+        await new Promise((res, rej) => { finalImg.onload = res; finalImg.onerror = rej; finalImg.src = finalUrl; });
         const canvas = document.createElement("canvas");
         canvas.width = 128; canvas.height = 128;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
-        URL.revokeObjectURL(objUrl);
+        ctx.drawImage(finalImg, 0, 0, finalImg.width, finalImg.height, 0, 0, 128, 128);
+        URL.revokeObjectURL(finalUrl);
         const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
         const stampFile = new File([blob], "stamp.png", { type: "image/png" });
         return await uploadToExternalService(stampFile, () => { }, 'stamps');
       };
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>アイコンをアップロード中...';
-      const thumbUrl = await uploadImage(thumbFile, true);
+
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>アイコンを処理中...';
+      const thumbUrl = await uploadImage(thumbFile, "グループアイコンを正方形に調整");
       const uploadedStamps = [];
       for (let i = 0; i < stampFiles.length; i++) {
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>スタンプアップロード中... (${i + 1}/${stampFiles.length})`;
-        const url = await uploadImage(stampFiles[i], true);
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>スタンプ処理中... (${i + 1}/${stampFiles.length})`;
+        const url = await uploadImage(stampFiles[i], `スタンプ (${i + 1}/${stampFiles.length}) を正方形に調整`, `${i + 1}/${stampFiles.length}`);
         uploadedStamps.push({ name: `${name}_${i + 1}`, url });
       }
       btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
@@ -9400,20 +10043,27 @@ setTimeout(() => {
     try {
       const uploadedStamps = [];
       for (let i = 0; i < stampFiles.length; i++) {
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>画像アップロード中... (${i + 1}/${stampFiles.length})`;
-        if (stampFiles[i].size > 2 * 1024 * 1024) throw new Error("画像は2MB以下にしてください");
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>画像処理中... (${i + 1}/${stampFiles.length})`;
+        if (stampFiles[i].size > 15 * 1024 * 1024) throw new Error("画像は15MB以下にしてください");
+        let currentFile = stampFiles[i];
         const img = new Image();
-        const objUrl = URL.createObjectURL(stampFiles[i]);
+        const objUrl = URL.createObjectURL(currentFile);
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = objUrl; });
         if (img.width !== img.height) {
           URL.revokeObjectURL(objUrl);
-          throw new Error("スタンプ画像は完全な正方形である必要があります");
+          currentFile = await openStampCropModal(currentFile, `スタンプ (${i + 1}/${stampFiles.length}) を正方形に調整`, `${i + 1}/${stampFiles.length}`);
+        } else {
+          URL.revokeObjectURL(objUrl);
         }
+
+        const finalImg = new Image();
+        const finalUrl = URL.createObjectURL(currentFile);
+        await new Promise((res, rej) => { finalImg.onload = res; finalImg.onerror = rej; finalImg.src = finalUrl; });
         const canvas = document.createElement("canvas");
         canvas.width = 128; canvas.height = 128;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 128, 128);
-        URL.revokeObjectURL(objUrl);
+        ctx.drawImage(finalImg, 0, 0, finalImg.width, finalImg.height, 0, 0, 128, 128);
+        URL.revokeObjectURL(finalUrl);
         const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
         const stampFile = new File([blob], "stamp.png", { type: "image/png" });
         const url = await uploadToExternalService(stampFile, () => { }, 'stamps');
@@ -10971,11 +11621,37 @@ async function subscribeToMessagesRTDB() {
   onChildChanged(q, handleChanged);
   onChildRemoved(q, handleRemoved);
 
-  const typingPath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/typing` : `artifacts/${appId}/dm_typing/${currentDmId}`;
+  const activeServerId = currentServerId;
+  const activeRoomId = currentRoomId;
+  const activeDmId = currentDmId;
+
+  if (window.typingUnsubscribe) {
+    try { window.typingUnsubscribe(); } catch(_) {}
+    window.typingUnsubscribe = null;
+    typingUnsubscribe = null;
+  }
+
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) {
+    indicator.textContent = '';
+    indicator.classList.add('hidden');
+  }
+
+  const typingPath = activeServerId
+    ? `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/typing`
+    : `artifacts/${appId}/dm_typing/${activeDmId}`;
   const typingRef = ref(rtdb, typingPath);
-  if (window.typingUnsubscribe) { window.typingUnsubscribe(); }
   const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   const onTyping = onValue(typingRef, (snap) => {
+    // 登録時のルーム/サーバー/DMと現在のアクティブ状態が完全一致しない場合は無視してインジケータを隠す
+    if (currentServerId !== activeServerId || currentRoomId !== activeRoomId || currentDmId !== activeDmId) {
+      const curInd = document.getElementById('typingIndicator');
+      if (curInd) {
+        curInd.textContent = '';
+        curInd.classList.add('hidden');
+      }
+      return;
+    }
     const now = Date.now();
     const others = [];
     snap.forEach((child) => {
@@ -10986,15 +11662,27 @@ async function subscribeToMessagesRTDB() {
         }
       }
     });
-    const indicator = document.getElementById('typingIndicator');
-    if (others.length > 0) {
-      indicator.textContent = others.join(', ') + ' が入力中...';
-      indicator.classList.remove('hidden');
-    } else {
-      indicator.classList.add('hidden');
+    const curInd = document.getElementById('typingIndicator');
+    if (curInd) {
+      if (others.length > 0) {
+        curInd.textContent = others.join(', ') + ' が入力中...';
+        curInd.classList.remove('hidden');
+      } else {
+        curInd.textContent = '';
+        curInd.classList.add('hidden');
+      }
     }
   });
-  window.typingUnsubscribe = () => off(typingRef, 'value', onTyping);
+  window.typingUnsubscribe = () => {
+    try { if (typeof onTyping === 'function') onTyping(); } catch (_) {}
+    try { off(typingRef, 'value', onTyping); } catch (_) {}
+    const curInd = document.getElementById('typingIndicator');
+    if (curInd) {
+      curInd.textContent = '';
+      curInd.classList.add('hidden');
+    }
+  };
+  typingUnsubscribe = window.typingUnsubscribe;
 
   const rrPath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts` : `artifacts/${appId}/dm_readReceipts/${currentDmId}`;
   const rrRef = ref(rtdb, rrPath);
@@ -11006,10 +11694,13 @@ async function subscribeToMessagesRTDB() {
     });
     renderMessagesWithReadReceipts();
   });
-  window.readReceiptsUnsubscribe = () => off(rrRef, 'value', onRR);
+  window.readReceiptsUnsubscribe = () => {
+    try { if (typeof onRR === 'function') onRR(); } catch (_) {}
+    try { off(rrRef, 'value', onRR); } catch (_) {}
+  };
 
   window.rtdbMessagesUnsub = () => {
-    off(q);
+    try { off(q); } catch (_) {}
     if (window.typingUnsubscribe) window.typingUnsubscribe();
     if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
   };
@@ -11116,10 +11807,7 @@ function selectRoom(roomId, roomName) {
   }
 
   if (readReceiptsUnsubscribe) readReceiptsUnsubscribe();
-  if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
-  clearTimeout(typingTimeout);
-  isCurrentlyTyping = false;
-  setTypingStatus(false);
+  if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
 
   isInitialMessageLoad = true;
   allLoadedMessages = [];
@@ -11607,7 +12295,7 @@ if (mobileBackButton) {
     currentPinnedMessages = [];
     renderPinnedMessages();
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
-    if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
+    if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
     if (typeof clearMessagesDOM === 'function') clearMessagesDOM();
     lastMessagesData = [];
     const messageInput = document.getElementById("messageInput");
@@ -14428,6 +15116,24 @@ async function setTypingStatus(isTyping) {
     }
   } catch (e) { }
 }
+
+window.clearTypingOnNavigation = function() {
+  clearTimeout(typingTimeout);
+  if (isCurrentlyTyping) {
+    isCurrentlyTyping = false;
+    setTypingStatus(false).catch(() => {});
+  }
+  if (typeof window.typingUnsubscribe === 'function') {
+    try { window.typingUnsubscribe(); } catch(_) {}
+    window.typingUnsubscribe = null;
+    typingUnsubscribe = null;
+  }
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) {
+    indicator.textContent = '';
+    indicator.classList.add('hidden');
+  }
+};
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden && document.hasFocus()) updateReadReceiptForCurrentUser(); });
 window.addEventListener("focus", () => { if (!document.hidden) updateReadReceiptForCurrentUser(); });
@@ -17963,6 +18669,17 @@ async function handleIncomingCall(callId, callerData) {
   };
   playCallRingSound();
   showCallOverlay('incoming', { name: callerData.nickname || '不明', avatar: callerData.avatarUrl || '' });
+
+  // 着信側セーフティタイムアウト（発信側切断・無応答時の無限着信鳴動を防止）
+  if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
+  _callTimeoutHandle = setTimeout(() => {
+    if (_callId === callId && _callRole === 'callee') {
+      console.log('[Call] 着信タイムアウト（相手からの応答または接続が途絶えました）');
+      stopCallRingSound();
+      endCall(true, 'noAnswer');
+    }
+  }, CALL_TIMEOUT_MS + 5000);
+
   // 発信者がキャンセルまたは終了したかを監視（通話中も同一リスナーを継続）
   const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
   const unsub = onSnapshot(doc(db, 'artifacts', appId, 'calls', callId), (snap) => {
@@ -17987,6 +18704,7 @@ async function handleIncomingCall(callId, callerData) {
 async function acceptCall() {
   if (!_callId || _callRole !== 'callee') return;
   stopCallRingSound();
+  if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
   const callerName = _pendingCallerData?.nickname || '不明';
   const callerAvatar = _pendingCallerData?.avatarUrl || '';
   const channelName = `covo_call_${_callId}`;
@@ -18022,6 +18740,7 @@ async function declineCall() {
   if (!_callId) return;
   const targetCallId = _callId;
   stopCallRingSound();
+  if (_callTimeoutHandle) { clearTimeout(_callTimeoutHandle); _callTimeoutHandle = null; }
   try {
     const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
     await updateDoc(doc(db, 'artifacts', appId, 'calls', targetCallId), { status: 'declined' }).catch(() => {});
@@ -18113,6 +18832,13 @@ function setupAgoraClientEvents(client) {
     }
   });
 
+  client.on("user-mute-audio", (user, isMuted) => {
+    const rUser = _remoteUsers.get(user.uid) || user;
+    rUser.isMuted = isMuted;
+    _remoteUsers.set(user.uid, rUser);
+    renderParticipantTiles();
+  });
+
   // 音量検知（話している人のタイルの外枠を Discord エメラルドグリーンで発光させる）
   client.on("volume-indicator", (volumes) => {
     volumes.forEach(vol => {
@@ -18135,6 +18861,37 @@ function setupAgoraClientEvents(client) {
         }
       }
     });
+  });
+
+  // トークン有効期限切れ監視と自動更新
+  client.on('token-privilege-will-expire', async () => {
+    console.log('[Agora] トークン有効期限切れ予告を受信。更新します...');
+    if (!_agoraChannelName) return;
+    try {
+      const refreshedToken = await fetchAgoraToken(_agoraChannelName, userId);
+      if (client && refreshedToken?.token) {
+        await client.renewToken(refreshedToken.token);
+        _agoraToken = refreshedToken.token;
+        console.log('[Agora] トークン自動更新成功');
+      }
+    } catch (err) {
+      console.error('[Agora] トークン自動更新失敗:', err);
+    }
+  });
+
+  client.on('token-privilege-did-expire', async () => {
+    console.warn('[Agora] トークン有効期限切れ。再接続します...');
+    if (!_agoraChannelName) return;
+    try {
+      const refreshedToken = await fetchAgoraToken(_agoraChannelName, userId);
+      if (client && refreshedToken?.token) {
+        await client.renewToken(refreshedToken.token);
+        _agoraToken = refreshedToken.token;
+      }
+    } catch (err) {
+      console.error('[Agora] トークン再接続失敗:', err);
+      endCall(false, 'connectionLost');
+    }
   });
 }
 
@@ -18173,7 +18930,7 @@ function renderParticipantTiles() {
       isLocal: false,
       name: _activeCallTarget.name || _activeCallTarget.nickname || '通話相手',
       avatarUrl: _activeCallTarget.avatar || _activeCallTarget.avatarUrl || '',
-      isMuted: false,
+      isMuted: Boolean(remoteUser?.isMuted || remoteUser?.audioTrack?.muted || (_voiceStates && _voiceStates[remoteUid]?.isMuted)),
       hasVideo: hasRemoteVideo,
       videoContainerId: `remote-video-${remoteUid}`,
       videoTrack: remoteUser?.videoTrack
@@ -18592,7 +19349,11 @@ async function showNotification(title, body, roomId) {
   lastNotificationBody = displayBody;
   lastNotificationRoomId = roomId || '';
 
-  // 通知音は OS / デスクトップ通知自体が鳴らすため、Web Audio による二重再生は行わない
+  // 音声設定が有効な場合、Web Audio API で通知音を確実に再生（Windows OS 側の通知音無効時も確実に鳴らす）
+  const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+  if (soundEnabled) {
+    try { playNotificationSound(); } catch (_) {}
+  }
 
   if (isTauri) {
     if (window.__TAURI__?.core?.invoke) {
@@ -20511,6 +21272,17 @@ function initSettings() {
     localStorage.setItem('simplechat_desktop_notif', checked ? 'true' : 'false');
     if (toggleBrowserNotif && toggleBrowserNotif.checked !== checked) toggleBrowserNotif.checked = checked;
     if (toggleBrowserNotifMobile && toggleBrowserNotifMobile.checked !== checked) toggleBrowserNotifMobile.checked = checked;
+    
+    // Service Worker に通知状態を即座に同期
+    try {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SET_NOTIF_ENABLED',
+          enabled: checked
+        });
+      }
+    } catch (_) {}
+
     setBrowserPushEnabled(checked).catch(console.error);
     if (isTauri && checked) {
       const tauriNotif = window.__TAURI__?.notification;
@@ -20919,7 +21691,11 @@ window.closePinSetupModal = function () {
 window.promptSetupAppPin = function () {
   window.openPinSetupModal();
 };
+let _lastSetupPinInputTime = 0;
 window.inputSetupPinDigit = async function (digit) {
+  const now = performance.now();
+  if (now - _lastSetupPinInputTime < 50) return;
+  _lastSetupPinInputTime = now;
   if (_currentSetupInput.length >= 4) return;
   _currentSetupInput += digit;
   updateSetupPinDots();
@@ -20934,7 +21710,11 @@ window.inputSetupPinDigit = async function (digit) {
     }, 120);
   }
 };
+let _lastSetupPinBsTime = 0;
 window.backspaceSetupPinDigit = function () {
+  const now = performance.now();
+  if (now - _lastSetupPinBsTime < 50) return;
+  _lastSetupPinBsTime = now;
   if (_currentSetupInput.length > 0) {
     _currentSetupInput = _currentSetupInput.slice(0, -1);
     updateSetupPinDots();
@@ -21217,6 +21997,7 @@ function _startPinAntiCheatObserver() {
   _pinObserver.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden'] });
 }
 
+let _lastAppPinInputTime = 0;
 window.inputAppPinDigit = async function (digit) {
   const now = Date.now();
   if (now < _pinLockoutUntil) {
@@ -21225,6 +22006,9 @@ window.inputAppPinDigit = async function (digit) {
     if (errMsg) errMsg.textContent = `連続で失敗したため ${remain} 秒間ロックされています`;
     return;
   }
+  const perfNow = performance.now();
+  if (perfNow - _lastAppPinInputTime < 50) return;
+  _lastAppPinInputTime = perfNow;
   if (_currentPinInput.length >= 4) return;
   _currentPinInput += digit;
   updatePinDots();
@@ -21262,8 +22046,11 @@ window.inputAppPinDigit = async function (digit) {
     }
   }
 };
-
+let _lastAppPinBsTime = 0;
 window.backspaceAppPinDigit = function () {
+  const perfNow = performance.now();
+  if (perfNow - _lastAppPinBsTime < 50) return;
+  _lastAppPinBsTime = perfNow;
   if (_currentPinInput.length > 0) {
     _currentPinInput = _currentPinInput.slice(0, -1);
     updatePinDots();
@@ -21295,17 +22082,55 @@ window.emergencyLogoutFromPinLock = async function () {
 // キーボード入力・無操作タイマー・アプリ離脱（バックグラウンド移行）検知
 function initPinLockSystem() {
   window.addEventListener('keydown', (e) => {
+    // 1. ロック画面解除中のキーボード入力
     const overlay = document.getElementById('appPinLockOverlay');
     if (overlay && overlay.classList.contains('active')) {
       if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
         inputAppPinDigit(e.key);
       } else if (e.key === 'Backspace') {
+        e.preventDefault();
         backspaceAppPinDigit();
       } else if (e.key === 'Escape') {
+        e.preventDefault();
         clearAppPinInput();
+      }
+      return;
+    }
+
+    // 2. PIN設定・変更・解除モーダル内のキーボード入力
+    const setupModal = document.getElementById('pinSetupModal');
+    if (setupModal && !setupModal.classList.contains('hidden')) {
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        inputSetupPinDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspaceSetupPinDigit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closePinSetupModal();
       }
     }
   });
+
+  // タッチ操作時の300msタップ遅延を根絶する即時pointerdownバインド
+  const bindFastKeypad = (containerId, inputFn) => {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.addEventListener('pointerdown', (e) => {
+      const btn = e.target.closest('.pin-keypad-btn');
+      if (!btn) return;
+      // 数字テキストを取得
+      const text = btn.textContent?.trim();
+      if (/^[0-9]$/.test(text)) {
+        e.preventDefault();
+        inputFn(text);
+      }
+    });
+  };
+  bindFastKeypad('appPinLockOverlay', window.inputAppPinDigit);
+  bindFastKeypad('pinSetupModal', window.inputSetupPinDigit);
 
   const onUserActivity = () => { _lastUserInteractionTime = Date.now(); };
   window.addEventListener('mousemove', onUserActivity, { passive: true });
@@ -21985,6 +22810,12 @@ class VoiceEngine {
     this.isActive = false;
     this._modeSwitching = false;  // 切替競合防止
 
+    // --- 排他制御・リカバリ用フラグ ---
+    this._isJoining = false;
+    this._isLeaving = false;
+    this._boundDeviceChange = null;
+    this._boundVisibilityChange = null;
+
     // --- Local Media ---
     this._localStream = null;      // マイク専用 MediaStream
     this._localScreenStream = null; // 画面共有専用 MediaStream
@@ -22018,168 +22849,369 @@ class VoiceEngine {
     this._myUid = null;
     this._myNickname = null;
     this._myAvatar = null;
+
+    // --- P2P 音量検知 (Web Audio API) ---
+    this._p2pAudioContext = null;
+    this._p2pAnalysers = new Map(); // uid -> { analyser, isLocal }
+    this._p2pVolumeInterval = null;
+
+    // --- 通話モード強制切替 (管理者用) ---
+    this._forceTurnOnly = false;
+    this._modeOverride = 'auto'; // 'auto' | 'p2p' | 'turn' | 'agora'
+    this._channelConfigUnsub = null;
   }
 
   // ================================================================
   // JOIN
   // ================================================================
   async join(serverId, channelId, channelName) {
-    if (this.isActive) {
-      console.warn('[VoiceEngine] 既にVC参加中。退出してから再参加します。');
-      await this.leave();
-    }
-    this.serverId = serverId;
-    this.channelId = channelId;
-    this.channelName = channelName;
-    this.isActive = true;
-    this._directCallConnected = false;
-    this._myUid = userId;
-    this._myNickname = currentServerNickname || userNickname || 'ユーザー';
-    this._myAvatar = userAvatarUrl || '';
-
-    console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`[VoiceEngine] 🔊 VC参加: #${channelName}`);
-    console.log(`[VoiceEngine] 📡 TURN: ${VC_TURN_INFO.service}`);
-    console.log(`[VoiceEngine] 📦 無料枠: ${VC_TURN_INFO.freeQuota} | 音声: ~${VC_TURN_INFO.audioOnlyMinutes.toLocaleString()}分/月`);
-    console.log(`[VoiceEngine] ⚡ 遅延: ${VC_TURN_INFO.latencyNote}`);
-    console.log(`[VoiceEngine] 🔒 セキュリティ: ${VC_TURN_INFO.securityNote}`);
-    console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    // --- マイク取得 ---
-    try {
-      this._localStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false
-      });
-      console.log('[VoiceEngine] ✅ マイク取得完了');
-    } catch (e) {
-      this.isActive = false;
-      const msg = e.name === 'NotAllowedError'
-        ? 'マイクへのアクセスが拒否されています。ブラウザの権限設定を確認してください。'
-        : `マイクの取得に失敗しました: ${e.message}`;
-      console.error('[VoiceEngine] ❌ マイクエラー:', e);
-      if (typeof alertMessage === 'function') alertMessage(msg, 'error');
+    if (this._isJoining) {
+      console.warn('[VoiceEngine] 既にVC参加処理を実行中です。重複参加を抑止しました。');
       return;
     }
+    this._isJoining = true;
+    try {
+      if (this.isActive) {
+        console.warn('[VoiceEngine] 既にVC参加中。退出してから再参加します。');
+        await this.leave();
+      }
+      this.serverId = serverId;
+      this.channelId = channelId;
+      this.channelName = channelName;
+      this.isActive = true;
+      this._directCallConnected = false;
+      this._myUid = userId;
+      this._myNickname = currentServerNickname || userNickname || 'ユーザー';
+      this._myAvatar = userAvatarUrl || '';
 
-    // --- TURN 疎通チェック（非同期・バックグラウンド） ---
-    this._checkTurnConnectivity();
+      console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`[VoiceEngine] 🔊 VC参加: #${channelName}`);
+      console.log(`[VoiceEngine] 📡 TURN: ${VC_TURN_INFO.service}`);
+      console.log(`[VoiceEngine] 📦 無料枠: ${VC_TURN_INFO.freeQuota} | 音声: ~${VC_TURN_INFO.audioOnlyMinutes.toLocaleString()}分/月`);
+      console.log(`[VoiceEngine] ⚡ 遅延: ${VC_TURN_INFO.latencyNote}`);
+      console.log(`[VoiceEngine] 🔒 セキュリティ: ${VC_TURN_INFO.securityNote}`);
+      console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-    // --- RTDB に voiceState を書き込み + onDisconnect 設定 ---
-    await this._setVoiceState({ isMuted: false, hasVideo: false, hasScreen: false });
+      // --- マイク取得 ---
+      try {
+        this._localStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        console.log('[VoiceEngine] ✅ マイク取得完了');
 
-    // --- voiceStates を購読 ---
-    this._subscribeVoiceStates();
+        // マイク切断検知 (Bluetooth/有線イヤホン切断時のフォールバック)
+        const audioTrack = this._localStream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.onended = () => {
+            console.warn('[VoiceEngine] 🎤 マイクデバイスが切断または無効化されました');
+            if (this.isActive) {
+              if (typeof alertMessage === 'function') {
+                alertMessage('マイクが切断されました。音声設定を確認してください。', 'warning');
+              }
+              this._isMuted = true;
+              this._updateMuteUI();
+              this._setVoiceState({ isMuted: true });
+            }
+          };
+        }
+      } catch (e) {
+        this.isActive = false;
+        const msg = e.name === 'NotAllowedError'
+          ? 'マイクへのアクセスが拒否されています。ブラウザの権限設定を確認してください。'
+          : `マイクの取得に失敗しました: ${e.message}`;
+        console.error('[VoiceEngine] ❌ マイクエラー:', e);
+        if (typeof alertMessage === 'function') alertMessage(msg, 'error');
+        return;
+      }
 
-    // --- 古いシグナリングドキュメントを掃除 ---
-    this._cleanupStaleSignaling();
+      // デバイス変更リスナー (イヤホン抜き差し・Bluetooth再接続)
+      if (navigator.mediaDevices && !this._boundDeviceChange) {
+        this._boundDeviceChange = () => {
+          if (!this.isActive) return;
+          console.log('[VoiceEngine] 🎧 オーディオデバイス変更を検知しました');
+        };
+        try {
+          navigator.mediaDevices.addEventListener('devicechange', this._boundDeviceChange);
+        } catch(_) {}
+      }
 
-    // --- UI 更新 ---
-    _vcShowBar(channelName);
-    this._setChannelActive(channelId, true);
+      // スリープ・バックグラウンド復帰時の AudioContext 再開リスナー (iOS Safari/Android PWA)
+      if (!this._boundVisibilityChange) {
+        this._boundVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && this._p2pAudioContext && this._p2pAudioContext.state === 'suspended') {
+            this._p2pAudioContext.resume().catch(e => console.warn('[VoiceEngine] AudioContext resume failed:', e));
+          }
+        };
+        try {
+          document.addEventListener('visibilitychange', this._boundVisibilityChange);
+        } catch(_) {}
+      }
 
-    // --- beforeunload でも確実にクリーンアップ ---
-    window.addEventListener('beforeunload', this._boundBeforeUnload = () => {
-      this._clearVoiceStateSync();
-    });
+      // --- TURN 疎通チェック（非同期・バックグラウンド） ---
+      this._checkTurnConnectivity();
+
+      // --- RTDB に voiceState を書き込み + onDisconnect 設定 ---
+      await this._setVoiceState({ isMuted: false, hasVideo: false, hasScreen: false });
+
+      // --- voiceStates を購読 ---
+      this._subscribeVoiceStates();
+
+      // --- 古いシグナリングドキュメントを掃除 ---
+      this._cleanupStaleSignaling();
+
+      // --- UI 更新 ---
+      _vcShowBar(channelName);
+      this._setChannelActive(channelId, true);
+
+      // --- beforeunload でも確実にクリーンアップ ---
+      window.addEventListener('beforeunload', this._boundBeforeUnload = () => {
+        this._clearVoiceStateSync();
+      });
+    } finally {
+      this._isJoining = false;
+    }
   }
 
   // ================================================================
   // LEAVE
   // ================================================================
   async leave() {
-    if (!this.isActive) return;
-    const channelId = this.channelId;
-    const channelName = this.channelName;
-    console.log(`[VoiceEngine] 📴 VC退出: #${channelName}`);
-    this.isActive = false;
-    this._modeSwitching = false;
-    this._directCallConnected = false;
-    // P2P クリーンアップ
-    this._cleanupAllPeers();
+    if (this._isLeaving) return;
+    this._isLeaving = true;
+    try {
+      if (!this.isActive) return;
+      const channelId = this.channelId;
+      const channelName = this.channelName;
+      console.log(`[VoiceEngine] 📴 VC退出: #${channelName}`);
+      this.isActive = false;
+      this._modeSwitching = false;
+      this._directCallConnected = false;
 
-    // Agora クリーンアップ
-    await this._cleanupAgora();
+      // デバイス変更・復帰リスナー解除
+      if (this._boundDeviceChange && navigator.mediaDevices) {
+        try { navigator.mediaDevices.removeEventListener('devicechange', this._boundDeviceChange); } catch(_) {}
+        this._boundDeviceChange = null;
+      }
+      if (this._boundVisibilityChange) {
+        try { document.removeEventListener('visibilitychange', this._boundVisibilityChange); } catch(_) {}
+        this._boundVisibilityChange = null;
+      }
 
-    // ローカルストリーム停止
-    this._stopLocalStreams();
+      // P2P クリーンアップ
+      this._cleanupAllPeers();
 
-    // RTDB voiceState 削除 + onDisconnect キャンセル
-    await this._clearVoiceState();
+      // Agora クリーンアップ
+      await this._cleanupAgora();
 
-    // Firestore リスナー解除
-    if (this._voiceStatesUnsub) { try { this._voiceStatesUnsub(); } catch(_){} this._voiceStatesUnsub = null; }
-    if (this._signalingUnsub) { try { this._signalingUnsub(); } catch(_){} this._signalingUnsub = null; }
+      // ローカルストリーム停止
+      this._stopLocalStreams();
 
-    // 状態リセット
-    this.mode = null;
-    this._voiceStates = {};
-    this._isMuted = false;
-    this._isVideoOn = false;
-    this._isScreenOn = false;
-    this.serverId = this.channelId = this.channelName = null;
+      // RTDB voiceState 削除 + onDisconnect キャンセル
+      await this._clearVoiceState();
 
-    // UI リセット
-    _vcHideBar();
-    this._setChannelActive(channelId, false);
-    this._renderMemberTree(channelId, []);
-    this._renderGrid();
-    const rtcText = document.getElementById('discordCallRtcText');
-    const rtcBadge = document.getElementById('discordCallRtcStatus');
-    if (rtcText) rtcText.textContent = '通話終了';
-    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
-    if (this._boundBeforeUnload) {
-      window.removeEventListener('beforeunload', this._boundBeforeUnload);
-      this._boundBeforeUnload = null;
+      // Firestore リスナー解除
+      if (this._voiceStatesUnsub) { try { this._voiceStatesUnsub(); } catch(_){} this._voiceStatesUnsub = null; }
+      if (this._signalingUnsub) { try { this._signalingUnsub(); } catch(_){} this._signalingUnsub = null; }
+      if (this._channelConfigUnsub) { try { this._channelConfigUnsub(); } catch(_){} this._channelConfigUnsub = null; }
+
+      // P2P 音量検知停止
+      this._stopP2PVolumeMonitor();
+
+      // 状態リセット
+      this.mode = null;
+      this._voiceStates = {};
+      this._isMuted = false;
+      this._isVideoOn = false;
+      this._isScreenOn = false;
+      this.serverId = this.channelId = this.channelName = null;
+
+      // UI リセット
+      _vcHideBar();
+      this._setChannelActive(channelId, false);
+      this._renderMemberTree(channelId, []);
+      this._renderGrid();
+      const rtcText = document.getElementById('discordCallRtcText');
+      const rtcBadge = document.getElementById('discordCallRtcStatus');
+      if (rtcText) rtcText.textContent = '通話終了';
+      if (rtcBadge) rtcBadge.classList.remove('reconnecting');
+      if (this._boundBeforeUnload) {
+        window.removeEventListener('beforeunload', this._boundBeforeUnload);
+        this._boundBeforeUnload = null;
+      }
+      console.log('[VoiceEngine] 👋 退出完了');
+    } finally {
+      this._isLeaving = false;
     }
-    console.log('[VoiceEngine] 👋 退出完了');
   }
 
   // ================================================================
-  // TURN 疎通チェック
+  // TURN 疎通チェック (iceTransportPolicy: relay 強制テスト)
   // ================================================================
   async _checkTurnConnectivity() {
+    const startTime = Date.now();
     try {
-      const pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
+      const pc = new RTCPeerConnection({
+        iceServers: VC_ICE_SERVERS,
+        iceTransportPolicy: 'relay' // TURNリレー候補のみを強制探索
+      });
       pc.createDataChannel('__vc_turn_check__');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await new Promise((resolve, reject) => {
+      const res = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pc.onicecandidate = null;
           try { pc.close(); } catch(_){}
-          reject(new Error('timeout'));
-        }, 12000);
+          reject(new Error('TURN 接続タイムアウト (8秒)'));
+        }, 8000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
-          if (e.candidate?.type === 'relay') {
+          if (e.candidate && (e.candidate.type === 'relay' || (e.candidate.candidate && e.candidate.candidate.includes('typ relay')))) {
             foundRelay = true;
             clearTimeout(timer);
+            const latency = Date.now() - startTime;
+            const candStr = e.candidate.candidate || `${e.candidate.protocol} ${e.candidate.address || e.candidate.ip}:${e.candidate.port}`;
             pc.onicecandidate = null;
             try { pc.close(); } catch(_){}
-            resolve();
+            resolve({ success: true, latencyMs: latency, candidate: candStr });
           }
           if (e.candidate === null && !foundRelay) {
             clearTimeout(timer);
             pc.onicecandidate = null;
             try { pc.close(); } catch(_){}
-            reject(new Error('no relay candidate'));
+            reject(new Error('リレー候補が生成されませんでした'));
           }
         };
       });
-      console.log('[VoiceEngine] ✅ TURN 疎通確認: openrelay.metered.ca 接続可能');
+      console.log(`[VoiceEngine] ✅ TURN 疎通確認成功 (${res.latencyMs}ms): ${res.candidate}`);
+      return res;
     } catch (e) {
       console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
+      return { success: false, error: e.message, latencyMs: Date.now() - startTime };
     }
   }
 
   // ================================================================
-  // voiceStates RTDB 購読
+  // P2P 音量検知 & 発話インジケーター (Web Audio API)
+  // ================================================================
+  _startP2PVolumeMonitor() {
+    if (this._p2pVolumeInterval) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!this._p2pAudioContext || this._p2pAudioContext.state === 'closed') {
+        this._p2pAudioContext = new AudioCtx();
+      }
+      if (this._p2pAudioContext.state === 'suspended') {
+        this._p2pAudioContext.resume().catch(() => {});
+      }
+
+      // 自分のマイクストリームを登録
+      if (this._localStream && this._myUid) {
+        this._attachP2PStreamAnalyser(this._myUid, this._localStream, true);
+      }
+
+      const buf = new Uint8Array(64);
+      this._p2pVolumeInterval = setInterval(() => {
+        if (!this.isActive || this.mode !== 'p2p') return;
+        this._p2pAnalysers.forEach((entry, uid) => {
+          if (!entry || !entry.analyser) return;
+          try {
+            entry.analyser.getByteFrequencyData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i++) {
+              sum += buf[i];
+            }
+            const avg = sum / buf.length;
+            // ローカルがミュート中なら発話判定しない
+            const isSpeaking = (!entry.isLocal || !this._isMuted) && avg > 14;
+            this._setSpeakingUI(uid, isSpeaking);
+          } catch (_) {}
+        });
+      }, 100);
+      console.log('[VoiceEngine] 🎙️ P2P 音量検知モニター開始');
+    } catch (e) {
+      console.warn('[VoiceEngine] P2P 音量検知開始失敗:', e);
+    }
+  }
+
+  _attachP2PStreamAnalyser(uid, stream, isLocal = false) {
+    try {
+      if (!this._p2pAudioContext || this._p2pAudioContext.state === 'closed') {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) this._p2pAudioContext = new AudioCtx();
+      }
+      if (!this._p2pAudioContext || !stream) return;
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks || audioTracks.length === 0) return;
+
+      // 既存があれば切断
+      const existing = this._p2pAnalysers.get(uid);
+      if (existing && existing.source) {
+        try { existing.source.disconnect(); } catch (_) {}
+      }
+
+      const source = this._p2pAudioContext.createMediaStreamSource(stream);
+      const analyser = this._p2pAudioContext.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+
+      this._p2pAnalysers.set(uid, { source, analyser, isLocal });
+    } catch (e) {
+      console.warn(`[VoiceEngine] Analyser 接続失敗 (${uid}):`, e);
+    }
+  }
+
+  _stopP2PVolumeMonitor() {
+    if (this._p2pVolumeInterval) {
+      clearInterval(this._p2pVolumeInterval);
+      this._p2pVolumeInterval = null;
+    }
+    this._p2pAnalysers.forEach((entry, uid) => {
+      try {
+        if (entry.source) entry.source.disconnect();
+      } catch (_) {}
+      this._setSpeakingUI(uid, false);
+    });
+    this._p2pAnalysers.clear();
+    if (this._p2pAudioContext) {
+      try { this._p2pAudioContext.close(); } catch (_) {}
+      this._p2pAudioContext = null;
+    }
+  }
+
+  _setSpeakingUI(uid, isSpeaking) {
+    const isLocal = (uid === this._myUid);
+    const tile = document.getElementById(`vc-tile-${uid}`);
+    if (tile) tile.classList.toggle('speaking', isSpeaking);
+    const member = document.querySelector(`.vc-member-item[data-uid="${uid}"]`);
+    if (member) member.classList.toggle('speaking', isSpeaking);
+
+    // 1対1 通話用 UI
+    if (isLocal) {
+      const localTile = document.getElementById("participant-tile-local");
+      if (localTile) localTile.classList.toggle("speaking", isSpeaking && !this._isMuted);
+      const pipAvatar = document.getElementById("callPipAvatar");
+      if (pipAvatar) pipAvatar.classList.toggle("speaking", isSpeaking && !this._isMuted);
+    } else {
+      const remoteTile = document.getElementById(`participant-tile-${uid}`) ||
+        document.querySelector('.discord-participant-tile:not(#participant-tile-local)');
+      if (remoteTile) remoteTile.classList.toggle("speaking", isSpeaking);
+    }
+  }
+
+  // ================================================================
+  // voiceStates RTDB 購読 & 通話モード設定購読
   // ================================================================
   _subscribeVoiceStates() {
     if (this._voiceStatesUnsub) {
       try { this._voiceStatesUnsub(); } catch(_){}
       this._voiceStatesUnsub = null;
+    }
+    if (this._channelConfigUnsub) {
+      try { this._channelConfigUnsub(); } catch(_){}
+      this._channelConfigUnsub = null;
     }
 
     _getOrInitRTDB().then(rtdb => {
@@ -22187,6 +23219,20 @@ class VoiceEngine {
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
         if (!this.isActive) return;
         const stateRef = ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}`);
+        const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+
+        const configHandler = (snapshot) => {
+          if (!this.isActive) return;
+          const cfg = snapshot.val() || {};
+          const modeOverride = cfg.modeOverride || 'auto';
+          if (this._modeOverride !== modeOverride) {
+            console.log(`[VoiceEngine] ⚙️ 通話モード設定受信: ${this._modeOverride} → ${modeOverride}`);
+            this._modeOverride = modeOverride;
+            this._applyCallMode(this._voiceStates);
+          }
+        };
+        onValue(configRef, configHandler);
+        this._channelConfigUnsub = () => off(configRef, 'value', configHandler);
 
         const handler = (snapshot) => {
           if (!this.isActive) return;
@@ -22194,7 +23240,7 @@ class VoiceEngine {
           this._voiceStates = data;
           const count = Object.keys(data).length;
 
-          console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'}`);
+          console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'} (設定: ${this._modeOverride})`);
           // サイドバーと グリッドを更新
           this._renderMemberTree(this.channelId, Object.values(data));
           this._renderGrid();
@@ -22215,98 +23261,163 @@ class VoiceEngine {
               return;
             }
           }
-          // ハイブリッド切替判定（切替中は無視）
+          // 通話モード判定（切替中は無視）
           if (!this._modeSwitching) {
-            if (count <= VC_P2P_MAX_PEERS) {
-              if (this.mode !== 'p2p') {
-                console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
-                this._switchToP2P(data);
-              } else {
-                // すでにP2Pモードの場合は新規参加・退出ピアの差分同期（デッドロック解消）
-                this._syncP2PPeers(data);
-              }
-            } else if (count > VC_P2P_MAX_PEERS && this.mode !== 'agora') {
-              console.log(`[VoiceEngine] ⚠️ 参加者 ${count}人 → Agora SFU へ自動切替`);
-              this._switchToAgora();
-            }
+            this._applyCallMode(data);
           }
-          };
-          onValue(stateRef, handler);
-          this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
-          });
-          }).catch(e => {
-          console.error('[VoiceEngine] RTDB 初期化失敗:', e);
-          });
-          }
-          // ================================================================
-          // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
-          // ================================================================
-          async _syncP2PPeers(currentStates) {
-          if (this.mode !== 'p2p' || !this.isActive || this._modeSwitching) return;
-          const currentUids = new Set(Object.keys(currentStates || {}).filter(uid => uid !== this._myUid));
+        };
+        onValue(stateRef, handler);
+        this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
+      });
+    }).catch(e => {
+      console.error('[VoiceEngine] RTDB 初期化失敗:', e);
+    });
+  }
 
-          // 1. 退出したピアを削除
-          for (const [peerUid] of this._peers) {
-          if (!currentUids.has(peerUid)) {
-          console.log(`[VoiceEngine] 👋 ピア退出検知 (${peerUid.slice(0,8)}) → 削除`);
-          this._removePeer(peerUid);
-          }
-          }
+  // ================================================================
+  // 通話モード適用（auto / p2p / turn / agora）
+  // ================================================================
+  async _applyCallMode(currentStates) {
+    if (!this.isActive || this._modeSwitching) return;
+    const count = Object.keys(currentStates || {}).length;
+    const override = this._modeOverride || 'auto';
 
-          // 2. 新規参加したピアへ接続開始
-          for (const peerUid of currentUids) {
-          if (!this._peers.has(peerUid)) {
-          const iAmOfferer = this._myUid < peerUid;
-          console.log(`[VoiceEngine] 🤝 新規ピア検知 (${peerUid.slice(0,8)}): ${iAmOfferer ? '自分がOfferer' : '相手のOfferを待機'}`);
-          if (iAmOfferer) {
+    if (override === 'turn') {
+      this._forceTurnOnly = true;
+      if (this.mode !== 'p2p') {
+        await this._switchToP2P(currentStates, 'relay');
+      } else {
+        this._syncP2PPeers(currentStates);
+      }
+      return;
+    }
+
+    this._forceTurnOnly = false;
+
+    if (override === 'p2p') {
+      if (this.mode !== 'p2p') {
+        await this._switchToP2P(currentStates, 'all');
+      } else {
+        this._syncP2PPeers(currentStates);
+      }
+      return;
+    }
+
+    if (override === 'agora') {
+      if (this.mode !== 'agora') {
+        await this._switchToAgora();
+      }
+      return;
+    }
+
+    // デフォルト: 'auto'
+    if (count <= VC_P2P_MAX_PEERS) {
+      if (this.mode !== 'p2p') {
+        console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
+        await this._switchToP2P(currentStates, 'all');
+      } else {
+        this._syncP2PPeers(currentStates);
+      }
+    } else {
+      if (this.mode !== 'agora') {
+        console.log(`[VoiceEngine] ⚠️ 参加者 ${count}人 → Agora SFU へ自動切替`);
+        await this._switchToAgora();
+      }
+    }
+  }
+
+  async setChannelModeOverride(mode = 'auto') {
+    if (!this.serverId || !this.channelId) {
+      throw new Error('通話チャンネルに参加していません');
+    }
+    const validModes = ['auto', 'p2p', 'turn', 'agora'];
+    if (!validModes.includes(mode)) {
+      throw new Error(`無効なモード: ${mode} (有効値: ${validModes.join(', ')})`);
+    }
+    const rtdb = await _getOrInitRTDB();
+    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+    await set(configRef, {
+      modeOverride: mode,
+      updatedAt: Date.now(),
+      updatedBy: this._myUid
+    });
+    console.log(`[VoiceEngine] ⚙️ 通話モード設定を更新しました: ${mode}`);
+  }
+
+  // ================================================================
+  // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
+  // ================================================================
+  async _syncP2PPeers(currentStates) {
+    if (this.mode !== 'p2p' || !this.isActive || this._modeSwitching) return;
+    const currentUids = new Set(Object.keys(currentStates || {}).filter(uid => uid !== this._myUid));
+
+    // 1. 退出したピアを削除
+    for (const [peerUid] of this._peers) {
+      if (!currentUids.has(peerUid)) {
+        console.log(`[VoiceEngine] 👋 ピア退出検知 (${peerUid.slice(0,8)}) → 削除`);
+        this._removePeer(peerUid);
+      }
+    }
+
+    // 2. 新規参加したピアへ接続開始
+    for (const peerUid of currentUids) {
+      if (!this._peers.has(peerUid)) {
+        const iAmOfferer = this._myUid < peerUid;
+        console.log(`[VoiceEngine] 🤝 新規ピア検知 (${peerUid.slice(0,8)}): ${iAmOfferer ? '自分がOfferer' : '相手のOfferを待機'}`);
+        if (iAmOfferer) {
           await this._createOffer(peerUid).catch(e =>
             console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
           );
-          } else {
+        } else {
           // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
           this._createPeerConnection(peerUid);
-          }
-          }
-          }
-          }
-          // ================================================================
-          // P2P モード切替
-          // ================================================================
-          async _switchToP2P(currentStates) {
-          if (this._modeSwitching) return;
-          this._modeSwitching = true;
-          if (this.mode === 'agora') {
-          console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
-          await this._cleanupAgora();
-          }
-          this.mode = 'p2p';
-          this._modeSwitching = false;
-          console.log('[VoiceEngine] 🔵 P2P + OpenRelay TURN モード');
-          console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
-          const rtcText = document.getElementById('discordCallRtcText');
-          const rtcBadge = document.getElementById('discordCallRtcStatus');
-          if (rtcText) rtcText.textContent = 'P2P (TURN) 接続完了';
-          if (rtcBadge) rtcBadge.classList.remove('reconnecting');
-          // 既存ピア接続をクリーンアップしてから再構築
-          this._cleanupAllPeers();
-          // シグナリングリスナーを先行起動（高速なAnswer/Candidateの受信漏れ防止）
-          this._setupSignalingListener();
-          // 決定論的 Offer 方向：
-          //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
-          //   これにより両端が同時にOfferを送るグリッチを防止
-          const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
-          for (const peerUid of others) {
-          const iAmOfferer = this._myUid < peerUid;
-          if (iAmOfferer) {
-          await this._createOffer(peerUid).catch(e =>
+        }
+      }
+    }
+  }
+
+  // ================================================================
+  // P2P モード切替
+  // ================================================================
+  async _switchToP2P(currentStates, transportPolicy = 'all') {
+    if (this._modeSwitching) return;
+    this._modeSwitching = true;
+    this._forceTurnOnly = (transportPolicy === 'relay');
+    if (this.mode === 'agora') {
+      console.log('[VoiceEngine] 🔄 Agora → P2P 切替中...');
+      await this._cleanupAgora();
+    }
+    this.mode = 'p2p';
+    this._modeSwitching = false;
+    console.log(`[VoiceEngine] 🔵 P2P モード (強制リレー: ${this._forceTurnOnly})`);
+    console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = this._forceTurnOnly ? 'P2P (TURN強制) 接続' : 'P2P (TURN) 接続完了';
+    if (rtcBadge) rtcBadge.classList.remove('reconnecting');
+    // 既存ピア接続をクリーンアップしてから再構築
+    this._cleanupAllPeers();
+    // シグナリングリスナーを先行起動（高速なAnswer/Candidateの受信漏れ防止）
+    this._setupSignalingListener();
+    // P2P 音量検知開始
+    this._startP2PVolumeMonitor();
+    // 決定論的 Offer 方向：
+    //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
+    //   これにより両端が同時にOfferを送るグリッチを防止
+    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    for (const peerUid of others) {
+      const iAmOfferer = this._myUid < peerUid;
+      if (iAmOfferer) {
+        await this._createOffer(peerUid).catch(e =>
           console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
-          );
-          } else {
-          // Answerer側も先行してピア接続オブジェクトを準備
-          this._createPeerConnection(peerUid);
-          }
-          }
-          }
+        );
+      } else {
+        // Answerer側も先行してピア接続オブジェクトを準備
+        this._createPeerConnection(peerUid);
+      }
+    }
+  }
 
   // ================================================================
   // P2P Offer 作成
@@ -22334,7 +23445,7 @@ class VoiceEngine {
 
     const pc = new RTCPeerConnection({
       iceServers: VC_ICE_SERVERS,
-      iceTransportPolicy: 'all',   // まず直接接続を試み、失敗したらTURN
+      iceTransportPolicy: this._forceTurnOnly ? 'relay' : 'all',   // TURN強制フラグまたは直接接続
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
@@ -22368,6 +23479,7 @@ class VoiceEngine {
         }
         audioEl.srcObject = e.streams[0];
         audioEl.play().catch(() => {});
+        this._attachP2PStreamAnalyser(peerUid, e.streams[0], false);
         console.log(`[VoiceEngine] 🔈 音声受信: ${peerUid.slice(0,8)}`);
       }
       if (e.track.kind === 'video') {
@@ -22483,6 +23595,22 @@ class VoiceEngine {
   }
 
   // ================================================================
+  // P2P 再ネゴシエーション (画面共有の追加・削除用)
+  // ================================================================
+  async _renegotiatePeer(peerUid) {
+    const peerInfo = this._peers.get(peerUid);
+    if (!peerInfo || !peerInfo.pc || !this.isActive || this.mode !== 'p2p') return;
+    try {
+      const offer = await peerInfo.pc.createOffer();
+      await peerInfo.pc.setLocalDescription(offer);
+      await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp, renegotiate: true });
+      console.log(`[VoiceEngine] 🔄 再ネゴシエーション Offer 送信 → ${peerUid.slice(0,8)}`);
+    } catch(e) {
+      console.warn(`[VoiceEngine] 再ネゴシエーション失敗 (${peerUid.slice(0,8)}):`, e);
+    }
+  }
+
+  // ================================================================
   // ピア削除
   // ================================================================
   _removePeer(peerUid) {
@@ -22507,6 +23635,14 @@ class VoiceEngine {
       } catch(_){}
       this._audioElements.delete(peerUid);
     }
+    // 音量アナライザー切断
+    const analyserEntry = this._p2pAnalysers.get(peerUid);
+    if (analyserEntry) {
+      try { if (analyserEntry.source) analyserEntry.source.disconnect(); } catch(_){}
+      this._p2pAnalysers.delete(peerUid);
+    }
+    this._setSpeakingUI(peerUid, false);
+
     // リモートビデオコンテナもクリア
     const remVideo = document.getElementById(`remote-video-${peerUid}`);
     if (remVideo) {
@@ -22612,7 +23748,7 @@ class VoiceEngine {
     let peerInfo = this._peers.get(fromUid);
     if (!peerInfo) {
       peerInfo = this._createPeerConnection(fromUid);
-    } else if (peerInfo.pc.signalingState === 'have-local-offer') {
+    } else if (!data.renegotiate && peerInfo.pc.signalingState === 'have-local-offer') {
       // Glare（両端がOfferを同時送信）: 決定論的ルールで解決
       if (this._myUid > fromUid) {
         console.log(`[VoiceEngine] Glare検知: ${fromUid.slice(0,8)}のOfferを優先`);
@@ -22731,6 +23867,37 @@ class VoiceEngine {
           });
         }, 100);
       });
+
+      // トークン有効期限切れ監視と自動リフレッシュ
+      this._agoraClient.on('token-privilege-will-expire', async () => {
+        console.log('[VoiceEngine] 🔑 Agora トークン期限切れ予告を受信。更新します...');
+        try {
+          const refreshedToken = await fetchAgoraToken(agoraChannel, this._myUid);
+          if (this._agoraClient && refreshedToken?.token) {
+            await this._agoraClient.renewToken(refreshedToken.token);
+            console.log('[VoiceEngine] 🔑 Agora トークン自動更新成功');
+          }
+        } catch (err) {
+          console.error('[VoiceEngine] Agora トークン自動更新失敗:', err);
+        }
+      });
+      this._agoraClient.on('token-privilege-did-expire', async () => {
+        console.warn('[VoiceEngine] 🔑 Agora トークン期限切れ。再接続します...');
+        try {
+          const refreshedToken = await fetchAgoraToken(agoraChannel, this._myUid);
+          if (this._agoraClient && refreshedToken?.token) {
+            await this._agoraClient.renewToken(refreshedToken.token);
+          }
+        } catch (err) {
+          console.error('[VoiceEngine] Agora トークン再接続失敗:', err);
+          if (this.isActive) {
+            await this._cleanupAgora();
+            this.mode = 'p2p';
+            await this._switchToP2P(this._voiceStates);
+          }
+        }
+      });
+
       // チャンネル参加
       await this._agoraClient.join(tokenData.appId, agoraChannel, tokenData.token, this._myUid);
       // マイクトラック公開
@@ -22761,6 +23928,7 @@ class VoiceEngine {
   // Agora クリーンアップ
   // ================================================================
   async _cleanupAgora() {
+    this._stopP2PVolumeMonitor();
     if (this._agoraVolumeDebounceTimer) { clearTimeout(this._agoraVolumeDebounceTimer); this._agoraVolumeDebounceTimer = null; }
     for (const track of [this._agoraAudio, this._agoraVideo, this._agoraScreen]) {
       if (track) {
@@ -22866,16 +24034,28 @@ class VoiceEngine {
   }
 
   async _startScreenShare() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      if (typeof alertMessage === 'function') {
+        alertMessage('お使いの環境・ブラウザでは画面共有に対応していません', 'warning');
+      }
+      return;
+    }
     try {
-      // ブラウザのネイティブ画面選択ダイアログ
-      this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'monitor', frameRate: 30 },
-        audio: false
-      });
+      try {
+        this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 30 },
+          audio: false
+        });
+      } catch (fallbackErr) {
+        // iOS Safari / 制限環境向けフォールバック
+        this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true
+        });
+      }
     } catch(e) {
       if (e.name !== 'NotAllowedError') {
         console.error('[VoiceEngine] 画面共有取得失敗:', e);
-        if (typeof alertMessage === 'function') alertMessage('画面共有の開始に失敗しました', 'error');
+        if (typeof alertMessage === 'function') alertMessage('画面共有の開始に失敗しました: ' + (e.message || ''), 'error');
       }
       return;
     }
@@ -22889,8 +24069,8 @@ class VoiceEngine {
     };
 
     if (this.mode === 'p2p') {
-      // P2P: 全ピア接続に画面トラックを replaceTrack で追加
-      for (const [, { pc }] of this._peers) {
+      // P2P: 全ピア接続に画面トラックを追加 & 再ネゴシエーション
+      for (const [peerUid, { pc }] of this._peers) {
         const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
         if (videoSender) {
           await videoSender.replaceTrack(screenTrack).catch(e =>
@@ -22898,9 +24078,10 @@ class VoiceEngine {
           );
         } else {
           pc.addTrack(screenTrack, this._localScreenStream);
+          await this._renegotiatePeer(peerUid);
         }
       }
-      console.log('[VoiceEngine] 🖥️ P2P 画面共有開始（replaceTrack）');
+      console.log('[VoiceEngine] 🖥️ P2P 画面共有開始');
     } else if (this.mode === 'agora') {
       try {
         // Agora: createScreenVideoTrack を使用して publish
@@ -22928,12 +24109,13 @@ class VoiceEngine {
 
   async _stopScreenShare() {
     if (this.mode === 'p2p') {
-      // P2P: 映像センダーを null にリセット
-      for (const [, { pc }] of this._peers) {
+      // P2P: 映像センダーを null にリセット & 再ネゴシエーション
+      for (const [peerUid, { pc }] of this._peers) {
         const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
         if (videoSender) {
           await videoSender.replaceTrack(null).catch(() => {});
         }
+        await this._renegotiatePeer(peerUid);
       }
     } else if (this.mode === 'agora' && this._agoraScreen) {
       try { await this._agoraClient.unpublish([this._agoraScreen]); } catch(_){}
@@ -23188,6 +24370,36 @@ window.vcToggleCamera = async function() {
 window.vcToggleScreen = async function() {
   if (!window._voiceEngine.isActive) return;
   await window._voiceEngine.toggleScreen();
+};
+
+window.testVoiceTurnServer = async function() {
+  if (window._voiceEngine) {
+    console.log('[VoiceEngine] 🧪 TURN サーバー疎通テストを実行中...');
+    const res = await window._voiceEngine._checkTurnConnectivity();
+    console.log('[VoiceEngine] 🧪 テスト結果:', res);
+    if (typeof alertMessage === 'function') {
+      if (res.success) {
+        alertMessage(`TURN 接続確認成功 (${res.latencyMs}ms)`, 'success');
+      } else {
+        alertMessage(`TURN 接続警告: ${res.error || 'リレー候補なし'}`, 'warning');
+      }
+    }
+    return res;
+  }
+  return { success: false, error: 'VoiceEngine not initialized' };
+};
+
+window.setVoiceCallMode = async function(mode) {
+  if (!window._voiceEngine || !window._voiceEngine.isActive) {
+    if (typeof alertMessage === 'function') alertMessage('ボイスチャンネルまたは通話に参加していません', 'warning');
+    return;
+  }
+  try {
+    await window._voiceEngine.setChannelModeOverride(mode);
+    if (typeof alertMessage === 'function') alertMessage(`通話モードを「${mode}」に切り替えました`, 'success');
+  } catch(e) {
+    if (typeof alertMessage === 'function') alertMessage('モード切替失敗: ' + e.message, 'error');
+  }
 };
 
 window.vcOpenGrid = _vcOpenGrid;

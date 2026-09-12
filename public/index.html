@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.161" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.162" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.161" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.162" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -1092,7 +1092,7 @@
                       <span id="pcCreateShortcutStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
                     <div class="flex justify-between items-center mt-2 gap-2 flex-wrap">
-                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-transparent shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="showLatestAnnouncementModal(true)">
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700/80 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="showLatestAnnouncementModal(true)">
                         <i class="fas fa-bullhorn text-xs"></i>お知らせ・更新履歴
                       </button>
                       <button class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl border border-rose-500/30 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="window.openFeedbackModal && window.openFeedbackModal()">
@@ -1610,6 +1610,54 @@
         <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/30 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
           <i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ストレージ内ファイル一覧・プレビューモーダル (四角形/長方形 切替対応) -->
+  <div id="storageCategoryFilesModal" class="fixed inset-0 z-[8000] modal-overlay flex items-center justify-center p-3 sm:p-4 select-none hidden" style="background:rgba(0,0,0,0.75); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" onclick="if(event.target===this) closeStorageCategoryFilesModal()">
+    <div class="bg-white dark:bg-[#1e1f22] rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 flex flex-col w-full max-w-4xl max-h-[90vh] h-[85vh]" onclick="event.stopPropagation()">
+      <!-- モーダルヘッダー -->
+      <div class="px-4 py-3 sm:px-6 sm:py-4 bg-gray-50/90 dark:bg-[#2b2d31]/90 border-b border-gray-200 dark:border-slate-700/60 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <button onclick="closeStorageCategoryFilesModal()" class="w-8 h-8 rounded-xl bg-gray-200/60 hover:bg-gray-200 dark:bg-slate-700/60 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center transition-all flex-shrink-0">
+            <i class="fas fa-arrow-left text-xs"></i>
+          </button>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate" id="storageCategoryModalTitle">ファイル一覧</h3>
+            <p class="text-[11px] text-gray-500 dark:text-slate-400 font-medium" id="storageCategoryModalSub">0 件</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <!-- 表示形式切替 (四角形 / 長方形) -->
+          <div class="flex items-center p-0.5 bg-gray-200/80 dark:bg-slate-800 rounded-xl border border-gray-300/60 dark:border-slate-700/80">
+            <button id="storageViewSquareBtn" onclick="setStorageViewMode('square')" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs" title="四角形グリッド表示">
+              <i class="fas fa-grip text-xs"></i>
+              <span class="hidden sm:inline">四角形</span>
+            </button>
+            <button id="storageViewRectBtn" onclick="setStorageViewMode('rect')" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white" title="長方形リスト表示">
+              <i class="fas fa-table-cells-large text-xs"></i>
+              <span class="hidden sm:inline">長方形</span>
+            </button>
+          </div>
+          <button onclick="closeStorageCategoryFilesModal()" class="w-8 h-8 rounded-xl bg-gray-200/60 hover:bg-gray-200 dark:bg-slate-700/60 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center transition-all">
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- モーダルコンテンツ (スクロール可能領域) -->
+      <div class="flex-1 overflow-y-auto p-3 sm:p-5 no-scrollbar relative min-h-0" id="storageFilesScrollArea">
+        <div id="storageFilesLoading" class="hidden flex flex-col items-center justify-center py-16 text-gray-400 space-y-3">
+          <i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i>
+          <span class="text-xs font-bold">ファイルを読み込み中...</span>
+        </div>
+        <div id="storageFilesEmpty" class="hidden flex flex-col items-center justify-center py-16 text-gray-400 space-y-2">
+          <i class="fas fa-folder-open text-3xl opacity-40"></i>
+          <span class="text-xs font-bold">このカテゴリにはファイルがありません</span>
+        </div>
+        <!-- グリッド/リストコンテナ -->
+        <div id="storageFilesGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
       </div>
     </div>
   </div>
@@ -3023,7 +3071,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.161"></script>
+  <script type="module" src="js/main.js?v=1.1.162"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3135,6 +3183,58 @@
         <button id="avatarCropConfirm"
           class="flex-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-900 text-white font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
           <i class="fas fa-check"></i> 確定
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- スタンプ調整・正四角形トリミングモーダル (PC・スマホ両対応) -->
+  <div id="stampCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3 select-none" style="z-index: 9999; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+    <div class="bg-white dark:bg-[#1e1f22] rounded-2xl sm:rounded-3xl shadow-2xl w-full flex flex-col modal-box animate-pop-in border border-gray-200/80 dark:border-white/10"
+      style="max-width:360px;max-height:calc(100dvh - 24px);overflow-y:auto;">
+      <div class="h-12 bg-slate-900 flex-shrink-0 flex items-center justify-between px-5 rounded-t-2xl sticky top-0 z-10 border-b border-white/10">
+        <div class="flex items-center gap-2 min-w-0">
+          <i class="fas fa-crop-simple text-indigo-400 text-sm"></i>
+          <span class="text-white text-sm font-bold tracking-wide truncate" id="stampCropTitle">スタンプを正方形に調整</span>
+        </div>
+        <span id="stampCropStepBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono hidden">1/1</span>
+      </div>
+      <div class="p-4 flex flex-col items-center gap-3">
+        <p class="text-[11px] text-gray-500 dark:text-gray-400 text-center">ドラッグで位置調整・ピンチ/スライダーで拡大縮小</p>
+        
+        <!-- 正方形クロップエリア (260x260) -->
+        <div class="relative flex-shrink-0 rounded-2xl overflow-hidden shadow-inner border border-gray-300 dark:border-slate-700 bg-slate-950" style="width:260px;height:260px;">
+          <canvas id="stampCropCanvas" width="260" height="260"
+            class="cursor-grab w-full h-full block"
+            style="touch-action:none;-webkit-user-select:none;user-select:none;"></canvas>
+          <!-- 正方形のガイド枠とグリッド -->
+          <svg class="absolute inset-0 pointer-events-none" width="260" height="260">
+            <!-- 3分割グリッド補助線（薄い点線） -->
+            <line x1="86.6" y1="0" x2="86.6" y2="260" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="173.3" y1="0" x2="173.3" y2="260" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="0" y1="86.6" x2="260" y2="86.6" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="0" y1="173.3" x2="260" y2="173.3" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <!-- 外枠 -->
+            <rect x="0" y="0" width="260" height="260" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" rx="16" />
+          </svg>
+        </div>
+
+        <!-- ズームスライダー -->
+        <div class="flex items-center gap-3 w-full px-2 mt-1">
+          <i class="fas fa-search-minus text-gray-400 text-xs"></i>
+          <input type="range" id="stampZoomSlider" min="0.5" max="3" step="0.01" value="1"
+            class="flex-1 accent-indigo-600" style="-webkit-appearance:auto; appearance:auto;">
+          <i class="fas fa-search-plus text-gray-400 text-xs"></i>
+        </div>
+      </div>
+      <div class="px-4 pb-4 flex gap-3">
+        <button id="stampCropCancel"
+          class="flex-1 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold py-3 rounded-xl transition-all text-sm">
+          キャンセル
+        </button>
+        <button id="stampCropConfirm"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-md">
+          <i class="fas fa-check"></i> トリミング確定
         </button>
       </div>
     </div>
@@ -4264,25 +4364,14 @@
           </div>
         </div>
 
-        <!-- クイックステータスプリセット -->
+        <!-- 過去に使ったステータスメッセージ履歴 -->
         <div>
-          <label class="block font-bold text-gray-600 dark:text-gray-300 mb-2">クイック選択</label>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="setCustomStatusPreset('🎮', 'ゲームプレイ中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>🎮</span> ゲームプレイ中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('💻', '作業・コーディング中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>💻</span> 作業中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('🎧', '音楽鑑賞中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>🎧</span> 音楽鑑賞中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('☕', 'ちょっと休憩中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>☕</span> 休憩中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('😴', 'おやすみ・離席中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>😴</span> おやすみ中
-            </button>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block font-bold text-gray-600 dark:text-gray-300">過去に使ったステータス</label>
+            <span id="customStatusHistoryCount" class="text-[10px] text-gray-400"></span>
+          </div>
+          <div id="customStatusHistoryContainer" class="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+            <div id="customStatusHistoryEmpty" class="text-[11px] text-gray-400 dark:text-gray-500 py-1 italic">過去のステータス履歴はありません</div>
           </div>
         </div>
 
