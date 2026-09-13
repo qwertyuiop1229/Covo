@@ -149,48 +149,60 @@ messaging.onBackgroundMessage((payload) => {
   // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
   if (typeof body === 'string') {
     if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::')) {
-        const senderPart = body.split(': enc::')[0];
-        body = `${senderPart}: 新しいメッセージがあります`;
+      if (body.includes(': enc::') || body.includes(':enc::')) {
+        const senderPart = body.split(/:\s*enc::/)[0];
+        body = `${senderPart}: 新着メッセージがあります`;
       } else {
-        body = '新しいメッセージがあります';
+        body = '新着メッセージがあります';
       }
     }
   }
-  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
-    title = 'Covo';
+  if (typeof title === 'string') {
+    if (title.includes('enc::v') || title.startsWith('enc::')) {
+      title = 'Covo';
+    } else if (title.startsWith('ダイレクトメッセージ › @')) {
+      title = title.replace('ダイレクトメッセージ › @', '');
+    }
   }
 
-  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
   if (typeof body === 'string') {
-    function _swIsStamp(s) {
-      if (!s || typeof s !== 'string') return false;
-      return s.includes('[STAMP]') || s.includes('/stamps/') ||
-             s.includes('covo:') || s.includes('covonew:') || s.includes('serverstamp:') ||
-             s.startsWith('スタンプ') || s === '🌟 スタンプ';
+    function _swFormatContent(s) {
+      if (!s || typeof s !== 'string') return '新着メッセージがあります';
+      const trimmed = s.trim();
+      if (
+        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
+        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
+        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
+      ) {
+        return '[スタンプ]';
+      }
+      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
+        return '📷 [写真]';
+      }
+      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
+        return '🎥 [動画]';
+      }
+      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
+        return '🎤 [ボイスメッセージ]';
+      }
+      if (
+        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
+        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
+        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
+      ) {
+        return '📎 [ファイル]';
+      }
+      return trimmed;
     }
-    function _swIsFile(s) {
-      if (!s || typeof s !== 'string') return false;
-      return s.includes('firebase-storage') || s.includes('cloudinary') ||
-             s.includes('r2.cloudflarestorage') || s.includes('/api/file/') ||
-             /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(s);
-    }
-    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+
     const colonIdx = body.indexOf(': ');
     if (colonIdx !== -1) {
       const senderPart = body.substring(0, colonIdx);
       const rest = body.substring(colonIdx + 2);
-      if (_swIsStamp(rest)) {
-        body = `${senderPart}: スタンプ`;
-      } else if (_swIsFile(rest)) {
-        body = `${senderPart}: 📎 添付ファイル`;
-      }
+      body = `${senderPart}: ${_swFormatContent(rest)}`;
     } else {
-      if (_swIsStamp(body)) {
-        body = 'スタンプ';
-      } else if (_swIsFile(body)) {
-        body = '📎 添付ファイル';
-      }
+      body = _swFormatContent(body);
     }
   }
 

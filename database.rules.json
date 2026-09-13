@@ -100,7 +100,7 @@
         "error_reports": {
           "$docId": {
             ".read": "auth != null",
-            ".write": "auth != null"
+            ".write": true
           }
         },
         "recovery_vault": {

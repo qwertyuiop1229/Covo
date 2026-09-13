@@ -1516,15 +1516,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
       }
-      /* ルームリスト全体の余白とアイテムデザインをプロフェッショナル仕様に極上化 */
+      /* ルームリスト全体の余白 */
       body.discord-ui-mode #sidebar .overflow-y-auto {
-        padding: 12px 10px !important;
-      }
-      body.discord-ui-mode .room-item-animate {
-        border-radius: 10px !important;
-        padding: 11px 12px !important;
-        margin-bottom: 6px !important;
-        transition: all 0.15s ease !important;
+        padding: 8px 0 !important;
       }
       /* スマホ表示時の全体メンバーリスト非表示（画面幅240px占拠・探索画面押し潰れの完全防止） */
       body.discord-ui-mode #discordHomeMembers {
@@ -1678,7 +1672,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
 
 
     /* ================================================================
-       Discord 本家完全準拠 チャンネルアイテムスタイル (PC: 34px / スマホ: 44px)
+       Discord 本家完全準拠 チャンネルアイテムスタイル (画像2準拠: 34px / 4px角丸)
        ================================================================ */
     .room-item-animate,
     .vc-channel-row {
@@ -1690,11 +1684,11 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       height: 34px !important;
       min-height: 34px !important;
       max-height: 34px !important;
-      margin: 2px 8px !important;
+      margin: 1px 8px !important;
       padding: 0 8px !important;
-      border-radius: 6px !important;
+      border-radius: 4px !important;
       cursor: pointer !important;
-      transition: background-color 0.15s ease, color 0.15s ease !important;
+      transition: background-color 0.1s ease, color 0.1s ease !important;
       font-size: 15px !important;
       font-weight: 500 !important;
       line-height: 20px !important;
@@ -1731,43 +1725,55 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       color: #313338 !important;
     }
 
-    /* ダークモード */
+    /* ダークモード (画像2 Discord本家完全一致) */
     body.dark-mode .room-item-animate,
     body.dark-server-theme .room-item-animate,
+    body.discord-dark-theme .room-item-animate,
     body.dark-mode .vc-channel-row,
-    body.dark-server-theme .vc-channel-row {
+    body.dark-server-theme .vc-channel-row,
+    body.discord-dark-theme .vc-channel-row {
       color: #949ba4 !important;
       background: transparent !important;
     }
     body.dark-mode .room-item-animate:hover,
     body.dark-server-theme .room-item-animate:hover,
+    body.discord-dark-theme .room-item-animate:hover,
     body.dark-mode .vc-channel-row:hover,
-    body.dark-server-theme .vc-channel-row:hover {
-      background: rgba(78, 80, 88, 0.3) !important;
+    body.dark-server-theme .vc-channel-row:hover,
+    body.discord-dark-theme .vc-channel-row:hover {
+      background: rgba(78, 80, 88, 0.2) !important;
       color: #dbdee1 !important;
     }
     body.dark-mode .room-item-animate.active,
     body.dark-server-theme .room-item-animate.active,
+    body.discord-dark-theme .room-item-animate.active,
     body.dark-mode .vc-channel-row.active-vc,
-    body.dark-server-theme .vc-channel-row.active-vc {
-      background: rgba(78, 80, 88, 0.6) !important;
+    body.dark-server-theme .vc-channel-row.active-vc,
+    body.discord-dark-theme .vc-channel-row.active-vc {
+      background: rgba(78, 80, 88, 0.38) !important;
       color: #ffffff !important;
       font-weight: 600 !important;
     }
     body.dark-mode .room-hashtag,
     body.dark-server-theme .room-hashtag,
+    body.discord-dark-theme .room-hashtag,
     body.dark-mode .vc-channel-icon,
-    body.dark-server-theme .vc-channel-icon {
+    body.dark-server-theme .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-icon {
       color: #80848e !important;
     }
     body.dark-mode .room-item-animate:hover .room-hashtag,
     body.dark-server-theme .room-item-animate:hover .room-hashtag,
+    body.discord-dark-theme .room-item-animate:hover .room-hashtag,
     body.dark-mode .room-item-animate.active .room-hashtag,
     body.dark-server-theme .room-item-animate.active .room-hashtag,
+    body.discord-dark-theme .room-item-animate.active .room-hashtag,
     body.dark-mode .vc-channel-row:hover .vc-channel-icon,
     body.dark-server-theme .vc-channel-row:hover .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-row:hover .vc-channel-icon,
     body.dark-mode .vc-channel-row.active-vc .vc-channel-icon,
-    body.dark-server-theme .vc-channel-row.active-vc .vc-channel-icon {
+    body.dark-server-theme .vc-channel-row.active-vc .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-row.active-vc .vc-channel-icon {
       color: #ffffff !important;
     }
 
@@ -1779,9 +1785,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
-        margin: 2px 8px !important;
+        margin: 1.5px 8px !important;
         padding: 0 12px !important;
-        border-radius: 8px !important;
+        border-radius: 6px !important;
         font-size: 16px !important;
       }
       .room-hashtag,

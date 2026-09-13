@@ -114,8 +114,6 @@ function isTransientTelemetryError(args) {
     // ブラウザ拡張機能・広告ブロッカー・外部注入スクリプト・WebView2内部ノイズ
     // Safari / iOS やブラウザ拡張機能のノイズ・クロスオリジンエラー
     if (
-      str === 'script error.' ||
-      str.includes('script error') ||
       str.includes('tracking prevention') ||
       str.includes('blocked access to storage') ||
       str.includes('chrome-extension://') ||
@@ -273,11 +271,32 @@ function _reportTelemetryError(type, message, stack) {
         _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
       }
     });
+
+    // RTDB にも即時反映（フェールセーフ・リアルタイム同期）
+    try {
+      if (typeof _getOrInitRTDB === 'function') {
+        _getOrInitRTDB().then(rtdb => {
+          if (rtdb) {
+            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
+              update(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), {
+                signature,
+                type: type || 'error',
+                message: msgStr.substring(0, 3000),
+                stack: String(stack || '').substring(0, 6000),
+                lastOccurredAt: Date.now(),
+                environment: envInfo
+              }).catch(() => {});
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
   } catch (e) {
   } finally {
     _isReportingTelemetry = false;
   }
 }
+window._reportTelemetryError = _reportTelemetryError;
 
 function _flushPendingTelemetryErrors() {
   if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
@@ -285,6 +304,12 @@ function _flushPendingTelemetryErrors() {
   for (const item of items) {
     _reportTelemetryError(item.type, item.message, item.stack);
   }
+}
+
+// 起動前の早期エラーをフラッシュ
+if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
+  const early = window._earlyErrors.splice(0, window._earlyErrors.length);
+  early.forEach(e => _reportTelemetryError(e.type, e.message, e.stack));
 }
 
 // オンライン復帰時および定期的なフラッシュ
@@ -385,6 +410,17 @@ console.warn = function (...args) {
 console.error = function (...args) {
   if (isTransientTelemetryError(args)) return;
   _pushLog('ERR', args);
+  try {
+    const errObj = args.find(a => a instanceof Error);
+    if (errObj) {
+      _reportTelemetryError('error', errObj.message || String(errObj), errObj.stack || '');
+    } else {
+      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
+      if (msg && msg.trim()) {
+        _reportTelemetryError('error', msg, '');
+      }
+    }
+  } catch (_) {}
   _orgErr.apply(console, args);
 };
 
@@ -9440,13 +9476,13 @@ async function loadServerSettingsRooms() {
       catDiv.className = "mb-4";
 
       const catHeader = document.createElement("div");
-      catHeader.className = "flex items-center justify-between mb-2 p-2 bg-[#1e1f22] rounded-lg";
+      catHeader.className = "flex items-center justify-between mb-2 px-3 py-2 bg-gray-100 dark:bg-[#1e1f22] border border-gray-200/60 dark:border-transparent rounded-lg";
       catHeader.innerHTML = `
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
               <i class="fas fa-folder-open text-[10px]"></i> ${escapeHtml(cat.name)}
             </span>
             <div class="flex gap-1">
-              <button class="cat-del-btn text-gray-500 hover:text-red-400 p-1" data-cat-id="${cat.id}"><i class="fas fa-trash text-sm"></i></button>
+              <button class="cat-del-btn text-gray-400 hover:text-red-500 p-1 transition-colors cursor-pointer" data-cat-id="${cat.id}" title="カテゴリーを削除"><i class="fas fa-trash text-xs"></i></button>
             </div>
           `;
       catDiv.appendChild(catHeader);
@@ -9473,7 +9509,7 @@ async function loadServerSettingsRooms() {
       });
       if (catRooms.length === 0) {
         const emptySpan = document.createElement("div");
-        emptySpan.className = "text-xs text-gray-600 italic ml-4 mb-2";
+        emptySpan.className = "text-xs text-gray-400 dark:text-gray-500 italic ml-4 mb-2";
         emptySpan.textContent = "ルームがありません";
         catDiv.appendChild(emptySpan);
       }
@@ -9487,7 +9523,7 @@ async function loadServerSettingsRooms() {
     if (uncategorized.length > 0) {
       const uncatDiv = document.createElement("div");
       uncatDiv.className = "mb-4";
-      uncatDiv.innerHTML = `<span class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-2 block">カテゴリーなし</span>`;
+      uncatDiv.innerHTML = `<span class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-2 block">カテゴリーなし</span>`;
       uncategorized.forEach((r, i) => {
         uncatDiv.appendChild(renderRoomItem(r, i, uncategorized));
       });
@@ -9506,41 +9542,101 @@ async function updateRoomOrderBoth(roomId, newOrder) {
   } catch (e) { console.error(e); }
 }
 
-document.getElementById('newRoomCategoryCustomBtn')?.addEventListener('click', (e) => {
-  const dd = document.getElementById('newRoomCategoryDropdown');
-  const icon = document.getElementById('newRoomCategoryIcon');
-  if (dd.classList.contains('hidden')) {
-    dd.classList.remove('hidden');
-    setTimeout(() => { dd.classList.remove('opacity-0'); icon.classList.add('rotate-180'); }, 10);
-  } else {
-    dd.classList.add('opacity-0');
-    icon.classList.remove('rotate-180');
-    setTimeout(() => dd.classList.add('hidden'), 200);
-  }
-});
+// ================================================================
+// Discord本家準拠: チャンネル作成モーダル
+// ================================================================
+window.openCreateChannelModal = function(defaultType = 'text', defaultCatId = null) {
+  const modal = document.getElementById('createChannelModal');
+  if (!modal) return;
 
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('#newRoomCategorySelectContainer')) {
-    const dd = document.getElementById('newRoomCategoryDropdown');
-    if (dd && !dd.classList.contains('hidden')) {
-      dd.classList.add('opacity-0');
-      document.getElementById('newRoomCategoryIcon')?.classList.remove('rotate-180');
-      setTimeout(() => dd.classList.add('hidden'), 200);
+  // カテゴリードロップダウンの初期化
+  const catSelect = document.getElementById('modalChannelCategorySelect');
+  if (catSelect) {
+    catSelect.innerHTML = '<option value="">カテゴリーなし</option>';
+    let categories = [];
+    if (typeof currentServerData !== 'undefined' && currentServerData && currentServerData.categories) {
+      categories = currentServerData.categories;
+      if (!Array.isArray(categories)) categories = Object.values(categories);
+      categories.sort((a, b) => a.order - b.order);
     }
+    categories.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.textContent = cat.name;
+      catSelect.appendChild(opt);
+    });
+    catSelect.value = defaultCatId || "";
   }
-});
 
-document.getElementById("createRoomInServerBtn")?.addEventListener("click", async () => {
-  const name = document.getElementById("newRoomNameInput")?.value.trim() || "";
-  const categoryId = document.getElementById("newRoomCategorySelect")?.value || null;
-  const channelType = document.getElementById("newRoomTypeInput")?.value || "text";
+  // 入力欄リセット
+  const nameInput = document.getElementById('modalChannelNameInput');
+  if (nameInput) nameInput.value = '';
+
+  // タイプ選択
+  window.selectCreateChannelType(defaultType);
+
+  modal.classList.remove('hidden');
+  setTimeout(() => { if (nameInput) nameInput.focus(); }, 50);
+};
+window.openCreateRoomModal = window.openCreateChannelModal;
+
+window.closeCreateChannelModal = function() {
+  const modal = document.getElementById('createChannelModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.selectCreateChannelType = function(type) {
+  const group = document.getElementById('createChannelTypeGroup');
+  if (group) {
+    group.querySelectorAll('.create-ch-type-card').forEach(card => {
+      const isTarget = card.dataset.type === type;
+      card.classList.toggle('active', isTarget);
+      card.classList.toggle('border-[#5865f2]', isTarget);
+      card.classList.toggle('bg-indigo-50/50', isTarget);
+      card.classList.toggle('border-gray-200', !isTarget);
+      card.classList.toggle('dark:border-[#202225]', !isTarget);
+      const radio = card.querySelector('input[type="radio"]');
+      if (radio) radio.checked = isTarget;
+    });
+  }
+  const prefixIcon = document.getElementById('createChannelPrefixIcon');
+  const nameInput = document.getElementById('modalChannelNameInput');
+  if (prefixIcon) {
+    if (type === 'voice') prefixIcon.innerHTML = '<i class="fas fa-volume-up text-emerald-500"></i>';
+    else if (type === 'announcement') prefixIcon.innerHTML = '<i class="fas fa-bullhorn text-amber-500"></i>';
+    else prefixIcon.innerHTML = '#';
+  }
+  if (nameInput) {
+    if (type === 'voice') nameInput.placeholder = '一般ボイス';
+    else if (type === 'announcement') nameInput.placeholder = 'お知らせ';
+    else nameInput.placeholder = '新しいチャンネル';
+  }
+};
+
+window.submitCreateChannel = async function() {
+  const nameInput = document.getElementById('modalChannelNameInput');
+  const catSelect = document.getElementById('modalChannelCategorySelect');
+  const typeRadio = document.querySelector('input[name="modalChannelType"]:checked');
+  const name = nameInput?.value.trim() || '';
   if (!name) return;
-  const loadingOverlayEl = document.getElementById("loadingOverlay");
-  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+
+  const channelType = typeRadio?.value || 'text';
+  const categoryId = catSelect?.value || null;
+
+  const submitBtn = document.getElementById('modalSubmitChannelBtn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>作成中...';
+  }
+
+  const loadingOverlayEl = document.getElementById('loadingOverlay');
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove('hidden');
+
   try {
     const newRoomRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`), {
       name, categoryId, channelType, createdAt: serverTimestamp(), createdBy: userId, currentKeyVersion: 1
     });
+
     if (channelType !== 'voice') {
       try {
         const members = (currentServerData && currentServerData.joinedUsers) || [userId];
@@ -9549,15 +9645,216 @@ document.getElementById("createRoomInServerBtn")?.addEventListener("click", asyn
         await _distributeRoomKeyVersion(currentServerId, newRoomRef.id, rawKey, members, 1);
       } catch (e) { console.error("E2EE key gen failed", e); }
     }
-    const nameInp = document.getElementById("newRoomNameInput");
-    if (nameInp) nameInp.value = "";
-    if (typeof selectChannelType === 'function') selectChannelType('text');
-    await loadServerSettingsRooms();
-    alertMessage(channelType === 'voice' ? 'ボイスチャンネルを作成しました 🔊' : 'ルームを作成しました', "success");
-    console.log(`[VoiceEngine] チャンネル作成: ${name} (type: ${channelType})`);
-  } catch (e) { alertMessage("作成に失敗しました", "error"); }
-  finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
-});
+
+    closeCreateChannelModal();
+    if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+    if (typeof loadServerSettingsRooms === 'function') loadServerSettingsRooms();
+    alertMessage(channelType === 'voice' ? 'ボイスチャンネルを作成しました 🔊' : 'チャンネルを作成しました', 'success');
+  } catch (err) {
+    console.error('Channel creation failed:', err);
+    alertMessage('作成に失敗しました: ' + (err.message || ''), 'error');
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add('hidden');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'チャンネルを作成';
+    }
+  }
+};
+
+// ================================================================
+// Discord本家準拠: 友達を招待モーダル
+// ================================================================
+window.openInviteModal = async function() {
+  const modal = document.getElementById('inviteModal');
+  if (!modal) return;
+
+  const serverTitle = document.getElementById('inviteModalServerName');
+  if (serverTitle) {
+    serverTitle.textContent = `${currentServerData?.name || 'サーバー'}に友達を招待`;
+  }
+
+  const codeText = document.getElementById('inviteModalCodeText');
+  const urlInput = document.getElementById('inviteModalUrlInput');
+  const copyText = document.getElementById('inviteModalCopyText');
+  if (codeText) codeText.textContent = '取得中...';
+  if (urlInput) urlInput.value = '取得中...';
+  if (copyText) copyText.textContent = 'コピー';
+
+  modal.classList.remove('hidden');
+
+  try {
+    // 既存の有効な招待コードがあるか確認
+    const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/inviteCodes`));
+    let validCode = null;
+    snap.forEach(d => {
+      const inv = d.data();
+      if (!inv.disabled && (!inv.expiresAt || inv.expiresAt.toDate().getTime() > Date.now())) {
+        if (!validCode) validCode = d.id;
+      }
+    });
+
+    // なければ新規作成
+    if (!validCode) {
+      validCode = await _generateServerInviteCode(currentServerId, 0, 0);
+    }
+
+    const shareUrl = `${window.location.origin}${window.location.pathname}?invite=${validCode}`;
+    if (codeText) codeText.textContent = validCode;
+    if (urlInput) urlInput.value = shareUrl;
+  } catch (err) {
+    console.error('Invite modal load failed:', err);
+    if (codeText) codeText.textContent = '取得エラー';
+    if (urlInput) urlInput.value = '';
+  }
+};
+
+window.closeInviteModal = function() {
+  const modal = document.getElementById('inviteModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.copyInviteModalLink = function() {
+  const urlInput = document.getElementById('inviteModalUrlInput');
+  if (!urlInput || !urlInput.value || urlInput.value === '取得中...') return;
+  navigator.clipboard.writeText(urlInput.value).then(() => {
+    const copyText = document.getElementById('inviteModalCopyText');
+    if (copyText) {
+      copyText.textContent = 'コピー完了！';
+      setTimeout(() => { if (copyText) copyText.textContent = 'コピー'; }, 2000);
+    }
+    alertMessage('招待リンクをクリップボードにコピーしました！', 'success');
+  }).catch(() => {
+    urlInput.select();
+    document.execCommand('copy');
+    alertMessage('コピーしました', 'success');
+  });
+};
+
+window.generateNewInviteModalCode = async function() {
+  const codeText = document.getElementById('inviteModalCodeText');
+  const urlInput = document.getElementById('inviteModalUrlInput');
+  if (codeText) codeText.textContent = '生成中...';
+  try {
+    const newCode = await _generateServerInviteCode(currentServerId, 0, 0);
+    const shareUrl = `${window.location.origin}${window.location.pathname}?invite=${newCode}`;
+    if (codeText) codeText.textContent = newCode;
+    if (urlInput) urlInput.value = shareUrl;
+    alertMessage(`新しい招待コード ${newCode} を生成しました`, 'success');
+  } catch (err) {
+    alertMessage('生成に失敗しました', 'error');
+  }
+};
+
+async function _generateServerInviteCode(serverId, expiryDays = 0, maxUses = 0) {
+  const _codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const _codeBytes = new Uint8Array(8);
+  crypto.getRandomValues(_codeBytes);
+  const code = Array.from(_codeBytes).map(b => _codeChars[b % 36]).join('');
+  const inviteData = {
+    createdBy: userId,
+    createdAt: serverTimestamp(),
+    uses: 0,
+    maxUses,
+    disabled: false
+  };
+  if (expiryDays > 0) {
+    const exp = new Date();
+    exp.setDate(exp.getDate() + expiryDays);
+    inviteData.expiresAt = exp;
+  } else {
+    inviteData.expiresAt = null;
+  }
+  await Promise.all([
+    setDoc(doc(db, `artifacts/${appId}/servers/${serverId}/inviteCodes`, code), inviteData),
+    setDoc(doc(db, `artifacts/${appId}/inviteIndex`, code), { serverId }),
+  ]);
+  return code;
+}
+
+// ================================================================
+// Discord本家準拠: カテゴリー作成モーダル
+// ================================================================
+window.openCreateCategoryModal = function() {
+  const modal = document.getElementById('createCategoryModal');
+  if (!modal) return;
+  const input = document.getElementById('modalCategoryNameInput');
+  if (input) input.value = '';
+  modal.classList.remove('hidden');
+  setTimeout(() => { if (input) input.focus(); }, 50);
+};
+
+window.closeCreateCategoryModal = function() {
+  const modal = document.getElementById('createCategoryModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.submitCreateCategory = async function() {
+  const input = document.getElementById('modalCategoryNameInput');
+  const name = input?.value.trim() || '';
+  if (!name) return;
+
+  const submitBtn = document.getElementById('modalSubmitCategoryBtn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>作成中...';
+  }
+
+  try {
+    const serverRef = doc(db, `artifacts/${appId}/servers/${currentServerId}`);
+    const snap = await getDoc(serverRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      let cats = data.categories || [];
+      if (!Array.isArray(cats)) cats = Object.values(cats);
+      const newId = "cat_" + Date.now();
+      cats.push({ id: newId, name: name, order: cats.length, isExpanded: true });
+      await updateDoc(serverRef, { categories: cats });
+      if (currentServerData) currentServerData.categories = cats;
+      closeCreateCategoryModal();
+      if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+      if (typeof loadServerSettingsRooms === 'function') loadServerSettingsRooms();
+      alertMessage('カテゴリーを作成しました', 'success');
+    }
+  } catch (e) {
+    console.error("カテゴリー作成エラー", e);
+    alertMessage("エラーが発生しました: " + (e.message || ''), "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'カテゴリーを作成';
+    }
+  }
+};
+
+// ================================================================
+// Discord本家準拠: サーバー通知設定モーダル
+// ================================================================
+window.openServerNotifModal = function() {
+  const modal = document.getElementById('serverNotifModal');
+  if (!modal) return;
+  const subtitle = document.getElementById('serverNotifModalSubtitle');
+  if (subtitle) {
+    subtitle.textContent = `${currentServerData?.name || 'サーバー'} の通知設定`;
+  }
+  const currentLevel = localStorage.getItem('server_notif_' + currentServerId) || 'mentions';
+  const radio = modal.querySelector(`input[name="serverNotifLevel"][value="${currentLevel}"]`);
+  if (radio) radio.checked = true;
+  modal.classList.remove('hidden');
+};
+
+window.closeServerNotifModal = function() {
+  const modal = document.getElementById('serverNotifModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.saveServerNotifSettings = function() {
+  const checked = document.querySelector('input[name="serverNotifLevel"]:checked');
+  const val = checked ? checked.value : 'mentions';
+  localStorage.setItem('server_notif_' + currentServerId, val);
+  closeServerNotifModal();
+  alertMessage('通知設定を保存しました', 'success');
+};
 
 // メンバー管理タブ
 async function loadServerSettingsMembers() {
@@ -10696,6 +10993,8 @@ function showCustomAlert(message) {
     else resolve();
   });
 }
+window.showCustomConfirm = showCustomConfirm;
+window.showCustomAlert = showCustomAlert;
 
 window.showCustomPrompt = function (message, defaultValue = "", okText = "決定", cancelText = "キャンセル") {
   return new Promise(resolve => {
@@ -12975,8 +13274,8 @@ async function sendSticker(emoji) {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
           const notifPayload = JSON.stringify({
             receiverIds: [otherUid],
-            title: `ダイレクトメッセージ › @${userNickname}`,
-            body: `${userNickname}: スタンプ`,
+            title: userNickname,
+            body: '[スタンプ]',
             roomId: currentDmId,
             messageId: newMessageId,
             appId: appId,
@@ -13005,7 +13304,7 @@ async function sendSticker(emoji) {
         lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ'
       });
 
-      // 通知
+      // 通知 (Discord 準拠)
       try {
         const sd = currentServerData;
         if (sd) {
@@ -13014,7 +13313,16 @@ async function sendSticker(emoji) {
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ receiverIds, title: `${sd.name || 'Covo'} › #${roomNames[currentRoomId] || 'room'}`, body: `${userNickname}: スタンプ`, roomId: currentRoomId, messageId: replyMsgRef.id, appId, senderId: userId, idToken })
+              body: JSON.stringify({
+                receiverIds,
+                title: `${sd.name || 'Covo'} (#${roomNames[currentRoomId] || 'room'})`,
+                body: `${userNickname}: [スタンプ]`,
+                roomId: currentRoomId,
+                messageId: replyMsgRef.id,
+                appId,
+                senderId: userId,
+                idToken
+              })
             }).catch(() => { });
           }
         }
@@ -13666,10 +13974,11 @@ async function sendMessage() {
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+          const cleanDmBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '📷 [写真]' : attachedKvFile ? '📎 [ファイル]' : '新着メッセージがあります')));
           const notifPayload = JSON.stringify({
             receiverIds: [otherUid],
-            title: `ダイレクトメッセージ › @${userNickname}`,
-            body: `${userNickname}: ${wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))}`,
+            title: userNickname,
+            body: cleanDmBody,
             roomId: currentDmId,
             messageId: newMessageId,
             appId: appId,
@@ -13724,10 +14033,18 @@ async function sendMessage() {
             const serverName = serverData.name || 'Covo';
             const roomName = roomNames[currentRoomId] || 'room';
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const isMention = text && (text.includes('@') || text.includes('@all'));
+            const cleanServerBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '📷 [写真]' : attachedKvFile ? '📎 [ファイル]' : '新着メッセージがあります')));
+            const notifTitle = isMention
+              ? `${userNickname} があなたをメンションしました`
+              : `${serverName} (#${roomName})`;
+            const notifBody = isMention
+              ? `[#${roomName}] ${cleanServerBody}`
+              : `${userNickname}: ${cleanServerBody}`;
             const notifPayload = JSON.stringify({
               receiverIds,
-              title: `${serverName} › #${roomName}`,
-              body: `${userNickname}: ${wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))}`,
+              title: notifTitle,
+              body: notifBody,
               roomId: currentRoomId,
               messageId: newMessageId,
               appId: appId,
@@ -13863,8 +14180,8 @@ async function sendSingleAttachmentMessage(fileObj) {
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
         const notifPayload = JSON.stringify({
           receiverIds: [otherUid],
-          title: `ダイレクトメッセージ › @${userNickname}`,
-          body: `${userNickname}: （ファイル）`,
+          title: userNickname,
+          body: '📎 [ファイル]',
           roomId: snapDmId,
           messageId: newMessageId,
           appId: appId,
@@ -13906,8 +14223,8 @@ async function sendSingleAttachmentMessage(fileObj) {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
           const notifPayload = JSON.stringify({
             receiverIds,
-            title: `${serverName} › #${roomName}`,
-            body: `${userNickname}: （ファイル）`,
+            title: `${serverName} (#${roomName})`,
+            body: `${userNickname}: 📎 [ファイル]`,
             roomId: snapRoomId,
             messageId: msgRefId,
             appId: appId,
@@ -16421,10 +16738,10 @@ async function deleteServerCascade(serverId) {
 
 // ===== アプリ内通知スタック & 通知ディスパッチャー =====
 
-// スタンプ・ファイルURLを可読テキストに統一整形する共通ヘルパー
+// スタンプ・ファイルURLを可読テキストに統一整形する共通ヘルパー (Discord & LINE 準拠)
 function formatNotificationBody(text, sticker) {
-  if (sticker) return 'スタンプ';
-  if (typeof text !== 'string') return '新着メッセージ';
+  if (sticker) return '[スタンプ]';
+  if (typeof text !== 'string') return '新着メッセージがあります';
 
   const colonIdx = text.indexOf(': ');
   if (colonIdx !== -1) {
@@ -16442,18 +16759,41 @@ function formatNotificationBody(text, sticker) {
     t.includes('/stamps/') ||
     t.startsWith('スタンプ ') ||
     t === 'スタンプ' ||
-    t === '🌟 スタンプ'
+    t === '🌟 スタンプ' ||
+    t === '[スタンプ]'
   ) {
-    return 'スタンプ';
+    return '[スタンプ]';
+  }
+  if (
+    /\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(t) ||
+    t === '（画像）' || t === '[画像]' || t.includes('📷 [写真]')
+  ) {
+    return '📷 [写真]';
+  }
+  if (
+    /\.(mp4|mov|webm|avi|m4v)/i.test(t) ||
+    t === '（動画）' || t === '[動画]'
+  ) {
+    return '🎥 [動画]';
+  }
+  if (
+    /\.(mp3|wav|ogg|m4a|aac)/i.test(t) ||
+    t === '（音声）' || t === '[ボイスメッセージ]'
+  ) {
+    return '🎤 [ボイスメッセージ]';
   }
   if (
     t.includes('firebase-storage') ||
     t.includes('cloudinary') ||
     t.includes('r2.cloudflarestorage') ||
     t.includes('/api/file/') ||
-    /\.(jpg|jpeg|png|gif|webp|mp4|mov|pdf|zip|txt|docx?|xlsx?)/i.test(t)
+    t === '（ファイル）' ||
+    /\.(pdf|zip|txt|docx?|xlsx?)/i.test(t)
   ) {
-    return '📎 添付ファイル';
+    return '📎 [ファイル]';
+  }
+  if (t.startsWith('enc::v') || t.includes('enc::v') || t === '（暗号化されたメッセージ）') {
+    return '新着メッセージがあります';
   }
   return t;
 }
@@ -16482,7 +16822,7 @@ async function notifyNewMessage({
 
   let bodyText = text;
   if (sticker) {
-    bodyText = 'スタンプ';
+    bodyText = '[スタンプ]';
   } else if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
     try {
       if (isDm && targetUid) {
@@ -16492,10 +16832,10 @@ async function notifyNewMessage({
         const memberIds = serverData?.joinedUsers || [];
         bodyText = await decryptText(bodyText, serverId, channelId, memberIds);
       }
-    } catch (e) { bodyText = '（暗号化されたメッセージ）'; }
+    } catch (e) { bodyText = '新着メッセージがあります'; }
   }
   if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
-    bodyText = '（暗号化されたメッセージ）';
+    bodyText = '新着メッセージがあります';
   }
 
   bodyText = formatNotificationBody(bodyText, sticker);
@@ -16508,9 +16848,23 @@ async function notifyNewMessage({
     return;
   }
   const isMention = userNickname && bodyText && (bodyText.includes(`@${userNickname}`) || bodyText.includes('@all'));
-  const notifTitle = isMention
-    ? `[@メンション] ${serverName} › #${channelName}`
-    : `${serverName} › #${channelName}`;
+  let notifTitle = '';
+  let notifBody = '';
+  if (isDm) {
+    // Discord & LINE 準拠: 1対1 DM は送信者名のみをタイトルに、本文はそのまま（重複排除）
+    notifTitle = senderName || 'ダイレクトメッセージ';
+    notifBody = bodyText;
+  } else {
+    // Discord 準拠: サーバー通知
+    if (isMention) {
+      notifTitle = `${senderName} があなたをメンションしました`;
+      notifBody = `[#${channelName}] ${bodyText}`;
+    } else {
+      notifTitle = `${serverName} (#${channelName})`;
+      notifBody = `${senderName}: ${bodyText}`;
+    }
+  }
+
   if (isAppActiveAndFocused) {
     // アプリが最前面でアクティブ操作中の時は、別チャンネルの新着をアプリ内通知（トースト）として表示
     showInAppNotification(
@@ -16526,8 +16880,8 @@ async function notifyNewMessage({
       targetAvatarUrl
     );
   } else {
-    // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、Windowsデスクトップ通知（OS通知）を送信
-    showNotification(notifTitle, `${senderName}: ${bodyText}`, channelId);
+    // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、OS通知を送信
+    showNotification(notifTitle, notifBody, channelId);
   }
 
   updateGlobalNotifUI();

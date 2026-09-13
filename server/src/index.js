@@ -1134,20 +1134,42 @@ async function handleSendNotification(request, env) {
                 const tokens = userData.fields.fcmTokens.arrayValue?.values || [];
                 const invalidTokens = [];
 
-                // E2EE暗号化テキストが渡された場合のサニタイズ（OS通知バーでの暗号文露出防止）
+                // Discord & LINE 準拠の通知テキスト整形 & E2EE暗号文のサニタイズ
                 let safeTitle = String(title || 'Covo');
-                let safeBody = String(body || '新しいメッセージがあります');
+                let safeBody = String(body || '新着メッセージがあります');
+
+                if (safeTitle.startsWith('ダイレクトメッセージ › @')) {
+                  safeTitle = safeTitle.replace('ダイレクトメッセージ › @', '');
+                } else if (safeTitle.includes('enc::v') || safeTitle.startsWith('enc::')) {
+                  safeTitle = 'Covo';
+                }
 
                 if (safeBody.includes('enc::v') || safeBody.startsWith('enc::')) {
-                  if (safeBody.includes(': enc::')) {
-                    const senderPrefix = safeBody.split(': enc::')[0];
-                    safeBody = `${senderPrefix}: 新しいメッセージがあります`;
+                  if (safeBody.includes(': enc::') || safeBody.includes(':enc::')) {
+                    const senderPrefix = safeBody.split(/:\s*enc::/)[0];
+                    safeBody = `${senderPrefix}: 新着メッセージがあります`;
                   } else {
-                    safeBody = '新しいメッセージがあります';
+                    safeBody = '新着メッセージがあります';
                   }
-                }
-                if (safeTitle.includes('enc::v') || safeTitle.startsWith('enc::')) {
-                  safeTitle = 'Covo';
+                } else {
+                  // スタンプ・ファイルURL等の可読化
+                  const formatRaw = (s) => {
+                    const t = String(s || '').trim();
+                    if (t.includes('[STAMP]') || t.includes('/stamps/') || t.includes('covo:') || t.includes('covonew:') || t.includes('serverstamp:') || t.startsWith('スタンプ') || t === '[スタンプ]') return '[スタンプ]';
+                    if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(t) || t === '（画像）' || t === '[画像]') return '📷 [写真]';
+                    if (/\.(mp4|mov|webm|avi|m4v)/i.test(t) || t === '（動画）' || t === '[動画]') return '🎥 [動画]';
+                    if (/\.(mp3|wav|ogg|m4a|aac)/i.test(t) || t === '（音声）' || t === '[ボイスメッセージ]') return '🎤 [ボイスメッセージ]';
+                    if (t.includes('firebase-storage') || t.includes('cloudinary') || t.includes('r2.cloudflarestorage') || t.includes('/api/file/') || t === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(t)) return '📎 [ファイル]';
+                    return t;
+                  };
+                  const colonIdx = safeBody.indexOf(': ');
+                  if (colonIdx !== -1) {
+                    const prefix = safeBody.substring(0, colonIdx);
+                    const rest = safeBody.substring(colonIdx + 2);
+                    safeBody = `${prefix}: ${formatRaw(rest)}`;
+                  } else {
+                    safeBody = formatRaw(safeBody);
+                  }
                 }
 
                 for (const t of tokens) {

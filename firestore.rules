@@ -125,9 +125,9 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // システムエラー・警告テレメトリ
+      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
       match /error_reports/{docId} {
-        allow create, update: if isAuthenticated() &&
+        allow create, update: if
           request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
