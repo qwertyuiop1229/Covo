@@ -483,9 +483,9 @@ class VoiceEngine {
       if (!this.isActive) return;
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
         if (!this.isActive) return;
-        const stateRef = ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}`);
-        const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
-
+        const sId = this.serverId || 'direct';
+        const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}`);
+        const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
         const configHandler = (snapshot) => {
           if (!this.isActive) return;
           const cfg = snapshot.val() || {};
@@ -546,40 +546,45 @@ class VoiceEngine {
     if (!this.isActive || this._modeSwitching) return;
     const count = Object.keys(currentStates || {}).length;
     const override = this._modeOverride || 'auto';
-
     if (override === 'turn') {
+      const needPolicyChange = (this.mode === 'p2p' && !this._forceTurnOnly);
       this._forceTurnOnly = true;
       if (this.mode !== 'p2p') {
         await this._switchToP2P(currentStates, 'relay');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('relay', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
       return;
     }
-
-    this._forceTurnOnly = false;
-
     if (override === 'p2p') {
+      const needPolicyChange = (this.mode === 'p2p' && this._forceTurnOnly);
+      this._forceTurnOnly = false;
       if (this.mode !== 'p2p') {
         await this._switchToP2P(currentStates, 'all');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
       return;
     }
-
+    this._forceTurnOnly = false;
     if (override === 'agora') {
       if (this.mode !== 'agora') {
         await this._switchToAgora();
       }
       return;
     }
-
     // デフォルト: 'auto'
     if (count <= VC_P2P_MAX_PEERS) {
       if (this.mode !== 'p2p') {
         console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
         await this._switchToP2P(currentStates, 'all');
+      } else if (this._forceTurnOnly) {
+        this._forceTurnOnly = false;
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
@@ -590,9 +595,34 @@ class VoiceEngine {
       }
     }
   }
-
+  // 音声ストリームを一切切断せずに、ピア接続の通信ポリシー（直接 ⇔ TURNリレー）のみを瞬時に再構築
+  async _reconnectAllPeersWithPolicy(transportPolicy, currentStates) {
+    if (this._modeSwitching || !this.isActive) return;
+    this._modeSwitching = true;
+    const isRelay = (transportPolicy === 'relay');
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替開始: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = isRelay ? 'P2P (TURNリレー強制) 移行中...' : 'P2P (直接優先) 移行中...';
+    if (rtcBadge) rtcBadge.classList.add('reconnecting');
+    this._forceTurnOnly = isRelay;
+    this._cleanupAllPeers();
+    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    for (const peerUid of others) {
+      const iAmOfferer = this._myUid < peerUid;
+      if (iAmOfferer) {
+        await this._createOffer(peerUid).catch(e =>
+          console.error(`[VoiceEngine] ポリシー切替Offer失敗 (${peerUid.slice(0,8)}):`, e)
+        );
+      } else {
+        this._createPeerConnection(peerUid);
+      }
+    }
+    this._modeSwitching = false;
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替完了: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+  }
   async setChannelModeOverride(mode = 'auto') {
-    if (!this.serverId || !this.channelId) {
+    if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
     }
     const validModes = ['auto', 'p2p', 'turn', 'agora'];
@@ -601,13 +631,16 @@ class VoiceEngine {
     }
     const rtdb = await _getOrInitRTDB();
     const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+    const sId = this.serverId || 'direct';
+    const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
     await set(configRef, {
       modeOverride: mode,
       updatedAt: Date.now(),
       updatedBy: this._myUid
     });
     console.log(`[VoiceEngine] ⚙️ 通話モード設定を更新しました: ${mode}`);
+    this._modeOverride = mode;
+    await this._applyCallMode(this._voiceStates);
   }
 
   // ================================================================
@@ -836,17 +869,26 @@ class VoiceEngine {
           clearTimeout(peerInfo.signalingTimer);
           peerInfo.signalingTimer = null;
         }
-        // どのパス（relay/直接）を使っているかをログ出力
+        // どのパス（relay/直接）を使っているかをログ出力し、UIステータスにも即座に明示
         pc.getStats().then(stats => {
           stats.forEach(r => {
             if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
               const localId = r.localCandidateId;
               stats.forEach(lr => {
                 if (lr.id === localId) {
-                  const via = lr.candidateType === 'relay'
+                  const isRelay = lr.candidateType === 'relay';
+                  const via = isRelay
                     ? `TURN relay (${lr.relayProtocol || '?'} @ ${lr.ip || lr.address || 'openrelay.metered.ca'})`
                     : `直接 P2P (${lr.candidateType})`;
                   console.log(`[VoiceEngine] ✅ ${peerUid.slice(0,8)}: ${via}`);
+                  const rtcText = document.getElementById('discordCallRtcText');
+                  const rtcBadge = document.getElementById('discordCallRtcStatus');
+                  if (rtcText) {
+                    rtcText.textContent = isRelay
+                      ? 'P2P (TURNリレー中継) 接続完了'
+                      : 'P2P (直接接続) 接続完了';
+                  }
+                  if (rtcBadge) rtcBadge.classList.remove('reconnecting');
                 }
               });
             }
@@ -1716,9 +1758,26 @@ window.setVoiceCallMode = async function(mode) {
     if (typeof alertMessage === 'function') alertMessage('ボイスチャンネルまたは通話に参加していません', 'warning');
     return;
   }
+  const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+  if (!isGlobalAdmin) {
+    if (typeof alertMessage === 'function') alertMessage('通話方式の強制変更は全体管理者のみ実行できます', 'error');
+    return;
+  }
   try {
     await window._voiceEngine.setChannelModeOverride(mode);
-    if (typeof alertMessage === 'function') alertMessage(`通話モードを「${mode}」に切り替えました`, 'success');
+    const modeNames = {
+      auto: '自動判定 (通常)',
+      p2p: 'P2P 直接優先 (host/srflx)',
+      turn: 'TURN リレー強制 (openrelay)',
+      agora: 'Agora SFU 強制 (サーバー中継)'
+    };
+    const label = modeNames[mode] || mode;
+    if (typeof alertMessage === 'function') alertMessage(`通話方式を「${label}」に切り替えました。参加者全員へ同期します`, 'success');
+    // メニュー内のボタン表示も即座に更新
+    document.querySelectorAll('.call-mode-btn').forEach(btn => {
+      const isSel = btn.dataset.mode === mode;
+      btn.className = `call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${isSel ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}`;
+    });
   } catch(e) {
     if (typeof alertMessage === 'function') alertMessage('モード切替失敗: ' + e.message, 'error');
   }

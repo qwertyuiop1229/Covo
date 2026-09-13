@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.170" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.153" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.170" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -198,17 +198,33 @@
       }
     };
 
+    window._earlyErrors = window._earlyErrors || [];
     window.addEventListener('error', function(e) {
       console.error('[Global Error Catcher]', e.message, e.error);
+      const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
+      const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
+      if (typeof window._reportTelemetryError === 'function') {
+        window._reportTelemetryError('error', msg, stack);
+      } else {
+        window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
+      }
       if (!window.__app_fully_loaded__) {
-        showEmergencyRecoveryPanel(e.message || 'JavaScript 実行エラー', e.error);
+        showEmergencyRecoveryPanel(msg, e.error);
       }
     });
 
     window.addEventListener('unhandledrejection', function(e) {
       console.error('[Global Unhandled Rejection]', e.reason);
+      const r = e.reason;
+      const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
+      const stack = (r && r.stack) || '';
+      if (typeof window._reportTelemetryError === 'function') {
+        window._reportTelemetryError('unhandledrejection', msg, stack);
+      } else {
+        window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
+      }
       if (!window.__app_fully_loaded__) {
-        showEmergencyRecoveryPanel(e.reason?.message || '非同期処理エラー (Unhandled Rejection)', e.reason);
+        showEmergencyRecoveryPanel(msg, e.reason);
       }
     });
 
@@ -1092,7 +1108,7 @@
                       <span id="pcCreateShortcutStatus" class="text-sm text-gray-500 dark:text-gray-400"></span>
                     </div>
                     <div class="flex justify-between items-center mt-2 gap-2 flex-wrap">
-                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-transparent shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="showLatestAnnouncementModal(true)">
+                      <button class="px-4 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white text-xs font-bold rounded-xl border border-slate-700 dark:border-slate-700/80 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="showLatestAnnouncementModal(true)">
                         <i class="fas fa-bullhorn text-xs"></i>お知らせ・更新履歴
                       </button>
                       <button class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl border border-rose-500/30 shadow-sm transition-all flex items-center gap-1.5 active:scale-95" onclick="window.openFeedbackModal && window.openFeedbackModal()">
@@ -1610,6 +1626,54 @@
         <button id="bulkDeleteAllFilesBtn" class="w-full py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white dark:bg-red-950/30 dark:hover:bg-red-600 dark:text-red-400 dark:hover:text-white border border-red-200 dark:border-red-800/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-98">
           <i class="fas fa-triangle-exclamation"></i> 全ファイルを一括削除 (完全初期化)
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ストレージ内ファイル一覧・プレビューモーダル (四角形/長方形 切替対応) -->
+  <div id="storageCategoryFilesModal" class="fixed inset-0 z-[8000] modal-overlay flex items-center justify-center p-3 sm:p-4 select-none hidden" style="background:rgba(0,0,0,0.75); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);" onclick="if(event.target===this) closeStorageCategoryFilesModal()">
+    <div class="bg-white dark:bg-[#1e1f22] rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 flex flex-col w-full max-w-4xl max-h-[90vh] h-[85vh]" onclick="event.stopPropagation()">
+      <!-- モーダルヘッダー -->
+      <div class="px-4 py-3 sm:px-6 sm:py-4 bg-gray-50/90 dark:bg-[#2b2d31]/90 border-b border-gray-200 dark:border-slate-700/60 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <button onclick="closeStorageCategoryFilesModal()" class="w-8 h-8 rounded-xl bg-gray-200/60 hover:bg-gray-200 dark:bg-slate-700/60 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center transition-all flex-shrink-0">
+            <i class="fas fa-arrow-left text-xs"></i>
+          </button>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate" id="storageCategoryModalTitle">ファイル一覧</h3>
+            <p class="text-[11px] text-gray-500 dark:text-slate-400 font-medium" id="storageCategoryModalSub">0 件</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <!-- 表示形式切替 (四角形 / 長方形) -->
+          <div class="flex items-center p-0.5 bg-gray-200/80 dark:bg-slate-800 rounded-xl border border-gray-300/60 dark:border-slate-700/80">
+            <button id="storageViewSquareBtn" onclick="setStorageViewMode('square')" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs" title="四角形グリッド表示">
+              <i class="fas fa-grip text-xs"></i>
+              <span class="hidden sm:inline">四角形</span>
+            </button>
+            <button id="storageViewRectBtn" onclick="setStorageViewMode('rect')" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white" title="長方形リスト表示">
+              <i class="fas fa-table-cells-large text-xs"></i>
+              <span class="hidden sm:inline">長方形</span>
+            </button>
+          </div>
+          <button onclick="closeStorageCategoryFilesModal()" class="w-8 h-8 rounded-xl bg-gray-200/60 hover:bg-gray-200 dark:bg-slate-700/60 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center transition-all">
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- モーダルコンテンツ (スクロール可能領域) -->
+      <div class="flex-1 overflow-y-auto p-3 sm:p-5 no-scrollbar relative min-h-0" id="storageFilesScrollArea">
+        <div id="storageFilesLoading" class="hidden flex flex-col items-center justify-center py-16 text-gray-400 space-y-3">
+          <i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i>
+          <span class="text-xs font-bold">ファイルを読み込み中...</span>
+        </div>
+        <div id="storageFilesEmpty" class="hidden flex flex-col items-center justify-center py-16 text-gray-400 space-y-2">
+          <i class="fas fa-folder-open text-3xl opacity-40"></i>
+          <span class="text-xs font-bold">このカテゴリにはファイルがありません</span>
+        </div>
+        <!-- グリッド/リストコンテナ -->
+        <div id="storageFilesGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
       </div>
     </div>
   </div>
@@ -2141,12 +2205,75 @@
         </div>
       </div>
 
-      <!-- サーバー設定モーダル -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
-          <div class="settings-discord-layout">
-            <!-- 左サイドバー -->
-            <div class="settings-sidebar">
+      <!-- スマホ用 Discord サーバーアクションシート (ボトムシート) -->
+      <div id="serverActionSheetOverlay" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden transition-opacity duration-200 md:hidden" onclick="closeServerActionSheet()">
+        <div id="serverActionSheet" class="fixed bottom-0 inset-x-0 bg-white dark:bg-[#2b2d31] rounded-t-2xl p-4 shadow-2xl z-50 transform translate-y-full transition-transform duration-200" onclick="event.stopPropagation()">
+          <!-- ドラッグピル -->
+          <div class="w-10 h-1 bg-gray-300 dark:bg-white/20 rounded-full mx-auto mb-3"></div>
+          <!-- サーバーヘッダー情報 -->
+          <div class="flex items-center gap-3 pb-3 mb-2 border-b border-gray-100 dark:border-white/10">
+            <div id="serverActionSheetIcon" class="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-sm overflow-hidden flex-shrink-0"></div>
+            <div class="min-w-0 flex-1">
+              <div id="serverActionSheetName" class="font-extrabold text-base text-gray-900 dark:text-white truncate">サーバー名</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">サーバーメニュー</div>
+            </div>
+          </div>
+          <!-- メニューアイテム一覧 -->
+          <div class="space-y-1">
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-[#5865f2] bg-indigo-50 dark:bg-indigo-500/10 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openInviteModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-user-plus text-base w-5 text-center"></i>友達を招待</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openServerSettings();">
+              <span class="flex items-center gap-3"><i class="fas fa-cog text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>サーバー設定</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openCreateRoomModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-plus-circle text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>チャンネルを作成</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openCreateCategoryModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-folder-plus text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>カテゴリーを作成</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openServerNotifModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-bell text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>通知設定</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); confirmLeaveCurrentServer();">
+              <span class="flex items-center gap-3"><i class="fas fa-sign-out-alt text-base w-5 text-center"></i>サーバーから退出</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+          </div>
+          <!-- キャンセルボタン -->
+          <button class="w-full mt-3 py-3 rounded-xl text-sm font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet()">
+            キャンセル
+          </button>
+        </div>
+      </div>
+
+      <!-- サーバー設定モーダル (Discord完全準拠: PC 2カラム / スマホ フルスクリーンドリルダウン) -->
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden md:p-4">
+        <div class="bg-white dark:bg-[#313338] md:rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in flex flex-col h-full md:h-[min(720px,calc(100dvh-3rem))] relative">
+          <!-- PC専用 閉じるボタン (右上固定・スクロールバーと重ならない位置) -->
+          <button class="hidden md:flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer absolute top-4 right-6 z-50" id="closeServerSettingsBtn" title="閉じる" onclick="closeServerSettingsModal()">
+            <i class="fas fa-times text-sm"></i>
+          </button>
+
+          <!-- スマホ専用ヘッダー (ドリルダウンナビゲーション) -->
+          <div id="ssMobileHeader" class="md:hidden h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between bg-white dark:bg-[#2b2d31] flex-shrink-0">
+            <button id="ssMobileBackBtn" class="hidden text-gray-600 dark:text-gray-300 flex items-center gap-1 text-sm font-bold p-1 cursor-pointer" onclick="goBackSsMobileMenu()">
+              <i class="fas fa-chevron-left"></i><span>戻る</span>
+            </button>
+            <span id="ssMobileTitle" class="font-bold text-base text-gray-900 dark:text-white truncate">サーバー設定</span>
+            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white p-1 cursor-pointer" onclick="closeServerSettingsModal()">
+              <i class="fas fa-times text-lg"></i>
+            </button>
+          </div>
+
+          <div class="settings-discord-layout flex-1 overflow-hidden">
+            <!-- 左サイドバー (PC専用) -->
+            <div class="settings-sidebar hidden md:flex">
               <!-- サーバー情報 -->
               <div class="settings-sidebar-user relative group cursor-pointer" id="serverIconSettingsWrapper" title="アイコンを変更">
                 <div class="settings-sidebar-avatar" id="serverIconSettingsPreview"></div>
@@ -2175,40 +2302,63 @@
                 <i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除
               </button>
             </div>
-            <!-- 右コンテンツエリア -->
-            <div class="settings-content relative">
-              <button class="settings-close-btn" id="closeServerSettingsBtn"><i class="fas fa-times"></i></button>
 
+            <!-- スマホ専用トップメニューリスト (ドリルダウン) -->
+            <div id="ssMobileNavMenu" class="md:hidden flex-1 overflow-y-auto p-4 space-y-4">
+              <!-- サーバー情報カード -->
+              <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22]">
+                <div class="relative group cursor-pointer" onclick="document.getElementById('serverIconUploadInput')?.click()">
+                  <div class="w-12 h-12 rounded-full overflow-hidden bg-indigo-500 text-white flex items-center justify-center font-bold text-lg" id="serverIconSettingsPreviewMobile"></div>
+                  <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center text-white text-xs"><i class="fas fa-camera"></i></div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div id="serverSettingsTitleMobile" class="font-extrabold text-base text-gray-900 dark:text-white truncate">サーバー</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">タップしてアイコン変更</div>
+                </div>
+              </div>
+
+              <!-- メニューリスト -->
+              <div class="bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22] overflow-hidden divide-y divide-gray-200/60 dark:divide-white/5">
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('rooms', 'ルーム管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-hashtag fa-fw text-indigo-500"></i>ルーム管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('members', 'メンバー管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-users fa-fw text-emerald-500"></i>メンバー管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('invites', '招待管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-envelope-open-text fa-fw text-amber-500"></i>招待コード管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('stamps', 'スタンプ管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-icons fa-fw text-blue-500"></i>スタンプ管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-rose-500 active:bg-rose-50 dark:active:bg-rose-500/10 transition-colors cursor-pointer" onclick="openSsMobileTab('danger', 'その他 / 削除')">
+                  <span class="flex items-center gap-3"><i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除</span>
+                  <i class="fas fa-chevron-right text-xs text-rose-400"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- 右コンテンツエリア (PC常時 / スマホはドリルダウン選択時) -->
+            <div id="ssContentArea" class="settings-content relative flex-1 hidden md:block overflow-y-auto p-4 md:p-8 bg-white dark:bg-[#313338]">
               <div id="ssRoomsSection" class="settings-content-section active">
-                <div class="settings-section-title">ルーム管理</div>
-                <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
-                  <div class="flex flex-col gap-3">
-                    <input type="text" id="newRoomNameInput" placeholder="新しいルーム名"
-                      class="w-full p-3 bg-white border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-sm text-gray-700" />
-                    <div class="relative w-full" id="newRoomCategorySelectContainer">
-                      <button type="button" id="newRoomCategoryCustomBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-sm text-gray-700 font-medium">
-                        <span id="newRoomCategoryLabel" class="truncate mr-2">カテゴリーなし</span>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform duration-200" id="newRoomCategoryIcon"></i>
-                      </button>
-                      <div id="newRoomCategoryDropdown" class="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top">
-                        <ul id="newRoomCategoryList" class="py-1">
-                           <li class="px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>
-                        </ul>
-                      </div>
-                      <input type="hidden" id="newRoomCategorySelect" value="" />
-                    </div>
-                    <div class="flex flex-col sm:flex-row gap-2 justify-end mt-2">
-                      <button id="createCategoryBtn" class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center justify-center w-full sm:w-auto">
-                        <i class="fas fa-folder-plus mr-1.5 text-gray-400"></i>カテゴリー作成
-                      </button>
-                      <button id="createRoomInServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center justify-center w-full sm:w-auto">
-                        追加
-                      </button>
-                    </div>
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-white/10">
+                  <div>
+                    <h3 class="text-base font-bold text-gray-900 dark:text-white">チャンネル管理</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">ドラッグ＆ドロップで並び替えやカテゴリー移動が可能です</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="openCreateCategoryModal()" class="px-3 py-2 rounded-xl text-xs font-bold bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/5 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs">
+                      <i class="fas fa-folder-plus text-xs text-gray-500"></i>カテゴリー作成
+                    </button>
+                    <button type="button" onclick="openCreateChannelModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white transition-all flex items-center gap-1.5 shadow-sm cursor-pointer">
+                      <i class="fas fa-plus text-xs"></i>チャンネル作成
+                    </button>
                   </div>
                 </div>
-                <div class="h-px bg-gray-200 w-full my-4"></div>
                 <div id="serverRoomsList" class="space-y-2 pb-10"></div>
               </div>
 
@@ -2222,9 +2372,9 @@
                 <div class="mb-4 space-y-4">
                   <div class="grid grid-cols-2 gap-4">
                     <div>
-                      <label class="text-xs text-gray-500 font-bold block mb-1">有効期限</label>
+                      <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">有効期限</label>
                       <div class="relative">
-                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">なし</option>
                           <option value="1">1日</option>
                           <option value="7">7日</option>
@@ -2236,9 +2386,9 @@
                       </div>
                     </div>
                     <div>
-                      <label class="text-xs text-gray-500 font-bold block mb-1">使用回数</label>
+                      <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">使用回数</label>
                       <div class="relative">
-                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">無制限</option>
                           <option value="1">1回</option>
                           <option value="5">5回</option>
@@ -2250,9 +2400,9 @@
                       </div>
                     </div>
                   </div>
-                  <button id="createInviteCodeBtn" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
+                  <button id="createInviteCodeBtn" class="w-full bg-[#5865f2] hover:bg-[#4752c4] text-white font-bold py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs">招待コードを生成</button>
                 </div>
-                <div class="h-px bg-gray-200 w-full my-4"></div>
+                <div class="h-px bg-gray-200 dark:bg-white/10 w-full my-4"></div>
                 <div id="inviteCodesList" class="space-y-2 pb-10"></div>
               </div>
 
@@ -2273,27 +2423,27 @@
               <div id="ssDangerSection" class="settings-content-section hidden space-y-6">
                 <div class="settings-section-title text-red-500">その他 / 削除</div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">サーバー名を変更</label>
+                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">サーバー名を変更</label>
                   <div class="flex gap-2">
                     <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
-                      class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
+                      class="flex-1 p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium" />
                     <button id="renameServerBtn"
-                      class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">変更</button>
+                      class="bg-[#5865f2] hover:bg-[#4752c4] text-white px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer">変更</button>
                   </div>
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">パスワードを変更</label>
+                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">パスワードを変更</label>
                   <form class="space-y-2" onsubmit="event.preventDefault();">
                     <input type="text" autocomplete="username" style="display:none;" />
                     <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード" autocomplete="new-password"
-                      class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
+                      class="w-full p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium" />
                     <button id="changeServerPasswordBtn" type="button"
-                      class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all">パスワード変更</button>
+                      class="w-full bg-gray-800 hover:bg-gray-700 dark:bg-white/10 dark:hover:bg-white/20 text-white font-bold py-3 rounded-xl text-sm transition-all cursor-pointer">パスワード変更</button>
                   </form>
                 </div>
-                <div class="pt-6 border-t border-red-100 mt-6">
+                <div class="pt-6 border-t border-red-100 dark:border-red-900/30 mt-6">
                   <button id="deleteServerBtn"
-                    class="w-full bg-red-50 hover:bg-red-500 text-red-600 hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 hover:border-transparent">
+                    class="w-full bg-red-50 hover:bg-red-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 text-red-600 dark:text-rose-400 hover:text-white dark:hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 dark:border-rose-500/20 hover:border-transparent cursor-pointer">
                     <i class="fas fa-trash mr-1.5"></i>このサーバーを削除
                   </button>
                 </div>
@@ -2384,15 +2534,57 @@
         </div>
 
         <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
-        <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー (添付画像3準拠のシンプル・洗練デザイン) -->
-          <div id="serverHeader" class="h-12 border-b px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
-            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
-            <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
-              <span id="serverNameDisplay" class="font-extrabold truncate text-base">サーバー</span>
-              <i class="fas fa-chevron-right text-[11px]"></i>
+        <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0 relative" style="width: 250px;">
+          <!-- サーバーヘッダー -->
+          <div id="serverHeader" class="h-12 border-b border-gray-200 dark:border-[#1f2023] px-3 flex items-center justify-between flex-shrink-0 select-none bg-white dark:bg-[#111214]">
+            <div class="flex items-center gap-1 min-w-0 flex-1">
+              <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-1 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
+              <!-- サーバー名ピルボタン -->
+              <button id="serverNameBtn" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-gray-900 dark:text-white font-extrabold text-[15px] truncate transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer max-w-[180px]" onclick="toggleServerMenu(event)">
+                <span id="serverNameDisplay" class="truncate">サーバー</span>
+                <i id="serverMenuChevronIcon" class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform duration-200"></i>
+              </button>
             </div>
-            <button id="serverSettingsBtn" title="サーバー設定" class="p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
+            <!-- 右端のサーバー招待アイコン -->
+            <button id="headerInviteBtn" title="サーバーに招待" class="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" onclick="event.stopPropagation(); openInviteModal()">
+              <i class="fas fa-user-plus text-xs"></i>
+            </button>
+          </div>
+
+          <!-- PC用サーバーメニュー ドロップダウン (sidebar内に配置 → 重なり問題を解消) -->
+          <div id="serverMenuDropdown" class="hidden absolute top-12 left-0 w-[240px] z-[200] bg-white dark:bg-[#18191c] border border-gray-200/80 dark:border-[#2c2d30] rounded-lg shadow-2xl p-1.5 select-none" style="box-shadow:0 8px 32px rgba(0,0,0,0.28);">
+            <!-- サーバーに招待 -->
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-[#5865f2] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-[#4752c4] dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openInviteModal();">
+              <i class="fas fa-user-plus w-4 text-center text-[#5865f2]"></i>
+              <span class="flex-1 text-left">サーバーに招待</span>
+            </button>
+            <!-- サーバー設定 -->
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerSettings();">
+              <i class="fas fa-cog w-4 text-center text-gray-400"></i>
+              <span class="flex-1 text-left">サーバー設定</span>
+            </button>
+            <!-- チャンネルを作成 -->
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateChannelModal();">
+              <i class="fas fa-plus-circle w-4 text-center text-gray-400"></i>
+              <span class="flex-1 text-left">チャンネルを作成</span>
+            </button>
+            <!-- カテゴリーを作成 -->
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateCategoryModal();">
+              <i class="fas fa-folder-plus w-4 text-center text-gray-400"></i>
+              <span class="flex-1 text-left">カテゴリーを作成</span>
+            </button>
+            <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
+            <!-- 通知設定 -->
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerNotifModal();">
+              <i class="fas fa-bell w-4 text-center text-gray-400"></i>
+              <span class="flex-1 text-left">通知設定</span>
+            </button>
+            <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
+            <!-- サーバーから退出 -->
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer" onclick="closeServerMenu(); confirmLeaveCurrentServer();">
+              <i class="fas fa-sign-out-alt w-4 text-center"></i>
+              <span class="flex-1 text-left">サーバーから退出</span>
+            </button>
           </div>
 
           <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->
@@ -2419,14 +2611,44 @@
             </div>
             
             <!-- DM会話一覧 (動的レンダリング) -->
-            <div id="dmConversationsList" class="px-2 py-1 space-y-1">
+            <div id="dmConversationsList" class="px-0 py-1">
               <!-- JSで動的に追加されます -->
             </div>
           </div>
 
-          <!-- ルームリスト -->
-          <div id="roomList" class="flex-1 scrollable p-3 pb-0">
+          <!-- ルームリスト (Discord本家完全準拠の余白・プロポーション) -->
+          <div id="roomList" class="flex-1 scrollable py-2 px-0 pb-0">
             <!-- ルームはここに動的に追加されます -->
+          </div>
+
+          <!-- VC接続中バー (Discord左下バー完全準拠) -->
+          <div id="vcConnectionBar" class="vc-connection-bar hidden">
+            <div class="vc-bar-top">
+              <div class="vc-bar-status">
+                <span class="vc-bar-dot"></span>
+                <div class="vc-bar-text">
+                  <div class="vc-bar-label">接続完了</div>
+                  <div class="vc-bar-channel truncate" id="vcBarChannelName">ボイスチャンネル</div>
+                </div>
+              </div>
+              <button class="vc-bar-expand-btn" onclick="vcOpenGrid()" title="通話画面を開く">
+                <i class="fas fa-expand-alt"></i>
+              </button>
+            </div>
+            <div class="vc-bar-actions">
+              <button class="vc-bar-btn" id="vcBarMuteBtn" onclick="vcToggleMute()" title="マイク切替">
+                <i class="fas fa-microphone" id="vcBarMuteIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+                <i class="fas fa-video" id="vcBarCamIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+                <i class="fas fa-desktop" id="vcBarScreenIcon"></i>
+              </button>
+              <button class="vc-bar-btn vc-bar-hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">
+                <i class="fas fa-phone-slash"></i>
+              </button>
+            </div>
           </div>
 
           <!-- ユーザー情報ミニバー (添付画像0/1完全準拠のフローティングカード) -->
@@ -2845,6 +3067,209 @@
     </div>
   </div>
 
+  <!-- チャンネル作成モーダル (Discord本家完全準拠) -->
+  <div id="createChannelModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[200] hidden p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1e1f22] flex flex-col">
+      <!-- ヘッダー -->
+      <div class="p-5 pb-3 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+        <div>
+          <h3 class="text-lg font-extrabold text-gray-900 dark:text-white">チャンネルを作成</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">テキストやボイスのチャンネルを追加します</p>
+        </div>
+        <button type="button" onclick="closeCreateChannelModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- フォーム -->
+      <form id="createChannelForm" onsubmit="event.preventDefault(); submitCreateChannel();" class="p-5 pt-4 space-y-4">
+        <!-- チャンネルの種類 -->
+        <div>
+          <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">チャンネルの種類</label>
+          <div class="space-y-2" id="createChannelTypeGroup">
+            <!-- テキスト -->
+            <label class="create-ch-type-card active flex items-center gap-3.5 p-3 rounded-xl border-2 border-[#5865f2] bg-indigo-50/50 dark:bg-[#2b2d31] cursor-pointer transition-all" data-type="text" onclick="selectCreateChannelType('text')">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-lg text-[#5865f2]">
+                <i class="fas fa-hashtag"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-gray-900 dark:text-white">テキスト</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 leading-tight">メッセージ、画像、リアクションを投稿</div>
+              </div>
+              <input type="radio" name="modalChannelType" value="text" checked class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+            </label>
+            <!-- ボイス -->
+            <label class="create-ch-type-card flex items-center gap-3.5 p-3 rounded-xl border-2 border-gray-200 dark:border-[#202225] hover:border-gray-300 dark:hover:border-[#383a40] bg-gray-50/60 dark:bg-[#2b2d31]/50 cursor-pointer transition-all" data-type="voice" onclick="selectCreateChannelType('voice')">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-lg text-emerald-500">
+                <i class="fas fa-volume-up"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-gray-900 dark:text-white">ボイス</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 leading-tight">音声通話、画面共有で一緒に過ごす</div>
+              </div>
+              <input type="radio" name="modalChannelType" value="voice" class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+            </label>
+            <!-- アナウンス -->
+            <label class="create-ch-type-card flex items-center gap-3.5 p-3 rounded-xl border-2 border-gray-200 dark:border-[#202225] hover:border-gray-300 dark:hover:border-[#383a40] bg-gray-50/60 dark:bg-[#2b2d31]/50 cursor-pointer transition-all" data-type="announcement" onclick="selectCreateChannelType('announcement')">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-lg text-amber-500">
+                <i class="fas fa-bullhorn"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-gray-900 dark:text-white">アナウンス</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 leading-tight">大事なお知らせをメンバーに通知</div>
+              </div>
+              <input type="radio" name="modalChannelType" value="announcement" class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+            </label>
+          </div>
+        </div>
+
+        <!-- チャンネル名 -->
+        <div>
+          <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">チャンネル名</label>
+          <div class="relative flex items-center">
+            <span id="createChannelPrefixIcon" class="absolute left-3.5 text-gray-400 dark:text-gray-500 text-sm font-bold">#</span>
+            <input type="text" id="modalChannelNameInput" required placeholder="新しいチャンネル" class="w-full pl-8 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all placeholder-gray-400 dark:placeholder-gray-500" />
+          </div>
+        </div>
+
+        <!-- カテゴリー選択 -->
+        <div>
+          <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">カテゴリー (任意)</label>
+          <select id="modalChannelCategorySelect" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all cursor-pointer">
+            <option value="">カテゴリーなし</option>
+          </select>
+        </div>
+
+        <!-- フッター -->
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-white/5">
+          <button type="button" onclick="closeCreateChannelModal()" class="px-4 py-2.5 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300 hover:underline cursor-pointer">キャンセル</button>
+          <button type="submit" id="modalSubmitChannelBtn" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white shadow-sm transition-all cursor-pointer">チャンネルを作成</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- サーバー招待モーダル (Discord本家完全準拠) -->
+  <div id="inviteModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[200] hidden p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1e1f22] flex flex-col">
+      <div class="p-5 pb-3 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+        <div>
+          <h3 class="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
+            <i class="fas fa-user-plus text-[#5865f2]"></i>
+            <span id="inviteModalServerName">サーバーに友達を招待</span>
+          </h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">リンクを共有して新しいメンバーを歓迎しましょう</p>
+        </div>
+        <button type="button" onclick="closeInviteModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-5 pt-4 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">サーバー招待リンク</label>
+          <div class="flex items-center gap-2">
+            <div class="relative flex-1">
+              <input type="text" id="inviteModalUrlInput" readonly class="w-full pl-3.5 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-mono text-gray-900 dark:text-white select-all focus:outline-none" />
+            </div>
+            <button type="button" id="inviteModalCopyBtn" onclick="copyInviteModalLink()" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white shadow-sm transition-all cursor-pointer flex-shrink-0 flex items-center gap-1.5">
+              <i class="fas fa-copy"></i>
+              <span id="inviteModalCopyText">コピー</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">この招待リンクは誰とでも共有できます</p>
+        </div>
+
+        <div class="bg-gray-50 dark:bg-[#2b2d31] p-3.5 rounded-xl border border-gray-200/80 dark:border-[#202225] flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-gray-400 dark:text-gray-500 uppercase font-bold">招待コード</div>
+            <div class="text-sm font-mono font-bold text-gray-800 dark:text-gray-200" id="inviteModalCodeText">生成中...</div>
+          </div>
+          <button type="button" onclick="generateNewInviteModalCode()" class="text-xs text-[#5865f2] hover:underline font-semibold cursor-pointer">
+            <i class="fas fa-sync-alt mr-1"></i>新規作成
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- カテゴリー作成モーダル (Discord本家完全準拠) -->
+  <div id="createCategoryModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[200] hidden p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1e1f22] flex flex-col">
+      <div class="p-5 pb-3 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+        <div>
+          <h3 class="text-lg font-extrabold text-gray-900 dark:text-white">カテゴリーを作成</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">チャンネルを整理するためのフォルダーを作成します</p>
+        </div>
+        <button type="button" onclick="closeCreateCategoryModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <form id="createCategoryForm" onsubmit="event.preventDefault(); submitCreateCategory();" class="p-5 pt-4 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">カテゴリー名</label>
+          <input type="text" id="modalCategoryNameInput" required placeholder="新しいカテゴリー" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all" />
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-white/5">
+          <button type="button" onclick="closeCreateCategoryModal()" class="px-4 py-2.5 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300 hover:underline cursor-pointer">キャンセル</button>
+          <button type="submit" id="modalSubmitCategoryBtn" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white shadow-sm transition-all cursor-pointer">カテゴリーを作成</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- サーバー通知設定モーダル (Discord本家完全準拠) -->
+  <div id="serverNotifModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[200] hidden p-4">
+    <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1e1f22] flex flex-col">
+      <div class="p-5 pb-3 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+        <div>
+          <h3 class="text-lg font-extrabold text-gray-900 dark:text-white">サーバー通知設定</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5" id="serverNotifModalSubtitle">通知の頻度をカスタマイズします</p>
+        </div>
+        <button type="button" onclick="closeServerNotifModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-5 pt-4 space-y-4">
+        <div class="space-y-2">
+          <label class="server-notif-option flex items-center justify-between p-3 rounded-xl border border-gray-200 dark:border-[#202225] bg-gray-50/50 dark:bg-[#2b2d31]/50 cursor-pointer transition-all hover:bg-gray-100 dark:hover:bg-[#2b2d31]">
+            <div class="flex items-center gap-3">
+              <i class="fas fa-bell text-gray-500 dark:text-gray-400 text-sm"></i>
+              <div>
+                <div class="text-sm font-bold text-gray-900 dark:text-white">すべてのメッセージ</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">新しい投稿があるたびに通知</div>
+              </div>
+            </div>
+            <input type="radio" name="serverNotifLevel" value="all" class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+          </label>
+          <label class="server-notif-option flex items-center justify-between p-3 rounded-xl border border-gray-200 dark:border-[#202225] bg-gray-50/50 dark:bg-[#2b2d31]/50 cursor-pointer transition-all hover:bg-gray-100 dark:hover:bg-[#2b2d31]">
+            <div class="flex items-center gap-3">
+              <i class="fas fa-at text-gray-500 dark:text-gray-400 text-sm"></i>
+              <div>
+                <div class="text-sm font-bold text-gray-900 dark:text-white">@メンションのみ (デフォルト)</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">メンションまたは返信があった時のみ通知</div>
+              </div>
+            </div>
+            <input type="radio" name="serverNotifLevel" value="mentions" checked class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+          </label>
+          <label class="server-notif-option flex items-center justify-between p-3 rounded-xl border border-gray-200 dark:border-[#202225] bg-gray-50/50 dark:bg-[#2b2d31]/50 cursor-pointer transition-all hover:bg-gray-100 dark:hover:bg-[#2b2d31]">
+            <div class="flex items-center gap-3">
+              <i class="fas fa-bell-slash text-gray-500 dark:text-gray-400 text-sm"></i>
+              <div>
+                <div class="text-sm font-bold text-gray-900 dark:text-white">通知しない</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">このサーバーのプッシュ通知をオフ</div>
+              </div>
+            </div>
+            <input type="radio" name="serverNotifLevel" value="nothing" class="w-4 h-4 text-[#5865f2] focus:ring-0 cursor-pointer accent-[#5865f2]" />
+          </label>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-white/5">
+          <button type="button" onclick="closeServerNotifModal()" class="px-4 py-2.5 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300 hover:underline cursor-pointer">キャンセル</button>
+          <button type="button" onclick="saveServerNotifSettings()" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white shadow-sm transition-all cursor-pointer">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- スタンプ詳細管理モーダル -->
   <!-- スタンプ詳細管理モーダル -->
   <div id="stampAdminModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
@@ -2979,7 +3404,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.153"></script>
+  <script type="module" src="js/main.js?v=1.1.170"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3096,6 +3521,58 @@
     </div>
   </div>
 
+  <!-- スタンプ調整・正四角形トリミングモーダル (PC・スマホ両対応) -->
+  <div id="stampCropModal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3 select-none" style="z-index: 9999; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);">
+    <div class="bg-white dark:bg-[#1e1f22] rounded-2xl sm:rounded-3xl shadow-2xl w-full flex flex-col modal-box animate-pop-in border border-gray-200/80 dark:border-white/10"
+      style="max-width:360px;max-height:calc(100dvh - 24px);overflow-y:auto;">
+      <div class="h-12 bg-slate-900 flex-shrink-0 flex items-center justify-between px-5 rounded-t-2xl sticky top-0 z-10 border-b border-white/10">
+        <div class="flex items-center gap-2 min-w-0">
+          <i class="fas fa-crop-simple text-indigo-400 text-sm"></i>
+          <span class="text-white text-sm font-bold tracking-wide truncate" id="stampCropTitle">スタンプを正方形に調整</span>
+        </div>
+        <span id="stampCropStepBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono hidden">1/1</span>
+      </div>
+      <div class="p-4 flex flex-col items-center gap-3">
+        <p class="text-[11px] text-gray-500 dark:text-gray-400 text-center">ドラッグで位置調整・ピンチ/スライダーで拡大縮小</p>
+        
+        <!-- 正方形クロップエリア (260x260) -->
+        <div class="relative flex-shrink-0 rounded-2xl overflow-hidden shadow-inner border border-gray-300 dark:border-slate-700 bg-slate-950" style="width:260px;height:260px;">
+          <canvas id="stampCropCanvas" width="260" height="260"
+            class="cursor-grab w-full h-full block"
+            style="touch-action:none;-webkit-user-select:none;user-select:none;"></canvas>
+          <!-- 正方形のガイド枠とグリッド -->
+          <svg class="absolute inset-0 pointer-events-none" width="260" height="260">
+            <!-- 3分割グリッド補助線（薄い点線） -->
+            <line x1="86.6" y1="0" x2="86.6" y2="260" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="173.3" y1="0" x2="173.3" y2="260" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="0" y1="86.6" x2="260" y2="86.6" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <line x1="0" y1="173.3" x2="260" y2="173.3" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3,3" stroke-width="1" />
+            <!-- 外枠 -->
+            <rect x="0" y="0" width="260" height="260" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" rx="16" />
+          </svg>
+        </div>
+
+        <!-- ズームスライダー -->
+        <div class="flex items-center gap-3 w-full px-2 mt-1">
+          <i class="fas fa-search-minus text-gray-400 text-xs"></i>
+          <input type="range" id="stampZoomSlider" min="0.5" max="3" step="0.01" value="1"
+            class="flex-1 accent-indigo-600" style="-webkit-appearance:auto; appearance:auto;">
+          <i class="fas fa-search-plus text-gray-400 text-xs"></i>
+        </div>
+      </div>
+      <div class="px-4 pb-4 flex gap-3">
+        <button id="stampCropCancel"
+          class="flex-1 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold py-3 rounded-xl transition-all text-sm">
+          キャンセル
+        </button>
+        <button id="stampCropConfirm"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-md">
+          <i class="fas fa-check"></i> トリミング確定
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- 検査モード中の常設バー（どの画面でも終了できる） -->
   <div id="inspectModeBar" data-inspect-ignore="1" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:max(24px, calc(16px + var(--safe-bottom, env(safe-area-inset-bottom,0px))));z-index:100001;align-items:center;gap:10px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:8px 10px 8px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);">
     <span style="color:#93c5fd;font-size:0.78rem;font-weight:700;display:flex;align-items:center;gap:6px;"><i class="fas fa-crosshairs"></i>検査モード</span>
@@ -3114,36 +3591,38 @@
     </div>
     <!-- Discord 完全準拠 通話UI (Agora SD-RTN™ 音声通話システム) -->
     <!-- 1. 着信ダイアログ (Discord 本家風 着信ポップアップカード) -->
-  <div id="discordCallIncomingModal" class="fixed inset-0 z-[100002] modal-overlay items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);">
-    <div class="bg-[#2b2d31] text-gray-200 rounded-3xl shadow-2xl p-6 max-w-sm w-full border border-white/10 flex flex-col items-center text-center animate-pop-in">
-      <div class="relative mb-4">
-        <div class="w-24 h-24 rounded-full bg-[#1e1f22] border-4 border-[#23a55a] flex items-center justify-center text-3xl font-bold shadow-xl overflow-hidden" id="discordIncomingAvatar">
+    <div id="discordCallIncomingModal" class="fixed inset-0 z-[100005] modal-overlay flex items-center justify-center p-4 hidden select-none" style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+    <div class="discord-incoming-card">
+      <div class="discord-incoming-avatar-wrap">
+        <div class="discord-incoming-avatar" id="discordIncomingAvatar">
           U
         </div>
-        <div class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#23a55a] text-white flex items-center justify-center text-xs shadow-md border-2 border-[#2b2d31] animate-bounce">
+        <div class="discord-incoming-badge animate-bounce">
           <i class="fas fa-phone"></i>
         </div>
       </div>
-      <div class="text-xs font-extrabold text-[#23a55a] tracking-wider uppercase mb-1">音声着信中...</div>
+      <div class="text-[11px] font-extrabold text-[#23a55a] tracking-wider uppercase mb-1 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-[#23a55a] inline-block animate-ping"></span>
+        <span>音声着信中...</span>
+      </div>
       <div class="text-xl font-black text-white truncate max-w-full mb-1" id="discordIncomingName">ユーザー</div>
       <p class="text-xs text-gray-400 mb-6" id="discordIncomingChannel">ダイレクト通話</p>
-      
-      <div class="flex items-center justify-center gap-6 w-full">
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="declineCall()" class="w-14 h-14 rounded-full bg-[#da373c] hover:bg-[#c02e34] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg transition-all cursor-pointer" title="拒否">
+      <div class="flex items-center justify-center gap-8 w-full">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="declineCall()" class="discord-call-action-btn decline" title="拒否">
             <i class="fas fa-phone-slash"></i>
           </button>
           <span class="text-[11px] font-bold text-gray-400">拒否</span>
         </div>
-        <div class="flex flex-col items-center gap-1.5">
-          <button type="button" onclick="acceptCall()" class="w-14 h-14 rounded-full bg-[#23a55a] hover:bg-[#1f934f] active:scale-95 text-white flex items-center justify-center text-xl shadow-lg shadow-[#23a55a]/30 transition-all cursor-pointer animate-pulse" title="応答">
+        <div class="discord-action-btn-wrap">
+          <button type="button" onclick="acceptCall()" class="discord-call-action-btn accept animate-pulse" title="応答">
             <i class="fas fa-phone"></i>
           </button>
-          <span class="text-[11px] font-bold text-gray-400">応答</span>
+          <span class="text-[11px] font-bold text-[#23a55a]">応答</span>
         </div>
       </div>
     </div>
-  </div>
+    </div>
 
   <!-- 2. Discord 本家完全準拠 フルスクリーン通話画面 (#callOverlay) -->
   <div id="callOverlay" class="select-none">
@@ -3219,6 +3698,48 @@
       </button>
       <button type="button" class="pip-btn expand" onclick="restoreCallOverlay()" title="最大化">
         <i class="fas fa-expand-alt"></i>
+      </button>
+    </div>
+    </div>
+
+  <!-- VC グリッドオーバーレイ (ボイスチャンネル参加時のフルスクリーン) -->
+  <div id="vcGridOverlay" class="hidden">
+    <!-- ヘッダー -->
+    <div class="vc-grid-header">
+      <div class="vc-grid-header-info">
+        <div class="vc-grid-header-dot"></div>
+        <i class="fas fa-volume-up text-[#23a55a] text-sm mx-1"></i>
+        <span class="vc-grid-header-name" id="vcGridChannelName">ボイスチャンネル</span>
+        <span class="vc-grid-header-count" id="vcGridParticipantCount">0人</span>
+      </div>
+      <div class="vc-grid-header-actions">
+        <button class="vc-ctrl-btn" onclick="vcOpenGrid()" title="最小化" style="width:2rem;height:2rem;font-size:0.75rem;">
+          <i class="fas fa-compress-alt"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 参加者グリッド -->
+    <div class="vc-grid-body" id="vcGridBody">
+      <!-- 動的生成 -->
+    </div>
+
+    <!-- 下部コントロールバー -->
+    <div class="vc-grid-controls">
+      <button class="vc-ctrl-btn" id="vcGridMuteBtn" onclick="vcToggleMute()" title="マイク切替">
+        <i class="fas fa-microphone" id="vcGridMuteIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+        <i class="fas fa-video" id="vcGridCamIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+        <i class="fas fa-desktop" id="vcGridScreenIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridDeviceBtn" onclick="toggleCallDeviceMenu(event)" title="デバイス設定">
+        <i class="fas fa-cog"></i>
+      </button>
+      <button class="vc-ctrl-btn hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">
+        <i class="fas fa-phone-slash"></i>
       </button>
     </div>
   </div>
@@ -4176,25 +4697,14 @@
           </div>
         </div>
 
-        <!-- クイックステータスプリセット -->
+        <!-- 過去に使ったステータスメッセージ履歴 -->
         <div>
-          <label class="block font-bold text-gray-600 dark:text-gray-300 mb-2">クイック選択</label>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="setCustomStatusPreset('🎮', 'ゲームプレイ中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>🎮</span> ゲームプレイ中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('💻', '作業・コーディング中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>💻</span> 作業中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('🎧', '音楽鑑賞中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>🎧</span> 音楽鑑賞中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('☕', 'ちょっと休憩中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>☕</span> 休憩中
-            </button>
-            <button type="button" onclick="setCustomStatusPreset('😴', 'おやすみ・離席中')" class="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#383a40] text-gray-800 dark:text-gray-200 font-medium transition flex items-center gap-1.5 shadow-xs">
-              <span>😴</span> おやすみ中
-            </button>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block font-bold text-gray-600 dark:text-gray-300">過去に使ったステータス</label>
+            <span id="customStatusHistoryCount" class="text-[10px] text-gray-400"></span>
+          </div>
+          <div id="customStatusHistoryContainer" class="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+            <div id="customStatusHistoryEmpty" class="text-[11px] text-gray-400 dark:text-gray-500 py-1 italic">過去のステータス履歴はありません</div>
           </div>
         </div>
 
