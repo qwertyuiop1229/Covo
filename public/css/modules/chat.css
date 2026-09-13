@@ -1700,6 +1700,41 @@
       color: #ffffff;
     }
 
+    /* ライトモード対応 (#callPipBar) */
+    html:not(.dark) #callPipBar,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar {
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(35, 165, 90, 0.35);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+      color: #2e3338;
+    }
+    html:not(.dark) #callPipBar .pip-name,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-name {
+      color: #2e3338;
+    }
+    html:not(.dark) #callPipBar .pip-avatar,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-avatar {
+      background: #e3e5e8;
+      color: #2e3338;
+    }
+    html:not(.dark) #callPipBar .pip-btn,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-btn {
+      background: rgba(0, 0, 0, 0.06);
+      color: #4f545c;
+    }
+    html:not(.dark) #callPipBar .pip-btn:hover,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-btn:hover {
+      background: rgba(0, 0, 0, 0.12);
+      color: #060607;
+    }
+    html:not(.dark) #callPipBar .pip-btn.mute.active,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-btn.mute.active,
+    html:not(.dark) #callPipBar .pip-btn.hangup,
+    body:not(.dark-mode):not(.dark-server-theme) #callPipBar .pip-btn.hangup {
+      background: #da373c;
+      color: #ffffff;
+    }
+
     /* 画面PINロックオーバーレイ (#105) */
     #appPinLockOverlay {
       position: fixed;

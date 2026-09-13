@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.162" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.163" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.162" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.163" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -2232,17 +2232,37 @@
                 <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
                   <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
                   <div class="flex flex-col gap-3">
-                    <!-- チャンネルタイプ選択 -->
-                    <div class="channel-type-selector" id="newRoomTypeSelector">
+                    <!-- チャンネルタイプ選択 (Discord完全準拠) -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="newRoomTypeSelector">
                       <label class="channel-type-option active" data-type="text" onclick="selectChannelType('text')" title="テキストチャンネル">
                         <i class="fas fa-hashtag channel-type-icon"></i>
                         <div class="channel-type-label">テキスト</div>
-                        <div class="channel-type-desc">メッセージ・画像・ファイル</div>
+                        <div class="channel-type-desc">メッセージ・画像</div>
                       </label>
                       <label class="channel-type-option" data-type="voice" onclick="selectChannelType('voice')" title="ボイスチャンネル">
                         <i class="fas fa-volume-up channel-type-icon"></i>
                         <div class="channel-type-label">ボイス</div>
-                        <div class="channel-type-desc">音声・ビデオ・画面共有</div>
+                        <div class="channel-type-desc">通話・画面共有</div>
+                      </label>
+                      <label class="channel-type-option" data-type="announcement" onclick="selectChannelType('announcement')" title="アナウンスチャンネル">
+                        <i class="fas fa-bullhorn channel-type-icon"></i>
+                        <div class="channel-type-label">アナウンス</div>
+                        <div class="channel-type-desc">公式のお知らせ</div>
+                      </label>
+                      <label class="channel-type-option" data-type="rules" onclick="selectChannelType('rules')" title="ルール・規約チャンネル">
+                        <i class="fas fa-scroll channel-type-icon"></i>
+                        <div class="channel-type-label">ルール</div>
+                        <div class="channel-type-desc">規約・案内情報</div>
+                      </label>
+                      <label class="channel-type-option" data-type="forum" onclick="selectChannelType('forum')" title="フォーラムチャンネル">
+                        <i class="fas fa-comments channel-type-icon"></i>
+                        <div class="channel-type-label">フォーラム</div>
+                        <div class="channel-type-desc">トピック別掲示板</div>
+                      </label>
+                      <label class="channel-type-option" data-type="event" onclick="selectChannelType('event')" title="イベントチャンネル">
+                        <i class="fas fa-calendar-alt channel-type-icon"></i>
+                        <div class="channel-type-label">イベント</div>
+                        <div class="channel-type-desc">イベント告知・予定</div>
                       </label>
                     </div>
                     <input type="hidden" id="newRoomTypeInput" value="text" />
@@ -3071,7 +3091,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.162"></script>
+  <script type="module" src="js/main.js?v=1.1.163"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

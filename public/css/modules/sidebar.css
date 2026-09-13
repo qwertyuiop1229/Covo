@@ -1677,57 +1677,121 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     }
 
 
-    /* --- Google Material Design Channel List UI --- */
-    body.discord-ui-mode .room-item-animate {
-      background: transparent !important;
-      color: #4b5563 !important;
-      transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease !important;
-      font-weight: 600 !important;
-      border-radius: 9999px !important; /* Material Pill Shape */
-      padding: 0.4rem 1rem !important; /* Slightly more padding for pill */
-      margin-left: 0.25rem !important;
-      margin-right: 0.25rem !important;
-      margin-bottom: 0.25rem !important;
-    }
-    body.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #9ca3af !important;
-      margin-right: 0.5rem !important;
-    }
-    body.discord-ui-mode .room-item-animate:hover {
-      background: rgba(0, 0, 0, 0.08) !important;
-      color: #111827 !important;
-    }
-    body.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #6b7280 !important;
-    }
-    body.discord-ui-mode .room-item-animate.active {
-      background: rgba(0, 0, 0, 0.12) !important;
-      color: #111827 !important;
-    }
-    body.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: #374151 !important;
+    /* ================================================================
+       Discord 本家完全準拠 チャンネルアイテムスタイル (PC: 34px / スマホ: 44px)
+       ================================================================ */
+    .room-item-animate,
+    .vc-channel-row {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      box-sizing: border-box !important;
+      width: calc(100% - 16px) !important;
+      height: 34px !important;
+      min-height: 34px !important;
+      max-height: 34px !important;
+      margin: 1px 8px !important;
+      padding: 0 8px !important;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      transition: background-color 0.15s ease, color 0.15s ease !important;
+      font-size: 15px !important;
+      font-weight: 500 !important;
+      line-height: 20px !important;
+      user-select: none !important;
+      text-decoration: none !important;
+      position: relative !important;
     }
 
-    /* Dark Server Theme Overrides */
-    body.dark-server-theme.discord-ui-mode .room-item-animate {
-      color: #9ca3af !important;
+    /* ライトモード */
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row {
+      color: #5c5e66 !important;
+      background: transparent !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #6b7280 !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate:hover,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      color: #313338 !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate:hover {
-      background: rgba(255, 255, 255, 0.08) !important;
-      color: #f3f4f6 !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate.active,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row.active-vc {
+      background: rgba(0, 0, 0, 0.1) !important;
+      color: #060607 !important;
+      font-weight: 600 !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #9ca3af !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-icon {
+      color: #80848e !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate.active {
-      background: rgba(255, 255, 255, 0.12) !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate:hover .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate.active .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row:hover .vc-channel-icon,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row.active-vc .vc-channel-icon {
+      color: #313338 !important;
+    }
+
+    /* ダークモード */
+    body.dark-mode .room-item-animate,
+    body.dark-server-theme .room-item-animate,
+    body.dark-mode .vc-channel-row,
+    body.dark-server-theme .vc-channel-row {
+      color: #949ba4 !important;
+      background: transparent !important;
+    }
+    body.dark-mode .room-item-animate:hover,
+    body.dark-server-theme .room-item-animate:hover,
+    body.dark-mode .vc-channel-row:hover,
+    body.dark-server-theme .vc-channel-row:hover {
+      background: rgba(78, 80, 88, 0.3) !important;
+      color: #dbdee1 !important;
+    }
+    body.dark-mode .room-item-animate.active,
+    body.dark-server-theme .room-item-animate.active,
+    body.dark-mode .vc-channel-row.active-vc,
+    body.dark-server-theme .vc-channel-row.active-vc {
+      background: rgba(78, 80, 88, 0.6) !important;
+      color: #ffffff !important;
+      font-weight: 600 !important;
+    }
+    body.dark-mode .room-hashtag,
+    body.dark-server-theme .room-hashtag,
+    body.dark-mode .vc-channel-icon,
+    body.dark-server-theme .vc-channel-icon {
+      color: #80848e !important;
+    }
+    body.dark-mode .room-item-animate:hover .room-hashtag,
+    body.dark-server-theme .room-item-animate:hover .room-hashtag,
+    body.dark-mode .room-item-animate.active .room-hashtag,
+    body.dark-server-theme .room-item-animate.active .room-hashtag,
+    body.dark-mode .vc-channel-row:hover .vc-channel-icon,
+    body.dark-server-theme .vc-channel-row:hover .vc-channel-icon,
+    body.dark-mode .vc-channel-row.active-vc .vc-channel-icon,
+    body.dark-server-theme .vc-channel-row.active-vc .vc-channel-icon {
       color: #ffffff !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: white !important;
+
+    /* モバイル (スマホ画面: max-width: 768px) - Discordモバイル完全準拠 */
+    @media (max-width: 768px) {
+      .room-item-animate,
+      .vc-channel-row {
+        width: calc(100% - 12px) !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        margin: 1px 6px !important;
+        padding: 0 12px !important;
+        border-radius: 6px !important;
+        font-size: 16px !important;
+      }
+      .room-hashtag,
+      .vc-channel-icon {
+        font-size: 18px !important;
+      }
+    .drag-over-channel {
+      border: 2px dashed #6366f1 !important;
+      background: rgba(99, 102, 241, 0.12) !important;
+      transform: scale(1.01);
     }
 
     /* 未ログイン時の完全表示制御（認証確定前はスプラッシュ表示、認証確定後かつ未ログイン時のみログイン画面を表示） */
@@ -2114,6 +2178,22 @@ body.dark-server-theme .vc-bar-btn:hover {
 .vc-bar-hangup:hover {
   background: rgba(220,38,38,0.12) !important;
   color: #b91c1c !important;
+}
+
+@media (max-width: 768px) {
+  /* スマホ利用時: サイドバーを閉じていてもチャット画面下部にボイス接続中バーを常駐表示 */
+  .vc-connection-bar:not(.hidden) {
+    position: fixed;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    left: 8px;
+    right: 8px;
+    z-index: 99980;
+    margin: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
 }
 
 /* ================================================================

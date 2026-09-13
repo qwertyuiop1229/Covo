@@ -112,7 +112,10 @@ function isTransientTelemetryError(args) {
       return true;
     }
     // ブラウザ拡張機能・広告ブロッカー・外部注入スクリプト・WebView2内部ノイズ
+    // Safari / iOS やブラウザ拡張機能のノイズ・クロスオリジンエラー
     if (
+      str === 'script error.' ||
+      str.includes('script error') ||
       str.includes('tracking prevention') ||
       str.includes('blocked access to storage') ||
       str.includes('chrome-extension://') ||
@@ -129,7 +132,10 @@ function isTransientTelemetryError(args) {
       str.includes('content_script.js') ||
       str.includes('beforeinstallprompt') ||
       str.includes('beforeinstallpromptevent') ||
-      str.includes('resizeobserver loop')
+      str.includes('resizeobserver loop') ||
+      str.includes('violates the following content security policy directive') ||
+      str.includes('content security policy') ||
+      str.trim() === '::'
     ) {
       return true;
     }
@@ -145,6 +151,7 @@ function isTransientTelemetryError(args) {
     if (
       str.includes('permission_denied') ||
       str.includes('permission-denied') ||
+      str.includes('permission denied') ||
       str.includes('@firebase/database') ||
       str.includes('pruneexcessmessages')
     ) {
@@ -170,7 +177,7 @@ function isTransientTelemetryError(args) {
   }
 }
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
-window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
+let _cachedTelemetryErrors = window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
 const _dismissedErrorSignatures = new Set();
 const _pendingTelemetryErrors = [];
@@ -5864,7 +5871,7 @@ async function syncStatusHistoryFromRTDB() {
       }
     }
   } catch (e) {
-    console.warn('[statusHistory] RTDB sync error:', e);
+    console.debug('[statusHistory] RTDB sync skipped or offline:', e?.message || e);
   }
 }
 
@@ -5875,7 +5882,7 @@ async function saveStatusHistoryToRTDB(history) {
     const rtdb = await _getOrInitRTDB();
     await set(ref(rtdb, `users/${userId}/statusHistory`), history);
   } catch (e) {
-    console.warn('[statusHistory] RTDB save error:', e);
+    console.debug('[statusHistory] RTDB save skipped or offline:', e?.message || e);
   }
 }
 
@@ -9008,17 +9015,79 @@ async function loadServerSettingsRooms() {
 
     const renderRoomItem = (room, index, arr) => {
       const item = document.createElement("div");
-      item.className = "flex items-center justify-between p-3 bg-[#2b2d31] border border-[#1e1f22] rounded-lg group transition-all ml-4 mb-2 min-w-0";
+      item.className = "flex items-center justify-between p-2.5 bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-[#1e1f22] rounded-lg group transition-all ml-2 sm:ml-4 mb-2 min-w-0 select-none shadow-xs";
+      item.setAttribute('draggable', 'true');
+
+      // チャンネルタイプに応じたDiscordアイコン
+      const chType = room.channelType || 'text';
+      let typeIconHtml = '<i class="fas fa-hashtag text-gray-400 dark:text-gray-500 text-xs"></i>';
+      if (chType === 'voice') typeIconHtml = '<i class="fas fa-volume-up text-emerald-500 text-xs"></i>';
+      else if (chType === 'announcement') typeIconHtml = '<i class="fas fa-bullhorn text-amber-500 text-xs"></i>';
+      else if (chType === 'rules') typeIconHtml = '<i class="fas fa-scroll text-blue-500 text-xs"></i>';
+      else if (chType === 'forum') typeIconHtml = '<i class="fas fa-comments text-indigo-500 text-xs"></i>';
+      else if (chType === 'event') typeIconHtml = '<i class="fas fa-calendar-alt text-rose-500 text-xs"></i>';
+
       const nameSpan = document.createElement("span");
-      nameSpan.className = "text-sm font-medium text-gray-300 flex items-center gap-2 truncate";
-      nameSpan.innerHTML = `<i class="fas fa-hashtag text-gray-500 text-xs"></i> ${escapeHtml(room.name)}`;
+      nameSpan.className = "text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2 truncate";
+      nameSpan.innerHTML = `
+        <i class="fas fa-grip-vertical text-gray-300 dark:text-gray-600 hover:text-gray-500 cursor-grab mr-0.5 text-xs" title="ドラッグして並び替え"></i>
+        ${typeIconHtml}
+        <span class="truncate">${escapeHtml(room.name)}</span>
+      `;
+
+      // ドラッグ＆ドロップ並び替えハンドラ (Discord本家準拠)
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', room.id);
+        item.style.opacity = '0.35';
+      });
+      item.addEventListener('dragend', () => {
+        item.style.opacity = '1';
+        listEl.querySelectorAll('.drag-over-channel').forEach(el => el.classList.remove('drag-over-channel', 'border-indigo-500'));
+      });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        item.classList.add('drag-over-channel', 'border-indigo-500');
+      });
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('drag-over-channel', 'border-indigo-500');
+      });
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over-channel', 'border-indigo-500');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === room.id) return;
+        const fromIdx = roomsData.findIndex(r => r.id === draggedId);
+        const toIdx = roomsData.findIndex(r => r.id === room.id);
+        if (fromIdx < 0 || toIdx < 0) return;
+
+        const [moved] = roomsData.splice(fromIdx, 1);
+        moved.categoryId = room.categoryId;
+        roomsData.splice(toIdx, 0, moved);
+        roomsData.forEach((r, i) => { r.order = i * 10; });
+
+        renderRoomsListUI();
+        try {
+          const { writeBatch, doc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+          const batch = writeBatch(db);
+          roomsData.forEach(r => {
+            batch.update(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${r.id}`), {
+              order: r.order,
+              categoryId: r.categoryId || null
+            });
+          });
+          await batch.commit();
+          if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
+        } catch (err) {
+          console.error('Drag drop reorder error:', err);
+        }
+      });
 
       const btnsContainer = document.createElement("div");
-      btnsContainer.className = "flex items-center gap-1.5";
+      btnsContainer.className = "flex items-center gap-1.5 flex-shrink-0";
 
       // Order Up
       const upBtn = document.createElement("button");
-      upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
+      upBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === 0 ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'}`;
       upBtn.disabled = index === 0;
       upBtn.innerHTML = `<i class="fas fa-arrow-up"></i>`;
       upBtn.addEventListener("click", async () => {
@@ -9039,7 +9108,7 @@ async function loadServerSettingsRooms() {
 
       // Order Down
       const downBtn = document.createElement("button");
-      downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === arr.length - 1 ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-white/10'}`;
+      downBtn.className = `room-order-btn p-1.5 rounded-lg text-xs font-bold transition-all ${index === arr.length - 1 ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'}`;
       downBtn.disabled = index === arr.length - 1;
       downBtn.innerHTML = `<i class="fas fa-arrow-down"></i>`;
       downBtn.addEventListener("click", async () => {
@@ -9058,13 +9127,13 @@ async function loadServerSettingsRooms() {
         if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
       });
 
-      // Custom Category Dropdown (Style matched to stampAdminServerSelectContainer)
+      // Custom Category Dropdown
       const catContainer = document.createElement("div");
-      catContainer.className = "relative ml-2";
+      catContainer.className = "relative ml-1 sm:ml-2";
 
       const catBtn = document.createElement("button");
       catBtn.type = "button";
-      catBtn.className = "w-28 bg-[#1e1f22] border border-[#2b2d31] hover:bg-[#2b2d31] rounded-lg p-1.5 flex items-center justify-between shadow-sm focus:outline-none transition-all text-gray-300 text-xs";
+      catBtn.className = "w-24 sm:w-28 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#2b2d31] rounded-lg p-1.5 flex items-center justify-between shadow-xs focus:outline-none transition-all text-gray-700 dark:text-gray-300 text-xs";
 
       const currentCat = (typeof categories !== 'undefined') ? categories.find(c => c.id === room.categoryId) : null;
       const catLabel = document.createElement("span");
@@ -9072,20 +9141,20 @@ async function loadServerSettingsRooms() {
       catLabel.textContent = currentCat ? currentCat.name : "カテゴリなし";
 
       const catIcon = document.createElement("i");
-      catIcon.className = "fas fa-chevron-down text-gray-500 transition-transform duration-200 text-[10px] room-cat-icon";
+      catIcon.className = "fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform duration-200 text-[10px] room-cat-icon";
 
       catBtn.appendChild(catLabel);
       catBtn.appendChild(catIcon);
 
       const catDropdown = document.createElement("div");
-      catDropdown.className = "room-cat-dropdown absolute z-50 w-36 right-0 mt-1 bg-[#1e1f22] border border-[#2b2d31] rounded-lg shadow-2xl max-h-40 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top";
+      catDropdown.className = "room-cat-dropdown absolute z-50 w-36 right-0 mt-1 bg-white dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-lg shadow-2xl max-h-40 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top";
 
       const catList = document.createElement("ul");
       catList.className = "py-1";
 
       const createOption = (val, text) => {
         const li = document.createElement("li");
-        li.className = "px-3 py-2 hover:bg-[#2b2d31] hover:text-white cursor-pointer text-[11px] font-bold text-gray-300 transition-colors truncate";
+        li.className = "px-3 py-2 hover:bg-gray-50 dark:hover:bg-[#2b2d31] hover:text-indigo-600 dark:hover:text-white cursor-pointer text-[11px] font-bold text-gray-700 dark:text-gray-300 transition-colors truncate";
         li.textContent = text;
         li.addEventListener("click", async (e) => {
           e.stopPropagation();
@@ -9150,7 +9219,7 @@ async function loadServerSettingsRooms() {
 
       // Delete
       const delBtn = document.createElement("button");
-      delBtn.className = "del-room-btn text-red-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg text-xs transition-all ml-2";
+      delBtn.className = "del-room-btn text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 rounded-lg text-xs transition-all ml-1 sm:ml-2";
       delBtn.dataset.roomId = room.id;
       delBtn.dataset.roomName = room.name;
       delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
@@ -10996,8 +11065,10 @@ function loadServerRooms(serverId, _retry = 0) {
       const room = docSnap.data();
       roomNames[docSnap.id] = room.name;
 
+      const chType = room.channelType || 'text';
+
       // ===== ボイスチャンネル専用レンダリング =====
-      if (room.channelType === 'voice') {
+      if (chType === 'voice') {
         const vcDiv = document.createElement('div');
         vcDiv.className = 'vc-channel-item';
         vcDiv.id = `room-item-${docSnap.id}`;
@@ -11006,8 +11077,10 @@ function loadServerRooms(serverId, _retry = 0) {
         vcDiv.innerHTML = `
           <div class="vc-channel-row${isActiveVc ? ' active-vc' : ''}" data-vc-id="${docSnap.id}"
                onclick="joinVoiceChannel('${docSnap.id}', '${safeName}')">
-            <i class="fas fa-volume-up vc-channel-icon"></i>
-            <span class="vc-channel-name">${safeName}</span>
+            <div class="flex items-center gap-2 flex-1 truncate text-left min-w-0">
+              <i class="fas fa-volume-up vc-channel-icon text-sm flex-shrink-0"></i>
+              <span class="vc-channel-name truncate">${safeName}</span>
+            </div>
             <button class="vc-join-btn" onclick="event.stopPropagation();joinVoiceChannel('${docSnap.id}','${safeName}')" title="参加">
               <i class="fas fa-sign-in-alt"></i>
             </button>
@@ -11017,17 +11090,27 @@ function loadServerRooms(serverId, _retry = 0) {
         return vcDiv;
       }
 
-      // ===== テキストチャンネル (従来通り) =====
+      // ===== テキスト・アナウンス・ルール・フォーラム・イベントチャンネル =====
       const div = document.createElement("div");
-      // ライトモードはしっかり濃い text-slate-800、ホバー時も青色にならず洗練された濃色グレー。ダークモードのホバー時も安っぽくなく自然に調和し、透明感のある薄グレー背景(slate-600/30)とキリッとした枠線(slate-500/60)が浮かび上がる極上の共通大人デザイン
-      div.className = "flex items-center justify-between py-1 px-2 mb-0.5 text-sm cursor-pointer group room-item-animate";
+      div.className = "room-item-animate";
       div.id = `room-item-${docSnap.id}`;
       if (docSnap.id === currentRoomId) div.classList.add("active");
       div.addEventListener("click", () => selectRoom(docSnap.id, room.name));
 
+      let iconHtml = '<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span>';
+      if (chType === 'announcement') {
+        iconHtml = '<i class="fas fa-bullhorn room-hashtag text-xs transition-colors mr-2"></i>';
+      } else if (chType === 'rules') {
+        iconHtml = '<i class="fas fa-scroll room-hashtag text-xs transition-colors mr-2"></i>';
+      } else if (chType === 'forum') {
+        iconHtml = '<i class="fas fa-comments room-hashtag text-xs transition-colors mr-2"></i>';
+      } else if (chType === 'event') {
+        iconHtml = '<i class="fas fa-calendar-alt room-hashtag text-xs transition-colors mr-2"></i>';
+      }
+
       const nameDiv = document.createElement("div");
-      nameDiv.className = "flex items-center gap-1.5 flex-1 truncate text-left";
-      nameDiv.innerHTML = `<span class="room-hashtag text-lg font-normal transition-colors mr-1">#</span><span class="truncate">${escapeHtml(room.name)}</span>`;
+      nameDiv.className = "flex items-center flex-1 truncate text-left min-w-0";
+      nameDiv.innerHTML = `${iconHtml}<span class="truncate">${escapeHtml(room.name)}</span>`;
 
       const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
       const lastRead = rm[docSnap.id] || 0;
@@ -18930,7 +19013,7 @@ function renderParticipantTiles() {
       isLocal: false,
       name: _activeCallTarget.name || _activeCallTarget.nickname || '通話相手',
       avatarUrl: _activeCallTarget.avatar || _activeCallTarget.avatarUrl || '',
-      isMuted: Boolean(remoteUser?.isMuted || remoteUser?.audioTrack?.muted || (_voiceStates && _voiceStates[remoteUid]?.isMuted)),
+      isMuted: Boolean(remoteUser?.isMuted || remoteUser?.audioTrack?.muted || (window._voiceEngine?._voiceStates?.[remoteUid]?.isMuted)),
       hasVideo: hasRemoteVideo,
       videoContainerId: `remote-video-${remoteUid}`,
       videoTrack: remoteUser?.videoTrack
@@ -19068,58 +19151,109 @@ window.toggleCamera = async function () {
   };
   window.toggleCallVideo = window.toggleCamera;
   window.toggleScreenShare = async function () {
-  if (window._voiceEngine && window._voiceEngine.isActive) {
-    await window._voiceEngine.toggleScreen();
-    return;
-  }
-  if (!_agoraClient) return;
-  const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
-  try {
-    if (_isScreenSharing) {
-      _isScreenSharing = false;
-      if (_localScreenTrack) {
-        await _agoraClient.unpublish([_localScreenTrack]);
-        _localScreenTrack.stop();
-        _localScreenTrack.close();
-        _localScreenTrack = null;
-      }
-      if (shareBtn) {
-        shareBtn.classList.remove("active");
-        shareBtn.title = "画面を共有";
-      }
-      renderParticipantTiles();
-    } else {
-      if (_isVideoEnabled) {
-        await toggleCamera(); // カメラONなら停止
-      }
-      const trackRes = await AgoraRTC.createScreenVideoTrack({
-        encoderConfig: "1080p_1"
-      }, "auto");
-      const screenTrack = Array.isArray(trackRes) ? trackRes[0] : trackRes;
-      _localScreenTrack = screenTrack;
-      _localScreenTrack.on("track-ended", () => {
-        if (_isScreenSharing) toggleScreenShare();
-      });
-      await _agoraClient.publish([_localScreenTrack]);
-      _isScreenSharing = true;
-      if (shareBtn) {
-        shareBtn.classList.add("active");
-        shareBtn.title = "画面共有を停止";
-      }
-      renderParticipantTiles();
-      setTimeout(() => {
-        const localCont = document.getElementById("local-video-container");
-        if (localCont && _localScreenTrack) {
-          _localScreenTrack.play("local-video-container");
+    if (window._voiceEngine && window._voiceEngine.isActive) {
+      await window._voiceEngine.toggleScreen();
+      return;
+    }
+    if (!_agoraClient) return;
+    const shareBtn = document.getElementById("callScreenBtn") || document.getElementById("callScreenShareBtn");
+    try {
+      if (_isScreenSharing) {
+        _isScreenSharing = false;
+        if (_localScreenTrack) {
+          try { await _agoraClient.unpublish([_localScreenTrack]); } catch (_) {}
+          try { _localScreenTrack.stop(); } catch (_) {}
+          try { _localScreenTrack.close(); } catch (_) {}
+          _localScreenTrack = null;
         }
-      }, 50);
+        if (shareBtn) {
+          shareBtn.classList.remove("active");
+          shareBtn.title = "画面を共有";
+        }
+        renderParticipantTiles();
+      } else {
+        const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isPwa = Boolean(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+        const canDisplayMedia = Boolean(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+
+        // iOS PWA または getDisplayMedia 非対応環境での代替（外カメラ共有）
+        if (!canDisplayMedia || (isIos && isPwa)) {
+          const useBackCam = await (typeof showCustomConfirm === 'function'
+            ? showCustomConfirm(
+                'iPhoneアプリ版(PWA)ではiOSの仕様により画面キャプチャが制限されています。\n\n手元の資料や画面を映せる【外カメラ（背面カメラ）共有】で代用しますか？\n（※Safariブラウザの通常タブで開くとシステム画面共有も可能です）',
+                '外カメラで共有',
+                'キャンセル'
+              )
+            : Promise.resolve(confirm('iPhoneアプリ版(PWA)では画面キャプチャが制限されています。外カメラで共有しますか？')));
+
+          if (useBackCam) {
+            if (_isVideoEnabled) await toggleCamera();
+            try {
+              const camStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: 'environment' } },
+                audio: false
+              });
+              const vTrack = camStream.getVideoTracks()[0];
+              if (vTrack) {
+                const agoraTrack = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: vTrack });
+                _localScreenTrack = agoraTrack;
+                _localScreenTrack.on("track-ended", () => {
+                  if (_isScreenSharing) toggleScreenShare();
+                });
+                await _agoraClient.publish([_localScreenTrack]);
+                _isScreenSharing = true;
+                if (shareBtn) {
+                  shareBtn.classList.add("active");
+                  shareBtn.title = "外カメラ共有を停止";
+                }
+                renderParticipantTiles();
+                setTimeout(() => {
+                  const localCont = document.getElementById("local-video-container");
+                  if (localCont && _localScreenTrack) {
+                    _localScreenTrack.play("local-video-container");
+                  }
+                }, 50);
+                if (typeof alertMessage === 'function') alertMessage("外カメラで共有を開始しました", "success");
+              }
+            } catch (camErr) {
+              console.warn("Back camera share failed:", camErr);
+              if (typeof alertMessage === 'function') alertMessage("外カメラの起動に失敗しました: " + (camErr.message || ''), "error");
+            }
+          }
+          return;
+        }
+
+        if (_isVideoEnabled) {
+          await toggleCamera(); // カメラONなら停止
+        }
+        const trackRes = await AgoraRTC.createScreenVideoTrack({
+          encoderConfig: "1080p_1"
+        }, "auto");
+        const screenTrack = Array.isArray(trackRes) ? trackRes[0] : trackRes;
+        _localScreenTrack = screenTrack;
+        _localScreenTrack.on("track-ended", () => {
+          if (_isScreenSharing) toggleScreenShare();
+        });
+        await _agoraClient.publish([_localScreenTrack]);
+        _isScreenSharing = true;
+        if (shareBtn) {
+          shareBtn.classList.add("active");
+          shareBtn.title = "画面共有を停止";
+        }
+        renderParticipantTiles();
+        setTimeout(() => {
+          const localCont = document.getElementById("local-video-container");
+          if (localCont && _localScreenTrack) {
+            _localScreenTrack.play("local-video-container");
+          }
+        }, 50);
+      }
+    } catch (err) {
+      console.error("Screen share error:", err);
+      if (err.name !== "NotAllowedError") {
+        alertMessage("画面共有を開始できませんでした", "error");
+      }
     }
-  } catch (err) {
-    console.error("Screen share error:", err);
-    if (err.name !== "NotAllowedError") {
-      alertMessage("画面共有を開始できませんでした", "error");
-    }
-  }
   };
   window.toggleCallScreenShare = window.toggleScreenShare;
   window.toggleCallFullscreen = function () {
@@ -24034,30 +24168,53 @@ class VoiceEngine {
   }
 
   async _startScreenShare() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      if (typeof alertMessage === 'function') {
-        alertMessage('お使いの環境・ブラウザでは画面共有に対応していません', 'warning');
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isPwa = Boolean(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+    const hasDisplayMedia = Boolean(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+
+    if (!hasDisplayMedia || (isIos && isPwa)) {
+      const useBackCam = await (typeof showCustomConfirm === 'function'
+        ? showCustomConfirm(
+            'iPhoneアプリ版(PWA)ではiOSの仕様により画面キャプチャが制限されています。\n\n手元の資料や画面を映せる【外カメラ（背面カメラ）共有】で代用しますか？\n（※Safariブラウザの通常タブで開くとシステム画面共有も可能です）',
+            '外カメラで共有',
+            'キャンセル'
+          )
+        : Promise.resolve(confirm('iPhoneアプリ版(PWA)では画面キャプチャが制限されています。外カメラで共有しますか？')));
+
+      if (useBackCam) {
+        try {
+          this._localScreenStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false
+          });
+        } catch (camErr) {
+          console.warn('[VoiceEngine] Back camera share failed:', camErr);
+          if (typeof alertMessage === 'function') alertMessage('外カメラの起動に失敗しました: ' + (camErr.message || ''), 'error');
+          return;
+        }
+      } else {
+        return;
       }
-      return;
-    }
-    try {
+    } else {
       try {
-        this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: 30 },
-          audio: false
-        });
-      } catch (fallbackErr) {
-        // iOS Safari / 制限環境向けフォールバック
-        this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true
-        });
+        try {
+          this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: 30 },
+            audio: false
+          });
+        } catch (fallbackErr) {
+          // iOS Safari / 制限環境向けフォールバック
+          this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true
+          });
+        }
+      } catch(e) {
+        if (e.name !== 'NotAllowedError') {
+          console.error('[VoiceEngine] 画面共有取得失敗:', e);
+          if (typeof alertMessage === 'function') alertMessage('画面共有の開始に失敗しました: ' + (e.message || ''), 'error');
+        }
+        return;
       }
-    } catch(e) {
-      if (e.name !== 'NotAllowedError') {
-        console.error('[VoiceEngine] 画面共有取得失敗:', e);
-        if (typeof alertMessage === 'function') alertMessage('画面共有の開始に失敗しました: ' + (e.message || ''), 'error');
-      }
-      return;
     }
 
     const screenTrack = this._localScreenStream.getVideoTracks()[0];
@@ -24084,18 +24241,24 @@ class VoiceEngine {
       console.log('[VoiceEngine] 🖥️ P2P 画面共有開始');
     } else if (this.mode === 'agora') {
       try {
-        // Agora: createScreenVideoTrack を使用して publish
-        this._agoraScreen = await AgoraRTC.createScreenVideoTrack(
-          { encoderConfig: '1080p_1', optimizationMode: 'detail' },
-          'disable' // 音声は別途マイクで
-        );
+        // Agora: 取得済み MediaStreamTrack から CustomVideoTrack を作成
+        if (typeof AgoraRTC !== 'undefined' && AgoraRTC.createCustomVideoTrack) {
+          this._agoraScreen = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: screenTrack });
+        } else {
+          this._agoraScreen = await AgoraRTC.createScreenVideoTrack(
+            { encoderConfig: '1080p_1', optimizationMode: 'detail' },
+            'disable'
+          );
+        }
         if (Array.isArray(this._agoraScreen)) this._agoraScreen = this._agoraScreen[0];
         await this._agoraClient.publish([this._agoraScreen]);
         console.log('[VoiceEngine] 🖥️ Agora 画面共有開始');
       } catch(e) {
         console.error('[VoiceEngine] Agora 画面共有開始失敗:', e);
-        this._localScreenStream.getTracks().forEach(t => t.stop());
-        this._localScreenStream = null;
+        if (this._localScreenStream) {
+          this._localScreenStream.getTracks().forEach(t => t.stop());
+          this._localScreenStream = null;
+        }
         if (typeof alertMessage === 'function') alertMessage('Agora 画面共有の開始に失敗しました', 'error');
         return;
       }
