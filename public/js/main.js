@@ -23459,8 +23459,17 @@ const VC_ICE_SERVERS = [
   // OpenRelay TURN – TCP 443（最も通りやすい・企業Firewall対応）
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
     username: 'openrelayproject', credential: 'openrelayproject' },
+  // OpenRelay TURNS – TLS 443（厳格なDPI/Firewall対応）
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject', credential: 'openrelayproject' },
   // Cloudflare STUN（追加 STUN バックアップ）
   { urls: 'stun:stun.cloudflare.com:3478' },
+];
+const VC_TURN_TEST_SERVERS = [
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 const VC_TURN_INFO = {
@@ -23626,14 +23635,13 @@ class VoiceEngine {
 
       // --- TURN 疎通チェック（非同期・バックグラウンド） ---
       this._checkTurnConnectivity();
-
+      // --- シグナリングリスナーを最速先行起動（相手からのOffer取りこぼしを完全防止） ---
+      this._setupSignalingListener();
       // --- RTDB に voiceState を書き込み + onDisconnect 設定 ---
       await this._setVoiceState({ isMuted: false, hasVideo: false, hasScreen: false });
-
       // --- voiceStates を購読 ---
       this._subscribeVoiceStates();
-
-      // --- 古いシグナリングドキュメントを掃除 ---
+      // --- 古いシグナリングドキュメントを安全に掃除（直近60秒以内のドキュメントは保持） ---
       this._cleanupStaleSignaling();
 
       // --- UI 更新 ---
@@ -23728,7 +23736,7 @@ class VoiceEngine {
     const startTime = Date.now();
     try {
       const pc = new RTCPeerConnection({
-        iceServers: VC_ICE_SERVERS,
+        iceServers: VC_TURN_TEST_SERVERS, // TURN専用設定で不要なSTUN探索待ちをバイパス
         iceTransportPolicy: 'relay' // TURNリレー候補のみを強制探索
       });
       pc.createDataChannel('__vc_turn_check__');
@@ -23738,8 +23746,8 @@ class VoiceEngine {
         const timer = setTimeout(() => {
           pc.onicecandidate = null;
           try { pc.close(); } catch(_){}
-          reject(new Error('TURN 接続タイムアウト (8秒)'));
-        }, 8000);
+          reject(new Error('TURN リレー候補探索タイムアウト (12秒)'));
+        }, 12000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
           if (e.candidate && (e.candidate.type === 'relay' || (e.candidate.candidate && e.candidate.candidate.includes('typ relay')))) {
@@ -23762,7 +23770,7 @@ class VoiceEngine {
       console.log(`[VoiceEngine] ✅ TURN 疎通確認成功 (${res.latencyMs}ms): ${res.candidate}`);
       return res;
     } catch (e) {
-      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
+      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (直接P2P可能環境ではリレー不使用で正常接続されます)`);
       return { success: false, error: e.message, latencyMs: Date.now() - startTime };
     }
   }
@@ -24046,8 +24054,22 @@ class VoiceEngine {
             console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
           );
         } else {
-          // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
-          this._createPeerConnection(peerUid);
+          // 自分がAnswererの場合もピア接続を先行生成し、Offer未達時の自律回復タイマーを設定
+          const peerInfo = this._createPeerConnection(peerUid);
+          if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = setTimeout(async () => {
+            if (!this.isActive || this.mode !== 'p2p') return;
+            if (peerInfo.pc.signalingState === 'stable' && peerInfo.pc.iceConnectionState === 'new') {
+              console.warn(`[VoiceEngine] ⏱ Offer待機タイムアウト (${peerUid.slice(0,8)}) → 自発的Offer送信で接続推進`);
+              try {
+                const offer = await peerInfo.pc.createOffer();
+                await peerInfo.pc.setLocalDescription(offer);
+                await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp, fallback: true });
+              } catch (e) {
+                console.warn(`[VoiceEngine] 自発的Offer送信エラー:`, e);
+              }
+            }
+          }, 4500);
         }
       }
     }
@@ -24101,14 +24123,26 @@ class VoiceEngine {
   async _createOffer(peerUid) {
     const peerInfo = this._createPeerConnection(peerUid);
     const { pc } = peerInfo;
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
     await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp });
     console.log(`[VoiceEngine] 📤 Offer → ${peerUid.slice(0,8)} (ICE: UDP80/443 + TCP443)`);
+    // 相手からのAnswer待機タイムアウト (3.5秒)：相手の受信漏れ・起動遅延時に自動再送
+    if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+    peerInfo.signalingTimer = setTimeout(async () => {
+      if (!this.isActive || this.mode !== 'p2p') return;
+      if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.signalingState === 'have-local-offer') {
+        console.warn(`[VoiceEngine] ⏱ Answer待機タイムアウト (${peerUid.slice(0,8)}) → Offer自動再送`);
+        try {
+          const reOffer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(reOffer);
+          await this._sendSignal(peerUid, { type: 'offer', sdp: reOffer.sdp, retry: true });
+        } catch (e) {
+          console.warn(`[VoiceEngine] Offer自動再送エラー:`, e);
+        }
+      }
+    }, 3500);
   }
-
   // ================================================================
   // RTCPeerConnection 生成（共通）
   // ================================================================
@@ -24116,16 +24150,16 @@ class VoiceEngine {
     // 既存があれば閉じる
     const existing = this._peers.get(peerUid);
     if (existing) {
+      if (existing.signalingTimer) clearTimeout(existing.signalingTimer);
       try { existing.pc.close(); } catch(_){}
     }
-
     const pc = new RTCPeerConnection({
       iceServers: VC_ICE_SERVERS,
       iceTransportPolicy: this._forceTurnOnly ? 'relay' : 'all',   // TURN強制フラグまたは直接接続
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, pendingCandidates: [] };
+    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, signalingTimer: null, pendingCandidates: [] };
     this._peers.set(peerUid, peerInfo);
 
     // ローカルトラックを追加
@@ -24148,13 +24182,26 @@ class VoiceEngine {
         if (!audioEl) {
           audioEl = new Audio();
           audioEl.autoplay = true;
+          audioEl.playsInline = true;
           // DOM に追加して GC を確実に防止
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
           this._audioElements.set(peerUid, audioEl);
         }
         audioEl.srcObject = e.streams[0];
-        audioEl.play().catch(() => {});
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn(`[VoiceEngine] 🔈 自動再生制限検知 (${peerUid.slice(0,8)}): タップで再生開始`, err);
+            const resumeAudio = () => {
+              audioEl.play().catch(() => {});
+              document.removeEventListener('click', resumeAudio);
+              document.removeEventListener('touchstart', resumeAudio);
+            };
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+          });
+        }
         this._attachP2PStreamAnalyser(peerUid, e.streams[0], false);
         console.log(`[VoiceEngine] 🔈 音声受信: ${peerUid.slice(0,8)}`);
       }
@@ -24204,6 +24251,10 @@ class VoiceEngine {
 
       if (state === 'connected' || state === 'completed') {
         peerInfo.iceRestarts = 0;
+        if (peerInfo.signalingTimer) {
+          clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = null;
+        }
         // どのパス（relay/直接）を使っているかをログ出力
         pc.getStats().then(stats => {
           stats.forEach(r => {
@@ -24293,6 +24344,7 @@ class VoiceEngine {
     const peerInfo = this._peers.get(peerUid);
     if (peerInfo) {
       if (peerInfo.iceTimer) clearTimeout(peerInfo.iceTimer);
+      if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
       try {
         peerInfo.pc.onicecandidate = null;
         peerInfo.pc.ontrack = null;
@@ -24379,14 +24431,20 @@ class VoiceEngine {
             await this._handleOffer(fromUid, data);
           } else if (data.type === 'answer') {
             const peerInfo = this._peers.get(fromUid);
-            if (peerInfo && peerInfo.pc.signalingState !== 'stable') {
-              await peerInfo.pc.setRemoteDescription(
-                new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
-              );
-              console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
-              while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
-                const cand = peerInfo.pendingCandidates.shift();
-                try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+            if (peerInfo) {
+              if (peerInfo.signalingTimer) {
+                clearTimeout(peerInfo.signalingTimer);
+                peerInfo.signalingTimer = null;
+              }
+              if (peerInfo.pc.signalingState !== 'stable') {
+                await peerInfo.pc.setRemoteDescription(
+                  new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
+                );
+                console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
+                while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
+                  const cand = peerInfo.pendingCandidates.shift();
+                  try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+                }
               }
             }
           } else if (data.type === 'candidate') {
@@ -24456,17 +24514,24 @@ class VoiceEngine {
   // ================================================================
   async _cleanupStaleSignaling() {
     try {
-      // 自分宛の古いシグナリングを削除
+      // 自分宛の古いシグナリングを安全に掃除（60秒以上前の古い残骸のみ削除、最新のOfferは絶対保持）
       const snap = await getDocs(
         query(
           collection(db, `artifacts/${appId}/vc_signaling`),
           where('toUid', '==', this._myUid)
         )
       );
-      const deletes = snap.docs.map(d => deleteDoc(d.ref));
+      const now = Date.now();
+      const deletes = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (!data.at || (now - data.at > 60000)) {
+          deletes.push(deleteDoc(d.ref));
+        }
+      });
       await Promise.allSettled(deletes);
-      if (snap.docs.length > 0) {
-        console.log(`[VoiceEngine] 🧹 古いシグナリング ${snap.docs.length}件 を削除`);
+      if (deletes.length > 0) {
+        console.log(`[VoiceEngine] 🧹 古いシグナリング残骸 ${deletes.length}件 を削除`);
       }
     } catch(e) {
       // 無視（クリーンアップ失敗は致命的ではない）
