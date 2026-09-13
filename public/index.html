@@ -2255,11 +2255,11 @@
       <!-- サーバー設定モーダル (Discord完全準拠: PC 2カラム / スマホ フルスクリーンドリルダウン) -->
       <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden md:p-4">
         <div class="bg-white dark:bg-[#313338] md:rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in flex flex-col h-full md:h-[min(720px,calc(100dvh-3rem))] relative">
-          <!-- PC専用 閉じるボタン (Discord風 右上固定、ESC文字なし) -->
-          <button class="hidden md:flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer absolute top-4 right-4 z-50" id="closeServerSettingsBtn" title="閉じる" onclick="closeServerSettingsModal()">
-            <i class="fas fa-times text-base"></i>
+          <!-- PC専用 閉じるボタン (右上固定・スクロールバーと重ならない位置) -->
+          <button class="hidden md:flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer absolute top-4 right-6 z-50" id="closeServerSettingsBtn" title="閉じる" onclick="closeServerSettingsModal()">
+            <i class="fas fa-times text-sm"></i>
           </button>
-          
+
           <!-- スマホ専用ヘッダー (ドリルダウンナビゲーション) -->
           <div id="ssMobileHeader" class="md:hidden h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between bg-white dark:bg-[#2b2d31] flex-shrink-0">
             <button id="ssMobileBackBtn" class="hidden text-gray-600 dark:text-gray-300 flex items-center gap-1 text-sm font-bold p-1 cursor-pointer" onclick="goBackSsMobileMenu()">
@@ -2534,71 +2534,55 @@
         </div>
 
         <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
-        <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー (画像1 Discord本家完全準拠: ホバー枠付きピルボタン + 右端招待アイコン) -->
-          <div id="serverHeader" class="h-12 border-b border-gray-200 dark:border-[#1f2023] px-3 flex items-center justify-between flex-shrink-0 select-none relative bg-white dark:bg-[#111214]">
+        <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0 relative" style="width: 250px;">
+          <!-- サーバーヘッダー -->
+          <div id="serverHeader" class="h-12 border-b border-gray-200 dark:border-[#1f2023] px-3 flex items-center justify-between flex-shrink-0 select-none bg-white dark:bg-[#111214]">
             <div class="flex items-center gap-1 min-w-0 flex-1">
               <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-1 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
-              <!-- サーバー名ピルボタン (ホバーで枠/背景がつく Discord 本家スタイル) -->
+              <!-- サーバー名ピルボタン -->
               <button id="serverNameBtn" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-gray-900 dark:text-white font-extrabold text-[15px] truncate transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer max-w-[180px]" onclick="toggleServerMenu(event)">
                 <span id="serverNameDisplay" class="truncate">サーバー</span>
                 <i id="serverMenuChevronIcon" class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform duration-200"></i>
               </button>
             </div>
-            <!-- 右端のサーバー招待アイコン (Discord本家完全準拠) -->
+            <!-- 右端のサーバー招待アイコン -->
             <button id="headerInviteBtn" title="サーバーに招待" class="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" onclick="event.stopPropagation(); openInviteModal()">
               <i class="fas fa-user-plus text-xs"></i>
             </button>
           </div>
 
-          <!-- PC用 Discordサーバーメニュー ドロップダウン (画像1本家完全一致: 左側アイコン) -->
-          <div id="serverMenuDropdown" class="hidden absolute top-12 left-2 w-[234px] z-50 bg-white dark:bg-[#111214] border border-gray-200 dark:border-[#202225] rounded-md shadow-2xl p-1.5 space-y-0.5 select-none">
-            <!-- サーバーブースト -->
-            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-pink-500 hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); alertMessage('サーバーブースト機能は準備中です', 'info');">
-              <i class="fas fa-gem w-4 text-center text-pink-400 group-hover:text-white"></i>
-              <span class="flex-1 text-left">サーバーブースト</span>
-            </button>
-            <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
+          <!-- PC用サーバーメニュー ドロップダウン (sidebar内に配置 → 重なり問題を解消) -->
+          <div id="serverMenuDropdown" class="hidden absolute top-12 left-0 w-[240px] z-[200] bg-white dark:bg-[#18191c] border border-gray-200/80 dark:border-[#2c2d30] rounded-lg shadow-2xl p-1.5 select-none" style="box-shadow:0 8px 32px rgba(0,0,0,0.28);">
             <!-- サーバーに招待 -->
-            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-[#5865f2] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openInviteModal();">
-              <i class="fas fa-user-plus w-4 text-center text-[#5865f2] group-hover:text-white"></i>
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-[#5865f2] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-[#4752c4] dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openInviteModal();">
+              <i class="fas fa-user-plus w-4 text-center text-[#5865f2]"></i>
               <span class="flex-1 text-left">サーバーに招待</span>
             </button>
             <!-- サーバー設定 -->
-            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerSettings();">
-              <i class="fas fa-cog w-4 text-center text-gray-400 group-hover:text-white"></i>
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerSettings();">
+              <i class="fas fa-cog w-4 text-center text-gray-400"></i>
               <span class="flex-1 text-left">サーバー設定</span>
             </button>
             <!-- チャンネルを作成 -->
-            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateChannelModal();">
-              <i class="fas fa-plus-circle w-4 text-center text-gray-400 group-hover:text-white"></i>
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateChannelModal();">
+              <i class="fas fa-plus-circle w-4 text-center text-gray-400"></i>
               <span class="flex-1 text-left">チャンネルを作成</span>
             </button>
             <!-- カテゴリーを作成 -->
-            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateCategoryModal();">
-              <i class="fas fa-folder-plus w-4 text-center text-gray-400 group-hover:text-white"></i>
+            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateCategoryModal();">
+              <i class="fas fa-folder-plus w-4 text-center text-gray-400"></i>
               <span class="flex-1 text-left">カテゴリーを作成</span>
-            </button>
-            <!-- イベントを作成 -->
-            <button class="server-menu-item server-admin-only group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateChannelModal('event');">
-              <i class="fas fa-calendar-plus w-4 text-center text-gray-400 group-hover:text-white"></i>
-              <span class="flex-1 text-left">イベントを作成</span>
             </button>
             <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
             <!-- 通知設定 -->
-            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerNotifModal();">
-              <i class="fas fa-bell w-4 text-center text-gray-400 group-hover:text-white"></i>
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerNotifModal();">
+              <i class="fas fa-bell w-4 text-center text-gray-400"></i>
               <span class="flex-1 text-left">通知設定</span>
-            </button>
-            <!-- プライバシー設定 -->
-            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); alertMessage('プライバシー設定: ダイレクトメッセージとフレンドリクエストを許可しています', 'info');">
-              <i class="fas fa-shield-alt w-4 text-center text-gray-400 group-hover:text-white"></i>
-              <span class="flex-1 text-left">プライバシー設定</span>
             </button>
             <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
             <!-- サーバーから退出 -->
-            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-rose-500 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); confirmLeaveCurrentServer();">
-              <i class="fas fa-sign-out-alt w-4 text-center group-hover:text-white"></i>
+            <button class="server-menu-item group flex items-center gap-3 w-full px-2.5 py-2 rounded-[4px] text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer" onclick="closeServerMenu(); confirmLeaveCurrentServer();">
+              <i class="fas fa-sign-out-alt w-4 text-center"></i>
               <span class="flex-1 text-left">サーバーから退出</span>
             </button>
           </div>

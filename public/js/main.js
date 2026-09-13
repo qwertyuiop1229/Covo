@@ -4364,6 +4364,8 @@ window.switchDiscordSettingsTab = function (tab) {
       container.appendChild(shared);
       shared.classList.remove('hidden');
     }
+    // エラータブが既に選択状態なので必ず loadErrorTelemetry を呼ぶ
+    if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
     if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
   }
 };
@@ -4908,6 +4910,7 @@ window.openMobileDetail = function (type) {
         container.appendChild(shared);
         shared.classList.remove('hidden');
       }
+      if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
       if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
     }
     if (type === 'appinfo') {
@@ -13974,7 +13977,7 @@ async function sendMessage() {
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-          const cleanDmBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '📷 [写真]' : attachedKvFile ? '📎 [ファイル]' : '新着メッセージがあります')));
+          const cleanDmBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '[写真]' : attachedKvFile ? '[ファイル]' : '新着メッセージがあります')));
           const notifPayload = JSON.stringify({
             receiverIds: [otherUid],
             title: userNickname,
@@ -14034,7 +14037,7 @@ async function sendMessage() {
             const roomName = roomNames[currentRoomId] || 'room';
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             const isMention = text && (text.includes('@') || text.includes('@all'));
-            const cleanServerBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '📷 [写真]' : attachedKvFile ? '📎 [ファイル]' : '新着メッセージがあります')));
+            const cleanServerBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '[写真]' : attachedKvFile ? '[ファイル]' : '新着メッセージがあります')));
             const notifTitle = isMention
               ? `${userNickname} があなたをメンションしました`
               : `${serverName} (#${roomName})`;
@@ -14181,7 +14184,7 @@ async function sendSingleAttachmentMessage(fileObj) {
         const notifPayload = JSON.stringify({
           receiverIds: [otherUid],
           title: userNickname,
-          body: '📎 [ファイル]',
+          body: '[ファイル]',
           roomId: snapDmId,
           messageId: newMessageId,
           appId: appId,
@@ -14224,7 +14227,7 @@ async function sendSingleAttachmentMessage(fileObj) {
           const notifPayload = JSON.stringify({
             receiverIds,
             title: `${serverName} (#${roomName})`,
-            body: `${userNickname}: 📎 [ファイル]`,
+            body: `${userNickname}: [ファイル]`,
             roomId: snapRoomId,
             messageId: msgRefId,
             appId: appId,
@@ -16766,21 +16769,21 @@ function formatNotificationBody(text, sticker) {
   }
   if (
     /\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(t) ||
-    t === '（画像）' || t === '[画像]' || t.includes('📷 [写真]')
+    t === '（画像）' || t === '[画像]' || t.includes('[写真]') || t.includes('📷')
   ) {
-    return '📷 [写真]';
+    return '[写真]';
   }
   if (
     /\.(mp4|mov|webm|avi|m4v)/i.test(t) ||
-    t === '（動画）' || t === '[動画]'
+    t === '（動画）' || t === '[動画]' || t.includes('🎥')
   ) {
-    return '🎥 [動画]';
+    return '[動画]';
   }
   if (
     /\.(mp3|wav|ogg|m4a|aac)/i.test(t) ||
-    t === '（音声）' || t === '[ボイスメッセージ]'
+    t === '（音声）' || t === '[ボイスメッセージ]' || t.includes('🎤')
   ) {
-    return '🎤 [ボイスメッセージ]';
+    return '[ボイスメッセージ]';
   }
   if (
     t.includes('firebase-storage') ||
@@ -16788,9 +16791,11 @@ function formatNotificationBody(text, sticker) {
     t.includes('r2.cloudflarestorage') ||
     t.includes('/api/file/') ||
     t === '（ファイル）' ||
+    t === '[ファイル]' ||
+    t.includes('📎') ||
     /\.(pdf|zip|txt|docx?|xlsx?)/i.test(t)
   ) {
-    return '📎 [ファイル]';
+    return '[ファイル]';
   }
   if (t.startsWith('enc::v') || t.includes('enc::v') || t === '（暗号化されたメッセージ）') {
     return '新着メッセージがあります';
@@ -17041,7 +17046,7 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
           <span class="text-[11px] font-semibold text-indigo-400 notif-room-text truncate">${isDm ? `@${escapeHtml(senderName)}` : `#${escapeHtml(roomName)}`}</span>
           <span class="notif-count-badge px-1.5 py-0.2 text-[9px] font-extrabold bg-indigo-500 text-white rounded-full hidden"></span>
         </div>
-        <div class="text-xs font-bold truncate leading-snug notif-body-text">${escapeHtml(senderName)}: ${escapeHtml(displayBody)}</div>
+        <div class="text-xs font-bold truncate leading-snug notif-body-text">${isDm ? escapeHtml(displayBody) : `${escapeHtml(senderName)}: ${escapeHtml(displayBody)}`}</div>
       </div>
       <button class="notif-close-btn absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
         <i class="fas fa-times text-[10px]"></i>
@@ -17147,10 +17152,10 @@ function _processNextMobileNotification() {
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-1.5 leading-tight mb-0.5">
-          <span class="text-xs font-bold truncate">${escapeHtml(item.serverName)}</span>
-          <span class="text-xs font-semibold text-indigo-400 truncate">${isDm ? `@${escapeHtml(item.senderName)}` : `#${escapeHtml(item.roomName)}`}</span>
+          <span class="text-xs font-bold truncate">${isDm ? escapeHtml(item.senderName) : escapeHtml(item.serverName)}</span>
+          ${isDm ? '' : `<span class="text-xs font-semibold text-gray-400 dark:text-gray-500 truncate">#${escapeHtml(item.roomName)}</span>`}
         </div>
-        <div class="text-xs font-medium truncate leading-tight opacity-90">${escapeHtml(item.senderName)}: ${escapeHtml(item.text)}</div>
+        <div class="text-xs font-medium truncate leading-tight opacity-90">${isDm ? escapeHtml(item.text) : `${escapeHtml(item.senderName)}: ${escapeHtml(item.text)}`}</div>
       </div>
       <div class="text-gray-400 text-xs px-1">
         <i class="fas fa-chevron-up text-[10px] opacity-60"></i>
@@ -20032,9 +20037,9 @@ async function showNotification(title, body, roomId) {
     }
 
     if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: body }).catch(console.error);
+      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
     } else if (Notification.permission === 'granted') {
-      const n = new Notification(title, { body: body });
+      const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
       n.onclick = () => {
         if (roomId) {
           if (typeof goToRoom === 'function') goToRoom(roomId);
@@ -20052,7 +20057,7 @@ async function showNotification(title, body, roomId) {
     // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
     if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
       try {
-        const n = new Notification(title, { body, icon: '/img/icon-192x192.png?v=6' });
+        const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
         n.onclick = () => {
           window.focus();
           n.close();
@@ -20064,7 +20069,7 @@ async function showNotification(title, body, roomId) {
             }
           }
         };
-      } catch (e) { }
+      } catch (_) {}
     }
   }
 }

@@ -2559,30 +2559,58 @@ body.discord-dark-theme .server-menu-item,
 html.dark .server-menu-item {
   color: #dbdee1;
 }
+/* サーバーメニュー ホバー: ライト/ダーク両対応のニュートラルグレー (blurple禁止) */
 .server-menu-item:hover {
-  background-color: #5865f2 !important;
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  color: #060607 !important;
+}
+body.dark-mode .server-menu-item:hover,
+body.dark-server-theme .server-menu-item:hover,
+body.discord-dark-theme .server-menu-item:hover,
+html.dark .server-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.10) !important;
   color: #ffffff !important;
+}
+/* 退出ボタンは赤系ホバー */
+.server-menu-item.text-rose-500:hover,
+.server-menu-item:has(.fa-sign-out-alt):hover {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  color: #dc2626 !important;
+}
+body.dark-mode .server-menu-item.text-rose-500:hover,
+body.dark-server-theme .server-menu-item.text-rose-500:hover,
+body.discord-dark-theme .server-menu-item.text-rose-500:hover,
+html.dark .server-menu-item.text-rose-500:hover {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
 }
 .server-menu-item:hover i {
-  color: #ffffff !important;
+  /* アイコンはbody themeで制御するためここではリセット */
 }
 
-/* サーバー設定モーダルの Discord 本家配色 */
-body.dark-mode #serverSettingsModal .settings-sidebar,
-body.dark-server-theme #serverSettingsModal .settings-sidebar,
-body.discord-dark-theme #serverSettingsModal .settings-sidebar {
-  background-color: #2b2d31 !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+/* サーバー設定モーダルのサイドバーをプロフィール設定と統一 */
+#serverSettingsModal .settings-sidebar {
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
 }
-body.dark-mode #serverSettingsModal .settings-content,
-body.dark-server-theme #serverSettingsModal .settings-content,
-body.discord-dark-theme #serverSettingsModal .settings-content {
-  background-color: #313338 !important;
+#serverSettingsModal .settings-sidebar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
-body:not(.dark-mode):not(.dark-server-theme):not(.discord-dark-theme) #serverSettingsModal .settings-sidebar {
-  background-color: #f2f3f5 !important;
-  border-right: 1px solid #e3e5e8 !important;
+/* スクロールバー非表示 (設定モーダル全体) */
+#settingsModal .settings-sidebar {
+  scrollbar-width: none;
 }
-body:not(.dark-mode):not(.dark-server-theme):not(.discord-dark-theme) #serverSettingsModal .settings-content {
-  background-color: #ffffff !important;
+#settingsModal .settings-sidebar::-webkit-scrollbar {
+  display: none;
+}
+/* サーバー設定モーダル右コンテンツのスクロールバーを細く */
+#ssContentArea::-webkit-scrollbar {
+  width: 4px;
+}
+#ssContentArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+#ssContentArea::-webkit-scrollbar-thumb {
+  background: rgba(128,128,128,0.3);
+  border-radius: 4px;
 }
