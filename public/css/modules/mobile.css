@@ -172,7 +172,6 @@
 
       .covo-bottom-sheet,
       #membersSidebar,
-      #serverSettingsModal .modal-box,
       #callPickerModal .call-picker-box {
         position: fixed !important;
         bottom: 0 !important;
@@ -200,20 +199,17 @@
 
       body.dark-server-theme .covo-bottom-sheet,
       body.dark-server-theme #membersSidebar,
-      body.dark-server-theme #serverSettingsModal .modal-box,
       body.dark-server-theme #callPickerModal .call-picker-box {
         background-color: #1e293b !important;
       }
       body.discord-dark-theme .covo-bottom-sheet,
       body.discord-dark-theme #membersSidebar,
-      body.discord-dark-theme #serverSettingsModal .modal-box,
       body.discord-dark-theme #callPickerModal .call-picker-box {
         background-color: #2b2d31 !important;
       }
 
       .covo-bottom-sheet.bottom-sheet-open,
       #membersSidebar.bottom-sheet-open,
-      #serverSettingsModal:not(.hidden) .modal-box,
       #callPickerModal.show .call-picker-box {
         transform: translateY(0) !important;
       }
@@ -509,41 +505,29 @@
       transition: background 0.12s;
     }
     .settings-close-btn:hover { background: #e5e7eb; }
-    @media (max-width: 640px) {
-      .settings-discord-layout {
-        flex-direction: column;
+    @media (max-width: 768px) {
+      #serverSettingsModal {
+        padding: 0 !important;
       }
-      .settings-sidebar {
+      #serverSettingsModal .modal-box {
+        position: fixed !important;
+        inset: 0 !important;
         width: 100% !important;
-        height: auto !important;
-        flex-direction: row !important;
-        overflow-x: auto !important;
-        padding: 0.5rem !important;
-        border-bottom: 1px solid rgba(0,0,0,0.1);
-        background: #111827;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
       }
-      /* Hide user profile block on mobile server settings to save vertical space */
-      .settings-sidebar .settings-sidebar-user {
+      #serverSettingsModal .settings-discord-layout {
+        flex-direction: column;
+        height: calc(100% - 48px);
+      }
+      #serverSettingsModal .settings-sidebar {
         display: none !important;
       }
-      .settings-sidebar .settings-nav-label {
-        display: none !important;
-      }
-      .settings-sidebar .settings-nav-divider {
-        display: none !important;
-      }
-      .settings-sidebar .settings-nav-item {
-        width: auto !important;
-        white-space: nowrap !important;
-        padding: 8px 12px !important;
-      }
-      .settings-content {
+      #serverSettingsModal .settings-content {
         padding: 1rem !important;
-      }
-      .settings-close-btn {
-        top: 0.5rem !important;
-        right: 0.5rem !important;
-        background: #f3f4f6 !important;
       }
     }
 

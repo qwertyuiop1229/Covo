@@ -206,10 +206,12 @@ messaging.onBackgroundMessage((payload) => {
     return;
   }
 
-  // 重複通知チェック (同一メッセージや同一ルーム・同一内容の多重表示防止)
-  const dedupKey = data.messageId
-    ? `msg-${data.messageId}`
-    : `${data.roomId || 'covo'}_${title}_${body}`;
+  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
+  const dedupKey = (data.type === 'incoming_call' && data.callId)
+    ? `call-${data.callId}`
+    : (data.messageId
+      ? `msg-${data.messageId}`
+      : `${data.roomId || 'covo'}_${title}_${body}`);
 
   if (_isDuplicate(dedupKey)) {
     console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);

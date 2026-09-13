@@ -711,7 +711,7 @@
     }
     .discord-participant-tile {
       background: #2b2d31;
-      border-radius: 20px;
+      border-radius: 16px;
       position: relative;
       overflow: hidden;
       display: flex;
@@ -721,14 +721,14 @@
       height: 100%;
       min-height: 200px;
       max-height: 520px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      box-shadow: none;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
-      border: 3px solid transparent;
+      border: 2px solid transparent;
     }
-    /* Discord 本家同等のエメラルドグリーン発話時リング枠線 */
+    /* Discord 本家同等のエメラルドグリーン発話時リング枠線 (自然で洗練されたグロー) */
     .discord-participant-tile.speaking {
       border-color: #23a55a !important;
-      box-shadow: 0 0 0 3px rgba(35, 165, 90, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35) !important;
+      box-shadow: 0 0 0 2px rgba(35, 165, 90, 0.3) !important;
     }
     .discord-tile-avatar {
       width: 96px;
@@ -797,7 +797,7 @@
       display: flex;
       align-items: center;
       gap: 14px;
-      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
       max-width: calc(100vw - 32px);
     }
     .discord-control-btn {
@@ -842,7 +842,7 @@
       background: #2b2d31;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
       width: 280px;
       max-width: calc(100vw - 24px);
       overflow: hidden;
@@ -1337,8 +1337,9 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      padding: 8px 10px;
-      border-radius: 6px;
+      margin: 2px 8px !important;
+      padding: 8px 12px !important;
+      border-radius: 8px !important;
       cursor: pointer;
       transition: all 0.15s ease;
       position: relative;
@@ -1571,7 +1572,7 @@
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid rgba(35, 165, 90, 0.4);
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
       border-radius: 14px;
       padding: 8px 14px 8px 12px;
       color: #ffffff;
@@ -1589,7 +1590,7 @@
         border-radius: 12px !important;
         padding: 6px 12px !important;
         gap: 8px !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
       }
       #callPipBar .pip-name {
         max-width: 100px !important;

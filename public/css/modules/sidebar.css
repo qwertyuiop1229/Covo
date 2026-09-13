@@ -1690,9 +1690,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       height: 34px !important;
       min-height: 34px !important;
       max-height: 34px !important;
-      margin: 1px 8px !important;
+      margin: 2px 8px !important;
       padding: 0 8px !important;
-      border-radius: 4px !important;
+      border-radius: 6px !important;
       cursor: pointer !important;
       transition: background-color 0.15s ease, color 0.15s ease !important;
       font-size: 15px !important;
@@ -1775,19 +1775,20 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     @media (max-width: 768px) {
       .room-item-animate,
       .vc-channel-row {
-        width: calc(100% - 12px) !important;
+        width: calc(100% - 16px) !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
-        margin: 1px 6px !important;
+        margin: 2px 8px !important;
         padding: 0 12px !important;
-        border-radius: 6px !important;
+        border-radius: 8px !important;
         font-size: 16px !important;
       }
       .room-hashtag,
       .vc-channel-icon {
         font-size: 18px !important;
       }
+    }
     .drag-over-channel {
       border: 2px dashed #6366f1 !important;
       background: rgba(99, 102, 241, 0.12) !important;
@@ -2494,4 +2495,88 @@ body.dark-server-theme .channel-type-desc {
 
 .vc-ctrl-btn.hangup:hover {
   background: #b91c1c;
+}
+
+/* ================================================================
+   ドロップダウン・トグルメニューのホバー白光り完全防止 (Discord準拠)
+   ================================================================ */
+.cat-select-option:hover,
+.room-cat-dropdown li:hover {
+  background-color: #f2f3f5 !important;
+  color: #060607 !important;
+}
+
+body.dark-mode .cat-select-option:hover,
+body.dark-server-theme .cat-select-option:hover,
+body.discord-dark-theme .cat-select-option:hover,
+html.dark .cat-select-option:hover,
+body.dark-mode .room-cat-dropdown li:hover,
+body.dark-server-theme .room-cat-dropdown li:hover,
+body.discord-dark-theme .room-cat-dropdown li:hover,
+html.dark .room-cat-dropdown li:hover {
+  background-color: #35373c !important;
+  color: #ffffff !important;
+}
+
+body.dark-mode #newRoomCategoryDropdown,
+body.dark-server-theme #newRoomCategoryDropdown,
+body.discord-dark-theme #newRoomCategoryDropdown,
+html.dark #newRoomCategoryDropdown,
+body.dark-mode .room-cat-dropdown,
+body.dark-server-theme .room-cat-dropdown,
+body.discord-dark-theme .room-cat-dropdown,
+html.dark .room-cat-dropdown {
+  background-color: #2b2d31 !important;
+  border-color: #1e1f22 !important;
+  color: #dbdee1 !important;
+}
+
+/* ================================================================
+   Discord 本家完全準拠 サーバーメニュー & サーバー設定
+   ================================================================ */
+#serverMenuDropdown {
+  animation: discordMenuPopIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+@keyframes discordMenuPopIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.server-menu-item {
+  color: #313338;
+}
+body.dark-mode .server-menu-item,
+body.dark-server-theme .server-menu-item,
+body.discord-dark-theme .server-menu-item,
+html.dark .server-menu-item {
+  color: #dbdee1;
+}
+.server-menu-item:hover {
+  background-color: #5865f2 !important;
+  color: #ffffff !important;
+}
+.server-menu-item:hover i {
+  color: #ffffff !important;
+}
+
+/* サーバー設定モーダルの Discord 本家配色 */
+body.dark-mode #serverSettingsModal .settings-sidebar,
+body.dark-server-theme #serverSettingsModal .settings-sidebar,
+body.discord-dark-theme #serverSettingsModal .settings-sidebar {
+  background-color: #2b2d31 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+body.dark-mode #serverSettingsModal .settings-content,
+body.dark-server-theme #serverSettingsModal .settings-content,
+body.discord-dark-theme #serverSettingsModal .settings-content {
+  background-color: #313338 !important;
+}
+body:not(.dark-mode):not(.dark-server-theme):not(.discord-dark-theme) #serverSettingsModal .settings-sidebar {
+  background-color: #f2f3f5 !important;
+  border-right: 1px solid #e3e5e8 !important;
+}
+body:not(.dark-mode):not(.dark-server-theme):not(.discord-dark-theme) #serverSettingsModal .settings-content {
+  background-color: #ffffff !important;
 }

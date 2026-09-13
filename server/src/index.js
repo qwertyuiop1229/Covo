@@ -990,16 +990,8 @@ async function handleSendCallNotification(request, env) {
               },
               headers: { "apns-priority": "10" }
             },
+            // Web Push (Chrome/Firefox/Safari PWA): SW の push イベントで表示（二重表示を防ぐため data 駆動に統一）
             webpush: {
-              notification: {
-                title,
-                body,
-                icon: "/img/icon-192x192.png?v=6",
-                badge: "/img/icon-192x192.png?v=6",
-                tag: `call-${callId}`,
-                requireInteraction: true,
-                renotify: true
-              },
               headers: { "Urgency": "high" },
               fcm_options: { link: "/" }
             }

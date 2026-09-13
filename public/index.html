@@ -2189,12 +2189,71 @@
         </div>
       </div>
 
-      <!-- サーバー設定モーダル -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden modal-box animate-pop-in" style="height:min(700px,calc(100dvh - 3rem))">
-          <div class="settings-discord-layout">
-            <!-- 左サイドバー -->
-            <div class="settings-sidebar">
+      <!-- スマホ用 Discord サーバーアクションシート (ボトムシート) -->
+      <div id="serverActionSheetOverlay" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden transition-opacity duration-200 md:hidden" onclick="closeServerActionSheet()">
+        <div id="serverActionSheet" class="fixed bottom-0 inset-x-0 bg-white dark:bg-[#2b2d31] rounded-t-2xl p-4 shadow-2xl z-50 transform translate-y-full transition-transform duration-200" onclick="event.stopPropagation()">
+          <!-- ドラッグピル -->
+          <div class="w-10 h-1 bg-gray-300 dark:bg-white/20 rounded-full mx-auto mb-3"></div>
+          <!-- サーバーヘッダー情報 -->
+          <div class="flex items-center gap-3 pb-3 mb-2 border-b border-gray-100 dark:border-white/10">
+            <div id="serverActionSheetIcon" class="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-sm overflow-hidden flex-shrink-0"></div>
+            <div class="min-w-0 flex-1">
+              <div id="serverActionSheetName" class="font-extrabold text-base text-gray-900 dark:text-white truncate">サーバー名</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">サーバーメニュー</div>
+            </div>
+          </div>
+          <!-- メニューアイテム一覧 -->
+          <div class="space-y-1">
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-[#5865f2] bg-indigo-50 dark:bg-indigo-500/10 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openInviteModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-user-plus text-base w-5 text-center"></i>友達を招待</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openServerSettings();">
+              <span class="flex items-center gap-3"><i class="fas fa-cog text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>サーバー設定</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openCreateRoomModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-plus-circle text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>チャンネルを作成</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="server-admin-only w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openCreateCategoryModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-folder-plus text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>カテゴリーを作成</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); openServerNotifModal();">
+              <span class="flex items-center gap-3"><i class="fas fa-bell text-base w-5 text-center text-gray-500 dark:text-gray-400"></i>通知設定</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+            <button class="w-full flex items-center justify-between p-3 rounded-xl text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet(); confirmLeaveCurrentServer();">
+              <span class="flex items-center gap-3"><i class="fas fa-sign-out-alt text-base w-5 text-center"></i>サーバーから退出</span>
+              <i class="fas fa-chevron-right text-xs opacity-50"></i>
+            </button>
+          </div>
+          <!-- キャンセルボタン -->
+          <button class="w-full mt-3 py-3 rounded-xl text-sm font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 active:scale-[0.98] transition-all cursor-pointer" onclick="closeServerActionSheet()">
+            キャンセル
+          </button>
+        </div>
+      </div>
+
+      <!-- サーバー設定モーダル (Discord完全準拠: PC 2カラム / スマホ フルスクリーンドリルダウン) -->
+      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden md:p-4">
+        <div class="bg-white dark:bg-[#313338] md:rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in flex flex-col h-full md:h-[min(720px,calc(100dvh-3rem))]">
+          
+          <!-- スマホ専用ヘッダー (ドリルダウンナビゲーション) -->
+          <div id="ssMobileHeader" class="md:hidden h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between bg-white dark:bg-[#2b2d31] flex-shrink-0">
+            <button id="ssMobileBackBtn" class="hidden text-gray-600 dark:text-gray-300 flex items-center gap-1 text-sm font-bold p-1 cursor-pointer" onclick="goBackSsMobileMenu()">
+              <i class="fas fa-chevron-left"></i><span>戻る</span>
+            </button>
+            <span id="ssMobileTitle" class="font-bold text-base text-gray-900 dark:text-white truncate">サーバー設定</span>
+            <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white p-1 cursor-pointer" onclick="closeServerSettingsModal()">
+              <i class="fas fa-times text-lg"></i>
+            </button>
+          </div>
+
+          <div class="settings-discord-layout flex-1 overflow-hidden">
+            <!-- 左サイドバー (PC専用) -->
+            <div class="settings-sidebar hidden md:flex">
               <!-- サーバー情報 -->
               <div class="settings-sidebar-user relative group cursor-pointer" id="serverIconSettingsWrapper" title="アイコンを変更">
                 <div class="settings-sidebar-avatar" id="serverIconSettingsPreview"></div>
@@ -2223,14 +2282,60 @@
                 <i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除
               </button>
             </div>
-            <!-- 右コンテンツエリア -->
-            <div class="settings-content relative">
-              <button class="settings-close-btn" id="closeServerSettingsBtn"><i class="fas fa-times"></i></button>
+
+            <!-- スマホ専用トップメニューリスト (ドリルダウン) -->
+            <div id="ssMobileNavMenu" class="md:hidden flex-1 overflow-y-auto p-4 space-y-4">
+              <!-- サーバー情報カード -->
+              <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22]">
+                <div class="relative group cursor-pointer" onclick="document.getElementById('serverIconUploadInput')?.click()">
+                  <div class="w-12 h-12 rounded-full overflow-hidden bg-indigo-500 text-white flex items-center justify-center font-bold text-lg" id="serverIconSettingsPreviewMobile"></div>
+                  <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center text-white text-xs"><i class="fas fa-camera"></i></div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div id="serverSettingsTitleMobile" class="font-extrabold text-base text-gray-900 dark:text-white truncate">サーバー</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">タップしてアイコン変更</div>
+                </div>
+              </div>
+
+              <!-- メニューリスト -->
+              <div class="bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22] overflow-hidden divide-y divide-gray-200/60 dark:divide-white/5">
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('rooms', 'ルーム管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-hashtag fa-fw text-indigo-500"></i>ルーム管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('members', 'メンバー管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-users fa-fw text-emerald-500"></i>メンバー管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('invites', '招待管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-envelope-open-text fa-fw text-amber-500"></i>招待コード管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('stamps', 'スタンプ管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-icons fa-fw text-blue-500"></i>スタンプ管理</span>
+                  <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                </button>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-rose-500 active:bg-rose-50 dark:active:bg-rose-500/10 transition-colors cursor-pointer" onclick="openSsMobileTab('danger', 'その他 / 削除')">
+                  <span class="flex items-center gap-3"><i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除</span>
+                  <i class="fas fa-chevron-right text-xs text-rose-400"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- 右コンテンツエリア (PC常時 / スマホはドリルダウン選択時) -->
+            <div id="ssContentArea" class="settings-content relative flex-1 hidden md:block overflow-y-auto p-4 md:p-8 bg-white dark:bg-[#313338]">
+              <!-- PC専用 閉じるボタン (Discord風 ESCバッジ付き) -->
+              <div class="hidden md:flex items-center gap-2 absolute top-6 right-6 z-30">
+                <button class="settings-close-btn flex items-center justify-center w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer" id="closeServerSettingsBtn" title="閉じる (ESC)">
+                  <i class="fas fa-times"></i>
+                </button>
+                <span class="text-[10px] font-mono text-gray-400 uppercase">ESC</span>
+              </div>
 
               <div id="ssRoomsSection" class="settings-content-section active">
                 <div class="settings-section-title">ルーム管理</div>
-                <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm relative z-40">
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">新しいルームを作成</label>
+                <div class="mb-6 bg-gray-50 dark:bg-[#2b2d31] p-4 rounded-2xl border border-gray-200 dark:border-[#1e1f22] shadow-xs relative z-40">
+                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">新しいルームを作成</label>
                   <div class="flex flex-col gap-3">
                     <!-- チャンネルタイプ選択 (Discord完全準拠) -->
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="newRoomTypeSelector">
@@ -2267,30 +2372,30 @@
                     </div>
                     <input type="hidden" id="newRoomTypeInput" value="text" />
                     <input type="text" id="newRoomNameInput" placeholder="新しいルーム名"
-                      class="w-full p-3 bg-white border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-sm text-gray-700" />
+                      class="w-full p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-sm font-medium" />
                     <div class="relative w-full" id="newRoomCategorySelectContainer">
-                      <button type="button" id="newRoomCategoryCustomBtn" class="w-full bg-white border border-gray-300 rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-sm text-gray-700 font-medium">
+                      <button type="button" id="newRoomCategoryCustomBtn" class="w-full bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] rounded-xl p-3 flex items-center justify-between shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all text-sm text-gray-700 dark:text-gray-200 font-medium">
                         <span id="newRoomCategoryLabel" class="truncate mr-2">カテゴリーなし</span>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform duration-200" id="newRoomCategoryIcon"></i>
+                        <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform duration-200" id="newRoomCategoryIcon"></i>
                       </button>
-                      <div id="newRoomCategoryDropdown" class="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top">
+                      <div id="newRoomCategoryDropdown" class="absolute z-50 w-full mt-2 bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-[#1e1f22] rounded-xl shadow-xl max-h-60 overflow-y-auto hidden opacity-0 transition-opacity duration-200 origin-top">
                         <ul id="newRoomCategoryList" class="py-1">
-                           <li class="px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>
+                           <li class="px-4 py-3 hover:bg-gray-100 dark:hover:bg-[#35373c] cursor-pointer text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-white/5 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>
                         </ul>
                       </div>
                       <input type="hidden" id="newRoomCategorySelect" value="" />
                     </div>
                     <div class="flex flex-col sm:flex-row gap-2 justify-end mt-2">
-                      <button id="createCategoryBtn" class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center justify-center w-full sm:w-auto">
+                      <button id="createCategoryBtn" class="bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold shadow-xs transition-all flex items-center justify-center w-full sm:w-auto cursor-pointer">
                         <i class="fas fa-folder-plus mr-1.5 text-gray-400"></i>カテゴリー作成
                       </button>
-                      <button id="createRoomInServerBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center justify-center w-full sm:w-auto">
+                      <button id="createRoomInServerBtn" class="bg-[#5865f2] hover:bg-[#4752c4] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-xs transition-all flex items-center justify-center w-full sm:w-auto cursor-pointer">
                         追加
                       </button>
                     </div>
                   </div>
                 </div>
-                <div class="h-px bg-gray-200 w-full my-4"></div>
+                <div class="h-px bg-gray-200 dark:bg-white/10 w-full my-4"></div>
                 <div id="serverRoomsList" class="space-y-2 pb-10"></div>
               </div>
 
@@ -2304,9 +2409,9 @@
                 <div class="mb-4 space-y-4">
                   <div class="grid grid-cols-2 gap-4">
                     <div>
-                      <label class="text-xs text-gray-500 font-bold block mb-1">有効期限</label>
+                      <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">有効期限</label>
                       <div class="relative">
-                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">なし</option>
                           <option value="1">1日</option>
                           <option value="7">7日</option>
@@ -2318,9 +2423,9 @@
                       </div>
                     </div>
                     <div>
-                      <label class="text-xs text-gray-500 font-bold block mb-1">使用回数</label>
+                      <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">使用回数</label>
                       <div class="relative">
-                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">無制限</option>
                           <option value="1">1回</option>
                           <option value="5">5回</option>
@@ -2332,9 +2437,9 @@
                       </div>
                     </div>
                   </div>
-                  <button id="createInviteCodeBtn" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">招待コードを生成</button>
+                  <button id="createInviteCodeBtn" class="w-full bg-[#5865f2] hover:bg-[#4752c4] text-white font-bold py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs">招待コードを生成</button>
                 </div>
-                <div class="h-px bg-gray-200 w-full my-4"></div>
+                <div class="h-px bg-gray-200 dark:bg-white/10 w-full my-4"></div>
                 <div id="inviteCodesList" class="space-y-2 pb-10"></div>
               </div>
 
@@ -2355,27 +2460,27 @@
               <div id="ssDangerSection" class="settings-content-section hidden space-y-6">
                 <div class="settings-section-title text-red-500">その他 / 削除</div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">サーバー名を変更</label>
+                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">サーバー名を変更</label>
                   <div class="flex gap-2">
                     <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
-                      class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
+                      class="flex-1 p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium" />
                     <button id="renameServerBtn"
-                      class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">変更</button>
+                      class="bg-[#5865f2] hover:bg-[#4752c4] text-white px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer">変更</button>
                   </div>
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">パスワードを変更</label>
+                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">パスワードを変更</label>
                   <form class="space-y-2" onsubmit="event.preventDefault();">
                     <input type="text" autocomplete="username" style="display:none;" />
                     <input type="password" id="changeServerPasswordInput" placeholder="新しいパスワード" autocomplete="new-password"
-                      class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200" />
+                      class="w-full p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium" />
                     <button id="changeServerPasswordBtn" type="button"
-                      class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl text-sm transition-all">パスワード変更</button>
+                      class="w-full bg-gray-800 hover:bg-gray-700 dark:bg-white/10 dark:hover:bg-white/20 text-white font-bold py-3 rounded-xl text-sm transition-all cursor-pointer">パスワード変更</button>
                   </form>
                 </div>
-                <div class="pt-6 border-t border-red-100 mt-6">
+                <div class="pt-6 border-t border-red-100 dark:border-red-900/30 mt-6">
                   <button id="deleteServerBtn"
-                    class="w-full bg-red-50 hover:bg-red-500 text-red-600 hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 hover:border-transparent">
+                    class="w-full bg-red-50 hover:bg-red-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 text-red-600 dark:text-rose-400 hover:text-white dark:hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 dark:border-rose-500/20 hover:border-transparent cursor-pointer">
                     <i class="fas fa-trash mr-1.5"></i>このサーバーを削除
                   </button>
                 </div>
@@ -2467,14 +2572,45 @@
 
         <!-- ルームリストサイドバー (Discordモバイル添付画像準拠のカードレイアウト) -->
         <div id="sidebar" class="bg-white dark:bg-[#111827] flex flex-col flex-shrink-0" style="width: 250px;">
-          <!-- サーバーヘッダー (添付画像3準拠のシンプル・洗練デザイン) -->
-          <div id="serverHeader" class="h-12 border-b px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none" onclick="openServerSettings()">
+          <!-- サーバーヘッダー (Discord本家完全準拠: クリックでサーバーメニュー開閉) -->
+          <div id="serverHeader" class="h-12 border-b px-4 flex items-center justify-between flex-shrink-0 cursor-pointer select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5 relative" onclick="toggleServerMenu(event)">
             <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white mr-2 md:hidden" id="backToServerListBtn" title="サーバー一覧に戻る" onclick="event.stopPropagation(); leaveServerView()"><i class="fas fa-arrow-left"></i></button>
             <div class="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
               <span id="serverNameDisplay" class="font-extrabold truncate text-base">サーバー</span>
-              <i class="fas fa-chevron-right text-[11px]"></i>
             </div>
-            <button id="serverSettingsBtn" title="サーバー設定" class="p-1.5 rounded-lg transition-colors" onclick="event.stopPropagation(); openServerSettings()"><i class="fas fa-cog text-base"></i></button>
+            <button id="serverMenuChevronBtn" class="p-1 rounded transition-transform text-gray-500 dark:text-gray-400" aria-label="サーバーメニュー">
+              <i id="serverMenuChevronIcon" class="fas fa-chevron-down text-xs transition-transform duration-200"></i>
+            </button>
+          </div>
+
+          <!-- PC用 Discordサーバーメニュー ドロップダウン -->
+          <div id="serverMenuDropdown" class="hidden absolute top-12 left-2 w-[234px] z-50 bg-white dark:bg-[#111214] border border-gray-200 dark:border-[#202225] rounded-lg shadow-xl p-1.5 space-y-0.5 select-none">
+            <button class="server-menu-item group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-[#5865f2] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openInviteModal();">
+              <span>友達を招待</span>
+              <i class="fas fa-user-plus text-xs"></i>
+            </button>
+            <button class="server-menu-item server-admin-only group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerSettings();">
+              <span>サーバー設定</span>
+              <i class="fas fa-cog text-xs text-gray-400 group-hover:text-white"></i>
+            </button>
+            <button class="server-menu-item server-admin-only group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateRoomModal();">
+              <span>チャンネルを作成</span>
+              <i class="fas fa-plus-circle text-xs text-gray-400 group-hover:text-white"></i>
+            </button>
+            <button class="server-menu-item server-admin-only group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openCreateCategoryModal();">
+              <span>カテゴリーを作成</span>
+              <i class="fas fa-folder-plus text-xs text-gray-400 group-hover:text-white"></i>
+            </button>
+            <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
+            <button class="server-menu-item group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-gray-700 dark:text-[#dbdee1] hover:bg-[#5865f2] hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); openServerNotifModal();">
+              <span>通知設定</span>
+              <i class="fas fa-bell text-xs text-gray-400 group-hover:text-white"></i>
+            </button>
+            <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
+            <button class="server-menu-item group flex items-center justify-between w-full px-2.5 py-2 rounded text-xs font-semibold text-rose-500 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer" onclick="closeServerMenu(); confirmLeaveCurrentServer();">
+              <span>サーバーから退出</span>
+              <i class="fas fa-sign-out-alt text-xs"></i>
+            </button>
           </div>
 
           <!-- DM/フレンド専用サイドバー（吹き出しボタン押下時に表示） -->
@@ -2501,13 +2637,13 @@
             </div>
             
             <!-- DM会話一覧 (動的レンダリング) -->
-            <div id="dmConversationsList" class="px-2 py-1 space-y-1">
+            <div id="dmConversationsList" class="px-0 py-1">
               <!-- JSで動的に追加されます -->
             </div>
           </div>
 
-          <!-- ルームリスト -->
-          <div id="roomList" class="flex-1 scrollable p-3 pb-0">
+          <!-- ルームリスト (Discord本家完全準拠の余白・プロポーション) -->
+          <div id="roomList" class="flex-1 scrollable py-2 px-0 pb-0">
             <!-- ルームはここに動的に追加されます -->
           </div>
 

@@ -8827,12 +8827,167 @@ document.getElementById("confirmJoinServerBtn")?.addEventListener("click", async
   }
 });
 
-// サーバー設定モーダル
+// ─── Discord 本家完全準拠 サーバーメニュー & サーバー設定 ──────────────────────
 const serverSettingsModal = document.getElementById("serverSettingsModal");
-document.getElementById("serverSettingsBtn")?.addEventListener("click", openServerSettings);
-document.getElementById("closeServerSettingsBtn")?.addEventListener("click", () => serverSettingsModal?.classList.add("hidden"));
+const serverMenuDropdown = document.getElementById("serverMenuDropdown");
+const serverActionSheetOverlay = document.getElementById("serverActionSheetOverlay");
+const serverActionSheet = document.getElementById("serverActionSheet");
+const serverMenuChevronIcon = document.getElementById("serverMenuChevronIcon");
 
-// サーバー設定のタブ
+// サーバーメニューのトグル (PC: ドロップダウン / スマホ: アクションシート)
+window.toggleServerMenu = function (e) {
+  if (e) e.stopPropagation();
+  if (!currentServerId) return;
+
+  const isMobile = window.innerWidth < 768;
+  if (isMobile) {
+    openServerActionSheet();
+  } else {
+    const isHidden = !serverMenuDropdown || serverMenuDropdown.classList.contains("hidden");
+    if (isHidden) {
+      openServerMenu();
+    } else {
+      closeServerMenu();
+    }
+  }
+};
+
+window.openServerMenu = function () {
+  if (!serverMenuDropdown) return;
+  const isOwner = currentServerData?.createdBy === userId ||
+    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const hasAdminRights = isOwner || isAdmin;
+
+  // 管理者専用メニュー項目の表示制御
+  serverMenuDropdown.querySelectorAll(".server-admin-only").forEach(el => {
+    el.style.display = hasAdminRights ? "" : "none";
+  });
+
+  serverMenuDropdown.classList.remove("hidden");
+  if (serverMenuChevronIcon) serverMenuChevronIcon.classList.add("rotate-180");
+};
+
+window.closeServerMenu = function () {
+  if (!serverMenuDropdown) return;
+  serverMenuDropdown.classList.add("hidden");
+  if (serverMenuChevronIcon) serverMenuChevronIcon.classList.remove("rotate-180");
+};
+
+window.openServerActionSheet = function () {
+  if (!serverActionSheetOverlay || !serverActionSheet) return;
+  const isOwner = currentServerData?.createdBy === userId ||
+    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  const hasAdminRights = isOwner || isAdmin;
+
+  // サーバー情報セット
+  const sName = currentServerData?.name || currentServerId;
+  const nameEl = document.getElementById("serverActionSheetName");
+  if (nameEl) nameEl.textContent = sName;
+
+  const iconEl = document.getElementById("serverActionSheetIcon");
+  if (iconEl) {
+    if (currentServerData?.iconUrl) {
+      iconEl.innerHTML = `<img src="${escapeHtml(currentServerData.iconUrl)}" class="w-full h-full object-cover" />`;
+      iconEl.style.backgroundColor = "transparent";
+    } else {
+      iconEl.textContent = sName.charAt(0).toUpperCase();
+      iconEl.style.backgroundColor = '#5865f2';
+    }
+  }
+
+  // 管理者専用項目の表示制御
+  serverActionSheet.querySelectorAll(".server-admin-only").forEach(el => {
+    el.style.display = hasAdminRights ? "" : "none";
+  });
+
+  serverActionSheetOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    serverActionSheet.classList.remove("translate-y-full");
+    serverActionSheet.classList.add("translate-y-0");
+  });
+};
+
+window.closeServerActionSheet = function () {
+  if (!serverActionSheetOverlay || !serverActionSheet) return;
+  serverActionSheet.classList.remove("translate-y-0");
+  serverActionSheet.classList.add("translate-y-full");
+  setTimeout(() => {
+    serverActionSheetOverlay.classList.add("hidden");
+  }, 200);
+};
+
+// 画面外クリックでPCサーバーメニューを閉じる
+document.addEventListener("click", (e) => {
+  if (serverMenuDropdown && !serverMenuDropdown.classList.contains("hidden")) {
+    const sHeader = document.getElementById("serverHeader");
+    if (!serverMenuDropdown.contains(e.target) && (!sHeader || !sHeader.contains(e.target))) {
+      closeServerMenu();
+    }
+  }
+});
+
+// サーバーから退出の確認
+window.confirmLeaveCurrentServer = async function () {
+  if (!currentServerId) return;
+  const sName = currentServerData?.name || "サーバー";
+  const ok = await window.showCustomConfirm(
+    `「${sName}」から退出しますか？`,
+    "退出",
+    "キャンセル",
+    "退出の確認"
+  );
+  if (ok) {
+    if (typeof window.leaveServer === "function") {
+      window.leaveServer(currentServerId);
+    }
+  }
+};
+
+// サーバー設定モーダルを閉じる
+window.closeServerSettingsModal = function () {
+  if (serverSettingsModal) {
+    serverSettingsModal.classList.add("hidden");
+  }
+  // スマホドリルダウンをトップメニューにリセット
+  goBackSsMobileMenu();
+};
+document.getElementById("closeServerSettingsBtn")?.addEventListener("click", closeServerSettingsModal);
+
+// ESCキーでサーバー設定を閉じる
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && serverSettingsModal && !serverSettingsModal.classList.contains("hidden")) {
+    closeServerSettingsModal();
+  }
+});
+
+// スマホ用ドリルダウン操作
+window.openSsMobileTab = function (tab, title) {
+  const mobileNav = document.getElementById("ssMobileNavMenu");
+  const contentArea = document.getElementById("ssContentArea");
+  const backBtn = document.getElementById("ssMobileBackBtn");
+  const titleEl = document.getElementById("ssMobileTitle");
+
+  if (mobileNav) mobileNav.classList.add("hidden");
+  if (contentArea) contentArea.classList.remove("hidden");
+  if (backBtn) backBtn.classList.remove("hidden");
+  if (titleEl) titleEl.textContent = title || "設定";
+
+  switchSsTab(tab);
+};
+
+window.goBackSsMobileMenu = function () {
+  const mobileNav = document.getElementById("ssMobileNavMenu");
+  const contentArea = document.getElementById("ssContentArea");
+  const backBtn = document.getElementById("ssMobileBackBtn");
+  const titleEl = document.getElementById("ssMobileTitle");
+
+  if (mobileNav) mobileNav.classList.remove("hidden");
+  if (contentArea) contentArea.classList.add("hidden");
+  if (backBtn) backBtn.classList.add("hidden");
+  if (titleEl) titleEl.textContent = "サーバー設定";
+};
+
+// サーバー設定のタブ切り替え
 let currentSsTab = "rooms";
 window.switchSsTab = function (tab) {
   currentSsTab = tab;
@@ -8850,38 +9005,63 @@ window.switchSsTab = function (tab) {
       }
     }
   });
-}
 
+  if (tab === "rooms") loadServerSettingsRooms();
+  else if (tab === "members") {
+    if (typeof loadServerMembers === 'function') loadServerMembers();
+  } else if (tab === "invites") {
+    if (typeof loadInviteCodes === 'function') loadInviteCodes();
+  } else if (tab === "stamps") {
+    if (typeof loadServerStampsForAdmin === 'function') loadServerStampsForAdmin();
+  }
+};
 
 window.openServerSettings = openServerSettings;
 async function openServerSettings() {
   if (!currentServerId) return;
-  document.getElementById("serverSettingsTitle").textContent = currentServerData?.name || currentServerId;
-  document.getElementById("serverSettingsMessage").textContent = "";
+  closeServerMenu();
+  closeServerActionSheet();
+
+  const sName = currentServerData?.name || currentServerId;
+  const titleEl = document.getElementById("serverSettingsTitle");
+  if (titleEl) titleEl.textContent = sName;
+  const titleMobileEl = document.getElementById("serverSettingsTitleMobile");
+  if (titleMobileEl) titleMobileEl.textContent = sName;
+
+  const msgEl = document.getElementById("serverSettingsMessage");
+  if (msgEl) msgEl.textContent = "";
 
   const isOwner = currentServerData?.createdBy === userId ||
     (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
   const hasAdminRights = isOwner || isAdmin;
 
-  // サーバーアイコン設定の表示・更新
+  // サーバーアイコン設定の表示・更新 (PC & モバイル両方)
   const iconWrapper = document.getElementById("serverIconSettingsWrapper");
   const iconPreview = document.getElementById("serverIconSettingsPreview");
-  if (iconWrapper && iconPreview) {
-    // 全体コンテナは常に表示するが、管理者以外はホバーエフェクトとクリックを無効化
+  const iconPreviewMobile = document.getElementById("serverIconSettingsPreviewMobile");
+
+  const updatePreviewEl = (el) => {
+    if (!el) return;
+    if (currentServerData?.iconUrl) {
+      el.innerHTML = `<img src="${escapeHtml(currentServerData.iconUrl)}" class="w-full h-full object-cover rounded-full" />`;
+      el.style.backgroundColor = "transparent";
+    } else {
+      const initial = sName.charAt(0).toUpperCase();
+      el.textContent = initial;
+      el.style.backgroundColor = '#5865f2';
+    }
+  };
+
+  updatePreviewEl(iconPreview);
+  updatePreviewEl(iconPreviewMobile);
+
+  if (iconWrapper) {
     if (hasAdminRights || isListAdmin) {
       iconWrapper.classList.add("cursor-pointer", "group");
       iconWrapper.dataset.canEdit = "true";
     } else {
       iconWrapper.classList.remove("cursor-pointer", "group");
       iconWrapper.dataset.canEdit = "false";
-    }
-    if (currentServerData?.iconUrl) {
-      iconPreview.innerHTML = `<img src="${escapeHtml(currentServerData.iconUrl)}" class="w-full h-full object-cover" />`;
-      iconPreview.style.backgroundColor = "transparent";
-    } else {
-      const initial = (currentServerData?.name || currentServerId).charAt(0).toUpperCase();
-      iconPreview.textContent = initial;
-      iconPreview.style.backgroundColor = '#374151';
     }
   }
 
@@ -8891,12 +9071,15 @@ async function openServerSettings() {
     deleteBtn.style.display = hasAdminRights ? "" : "none";
   }
 
-  // タブの表示制御
+  // PCタブの表示制御
   const tabs = ["ssTabRooms", "ssTabMembers", "ssTabInvites", "ssTabDanger"];
   tabs.forEach(tabId => {
     const el = document.getElementById(tabId);
     if (el) el.style.display = hasAdminRights ? "" : "none";
   });
+
+  // モバイルドリルダウンのリセット
+  goBackSsMobileMenu();
 
   openModal(serverSettingsModal);
 
@@ -8935,10 +9118,10 @@ async function loadServerSettingsRooms() {
 
   const catList = document.getElementById("newRoomCategoryList");
   if (catList) {
-    catList.innerHTML = `<li class="px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>`;
+    catList.innerHTML = `<li class="px-4 py-3 hover:bg-gray-100 dark:hover:bg-[#35373c] cursor-pointer text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-white/5 last:border-0 cat-select-option" data-val="">カテゴリーなし</li>`;
     categories.forEach(cat => {
       const li = document.createElement("li");
-      li.className = "px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 cat-select-option truncate";
+      li.className = "px-4 py-3 hover:bg-gray-100 dark:hover:bg-[#35373c] cursor-pointer text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-white/5 last:border-0 cat-select-option truncate";
       li.dataset.val = cat.id;
       li.textContent = cat.name;
       catList.appendChild(li);
@@ -9154,7 +9337,7 @@ async function loadServerSettingsRooms() {
 
       const createOption = (val, text) => {
         const li = document.createElement("li");
-        li.className = "px-3 py-2 hover:bg-gray-50 dark:hover:bg-[#2b2d31] hover:text-indigo-600 dark:hover:text-white cursor-pointer text-[11px] font-bold text-gray-700 dark:text-gray-300 transition-colors truncate";
+        li.className = "px-3 py-2 hover:bg-gray-100 dark:hover:bg-[#35373c] hover:text-indigo-600 dark:hover:text-white cursor-pointer text-[11px] font-bold text-gray-700 dark:text-gray-200 transition-colors truncate";
         li.textContent = text;
         li.addEventListener("click", async (e) => {
           e.stopPropagation();
@@ -11148,7 +11331,7 @@ function loadServerRooms(serverId, _retry = 0) {
       const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
 
       const catDiv = document.createElement("div");
-      catDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group";
+      catDiv.className = "flex items-center px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors";
       catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
       roomList.appendChild(catDiv);
 
@@ -11168,7 +11351,7 @@ function loadServerRooms(serverId, _retry = 0) {
     if (uncatRooms.length > 0) {
       if (categories.length > 0) {
         const uncatDiv = document.createElement("div");
-        uncatDiv.className = "flex items-center px-1 mt-4 mb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
+        uncatDiv.className = "flex items-center px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none";
         uncatDiv.innerHTML = `<i class="fas fa-minus mr-1.5 text-[9px]"></i>その他`;
         roomList.appendChild(uncatDiv);
       }
