@@ -32,16 +32,21 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.171" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.172" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.171" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.172" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
+  <script>
+    if (typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) {
+      AgoraRTC.setLogLevel(4); // 4: NONE (冗長な内部デバッグ・警告ログを完全消音)
+    }
+  </script>
   <!-- heic2any -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <!-- Panzoom (画像拡大用) -->
@@ -186,7 +191,25 @@
     // 🛡️ 最強フェイルセーフ：画面真っ白・起動フリーズを完全防止するシステムリカバリー＆ウォッチドッグ
     // =========================================================================
     window.__app_fully_loaded__ = false;
-
+    function _isIgnoredEarlyError(msg, src, err) {
+      const s = `${msg || ''} ${src || ''} ${err?.message || ''} ${err?.stack || ''}`.toLowerCase();
+      return (
+        s.includes('chrome-extension:') ||
+        s.includes('moz-extension:') ||
+        s.includes('safari-extension:') ||
+        s.includes('content.js') ||
+        s.includes('globals-front.js') ||
+        s.includes('adblock-picreplacement.js') ||
+        s.includes('usecache') ||
+        s.includes('receiving end does not exist') ||
+        s.includes('could not establish connection') ||
+        s.includes('a listener indicated an asynchronous response') ||
+        s.includes('tracking prevention') ||
+        s.includes('blocked access to storage') ||
+        s.includes('resizeobserver') ||
+        s.includes('resize-observer')
+      );
+    }
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
@@ -197,9 +220,9 @@
         detailArea.value = `エラー発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
       }
     };
-
     window._earlyErrors = window._earlyErrors || [];
     window.addEventListener('error', function(e) {
+      if (_isIgnoredEarlyError(e.message, e.filename, e.error)) return;
       console.error('[Global Error Catcher]', e.message, e.error);
       const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
       const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
@@ -208,14 +231,14 @@
       } else {
         window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
       }
-      if (!window.__app_fully_loaded__) {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
         showEmergencyRecoveryPanel(msg, e.error);
       }
     });
-
     window.addEventListener('unhandledrejection', function(e) {
-      console.error('[Global Unhandled Rejection]', e.reason);
       const r = e.reason;
+      if (_isIgnoredEarlyError(r?.message || String(r || ''), '', r)) return;
+      console.error('[Global Unhandled Rejection]', e.reason);
       const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
       const stack = (r && r.stack) || '';
       if (typeof window._reportTelemetryError === 'function') {
@@ -223,14 +246,13 @@
       } else {
         window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
       }
-      if (!window.__app_fully_loaded__) {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
         showEmergencyRecoveryPanel(msg, e.reason);
       }
     });
-
-    // 35秒間のウォッチドッグタイマー：低速回線やキャッシュウォームアップ中の誤起動を防止
+    // 35秒間のウォッチドッグタイマー：バックグラウンド待機中やロード完了時はリカバリーパネルを展開しない
     setTimeout(function() {
-      if (!window.__app_fully_loaded__) {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
         console.warn('[Watchdog Timer] アプリ起動完了タイムアウトを確認しました。リカバリーパネルを展開します。');
         showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（通信遮断またはネットワーク遅延の可能性）', null);
       }
@@ -3404,7 +3426,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.171"></script>
+  <script type="module" src="js/main.js?v=1.1.172"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

@@ -1824,5 +1824,125 @@
       user-select: auto !important;
     }
 
+    /* =========================================================================
+       Discord本家準拠 DM会話リスト 未読ピル & 未読赤丸バッジ
+    .dm-sidebar-item.has-unread {
+      color: #060607 !important;
+      font-weight: 700 !important;
+    }
+    .dark-server-theme .dm-sidebar-item.has-unread,
+    .dark .dm-sidebar-item.has-unread,
+    .discord-dark-theme .dm-sidebar-item.has-unread {
+      color: #ffffff !important;
+      font-weight: 700 !important;
+    }
+    .dm-unread-pill {
+      position: absolute;
+      left: -8px;
+      width: 4px;
+      height: 8px;
+      background: #060607;
+      border-radius: 0 4px 4px 0;
+      transition: height 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .dark-server-theme .dm-unread-pill,
+    .dark .dm-unread-pill,
+    .discord-dark-theme .dm-unread-pill {
+      background: #ffffff;
+    }
+    .dm-sidebar-item:hover .dm-unread-pill {
+      height: 20px;
+    }
+    .dm-unread-badge {
+      font-size: 10px;
+      font-weight: 800;
+      color: #ffffff;
+      background-color: #da373c;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      min-width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      margin-left: auto;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    /* =========================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+    #dmProfilePanel {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+    }
+    #dmProfilePanel.hidden {
+      display: none !important;
+    }
+    .dm-profile-banner {
+      height: 90px;
+      width: 100%;
+      background: linear-gradient(135deg, #5865f2, #4752c4);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .dm-profile-avatar-wrap {
+      padding: 0 16px;
+      margin-top: -38px;
+      margin-bottom: 10px;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .dm-profile-avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 4px solid #ffffff;
+      background: #2b2d31;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 800;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      position: relative;
+    }
+    .dm-profile-avatar:hover {
+      transform: scale(1.04);
+    }
+    body.dark-server-theme .dm-profile-avatar {
+      border-color: #1e293b;
+      background: #0f172a;
+    }
+    body.discord-dark-theme .dm-profile-avatar {
+      border-color: #2b2d31;
+      background: #111214;
+    }
+    .dm-profile-card {
+      margin: 0 12px 14px 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    body.dark-server-theme .dm-profile-card {
+      background: #162032;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    body.discord-dark-theme .dm-profile-card {
+      background: #1e1f22;
+      border-color: #1f2023;
+    }
+
 
 

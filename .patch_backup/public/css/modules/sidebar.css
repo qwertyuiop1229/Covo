@@ -1809,13 +1809,25 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body:not(.auth-ready) #authContainer {
       display: none !important;
     }
-    body.auth-ready:not(.logged-in) #appContainer,
-    body.auth-ready:not(.logged-in) #serverListScreen,
-    body.auth-ready:not(.logged-in) #globalAppHeader,
-    body.auth-ready:not(.logged-in) #nicknameContainer {
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #appContainer,
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #serverListScreen,
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #globalAppHeader,
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #nicknameContainer {
       display: none !important;
     }
-    body.auth-ready:not(.logged-in) #authContainer {
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #authContainer {
+      display: flex !important;
+      width: 100% !important;
+      min-height: 100vh !important;
+    }
+    /* ニックネーム設定待機状態 (新規登録時) */
+    body.auth-ready.needs-nickname #appContainer,
+    body.auth-ready.needs-nickname #serverListScreen,
+    body.auth-ready.needs-nickname #globalAppHeader,
+    body.auth-ready.needs-nickname #authContainer {
+      display: none !important;
+    }
+    body.auth-ready.needs-nickname #nicknameContainer {
       display: flex !important;
       width: 100% !important;
       min-height: 100vh !important;
