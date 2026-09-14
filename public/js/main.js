@@ -5845,13 +5845,32 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       if (adminBadge) {
         adminBadge.classList.toggle("hidden", !(uData.isAdmin || (isAdmin && isSelf)));
       }
-    }
-  } catch (err) {
-    console.warn("Failed to fetch full user profile:", err);
-  }
-
-  openModal(modal);
-};
+      // 共通のサーバー (Mutual Servers)
+      const mutualServersEl = document.getElementById("userProfileMutualServers");
+      const mutualSec = document.getElementById("userProfileMutualServersSection");
+      if (mutualServersEl && Array.isArray(allServersCache)) {
+        const mutuals = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+        if (mutuals.length === 0) {
+          if (mutualSec) mutualSec.classList.add("hidden");
+        } else {
+          if (mutualSec) mutualSec.classList.remove("hidden");
+          mutualServersEl.innerHTML = mutuals.map(s => `
+            <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-all group" onclick="closeUserProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+              <div class="w-7 h-7 rounded-xl bg-indigo-500 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
+                ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
+              </div>
+              <span class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex-1">${escapeHtml(s.name || s.id)}</span>
+              <i class="fas fa-chevron-right text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+            </div>
+          `).join('');
+        }
+      }
+      }
+      } catch (err) {
+      console.warn("Failed to fetch full user profile:", err);
+      }
+      openModal(modal);
+      };
 
 window.closeUserProfileModal = function () {
   const modal = document.getElementById("userProfileModal");
@@ -8039,7 +8058,7 @@ function renderDmConversationsList() {
         </div>
         ${isUnread ? `
           <div class="dm-unread-badge-wrap flex-shrink-0 flex items-center ml-auto">
-            <span class="dm-unread-badge">1</span>
+            <span class="dm-unread-badge">${(dm.unreadCount && dm.unreadCount > 1) ? (dm.unreadCount > 99 ? '99+' : dm.unreadCount) : '1'}</span>
           </div>
         ` : ''}
         <button class="dm-close-btn flex-shrink-0 ml-1" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
@@ -8256,48 +8275,49 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   panel.innerHTML = `
     <div class="dm-profile-banner"></div>
     <div class="dm-profile-avatar-wrap">
-      <div class="dm-profile-avatar" id="dmPanelAvatar" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
-        ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
+      <div class="relative flex-shrink-0 group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
+        <div class="dm-profile-avatar" id="dmPanelAvatar">
+          ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
+        </div>
+        <div class="status-indicator status-offline" id="dmPanelStatusDot"></div>
       </div>
-      <div class="flex items-center gap-1.5 pb-1">
-        <button onclick="window.openCallPickerWithTarget('${targetUid}')" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center text-xs transition active:scale-95 shadow-xs" title="通話を開始">
+      <div class="flex items-center gap-1.5 pb-0.5">
+        <button onclick="window.openCallPickerWithTarget('${targetUid}')" class="dm-action-btn" title="通話を開始">
           <i class="fas fa-phone"></i>
         </button>
-        <button onclick="window.openFileShareWithTarget('${targetUid}')" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center text-xs transition active:scale-95 shadow-xs" title="P2Pファイルを送信">
+        <button onclick="window.openFileShareWithTarget('${targetUid}')" class="dm-action-btn" title="P2Pファイルを送信">
           <i class="fas fa-share-from-square"></i>
+        </button>
+        <button onclick="window.sendDirectFriendRequest('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="dm-action-btn" id="dmPanelFriendBtn" title="フレンド申請">
+          <i class="fas fa-user-plus"></i>
         </button>
       </div>
     </div>
     <div class="px-4 pb-2">
-      <div class="text-base font-black text-gray-900 dark:text-white truncate" id="dmPanelName">${safeName}</div>
-      <div class="text-[11px] font-mono text-gray-400 font-semibold">#${targetUid.slice(-4).toLowerCase()}</div>
+      <div class="text-base sm:text-lg font-black text-gray-900 dark:text-white truncate leading-tight" id="dmPanelName">${safeName}</div>
+      <div class="text-xs font-mono font-semibold text-gray-400 dark:text-gray-500 mt-0.5">#${targetUid.slice(-4).toLowerCase()}</div>
     </div>
     <div class="dm-profile-card space-y-3">
-      <!-- ステータス -->
-      <div id="dmPanelStatusRow" class="flex items-center gap-2 text-xs">
-        <div class="w-2.5 h-2.5 rounded-full bg-gray-400" id="dmPanelStatusDot"></div>
-        <span class="text-gray-600 dark:text-gray-300 font-medium" id="dmPanelStatusText">オフライン</span>
-      </div>
       <!-- カスタムステータス (ステメ) -->
-      <div id="dmPanelCustomStatus" class="p-2 bg-gray-50 dark:bg-[#111214] rounded-xl text-xs text-gray-700 dark:text-gray-300 hidden">
-        <span id="dmPanelCustomStatusEmoji">💬</span>
-        <span id="dmPanelCustomStatusText" class="ml-1 font-medium select-text"></span>
+      <div id="dmPanelCustomStatus" class="p-2.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 shadow-inner">
+        <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
+        <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
       </div>
       <!-- 自己紹介 -->
       <div>
-        <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">自己紹介</div>
-        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text">読み込み中...</div>
+        <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
+        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text font-normal">読み込み中...</div>
       </div>
       <!-- 参加日 -->
-      <div class="pt-2 border-t border-gray-100 dark:border-white/5 flex justify-between items-center text-[11px] text-gray-400">
-        <span class="font-bold uppercase">登録日</span>
-        <span id="dmPanelJoinedDate" class="font-mono text-gray-600 dark:text-gray-300">-</span>
+      <div class="pt-2.5 border-t border-gray-100 dark:border-white/5 flex justify-between items-center text-xs">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">登録日 (MEMBER SINCE)</span>
+        <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
       </div>
     </div>
     <!-- 共通サーバー -->
     <div class="px-3 pb-4">
-      <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-2 px-1">共通のサーバー</div>
-      <div id="dmPanelMutualServers" class="space-y-1"></div>
+      <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-1">共通のサーバー</div>
+      <div id="dmPanelMutualServers" class="space-y-1.5"></div>
     </div>
   `;
   try {
@@ -8305,29 +8325,20 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const nameEl = document.getElementById('dmPanelName');
     const avEl = document.getElementById('dmPanelAvatar');
     const statusDot = document.getElementById('dmPanelStatusDot');
-    const statusText = document.getElementById('dmPanelStatusText');
     const customStatusWrap = document.getElementById('dmPanelCustomStatus');
     const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
     const customText = document.getElementById('dmPanelCustomStatusText');
     const aboutMeEl = document.getElementById('dmPanelAboutMe');
     const joinedEl = document.getElementById('dmPanelJoinedDate');
     const mutualServersEl = document.getElementById('dmPanelMutualServers');
+    const friendBtn = document.getElementById('dmPanelFriendBtn');
     if (prof) {
       if (nameEl && prof.nickname) nameEl.textContent = prof.nickname;
       if (avEl && isUsableAvatarUrl(prof.avatarUrl)) {
         avEl.innerHTML = `<img src="${escapeHtml(prof.avatarUrl)}" class="w-full h-full object-cover rounded-full">`;
       }
-      const isOnline = prof.status === 'online' || prof.status === 'away';
       if (statusDot) {
-        statusDot.className = `w-2.5 h-2.5 rounded-full ${prof.status === 'online' ? 'bg-emerald-500' : prof.status === 'away' ? 'bg-amber-500' : 'bg-gray-400'}`;
-      }
-      if (statusText) {
-        if (prof.status === 'online') statusText.textContent = 'オンライン';
-        else if (prof.status === 'away') statusText.textContent = '離席中';
-        else {
-          const timeStr = formatTimeAgo(prof.last_changed || prof.lastSeen);
-          statusText.textContent = timeStr ? `${timeStr}にアクティブ` : 'オフライン';
-        }
+        statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
       }
       if (prof.customStatus && prof.customStatus.text) {
         if (customEmoji) customEmoji.textContent = prof.customStatus.emoji || '💬';
@@ -8343,17 +8354,41 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         if (!isNaN(d.getTime())) joinedEl.textContent = d.toLocaleDateString('ja-JP');
       }
     }
+    // フレンド状態に応じたボタン装飾
+    if (friendBtn && typeof friendRelationships === 'object') {
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends') {
+        friendBtn.className = "dm-action-btn text-emerald-600 bg-emerald-500/10 hover:bg-rose-500/20 hover:text-rose-600 dark:text-emerald-400 dark:hover:text-rose-400";
+        friendBtn.title = "フレンド解除";
+        friendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        friendBtn.onclick = async () => {
+          if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
+          rejectFriendRequest(targetUid);
+        };
+      } else if (rel?.status === 'pending_sent') {
+        friendBtn.className = "dm-action-btn text-amber-600 bg-amber-500/10 hover:bg-rose-500/20 hover:text-rose-600 dark:text-amber-400 dark:hover:text-rose-400";
+        friendBtn.title = "申請送信済み (タップで取消)";
+        friendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        friendBtn.onclick = () => cancelFriendRequest(targetUid);
+      } else if (rel?.status === 'pending_received') {
+        friendBtn.className = "dm-action-btn text-[#5865f2] bg-[#5865f2]/15 hover:bg-[#5865f2] hover:text-white";
+        friendBtn.title = "フレンド申請が届いています (タップで承認)";
+        friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        friendBtn.onclick = () => acceptFriendRequest(targetUid);
+      }
+    }
     if (mutualServersEl && Array.isArray(allServersCache)) {
       const mutuals = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
       if (mutuals.length === 0) {
-        mutualServersEl.innerHTML = '<div class="text-[11px] text-gray-400 dark:text-gray-500 px-1">共通のサーバーはありません</div>';
+        mutualServersEl.innerHTML = '<div class="text-[11px] text-gray-400 dark:text-gray-500 px-1 py-1">共通のサーバーはありません</div>';
       } else {
         mutualServersEl.innerHTML = mutuals.map(s => `
-          <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-colors" onclick="enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
-            <div class="w-6 h-6 rounded-lg bg-indigo-500 text-white font-bold text-[10px] flex items-center justify-center overflow-hidden flex-shrink-0">
+          <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-all group" onclick="enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+            <div class="w-8 h-8 rounded-xl bg-indigo-500 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
               ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
             </div>
             <span class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex-1">${escapeHtml(s.name || s.id)}</span>
+            <i class="fas fa-chevron-right text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
           </div>
         `).join('');
       }

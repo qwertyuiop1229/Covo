@@ -1,7 +1,9 @@
 {
-  "date": "2026-09-14T14:01:50.261Z",
+  "date": "2026-09-14T16:50:38.255Z",
   "files": [
-    "public/js/main.js",
-    "public/css/modules/chat.css"
+    "public/css/modules/chat.css",
+    "public/css/modules/mobile.css",
+    "public/index.html",
+    "public/js/main.js"
   ]
 }

@@ -1670,6 +1670,527 @@ module.exports = {
 }
 </file>
 
+<file path="tailwind.input.css">
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer base {
+  button, a, input, select, textarea, .room-item, .msg, .transition-smooth {
+    @apply transition-all duration-200 ease-in-out;
+  }
+}
+@layer utilities {
+  .message-row {
+    touch-action: pan-y;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+</file>
+
+<file path="public/css/modules/components.css">
+/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
+    .flipped {
+      transform: scaleY(-1);
+    }
+    .message-bubble {
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      margin-bottom: 0;
+      word-wrap: break-word;
+      -webkit-touch-callout: none;
+      /* iOS長押しメニュー防止 */
+    }
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+      transition: opacity 0.15s;
+    }
+    .msg-avatar:hover {
+      opacity: 0.85;
+    }
+    .msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .my-message {
+      background-color: #e0e0e0;
+      /* 薄いグレー */
+      border-top-right-radius: 0.25rem;
+    }
+    .other-message {
+      background-color: #f0f0f0;
+      /* 非常に薄いグレー */
+      border-top-left-radius: 0.25rem;
+    }
+    .scrollable {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
+    #updateOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      flex-direction: column;
+    }
+    #updateOverlay.show {
+      display: flex;
+    }
+    .update-card {
+      position: relative;
+      background: #ffffff;
+      color: #1f2937;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+    .update-close-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #111827;
+      transform: scale(1.05);
+    }
+    @keyframes updateCardPopIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .update-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #4f46e5;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: white;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+    }
+    .update-title {
+      color: #111827;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .update-version {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .update-body {
+      color: #4b5563;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      padding: 1rem;
+      background: #f3f4f6;
+      border-radius: 1rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .update-btn {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #4f46e5;
+      color: white;
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .update-btn:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    }
+    .update-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .update-progress {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .update-progress.show {
+      display: block;
+    }
+    .update-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    /* === 設定トグルスイッチ === */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+    .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+    .setting-label i {
+      width: 18px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background-color: #d1d5db;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background-color 0.25s;
+    }
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #374151;
+    }
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+    #updateErrorBox textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      font-size: 0.7rem;
+      background: #1e293b;
+      color: #fca5a5;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 8px;
+      white-space: pre;
+      overflow: auto;
+    }
+    #updateErrorBox button {
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #updateErrorBox button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    /* === モーダルアニメーション === */
+    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
+    /* .modal-box { placeholder } */
+    .modal-opening {
+      animation: scaleInFade 0.22s ease both;
+    }
+    /* === メッセージバブルフェードイン === */
+    .message-bubble {
+      animation: slideUpFade 0.18s ease both;
+    }
+    /* === ルームリストアイテムのフェード === */
+    .room-item-animate {
+      animation: fadeIn 0.15s ease both;
+    }
+    /* === ボタン全般のactiveフィードバック === */
+    button:not(.server-list-user-btn):active {
+      opacity: 0.8;
+    }
+    #backToServerListBtn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    /* サーバー設定モーダル内のタブ */
+    .ss-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .ss-tab.active {
+      background: #1f2937;
+      color: white;
+    }
+    .ss-tab:not(.active) {
+      background: transparent;
+      color: #6b7280;
+    }
+    .ss-tab:not(.active):hover {
+      background: #f3f4f6;
+    }
+    /* 招待コード表示 */
+    .invite-code-item {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .invite-code-text {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+      letter-spacing: 2px;
+    }
+    .invite-code-meta {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+    /* === サーバービュー用ニックネームヘッダー === */
+    #globalAppHeader {
+      display: none;
+      background: #374151;
+      color: white;
+      padding: 0.45rem 1rem;
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #globalAppHeader.server-mode {
+      display: flex;
+    }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
+    #headerTitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.88;
+    }
+    /* === カスタム確認ダイアログ === */
+    #customConfirmModal,
+    #customPromptModal,
+    #customAlertModal {
+      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
+    }
+    #customConfirmModal .confirm-box {
+      text-align: left;
+    }
+    /* === モーダル角丸崩れ防止 === */
+    .modal-dark-header {
+      border-radius: inherit;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    /* === メンションバッジ通知 === */
+    .mention-toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mention-toast-badge {
+      background: #4f46e5;
+      color: white;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 99px;
+      flex-shrink: 0;
+      letter-spacing: 0.03em;
+    }
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
+    }
+</file>
+
 <file path="public/css/geo_study.css">
 /* geo_study.css - 隠し機能用スタイル */
 #geoStudyContainer {
@@ -1772,6 +2293,267 @@ module.exports = {
 .gs-custom-marker-wrapper {
   background: transparent !important;
   border: none !important;
+}
+</file>
+
+<file path="public/js/debug_ui.js">
+import { safeCopy } from './utils.js';
+import { alertMessage } from './ui_helpers.js';
+export function _runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+export function _updateLayoutDebugUI() {
+  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+  if (!els.length) return;
+  const txt = _runShadowHunter();
+  const n = txt.split('\n').length;
+  els.forEach(el => {
+    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+    el.style.cursor = 'pointer';
+    el.style.textDecoration = 'underline';
+    el.style.whiteSpace = 'normal';
+    el.title = 'タップでコピー';
+    el.onclick = () => copyDebugText(txt, el);
+  });
+}
+let _inspectHL = null;
+export function __clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+export function __showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+export function _inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+export function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
+      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      if (line.includes('[INFO]')) return '#60a5fa';
+      return '#cbd5e1';
+    }
+export function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      div.style.padding = '2px 0';
+      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+      body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
+    }
+let _inspectMode = false;
+export function setInspectMode(enabled) {
+  _inspectMode = !!enabled;
+  const bar = document.getElementById('inspectModeBar');
+  const pcCb = document.getElementById('pcToggleInspectMode');
+  const mobileCb = document.getElementById('toggleInspectMode');
+  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+  if (pcCb) pcCb.checked = _inspectMode;
+  if (mobileCb) mobileCb.checked = _inspectMode;
+  if (!_inspectMode) {
+    __clearInspectHighlight();
+  }
+}
+export function toggleDevConsole() {
+  const panel = document.getElementById('devConsolePanel');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    const body = document.getElementById('devConsoleBody');
+    if (body) {
+      body.innerHTML = '';
+      const logs = window._covoLogs || [];
+      if (logs.length === 0) {
+        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
+      } else {
+        logs.forEach(line => _appendConsoleLine(line));
+      }
+    }
+  }
+}
+export function clearDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  if (body) body.innerHTML = '';
+  window._covoLogs = [];
+}
+export function copyDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  if (!text || text.trim() === '') {
+    alertMessage('コピーするコンソールログがありません', 'info');
+    return;
+  }
+  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
+}
+export function copyDebugText(txt) {
+  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+export function getSystemDiagnosticInfo() {
+  const info = {
+    timestamp: new Date().toLocaleString('ja-JP'),
+    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    userAgent: navigator.userAgent,
+    language: navigator.language || 'ja',
+    online: navigator.onLine,
+    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    screenSize: `${window.innerWidth}x${window.innerHeight}`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
+    memory: (window.performance && window.performance.memory) ? {
+      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
+      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
+      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
+    } : null,
+    network: navigator.connection ? {
+      type: navigator.connection.effectiveType || 'unknown',
+      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
+      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
+    } : null,
+    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
+    localStorageCount: (() => {
+      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
+    })()
+  };
+  return info;
+}
+export function formatDiagnosticMarkdown(info) {
+  let md = `### Covo システム診断レポート\n`;
+  md += `- **記録日時**: ${info.timestamp}\n`;
+  md += `- **アプリ種別**: ${info.appType}\n`;
+  md += `- **アプリバージョン**: ${info.appVersion}\n`;
+  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
+  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
+  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
+  if (info.memory) {
+    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
+  }
+  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
+  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
+  return md;
+}
+export function copySystemDiagnosticReport() {
+  const info = getSystemDiagnosticInfo();
+  const md = formatDiagnosticMarkdown(info);
+  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
+}
+export function copyFullDiagnosticAndConsoleReport() {
+  const info = getSystemDiagnosticInfo();
+  let md = formatDiagnosticMarkdown(info);
+  const logs = window._covoLogs || [];
+  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
+  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
+}
+if (typeof window !== 'undefined') {
+  window.setInspectMode = setInspectMode;
+  window.toggleDevConsole = toggleDevConsole;
+  window.clearDevConsole = clearDevConsole;
+  window.copyDevConsole = copyDevConsole;
+  window.copyDebugText = copyDebugText;
+  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 </file>
 
@@ -7746,29 +8528,6 @@ goto MENU
 exit
 </file>
 
-<file path="tailwind.input.css">
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-@layer base {
-  button, a, input, select, textarea, .room-item, .msg, .transition-smooth {
-    @apply transition-all duration-200 ease-in-out;
-  }
-}
-@layer utilities {
-  .message-row {
-    touch-action: pan-y;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-}
-</file>
-
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -8094,765 +8853,6 @@ exit
       height: 14px;
       pointer-events: none;
     }
-</file>
-
-<file path="public/css/modules/components.css">
-/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
-    .flipped {
-      transform: scaleY(-1);
-    }
-    .message-bubble {
-      max-width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      margin-bottom: 0;
-      word-wrap: break-word;
-      -webkit-touch-callout: none;
-      /* iOS長押しメニュー防止 */
-    }
-    .msg-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      cursor: pointer;
-      overflow: hidden;
-      transition: opacity 0.15s;
-    }
-    .msg-avatar:hover {
-      opacity: 0.85;
-    }
-    .msg-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .my-message {
-      background-color: #e0e0e0;
-      /* 薄いグレー */
-      border-top-right-radius: 0.25rem;
-    }
-    .other-message {
-      background-color: #f0f0f0;
-      /* 非常に薄いグレー */
-      border-top-left-radius: 0.25rem;
-    }
-    .scrollable {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
-    #updateOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(16px);
-      flex-direction: column;
-    }
-    #updateOverlay.show {
-      display: flex;
-    }
-    .update-card {
-      position: relative;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.75rem;
-      padding: 2.75rem 2.25rem;
-      max-width: 420px;
-      width: 90%;
-      text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .update-close-btn {
-      position: absolute;
-      top: 1.25rem;
-      right: 1.25rem;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .update-close-btn.hidden {
-      display: none !important;
-    }
-    .update-close-btn:hover {
-      background: rgba(0, 0, 0, 0.1);
-      color: #111827;
-      transform: scale(1.05);
-    }
-    @keyframes updateCardPopIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-    .update-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 1.25rem;
-      background: #4f46e5;
-      border-radius: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    }
-    .update-title {
-      color: #111827;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-    }
-    .update-version {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-    .update-body {
-      color: #4b5563;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      margin-bottom: 1.75rem;
-      max-height: 140px;
-      overflow-y: auto;
-      text-align: left;
-      padding: 1rem;
-      background: #f3f4f6;
-      border-radius: 1rem;
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-    .update-btn {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: #4f46e5;
-      color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    .update-btn:hover {
-      background: #4338ca;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
-    }
-    .update-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .update-progress {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.85rem;
-      display: none;
-    }
-    .update-progress.show {
-      display: block;
-    }
-    .update-spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e2e8f0;
-      border-top-color: #4f46e5;
-      border-radius: 50%;
-      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-    /* === 設定トグルスイッチ === */
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .setting-row:last-child {
-      border-bottom: none;
-    }
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-    .setting-label i {
-      width: 18px;
-      text-align: center;
-      color: #6b7280;
-    }
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background-color: #d1d5db;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: background-color 0.25s;
-    }
-    .toggle-slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-    .toggle-switch input:checked+.toggle-slider {
-      background-color: #374151;
-    }
-    .toggle-switch input:checked+.toggle-slider::before {
-      transform: translateX(20px);
-    }
-    #updateErrorBox textarea {
-      width: 100%;
-      height: 80px;
-      padding: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
-      font-size: 0.7rem;
-      background: #1e293b;
-      color: #fca5a5;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      resize: vertical;
-      margin-bottom: 8px;
-      white-space: pre;
-      overflow: auto;
-    }
-    #updateErrorBox button {
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f1f5f9;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #updateErrorBox button:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-    /* === モーダルアニメーション === */
-    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-    /* .modal-box { placeholder } */
-    .modal-opening {
-      animation: scaleInFade 0.22s ease both;
-    }
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
-    /* === ルームリストアイテムのフェード === */
-    .room-item-animate {
-      animation: fadeIn 0.15s ease both;
-    }
-    /* === ボタン全般のactiveフィードバック === */
-    button:not(.server-list-user-btn):active {
-      opacity: 0.8;
-    }
-    #backToServerListBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-    /* サーバー設定モーダル内のタブ */
-    .ss-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .ss-tab.active {
-      background: #1f2937;
-      color: white;
-    }
-    .ss-tab:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-    .ss-tab:not(.active):hover {
-      background: #f3f4f6;
-    }
-    /* 招待コード表示 */
-    .invite-code-item {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-    .invite-code-text {
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-      flex: 1;
-      letter-spacing: 2px;
-    }
-    .invite-code-meta {
-      font-size: 0.7rem;
-      color: #9ca3af;
-    }
-    /* === サーバービュー用ニックネームヘッダー === */
-    #globalAppHeader {
-      display: none;
-      background: #374151;
-      color: white;
-      padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    #globalAppHeader.server-mode {
-      display: flex;
-    }
-    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
-    body.discord-ui-mode #globalAppHeader {
-      display: none !important;
-    }
-    #headerTitle {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.88;
-    }
-    /* === カスタム確認ダイアログ === */
-    #customConfirmModal,
-    #customPromptModal,
-    #customAlertModal {
-      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
-    }
-    #customConfirmModal .confirm-box {
-      text-align: left;
-    }
-    /* === モーダル角丸崩れ防止 === */
-    .modal-dark-header {
-      border-radius: inherit;
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-    /* === メンションバッジ通知 === */
-    .mention-toast {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .mention-toast-badge {
-      background: #4f46e5;
-      color: white;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 99px;
-      flex-shrink: 0;
-      letter-spacing: 0.03em;
-    }
-    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
-    .whatsnew-card {
-      background-color: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
-      border-radius: 1.5rem;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    }
-    body.dark-server-theme .whatsnew-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-      color: #f8fafc !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    body.discord-dark-theme .whatsnew-card {
-      background-color: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    .whatsnew-header {
-      padding: 1.25rem 1.5rem 1rem;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-header {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-header {
-      background-color: #242629 !important;
-      border-bottom-color: #1f2023 !important;
-    }
-    .whatsnew-body-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 1.25rem;
-      font-size: 0.875rem;
-      line-height: 1.65;
-      color: #334155;
-    }
-    body.dark-server-theme .whatsnew-body-box {
-      background-color: rgba(15, 23, 42, 0.6) !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme .whatsnew-body-box {
-      background-color: #1e1f22 !important;
-      border-color: #1f2023 !important;
-      color: #dbdee1 !important;
-    }
-    .whatsnew-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-footer {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-footer {
-      background-color: #242629 !important;
-      border-top-color: #1f2023 !important;
-    }
-</file>
-
-<file path="public/js/debug_ui.js">
-import { safeCopy } from './utils.js';
-import { alertMessage } from './ui_helpers.js';
-export function _runShadowHunter() {
-      const lines = [];
-      try {
-        const desc = (el) => {
-          if (!el || !el.tagName) return '?';
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-          return el.tagName.toLowerCase() + id + cls;
-        };
-        // 影・境界・グラデを持つか判定し、持つなら記録
-        const inspect = (el, tag) => {
-          if (!el) return;
-          const cs = getComputedStyle(el);
-          const hits = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
-          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
-          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
-          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
-          // ::after / ::before も調べる
-          for (const pseudo of ['::before', '::after']) {
-            const pcs = getComputedStyle(el, pseudo);
-            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
-              const ph = [];
-              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
-              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
-              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
-              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
-            }
-          }
-          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
-        };
-        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
-        const input = document.getElementById('messageInputArea');
-        const nav = document.getElementById('mobileBottomNav');
-        inspect(input, 'IN');
-        inspect(input && input.parentElement, 'IN.parent');
-        inspect(nav, 'NAV');
-        inspect(document.getElementById('chatArea'), 'chat');
-        inspect(document.getElementById('messageInputInner'), 'inner');
-        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
-        if (input) {
-          const ir = input.getBoundingClientRect();
-          const x = Math.round(ir.left + ir.width / 2);
-          for (const dy of [-2, 0, 2, 4, 8]) {
-            const y = Math.round(ir.bottom + dy);
-            const stack = document.elementsFromPoint(x, y) || [];
-            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
-          }
-        }
-        const uniq = [...new Set(lines)];
-        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-export function _updateLayoutDebugUI() {
-  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
-  if (!els.length) return;
-  const txt = _runShadowHunter();
-  const n = txt.split('\n').length;
-  els.forEach(el => {
-    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
-    el.style.cursor = 'pointer';
-    el.style.textDecoration = 'underline';
-    el.style.whiteSpace = 'normal';
-    el.title = 'タップでコピー';
-    el.onclick = () => copyDebugText(txt, el);
-  });
-}
-let _inspectHL = null;
-export function __clearInspectHighlight() {
-      if (_inspectHL) { _inspectHL.style.display = 'none'; }
-    }
-export function __showInspectHighlight(rect) {
-      if (!_inspectHL) {
-        _inspectHL = document.createElement('div');
-        _inspectHL.setAttribute('data-inspect-ignore', '1');
-        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
-        document.body.appendChild(_inspectHL);
-      }
-      _inspectHL.style.display = 'block';
-      _inspectHL.style.left = rect.left + 'px';
-      _inspectHL.style.top = rect.top + 'px';
-      _inspectHL.style.width = rect.width + 'px';
-      _inspectHL.style.height = rect.height + 'px';
-    }
-export function _inspectPoint(x, y) {
-      try {
-        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
-        const out = [];
-        stack.forEach((el, i) => {
-          const cs = getComputedStyle(el);
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
-          const name = el.tagName.toLowerCase() + id + cls;
-          const r = el.getBoundingClientRect();
-          const props = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
-          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
-          // 擬似要素
-          for (const ps of ['::before', '::after']) {
-            const p = getComputedStyle(el, ps);
-            if (p.content && p.content !== 'none' && p.content !== 'normal') {
-              const pp = [];
-              if (p.boxShadow !== 'none') pp.push('shadow');
-              if (p.backgroundImage !== 'none') pp.push('bg');
-              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
-              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
-            }
-          }
-          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
-        });
-        return out.join('\n');
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-export function _lineColor(line) {
-      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
-      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
-      if (line.includes('[E2EE]')) return '#34d399';
-      if (line.includes('[INFO]')) return '#60a5fa';
-      return '#cbd5e1';
-    }
-export function _appendConsoleLine(line) {
-      const body = document.getElementById('devConsoleBody');
-      if (!body) return;
-      const div = document.createElement('div');
-      div.textContent = line;
-      div.style.color = _lineColor(line);
-      div.style.padding = '2px 0';
-      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
-      body.appendChild(div);
-      body.scrollTop = body.scrollHeight;
-    }
-let _inspectMode = false;
-export function setInspectMode(enabled) {
-  _inspectMode = !!enabled;
-  const bar = document.getElementById('inspectModeBar');
-  const pcCb = document.getElementById('pcToggleInspectMode');
-  const mobileCb = document.getElementById('toggleInspectMode');
-  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
-  if (pcCb) pcCb.checked = _inspectMode;
-  if (mobileCb) mobileCb.checked = _inspectMode;
-  if (!_inspectMode) {
-    __clearInspectHighlight();
-  }
-}
-export function toggleDevConsole() {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel) return;
-  const isHidden = panel.style.display === 'none' || !panel.style.display;
-  panel.style.display = isHidden ? 'flex' : 'none';
-  if (isHidden) {
-    const body = document.getElementById('devConsoleBody');
-    if (body) {
-      body.innerHTML = '';
-      const logs = window._covoLogs || [];
-      if (logs.length === 0) {
-        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
-      } else {
-        logs.forEach(line => _appendConsoleLine(line));
-      }
-    }
-  }
-}
-export function clearDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  if (body) body.innerHTML = '';
-  window._covoLogs = [];
-}
-export function copyDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
-  if (!text || text.trim() === '') {
-    alertMessage('コピーするコンソールログがありません', 'info');
-    return;
-  }
-  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
-}
-export function copyDebugText(txt) {
-  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
-}
-export function getSystemDiagnosticInfo() {
-  const info = {
-    timestamp: new Date().toLocaleString('ja-JP'),
-    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
-    userAgent: navigator.userAgent,
-    language: navigator.language || 'ja',
-    online: navigator.onLine,
-    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
-    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
-    screenSize: `${window.innerWidth}x${window.innerHeight}`,
-    viewport: `${window.innerWidth}x${window.innerHeight}`,
-    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
-    memory: (window.performance && window.performance.memory) ? {
-      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
-      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
-      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
-    } : null,
-    network: navigator.connection ? {
-      type: navigator.connection.effectiveType || 'unknown',
-      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
-      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
-    } : null,
-    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
-    localStorageCount: (() => {
-      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
-    })()
-  };
-  return info;
-}
-export function formatDiagnosticMarkdown(info) {
-  let md = `### Covo システム診断レポート\n`;
-  md += `- **記録日時**: ${info.timestamp}\n`;
-  md += `- **アプリ種別**: ${info.appType}\n`;
-  md += `- **アプリバージョン**: ${info.appVersion}\n`;
-  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
-  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
-  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
-  if (info.memory) {
-    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
-  }
-  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
-  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
-  return md;
-}
-export function copySystemDiagnosticReport() {
-  const info = getSystemDiagnosticInfo();
-  const md = formatDiagnosticMarkdown(info);
-  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
-}
-export function copyFullDiagnosticAndConsoleReport() {
-  const info = getSystemDiagnosticInfo();
-  let md = formatDiagnosticMarkdown(info);
-  const logs = window._covoLogs || [];
-  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
-  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
-}
-if (typeof window !== 'undefined') {
-  window.setInspectMode = setInspectMode;
-  window.toggleDevConsole = toggleDevConsole;
-  window.clearDevConsole = clearDevConsole;
-  window.copyDevConsole = copyDevConsole;
-  window.copyDebugText = copyDebugText;
-  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
-  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
-  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
-}
 </file>
 
 <file path="src-tauri/capabilities/default.json">
@@ -17435,8 +17435,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode.discord-dm-chat #roomList,
     body.discord-ui-mode.discord-dm-chat #discordDmHomeView,
     body.discord-ui-mode.discord-dm-chat #discordDiscoverView,
-    body.discord-ui-mode.discord-dm-chat #discordHomeMembers,
-    body.discord-ui-mode.discord-dm-chat #membersSidebar {
+    body.discord-ui-mode.discord-dm-chat #discordHomeMembers {
       display: none !important;
     }
     /* 3. 探索/サーバービュー (コンパスマーク) */
@@ -21093,6 +21092,265 @@ html.dark .server-menu-item.text-rose-500:hover {
       pointer-events: auto !important;
       user-select: auto !important;
     }
+    .dm-sidebar-item.has-unread {
+      color: #060607 !important;
+      font-weight: 700 !important;
+    }
+    .dark-server-theme .dm-sidebar-item.has-unread,
+    .dark .dm-sidebar-item.has-unread,
+    .discord-dark-theme .dm-sidebar-item.has-unread {
+      color: #ffffff !important;
+      font-weight: 700 !important;
+    }
+    .dm-unread-pill {
+      position: absolute;
+      left: -8px;
+      width: 4px;
+      height: 8px;
+      background: #060607;
+      border-radius: 0 4px 4px 0;
+      transition: height 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .dark-server-theme .dm-unread-pill,
+    .dark .dm-unread-pill,
+    .discord-dark-theme .dm-unread-pill {
+      background: #ffffff;
+    }
+    .dm-sidebar-item:hover .dm-unread-pill {
+      height: 20px;
+    }
+    .dm-unread-badge {
+      font-size: 10px;
+      font-weight: 800;
+      color: #ffffff;
+      background-color: #da373c;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      min-width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      margin-left: auto;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    /* =========================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+    /* =========================================================================
+       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ
+    .dm-sidebar-item {
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      margin: 1px 8px !important;
+      padding: 0 8px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      max-height: 44px !important;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      transition: background-color 0.1s ease, color 0.1s ease !important;
+      position: relative !important;
+      user-select: none !important;
+      box-sizing: border-box !important;
+    }
+    /* ライトモード */
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item {
+      color: #5c5e66;
+      background: transparent;
+    }
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      color: #313338;
+    }
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item.active {
+      background: rgba(0, 0, 0, 0.1) !important;
+      color: #060607 !important;
+    }
+    /* ダークモード */
+    body.dark-server-theme .dm-sidebar-item,
+    body.discord-dark-theme .dm-sidebar-item {
+      color: #949ba4;
+      background: transparent;
+    }
+    body.dark-server-theme .dm-sidebar-item:hover,
+    body.discord-dark-theme .dm-sidebar-item:hover {
+      background: rgba(78, 80, 88, 0.2) !important;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .dm-sidebar-item.active,
+    body.discord-dark-theme .dm-sidebar-item.active {
+      background: rgba(78, 80, 88, 0.38) !important;
+      color: #ffffff !important;
+    }
+    /* 未読時 */
+    .dm-sidebar-item.has-unread {
+      font-weight: 700 !important;
+    }
+    /* 未読バッジ (Discord Red #da373c) */
+    .dm-unread-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 18px !important;
+      height: 18px !important;
+      padding: 0 5px !important;
+      border-radius: 9999px !important;
+      background-color: #da373c !important;
+      color: #ffffff !important;
+      font-size: 11px !important;
+      font-weight: 800 !important;
+      line-height: 1 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+      transition: opacity 0.15s ease !important;
+    }
+    /* 閉じるボタン（×）: 通常時は非表示、ホバー時のみ表示 */
+    .dm-sidebar-item .dm-close-btn {
+      width: 18px !important;
+      height: 18px !important;
+      border-radius: 4px !important;
+      display: none !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: #94a3b8 !important;
+      background: transparent !important;
+      border: none !important;
+      cursor: pointer !important;
+      transition: color 0.15s, background-color 0.15s !important;
+      padding: 0 !important;
+      margin-left: 2px !important;
+      font-size: 11px !important;
+    }
+    /* ホバー時: 未読バッジを隠して×ボタンに切り替え (Discord本家のスワップ) */
+    .dm-sidebar-item:hover .dm-close-btn {
+      display: inline-flex !important;
+    }
+    .dm-sidebar-item:hover .dm-unread-badge-wrap {
+      display: none !important;
+    }
+    .dm-sidebar-item .dm-close-btn:hover {
+      color: #ef4444 !important;
+      background-color: rgba(239, 68, 68, 0.15) !important;
+    }
+    /* =========================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+    .dm-sidebar-item.has-unread {
+      color: #060607 !important;
+      font-weight: 700 !important;
+    }
+    .dark-server-theme .dm-sidebar-item.has-unread,
+    .dark .dm-sidebar-item.has-unread,
+    .discord-dark-theme .dm-sidebar-item.has-unread {
+      color: #ffffff !important;
+      font-weight: 700 !important;
+    }
+    .dm-unread-pill {
+      position: absolute;
+      left: -8px;
+      width: 4px;
+      height: 8px;
+      background: #060607;
+      border-radius: 0 4px 4px 0;
+      transition: height 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .dark-server-theme .dm-unread-pill,
+    .dark .dm-unread-pill,
+    .discord-dark-theme .dm-unread-pill {
+      background: #ffffff;
+    }
+    .dm-sidebar-item:hover .dm-unread-pill {
+      height: 20px;
+    }
+    .dm-unread-badge {
+      font-size: 10px;
+      font-weight: 800;
+      color: #ffffff;
+      background-color: #da373c;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      min-width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      margin-left: auto;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    /* =========================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+    #dmProfilePanel {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+    }
+    #dmProfilePanel.hidden {
+      display: none !important;
+    }
+    .dm-profile-banner {
+      height: 90px;
+      width: 100%;
+      background: linear-gradient(135deg, #5865f2, #4752c4);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .dm-profile-avatar-wrap {
+      padding: 0 16px;
+      margin-top: -38px;
+      margin-bottom: 10px;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .dm-profile-avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 4px solid #ffffff;
+      background: #2b2d31;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 800;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      position: relative;
+    }
+    .dm-profile-avatar:hover {
+      transform: scale(1.04);
+    }
+    body.dark-server-theme .dm-profile-avatar {
+      border-color: #1e293b;
+      background: #0f172a;
+    }
+    body.discord-dark-theme .dm-profile-avatar {
+      border-color: #2b2d31;
+      background: #111214;
+    }
+    .dm-profile-card {
+      margin: 0 12px 14px 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    body.dark-server-theme .dm-profile-card {
+      background: #162032;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    body.discord-dark-theme .dm-profile-card {
+      background: #1e1f22;
+      border-color: #1f2023;
+    }
 </file>
 
 <file path="public/js/crypto_helpers.js">
@@ -22026,7 +22284,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.dmKeyCache[dmId] = keysObj;
               return keysObj;
             }
-            return null;
+            // 相手宛てのキーはあるが自分宛てが未生成の場合、過去にDMメッセージが存在しないなら
+            // 相手からのキー到着を待たずに自分が新規キーを生成してセッションを確立する
+            const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/dm_messages/${dmId}`), limit(1))).catch(() => null);
+            if (msgsSnap && !msgsSnap.empty) {
+              return null;
+            }
+            console.log(`[E2EE] 過去DMメッセージが存在しないため、新規キーを生成してセッションを確立します (dmId=${dmId})`);
           }
         }
         // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布
@@ -22201,6 +22465,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m.text = decrypted;
             m._decryptedErrorText = null;
             m._decrypted = true;
+            if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              LocalStore.putMessage(m).catch(() => {});
+            }
           }
         } catch (e) {
           m.text = "（復号化エラー：メッセージを解読できません）";
@@ -25916,13 +26183,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.172" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.174" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.172" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.174" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <script>
@@ -25942,9 +26209,11 @@ async function handleD1Api(request, env, url) {
       location.origin === "tauri://localhost" ||
       location.origin === "http://tauri.localhost" ||
       location.origin === "https://tauri.localhost" ||
-      location.protocol === "tauri:"
+      location.protocol === "tauri:" ||
+      location.hostname === "tauri.localhost" ||
+      location.hostname.endsWith(".localhost")
     );
-    if (!isDesktopApp && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    if (!isDesktopApp && location.hostname !== "localhost" && location.hostname !== "127.0.0.1" && !location.hostname.endsWith(".localhost")) {
       const gtagScript = document.createElement('script');
       gtagScript.async = true;
       gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG';
@@ -28716,18 +28985,23 @@ async function handleD1Api(request, env, url) {
             </div>
           </div>
         </div>
-        <!-- メンバーリストサイドバー (スマホでは下からスライドインするボトムシート) -->
+        <!-- メンバーリストサイドバー / DM相手のユーザープロフィールパネル (スマホでは下からスライドインするボトムシート) -->
         <div id="resizerRight"></div>
         <div id="bottomSheetOverlay" onclick="closeBottomSheet()"></div>
-        <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet">
+        <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet select-none">
           <div class="bottom-sheet-handle md:hidden" id="bottomSheetHandle">
             <div class="bottom-sheet-handle-bar"></div>
           </div>
+          <!-- 1. サーバー画面用: メンバー一覧 -->
           <div id="membersList" class="p-2 w-full flex-1 overflow-y-auto">
             <!-- メンバーはここに動的に追加されます -->
           </div>
+          <!-- 2. DM (個チャ) 画面用: 相手のユーザープロフィールパネル (Discord本家完全準拠) -->
+          <div id="dmProfilePanel" class="w-full flex-1 flex-col overflow-y-auto hidden">
+            <!-- JSで動的に相手のプロフィールカードをレンダリング -->
+          </div>
         </div>
-      </div>
+        </div>
     </div>
     <!-- ===== Mobile Bottom Navigation (コンテナ内flex子要素として配置) ===== -->
     <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
@@ -29102,7 +29376,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.172"></script>
+  <script type="module" src="js/main.js?v=1.1.174"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -30370,7 +30644,6 @@ async function handleD1Api(request, env, url) {
  * 100% Fully Resolved Scope & All Discord Modern UI Enhancements
  */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -31031,7 +31304,16 @@ let userNickname = null;
 let userAboutMe = "";
 let isAdmin = false;
 let isListAdmin = false;
-const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI__);
+const isTauri = typeof window !== 'undefined' && (
+  Boolean(window.__TAURI__) ||
+  Boolean(window.__TAURI_INTERNALS__) ||
+  location.origin === "tauri://localhost" ||
+  location.origin === "http://tauri.localhost" ||
+  location.origin === "https://tauri.localhost" ||
+  location.protocol === "tauri:" ||
+  location.hostname === "tauri.localhost" ||
+  location.hostname.endsWith(".localhost")
+);
 // DOM要素参照（安全な初期化とStrictスコープ対応）
 const userPanelName = document.getElementById("userPanelName");
 const userPanelId = document.getElementById("userPanelId");
@@ -31204,32 +31486,15 @@ function initializeFirebase() {
   try {
     if (!app) {
       app = initializeApp(firebaseConfig);
-      if (!isTauri) {
-        try {
-          if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
-            initializeAppCheck(app, {
-              provider: new ReCaptchaEnterpriseProvider('6LfB3UAtAAAAAD_Yj4JaPVUfd0hvxrtEGvivvwuU'),
-              isTokenAutoRefreshEnabled: false
-            });
-            console.log("🤖 [セキュリティ] ボット対策 (App Check) を初期化しました");
-          }
-        } catch (e) {
-          // 未構成またはスロットリング時は静かにフォールバック
-        }
-      }
       try {
         db = initializeFirestore(app, {
-          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-          experimentalForceLongPolling: true,
-          useFetchStreams: false
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
       } catch (e) {
         console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
         try {
           db = initializeFirestore(app, {
-            localCache: memoryLocalCache(),
-            experimentalForceLongPolling: true,
-            useFetchStreams: false
+            localCache: memoryLocalCache()
           });
         } catch (e2) {
           db = getFirestore(app);
@@ -36467,7 +36732,7 @@ function subscribeToUserStatus() {
   memberIds.forEach(uid => {
     const cachedProf = window._userProfileCache?.get(uid);
     usersMap.set(uid, { id: uid, state: 'offline', ...(cachedProf || {}) });
-    if (!cachedProf) {
+    if (!cachedProf || !cachedProf.last_changed) {
       window.getUserProfile(uid).then(prof => {
         if (prof) {
           const cur = usersMap.get(uid) || { id: uid };
@@ -36492,6 +36757,10 @@ function subscribeToUserStatus() {
           const cachedProf = window._userProfileCache?.get(uid);
           if (data) {
             const merged = { id: uid, ...existing, ...(cachedProf || {}), ...data };
+            // last_changed のフォールバック保護
+            if (!merged.last_changed && (cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen)) {
+              merged.last_changed = cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen;
+            }
             usersMap.set(uid, merged);
             if (cachedProf) {
               Object.assign(cachedProf, data);
@@ -36509,7 +36778,7 @@ function subscribeToUserStatus() {
       });
     });
   }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
-}
+  }
 function renderMembersList(users) {
   if (!membersList) return;
   membersList.innerHTML = "";
@@ -36600,9 +36869,10 @@ function renderMembersList(users) {
       if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
         statusText.className = "member-status-text";
-        const ts = member.last_changed || member.lastSeen || member.updatedAt || member.createdAt;
+        const cachedProf = window._userProfileCache?.get(member.id);
+        const ts = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
         const timeStr = formatTimeAgo(ts);
-        statusText.textContent = timeStr || (member.computedState === 'away' ? '離席中' : 'オフライン');
+        statusText.textContent = timeStr ? `${timeStr}にアクティブ` : (member.computedState === 'away' ? '離席中' : 'オフライン');
         info.appendChild(statusText);
       }
       // カスタムステータス (ステメ) の表示
@@ -36629,17 +36899,22 @@ function formatTimeAgo(timestamp) {
   if (!timestamp) return "";
   let past;
   if (typeof timestamp === 'number') {
-    past = new Date(timestamp);
+    past = timestamp < 10000000000 ? new Date(timestamp * 1000) : new Date(timestamp);
   } else if (typeof timestamp.toDate === 'function') {
     past = timestamp.toDate();
   } else if (typeof timestamp === 'object' && timestamp.seconds != null) {
     past = new Date(timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000));
   } else if (typeof timestamp === 'string') {
-    past = new Date(timestamp);
+    const num = Number(timestamp);
+    if (!isNaN(num) && num > 0) {
+      past = num < 10000000000 ? new Date(num * 1000) : new Date(num);
+    } else {
+      past = new Date(timestamp);
+    }
   } else {
     return "";
   }
-  if (isNaN(past.getTime())) return "";
+  if (isNaN(past.getTime()) || past.getTime() <= 0) return "";
   const now = new Date();
   const diffInSeconds = Math.floor((now - past) / 1000);
   if (diffInSeconds < 0) return `たった今`;
@@ -36649,7 +36924,10 @@ function formatTimeAgo(timestamp) {
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) return `${diffInHours}時間前`;
   const diffInDays = Math.floor(diffInHours / 24);
-  return `${diffInDays}日前`;
+  if (diffInDays < 30) return `${diffInDays}日前`;
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) return `${diffInMonths}か月前`;
+  return `${Math.floor(diffInDays / 365)}年前`;
 }
 // ================= MODULE: servers.js ================
 // ================= SERVERS MODULE ================
@@ -37631,7 +37909,9 @@ function renderDmConversationsList() {
     `;
     return;
   }
+  const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
   list.sort((a, b) => (b.lastMessageAt?.toMillis?.() || b.lastMessageAt || 0) - (a.lastMessageAt?.toMillis?.() || a.lastMessageAt || 0));
+  let hasAnyDmUnread = false;
   container.innerHTML = list.map(dm => {
     const otherUid = (dm.participants || []).find(id => id !== userId) || userId;
     const rel = friendRelationships[otherUid];
@@ -37644,6 +37924,12 @@ function renderDmConversationsList() {
     if (!cachedProf) {
       window.getUserProfile(otherUid).then(() => renderDmConversationsList()).catch(() => {});
     }
+    const lastRead = rm[`dm_${dm.id}`] || 0;
+    const lastMsgAt = typeof dm.lastMessageAt === 'number' ? dm.lastMessageAt : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
+    const isNotCurrent = (currentDmId !== dm.id) || !document.hasFocus();
+    const bySelf = dm.lastMessageSender && dm.lastMessageSender === userId;
+    const isUnread = Boolean(lastMsgAt > lastRead && isNotCurrent && !bySelf);
+    if (isUnread) hasAnyDmUnread = true;
     // 最新メッセージプレビューの復号・サニタイズ処理
     let previewText = dm._decryptedPreview || dm.lastMessageText || '会話を始めましょう';
     if (dm.lastMessageText && typeof isEncrypted === 'function' && isEncrypted(dm.lastMessageText) && !dm._decryptedPreview) {
@@ -37661,23 +37947,35 @@ function renderDmConversationsList() {
       }).catch(() => {});
     }
     return `
-      <div class="dm-sidebar-item ${isActive ? 'active' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
+      <div class="dm-sidebar-item group ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
         <div class="relative w-8 h-8 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
             ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
           </div>
           <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
         </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(nickname)}</div>
-          <div class="text-[11px] text-gray-400 truncate" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
+        <div class="flex-1 min-w-0 flex flex-col justify-center">
+          <div class="text-[13px] leading-snug truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-[#949ba4]'}">${escapeHtml(nickname)}</div>
+          <div class="text-[11px] leading-normal truncate ${isUnread ? 'text-gray-800 dark:text-[#dbdee1] font-semibold' : 'text-gray-400 dark:text-[#80848e]'}" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
         </div>
-        <button class="dm-close-btn p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
+        ${isUnread ? `
+          <div class="dm-unread-badge-wrap flex-shrink-0 flex items-center ml-auto">
+            <span class="dm-unread-badge">1</span>
+          </div>
+        ` : ''}
+        <button class="dm-close-btn flex-shrink-0 ml-1" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
           <i class="fas fa-times"></i>
         </button>
       </div>
     `;
   }).join('');
+  // ホームボタンの未読マーク連動（赤丸ドットは削除し、サーバーと同様に左側の白ピル has-unread のみ連動）
+  const homeBtn = document.getElementById("discordHomeBtn");
+  if (homeBtn) {
+    homeBtn.classList.toggle('has-unread', hasAnyDmUnread);
+    const oldBadge = homeBtn.querySelector('.discord-home-unread-dot');
+    if (oldBadge) oldBadge.remove();
+  }
 }
 window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
@@ -37764,6 +38062,20 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   currentPinnedMessages = [];
   renderPinnedMessages();
   renderDmConversationsList();
+  // 右側パネルの切り替え: サーバーメンバー一覧を隠し、DM相手のユーザープロフィールを表示
+  if (typeof renderDmProfilePanel === 'function') {
+    renderDmProfilePanel(targetUid, targetNickname, targetAvatarUrl);
+  }
+  const isRightCollapsed = localStorage.getItem("chatAppMembersCollapsed") === "true";
+  if (membersSidebar) {
+    if (window.innerWidth >= 768 && !isRightCollapsed) {
+      membersSidebar.style.setProperty("display", "", "important");
+      membersSidebar.classList.remove("hidden");
+      membersSidebar.classList.add("md:flex");
+    } else {
+      membersSidebar.classList.add("hidden");
+    }
+  }
   if (window._activeDmKeyCheckTimer) {
     clearInterval(window._activeDmKeyCheckTimer);
     window._activeDmKeyCheckTimer = null;
@@ -37772,13 +38084,46 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     window._activeDmKeyUnsub();
     window._activeDmKeyUnsub = null;
   }
-  try {
-    await _getDmKeyWithWait(dmId, currentDmParticipants, 2500);
-    // 入室時に相手へ自分の持っている鍵を即時バックフィル・相互同期
-    _backfillDmKeysForParticipant(dmId, targetUid).catch(() => {});
-  } catch (e) {
-    console.warn('[E2EE] DM key init error:', e);
-  }
+  // チャット購読を即座に開始（鍵の取得待ちでメッセージ一覧をブロックしない）
+  subscribeToMessages();
+  subscribeToPinnedMessages(null, null, dmId);
+  // DM鍵の初期化と自動復号は非同期並行処理で実行
+  (async () => {
+    try {
+      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+      const activeDmId = dmId;
+      const activeParticipants = currentDmParticipants;
+      const key = await _getDmKeyWithWait(activeDmId, activeParticipants, 1500);
+      if (key) {
+        _backfillDmKeysForParticipant(activeDmId, targetUid).catch(() => {});
+        if (currentDmId === activeDmId && allLoadedMessages.length > 0) {
+          await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
+          renderMessagesWithReadReceipts();
+        }
+      } else {
+        let retryCount = 0;
+        window._activeDmKeyCheckTimer = setInterval(async () => {
+          retryCount++;
+          if (retryCount > 15 || currentDmId !== activeDmId || _e2ee.dmKeyCache[activeDmId]) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            return;
+          }
+          const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 1500);
+          if (arrived) {
+            clearInterval(window._activeDmKeyCheckTimer);
+            window._activeDmKeyCheckTimer = null;
+            if (currentDmId === activeDmId && typeof renderMessagesWithReadReceipts === 'function') {
+              await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
+              renderMessagesWithReadReceipts();
+            }
+          }
+        }, 1500);
+      }
+    } catch (e) {
+      console.warn('[E2EE] DM key background init warning:', e);
+    }
+  })();
   // DM鍵のリアルタイム監視リスナー（相手が新しい鍵をバックフィルした瞬間、即座に再復号・画面更新）
   try {
     const { doc: fsDoc, onSnapshot: fsOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
@@ -37795,43 +38140,133 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       console.warn('[DM Key onSnapshot] notice:', err?.message || err);
     });
   } catch (_) {}
-  // DM鍵がまだ到着していない場合、自動監視タイマーを起動して鍵到着時に一括復号
-  (async () => {
-    try {
-      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
-      const activeDmId = dmId;
-      const activeParticipants = currentDmParticipants;
-      const key = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
-      if (!key) {
-        let retryCount = 0;
-        window._activeDmKeyCheckTimer = setInterval(async () => {
-          retryCount++;
-          if (retryCount > 15 || currentDmId !== activeDmId || _e2ee.dmKeyCache[activeDmId]) {
-            clearInterval(window._activeDmKeyCheckTimer);
-            window._activeDmKeyCheckTimer = null;
-            return;
-          }
-          const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 2000);
-          if (arrived) {
-            clearInterval(window._activeDmKeyCheckTimer);
-            window._activeDmKeyCheckTimer = null;
-            if (currentDmId === activeDmId && typeof renderMessagesWithReadReceipts === 'function') {
-              await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
-              renderMessagesWithReadReceipts();
-            }
-          }
-          }, 2000);
-          }
-          } catch (e) {}
-          })();
-          subscribeToMessages();
-          subscribeToPinnedMessages(null, null, dmId);
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
   try {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
     requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
-};
+  };
+  // =========================================================================
+  // Discord本家準拠: 個チャ (DM) 相手のユーザープロフィールパネル描画
+  // =========================================================================
+  window.renderDmProfilePanel = async function(targetUid, targetNickname, targetAvatarUrl) {
+  const panel = document.getElementById('dmProfilePanel');
+  const membersList = document.getElementById('membersList');
+  const toggleBtn = document.getElementById('toggleMembersSidebarBtn');
+  if (!panel) return;
+  if (membersList) membersList.classList.add('hidden');
+  panel.classList.remove('hidden');
+  if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
+  const safeName = escapeHtml(targetNickname || 'ユーザー');
+  panel.innerHTML = `
+    <div class="dm-profile-banner"></div>
+    <div class="dm-profile-avatar-wrap">
+      <div class="dm-profile-avatar" id="dmPanelAvatar" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
+        ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
+      </div>
+      <div class="flex items-center gap-1.5 pb-1">
+        <button onclick="window.openCallPickerWithTarget('${targetUid}')" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center text-xs transition active:scale-95 shadow-xs" title="通話を開始">
+          <i class="fas fa-phone"></i>
+        </button>
+        <button onclick="window.openFileShareWithTarget('${targetUid}')" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 flex items-center justify-center text-xs transition active:scale-95 shadow-xs" title="P2Pファイルを送信">
+          <i class="fas fa-share-from-square"></i>
+        </button>
+      </div>
+    </div>
+    <div class="px-4 pb-2">
+      <div class="text-base font-black text-gray-900 dark:text-white truncate" id="dmPanelName">${safeName}</div>
+      <div class="text-[11px] font-mono text-gray-400 font-semibold">#${targetUid.slice(-4).toLowerCase()}</div>
+    </div>
+    <div class="dm-profile-card space-y-3">
+      <!-- ステータス -->
+      <div id="dmPanelStatusRow" class="flex items-center gap-2 text-xs">
+        <div class="w-2.5 h-2.5 rounded-full bg-gray-400" id="dmPanelStatusDot"></div>
+        <span class="text-gray-600 dark:text-gray-300 font-medium" id="dmPanelStatusText">オフライン</span>
+      </div>
+      <!-- カスタムステータス (ステメ) -->
+      <div id="dmPanelCustomStatus" class="p-2 bg-gray-50 dark:bg-[#111214] rounded-xl text-xs text-gray-700 dark:text-gray-300 hidden">
+        <span id="dmPanelCustomStatusEmoji">💬</span>
+        <span id="dmPanelCustomStatusText" class="ml-1 font-medium select-text"></span>
+      </div>
+      <!-- 自己紹介 -->
+      <div>
+        <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">自己紹介</div>
+        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text">読み込み中...</div>
+      </div>
+      <!-- 参加日 -->
+      <div class="pt-2 border-t border-gray-100 dark:border-white/5 flex justify-between items-center text-[11px] text-gray-400">
+        <span class="font-bold uppercase">登録日</span>
+        <span id="dmPanelJoinedDate" class="font-mono text-gray-600 dark:text-gray-300">-</span>
+      </div>
+    </div>
+    <!-- 共通サーバー -->
+    <div class="px-3 pb-4">
+      <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-2 px-1">共通のサーバー</div>
+      <div id="dmPanelMutualServers" class="space-y-1"></div>
+    </div>
+  `;
+  try {
+    const prof = await window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl });
+    const nameEl = document.getElementById('dmPanelName');
+    const avEl = document.getElementById('dmPanelAvatar');
+    const statusDot = document.getElementById('dmPanelStatusDot');
+    const statusText = document.getElementById('dmPanelStatusText');
+    const customStatusWrap = document.getElementById('dmPanelCustomStatus');
+    const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
+    const customText = document.getElementById('dmPanelCustomStatusText');
+    const aboutMeEl = document.getElementById('dmPanelAboutMe');
+    const joinedEl = document.getElementById('dmPanelJoinedDate');
+    const mutualServersEl = document.getElementById('dmPanelMutualServers');
+    if (prof) {
+      if (nameEl && prof.nickname) nameEl.textContent = prof.nickname;
+      if (avEl && isUsableAvatarUrl(prof.avatarUrl)) {
+        avEl.innerHTML = `<img src="${escapeHtml(prof.avatarUrl)}" class="w-full h-full object-cover rounded-full">`;
+      }
+      const isOnline = prof.status === 'online' || prof.status === 'away';
+      if (statusDot) {
+        statusDot.className = `w-2.5 h-2.5 rounded-full ${prof.status === 'online' ? 'bg-emerald-500' : prof.status === 'away' ? 'bg-amber-500' : 'bg-gray-400'}`;
+      }
+      if (statusText) {
+        if (prof.status === 'online') statusText.textContent = 'オンライン';
+        else if (prof.status === 'away') statusText.textContent = '離席中';
+        else {
+          const timeStr = formatTimeAgo(prof.last_changed || prof.lastSeen);
+          statusText.textContent = timeStr ? `${timeStr}にアクティブ` : 'オフライン';
+        }
+      }
+      if (prof.customStatus && prof.customStatus.text) {
+        if (customEmoji) customEmoji.textContent = prof.customStatus.emoji || '💬';
+        if (customText) customText.textContent = prof.customStatus.text;
+        if (customStatusWrap) customStatusWrap.classList.remove('hidden');
+      } else if (customStatusWrap) {
+        customStatusWrap.classList.add('hidden');
+      }
+      if (aboutMeEl) aboutMeEl.textContent = prof.aboutMe || '自己紹介はまだ設定されていません。';
+      if (joinedEl && (prof.lastSeen || prof.createdAt)) {
+        const rawDate = prof.createdAt || prof.lastSeen;
+        const d = new Date(rawDate.toDate ? rawDate.toDate() : rawDate);
+        if (!isNaN(d.getTime())) joinedEl.textContent = d.toLocaleDateString('ja-JP');
+      }
+    }
+    if (mutualServersEl && Array.isArray(allServersCache)) {
+      const mutuals = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+      if (mutuals.length === 0) {
+        mutualServersEl.innerHTML = '<div class="text-[11px] text-gray-400 dark:text-gray-500 px-1">共通のサーバーはありません</div>';
+      } else {
+        mutualServersEl.innerHTML = mutuals.map(s => `
+          <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-colors" onclick="enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+            <div class="w-6 h-6 rounded-lg bg-indigo-500 text-white font-bold text-[10px] flex items-center justify-center overflow-hidden flex-shrink-0">
+              ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
+            </div>
+            <span class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex-1">${escapeHtml(s.name || s.id)}</span>
+          </div>
+        `).join('');
+      }
+    }
+  } catch (err) {
+    console.warn('[renderDmProfilePanel] profile load error:', err);
+  }
+  };
 window.hideDmConversation = async function(dmId) {
   delete dmConversations[dmId];
   renderDmConversationsList();
@@ -41647,6 +42082,13 @@ function selectRoom(roomId, roomName) {
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   currentPinnedMessages = [];
   renderPinnedMessages();
+  // サーバー画面用: 右サイドバーをメンバー一覧モードに設定
+  const dmPanel = document.getElementById('dmProfilePanel');
+  const membersListEl = document.getElementById('membersList');
+  const toggleBtnEl = document.getElementById('toggleMembersSidebarBtn');
+  if (dmPanel) dmPanel.classList.add('hidden');
+  if (membersListEl) membersListEl.classList.remove('hidden');
+  if (toggleBtnEl) toggleBtnEl.title = 'メンバー一覧の表示切替';
   subscribeToMessages();
   subscribeToPinnedMessages(currentServerId, roomId);
   // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
@@ -43995,7 +44437,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
         const img = document.createElement('img');
         img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
         img.style.maxHeight = '250px';
-        img.loading = 'lazy';
+        img.loading = 'eager';
         setMediaSrc(img, 'src');
         img.addEventListener("click", () => {
           const url = message._decryptedFileUrl || message.fileData;
@@ -50299,6 +50741,10 @@ function initializeResizer() {
         membersSidebar.classList.remove("hidden");
         membersSidebar.classList.add("md:flex");
         localStorage.setItem(RIGHT_COLLAPSED_KEY, "false");
+        // DM画面の場合は最新プロフィールを再描画
+        if (currentDmId && currentDmParticipant && typeof renderDmProfilePanel === 'function') {
+          renderDmProfilePanel(currentDmParticipant.uid, currentDmParticipant.nickname, currentDmParticipant.avatarUrl);
+        }
       } else {
         membersSidebar.style.setProperty("display", "none", "important");
         membersSidebar.classList.add("hidden");
@@ -53629,7 +54075,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.172",
+  "version": "1.1.174",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -53649,7 +54095,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://download.agora.io https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com https://www.recaptcha.net https://apis.google.com https://www.google-analytics.com https://*.googleapis.com; frame-src 'self' https://www.google.com https://recaptcha.google.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' tauri: asset: http://asset.localhost https://asset.localhost data: blob: https://* http://localhost:* http://127.0.0.1:*; media-src 'self' tauri: asset: data: blob: https://*; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost ws: wss: https://* http://127.0.0.1:*; worker-src 'self' blob: https://cdnjs.cloudflare.com https://download.agora.io;",
+      "csp": "default-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://download.agora.io https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com https://www.recaptcha.net https://apis.google.com https://www.google-analytics.com https://*.googleapis.com; frame-src 'self' https://www.google.com https://recaptcha.google.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' tauri: asset: http://asset.localhost https://asset.localhost data: blob: https://* http://localhost:* http://127.0.0.1:*; media-src 'self' tauri: asset: data: blob: https://*; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost ws: wss: https://* http://127.0.0.1:*; worker-src 'self' blob: https://cdnjs.cloudflare.com https://download.agora.io;",
       "dangerousDisableAssetCspModification": true
     },
     "withGlobalTauri": true
@@ -53686,7 +54132,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.172",
+  "version": "1.1.174",
   "force": false
 }
 </file>

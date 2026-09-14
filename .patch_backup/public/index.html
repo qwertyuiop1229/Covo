@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.172" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.174" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.172" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.174" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -60,9 +60,11 @@
       location.origin === "tauri://localhost" ||
       location.origin === "http://tauri.localhost" ||
       location.origin === "https://tauri.localhost" ||
-      location.protocol === "tauri:"
+      location.protocol === "tauri:" ||
+      location.hostname === "tauri.localhost" ||
+      location.hostname.endsWith(".localhost")
     );
-    if (!isDesktopApp && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    if (!isDesktopApp && location.hostname !== "localhost" && location.hostname !== "127.0.0.1" && !location.hostname.endsWith(".localhost")) {
       const gtagScript = document.createElement('script');
       gtagScript.async = true;
       gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-RY7DKH85XG';
@@ -3015,19 +3017,23 @@
           </div>
         </div>
 
-        <!-- メンバーリストサイドバー (スマホでは下からスライドインするボトムシート) -->
+        <!-- メンバーリストサイドバー / DM相手のユーザープロフィールパネル (スマホでは下からスライドインするボトムシート) -->
         <div id="resizerRight"></div>
         <div id="bottomSheetOverlay" onclick="closeBottomSheet()"></div>
-        <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet">
+        <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet select-none">
           <div class="bottom-sheet-handle md:hidden" id="bottomSheetHandle">
             <div class="bottom-sheet-handle-bar"></div>
           </div>
+          <!-- 1. サーバー画面用: メンバー一覧 -->
           <div id="membersList" class="p-2 w-full flex-1 overflow-y-auto">
             <!-- メンバーはここに動的に追加されます -->
           </div>
+          <!-- 2. DM (個チャ) 画面用: 相手のユーザープロフィールパネル (Discord本家完全準拠) -->
+          <div id="dmProfilePanel" class="w-full flex-1 flex-col overflow-y-auto hidden">
+            <!-- JSで動的に相手のプロフィールカードをレンダリング -->
+          </div>
         </div>
-
-      </div>
+        </div>
     </div>
     <!-- ===== Mobile Bottom Navigation (コンテナ内flex子要素として配置) ===== -->
     <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
@@ -3426,7 +3432,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.172"></script>
+  <script type="module" src="js/main.js?v=1.1.174"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

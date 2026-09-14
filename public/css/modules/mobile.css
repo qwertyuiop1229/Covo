@@ -676,7 +676,6 @@
       #customAlertModal:not(.hidden),
       #messagePreviewModal:not(.hidden),
       #addServerSelectModal:not(.hidden),
-      #userProfileModal:not(.hidden),
       #customStatusModal:not(.hidden),
       #passwordResetModal:not(.hidden),
       #changePasswordModal:not(.hidden),
@@ -765,27 +764,36 @@
         width: 100% !important;
       }
 
-      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
+      /* ユーザープロフィールポップアップ専用スマホ・ボトムシート仕様 (Discord Mobile & Material 3 準拠) */
+      #userProfileModal:not(.hidden) {
+        display: flex !important;
+        align-items: flex-end !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 100005 !important;
+      }
       #userProfileModal:not(.hidden) .modal-box {
-        max-width: 340px !important;
-        width: min(92vw, 340px) !important;
+        width: 100% !important;
+        max-width: 100% !important;
         padding: 0 !important;
         overflow: hidden !important;
-        justify-content: flex-start !important;
-        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 24px !important;
+        border-top-left-radius: 28px !important;
+        border-top-right-radius: 28px !important;
+        border-bottom-left-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        border-bottom: none !important;
+        animation: slideUpFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
         min-height: unset !important;
         height: auto !important;
-        max-height: min(90dvh, 620px) !important;
+        max-height: min(88vh, calc(100dvh - 36px)) !important;
         position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
+        margin: 0 !important;
         box-sizing: border-box !important;
         background: #ffffff !important;
+        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.35) !important;
+        padding-bottom: max(20px, env(safe-area-inset-bottom, 0px)) !important;
       }
       body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
         background: #1e293b !important;

@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.174" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.175" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.174" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.175" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -3432,7 +3432,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.174"></script>
+  <script type="module" src="js/main.js?v=1.1.175"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4605,6 +4605,8 @@
   <!-- Covoモダンデザイン ユーザープロフィール詳細ポップアップモーダル (Discord完全準拠・アバター見切れ完全解消版) -->
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
     <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[340px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1f2023] relative text-gray-800 dark:text-gray-100 flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+      <!-- スマホ用ボトムシートドラッグハンドル -->
+      <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
       <!-- 1. バナーヘッダー (Discord本家カラー #5865f2) -->
       <div id="userProfileBanner" class="h-24 bg-[#5865f2] relative flex items-start justify-end p-3 flex-shrink-0">
         <button onclick="closeUserProfileModal()" class="w-7 h-7 rounded-full bg-black/25 hover:bg-black/40 text-white/90 hover:text-white flex items-center justify-center transition-all shadow-xs" title="閉じる (ESC)">
@@ -4680,7 +4682,11 @@
             <span id="userProfileJoinedDate" class="font-semibold text-gray-800 dark:text-gray-200 font-mono">-</span>
           </div>
         </div>
-
+        <!-- 共通のサーバー (MUTUAL SERVERS) -->
+        <div id="userProfileMutualServersSection" class="hidden">
+          <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-1">共通のサーバー</div>
+          <div id="userProfileMutualServers" class="space-y-1.5"></div>
+        </div>
         <!-- メッセージ送信クイック入力 (他人の場合のみ) -->
         <div id="userProfileQuickMsgArea" class="pt-0.5">
           <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
