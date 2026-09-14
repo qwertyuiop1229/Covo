@@ -64,6 +64,7 @@
       right: -1px;
       border: 2px solid #f9fafb;
       transition: all 0.2s ease-in-out;
+      z-index: 20;
     }
 
     .status-online {
@@ -1515,15 +1516,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
       }
-      /* ルームリスト全体の余白とアイテムデザインをプロフェッショナル仕様に極上化 */
+      /* ルームリスト全体の余白 */
       body.discord-ui-mode #sidebar .overflow-y-auto {
-        padding: 12px 10px !important;
-      }
-      body.discord-ui-mode .room-item-animate {
-        border-radius: 10px !important;
-        padding: 11px 12px !important;
-        margin-bottom: 6px !important;
-        transition: all 0.15s ease !important;
+        padding: 8px 0 !important;
       }
       /* スマホ表示時の全体メンバーリスト非表示（画面幅240px占拠・探索画面押し潰れの完全防止） */
       body.discord-ui-mode #discordHomeMembers {
@@ -1676,57 +1671,134 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     }
 
 
-    /* --- Google Material Design Channel List UI --- */
-    body.discord-ui-mode .room-item-animate {
-      background: transparent !important;
-      color: #4b5563 !important;
-      transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease !important;
-      font-weight: 600 !important;
-      border-radius: 9999px !important; /* Material Pill Shape */
-      padding: 0.4rem 1rem !important; /* Slightly more padding for pill */
-      margin-left: 0.25rem !important;
-      margin-right: 0.25rem !important;
-      margin-bottom: 0.25rem !important;
-    }
-    body.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #9ca3af !important;
-      margin-right: 0.5rem !important;
-    }
-    body.discord-ui-mode .room-item-animate:hover {
-      background: rgba(0, 0, 0, 0.08) !important;
-      color: #111827 !important;
-    }
-    body.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #6b7280 !important;
-    }
-    body.discord-ui-mode .room-item-animate.active {
-      background: rgba(0, 0, 0, 0.12) !important;
-      color: #111827 !important;
-    }
-    body.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: #374151 !important;
+    /* ================================================================
+       Discord 本家完全準拠 チャンネルアイテムスタイル (画像2準拠: 34px / 4px角丸)
+       ================================================================ */
+    .room-item-animate,
+    .vc-channel-row {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      box-sizing: border-box !important;
+      width: calc(100% - 16px) !important;
+      height: 34px !important;
+      min-height: 34px !important;
+      max-height: 34px !important;
+      margin: 1px 8px !important;
+      padding: 0 8px !important;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      transition: background-color 0.1s ease, color 0.1s ease !important;
+      font-size: 15px !important;
+      font-weight: 500 !important;
+      line-height: 20px !important;
+      user-select: none !important;
+      text-decoration: none !important;
+      position: relative !important;
     }
 
-    /* Dark Server Theme Overrides */
-    body.dark-server-theme.discord-ui-mode .room-item-animate {
-      color: #9ca3af !important;
+    /* ライトモード */
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row {
+      color: #5c5e66 !important;
+      background: transparent !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate .room-hashtag {
-      color: #6b7280 !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate:hover,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      color: #313338 !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate:hover {
-      background: rgba(255, 255, 255, 0.08) !important;
-      color: #f3f4f6 !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate.active,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row.active-vc {
+      background: rgba(0, 0, 0, 0.1) !important;
+      color: #060607 !important;
+      font-weight: 600 !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate:hover .room-hashtag {
-      color: #9ca3af !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-icon {
+      color: #80848e !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate.active {
-      background: rgba(255, 255, 255, 0.12) !important;
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate:hover .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .room-item-animate.active .room-hashtag,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row:hover .vc-channel-icon,
+    body:not(.dark-mode):not(.dark-server-theme) .vc-channel-row.active-vc .vc-channel-icon {
+      color: #313338 !important;
+    }
+
+    /* ダークモード (画像2 Discord本家完全一致) */
+    body.dark-mode .room-item-animate,
+    body.dark-server-theme .room-item-animate,
+    body.discord-dark-theme .room-item-animate,
+    body.dark-mode .vc-channel-row,
+    body.dark-server-theme .vc-channel-row,
+    body.discord-dark-theme .vc-channel-row {
+      color: #949ba4 !important;
+      background: transparent !important;
+    }
+    body.dark-mode .room-item-animate:hover,
+    body.dark-server-theme .room-item-animate:hover,
+    body.discord-dark-theme .room-item-animate:hover,
+    body.dark-mode .vc-channel-row:hover,
+    body.dark-server-theme .vc-channel-row:hover,
+    body.discord-dark-theme .vc-channel-row:hover {
+      background: rgba(78, 80, 88, 0.2) !important;
+      color: #dbdee1 !important;
+    }
+    body.dark-mode .room-item-animate.active,
+    body.dark-server-theme .room-item-animate.active,
+    body.discord-dark-theme .room-item-animate.active,
+    body.dark-mode .vc-channel-row.active-vc,
+    body.dark-server-theme .vc-channel-row.active-vc,
+    body.discord-dark-theme .vc-channel-row.active-vc {
+      background: rgba(78, 80, 88, 0.38) !important;
+      color: #ffffff !important;
+      font-weight: 600 !important;
+    }
+    body.dark-mode .room-hashtag,
+    body.dark-server-theme .room-hashtag,
+    body.discord-dark-theme .room-hashtag,
+    body.dark-mode .vc-channel-icon,
+    body.dark-server-theme .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-icon {
+      color: #80848e !important;
+    }
+    body.dark-mode .room-item-animate:hover .room-hashtag,
+    body.dark-server-theme .room-item-animate:hover .room-hashtag,
+    body.discord-dark-theme .room-item-animate:hover .room-hashtag,
+    body.dark-mode .room-item-animate.active .room-hashtag,
+    body.dark-server-theme .room-item-animate.active .room-hashtag,
+    body.discord-dark-theme .room-item-animate.active .room-hashtag,
+    body.dark-mode .vc-channel-row:hover .vc-channel-icon,
+    body.dark-server-theme .vc-channel-row:hover .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-row:hover .vc-channel-icon,
+    body.dark-mode .vc-channel-row.active-vc .vc-channel-icon,
+    body.dark-server-theme .vc-channel-row.active-vc .vc-channel-icon,
+    body.discord-dark-theme .vc-channel-row.active-vc .vc-channel-icon {
       color: #ffffff !important;
     }
-    body.dark-server-theme.discord-ui-mode .room-item-animate.active .room-hashtag {
-      color: white !important;
+
+    /* モバイル (スマホ画面: max-width: 768px) - Discordモバイル完全準拠 */
+    @media (max-width: 768px) {
+      .room-item-animate,
+      .vc-channel-row {
+        width: calc(100% - 16px) !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        margin: 1.5px 8px !important;
+        padding: 0 12px !important;
+        border-radius: 6px !important;
+        font-size: 16px !important;
+      }
+      .room-hashtag,
+      .vc-channel-icon {
+        font-size: 18px !important;
+      }
+    }
+    .drag-over-channel {
+      border: 2px dashed #6366f1 !important;
+      background: rgba(99, 102, 241, 0.12) !important;
+      transform: scale(1.01);
     }
 
     /* 未ログイン時の完全表示制御（認証確定前はスプラッシュ表示、認証確定後かつ未ログイン時のみログイン画面を表示） */
@@ -2115,6 +2187,22 @@ body.dark-server-theme .vc-bar-btn:hover {
   color: #b91c1c !important;
 }
 
+@media (max-width: 768px) {
+  /* スマホ利用時: サイドバーを閉じていてもチャット画面下部にボイス接続中バーを常駐表示 */
+  .vc-connection-bar:not(.hidden) {
+    position: fixed;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    left: 8px;
+    right: 8px;
+    z-index: 99980;
+    margin: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}
+
 /* ================================================================
    チャンネルタイプ選択UI（チャンネル作成モーダル）
    ================================================================ */
@@ -2413,4 +2501,116 @@ body.dark-server-theme .channel-type-desc {
 
 .vc-ctrl-btn.hangup:hover {
   background: #b91c1c;
+}
+
+/* ================================================================
+   ドロップダウン・トグルメニューのホバー白光り完全防止 (Discord準拠)
+   ================================================================ */
+.cat-select-option:hover,
+.room-cat-dropdown li:hover {
+  background-color: #f2f3f5 !important;
+  color: #060607 !important;
+}
+
+body.dark-mode .cat-select-option:hover,
+body.dark-server-theme .cat-select-option:hover,
+body.discord-dark-theme .cat-select-option:hover,
+html.dark .cat-select-option:hover,
+body.dark-mode .room-cat-dropdown li:hover,
+body.dark-server-theme .room-cat-dropdown li:hover,
+body.discord-dark-theme .room-cat-dropdown li:hover,
+html.dark .room-cat-dropdown li:hover {
+  background-color: #35373c !important;
+  color: #ffffff !important;
+}
+
+body.dark-mode #newRoomCategoryDropdown,
+body.dark-server-theme #newRoomCategoryDropdown,
+body.discord-dark-theme #newRoomCategoryDropdown,
+html.dark #newRoomCategoryDropdown,
+body.dark-mode .room-cat-dropdown,
+body.dark-server-theme .room-cat-dropdown,
+body.discord-dark-theme .room-cat-dropdown,
+html.dark .room-cat-dropdown {
+  background-color: #2b2d31 !important;
+  border-color: #1e1f22 !important;
+  color: #dbdee1 !important;
+}
+
+/* ================================================================
+   Discord 本家完全準拠 サーバーメニュー & サーバー設定
+   ================================================================ */
+#serverMenuDropdown {
+  animation: discordMenuPopIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+@keyframes discordMenuPopIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.server-menu-item {
+  color: #313338;
+}
+body.dark-mode .server-menu-item,
+body.dark-server-theme .server-menu-item,
+body.discord-dark-theme .server-menu-item,
+html.dark .server-menu-item {
+  color: #dbdee1;
+}
+/* サーバーメニュー ホバー: ライト/ダーク両対応のニュートラルグレー (blurple禁止) */
+.server-menu-item:hover {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  color: #060607 !important;
+}
+body.dark-mode .server-menu-item:hover,
+body.dark-server-theme .server-menu-item:hover,
+body.discord-dark-theme .server-menu-item:hover,
+html.dark .server-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  color: #ffffff !important;
+}
+/* 退出ボタンは赤系ホバー */
+.server-menu-item.text-rose-500:hover,
+.server-menu-item:has(.fa-sign-out-alt):hover {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  color: #dc2626 !important;
+}
+body.dark-mode .server-menu-item.text-rose-500:hover,
+body.dark-server-theme .server-menu-item.text-rose-500:hover,
+body.discord-dark-theme .server-menu-item.text-rose-500:hover,
+html.dark .server-menu-item.text-rose-500:hover {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
+}
+.server-menu-item:hover i {
+  /* アイコンはbody themeで制御するためここではリセット */
+}
+
+/* サーバー設定モーダルのサイドバーをプロフィール設定と統一 */
+#serverSettingsModal .settings-sidebar {
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+}
+#serverSettingsModal .settings-sidebar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+/* スクロールバー非表示 (設定モーダル全体) */
+#settingsModal .settings-sidebar {
+  scrollbar-width: none;
+}
+#settingsModal .settings-sidebar::-webkit-scrollbar {
+  display: none;
+}
+/* サーバー設定モーダル右コンテンツのスクロールバーを細く */
+#ssContentArea::-webkit-scrollbar {
+  width: 4px;
+}
+#ssContentArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+#ssContentArea::-webkit-scrollbar-thumb {
+  background: rgba(128,128,128,0.3);
+  border-radius: 4px;
 }

@@ -128,6 +128,9 @@ function isTransientTelemetryError(args) {
       str.includes('webext-ad-filtering') ||
       str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
       str.includes('content_script.js') ||
+      str.includes('globals-front.js') ||
+      str.includes('adblock-picreplacement.js') ||
+      str.includes('usecache') ||
       str.includes('beforeinstallprompt') ||
       str.includes('beforeinstallpromptevent') ||
       str.includes('resizeobserver loop') ||
@@ -524,7 +527,9 @@ window.getUserProfile = async function (uid, fallback = {}) {
         email,
         customStatus,
         aboutMe,
-        status: cu?.computedState || cu?.state || 'offline'
+        status: cu?.computedState || cu?.state || 'offline',
+        last_changed: data?.last_changed || data?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || null,
+        lastSeen: data?.lastSeen || data?.last_changed || data?.updatedAt || data?.createdAt || cu?.lastSeen || null
       };
 
       window._userProfileCache.set(uid, profile);
@@ -1269,11 +1274,19 @@ function initializeFirebase() {
               setTimeout(() => { try { jumpFn(); } catch(e){} }, 600);
             }
           } else {
+            document.body.classList.add("auth-ready", "needs-nickname");
+            document.body.classList.remove("logged-in");
+            if (splash) {
+              splash.style.opacity = '0';
+              setTimeout(() => splash.remove(), 300);
+            }
             authContainer.classList.add("hidden");
             appContainer.classList.add("hidden");
-            document.getElementById("serverListScreen").classList.add("hidden");
+            const sls = document.getElementById("serverListScreen");
+            if (sls) sls.classList.add("hidden");
             nicknameContainer.classList.remove("hidden");
             nicknameInput.value = "";
+            setTimeout(() => nicknameInput.focus(), 100);
           }
         } else {
           // Cleanup on logout
@@ -2874,6 +2887,17 @@ let _telemetryFilter = 'all';
 
 window.switchReportSubTab = function (tab) {
   _currentReportSubTab = tab;
+  if (tab === 'errors') {
+    _telemetryFilter = 'all';
+    ['all', 'errors', 'warns'].forEach(f => {
+      const btn = document.getElementById(`errFilter${f.charAt(0).toUpperCase() + f.slice(1)}`);
+      if (btn) {
+        btn.className = (f === 'all')
+          ? 'px-2.5 py-1 text-[11px] font-bold rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 transition'
+          : 'px-2.5 py-1 text-[11px] font-bold rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition';
+      }
+    });
+  }
   const tabs = ['errors', 'feedbacks', 'diag'];
   tabs.forEach(t => {
     const btn = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
@@ -2890,7 +2914,6 @@ window.switchReportSubTab = function (tab) {
       if (content) content.classList.add('hidden');
     }
   });
-
   if (tab === 'errors') loadErrorTelemetry();
   else if (tab === 'feedbacks') loadAdminFeedbacks();
   else if (tab === 'diag') renderReportsConsoleStream();
@@ -2981,15 +3004,26 @@ window.loadErrorTelemetry = async function () {
 
 function renderTelemetryErrorsList() {
   const listEl = document.getElementById("telemetryErrorsList");
+  const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  const filtered = _cachedTelemetryErrors.filter(item => {
-    if (_telemetryFilter === 'error') return item.type === 'error' || item.type === 'unhandledrejection';
-    if (_telemetryFilter === 'warn') return item.type === 'warn';
+  const filtered = (_cachedTelemetryErrors || []).filter(item => {
+    if (!item) return false;
+    const itemType = String(item.type || 'error').toLowerCase();
+    if (_telemetryFilter === 'error') return itemType === 'error' || itemType === 'unhandledrejection' || itemType === 'err';
+    if (_telemetryFilter === 'warn') return itemType === 'warn' || itemType === 'warning';
     return true;
   });
-
+  if (badgeEl) {
+    const totalCount = (_cachedTelemetryErrors || []).length;
+    badgeEl.textContent = totalCount;
+    badgeEl.classList.toggle('hidden', totalCount === 0);
+  }
   if (filtered.length === 0) {
-    listEl.innerHTML = "<div class='text-center py-8 text-xs text-gray-400 dark:text-gray-500'>記録されたエラーはありません。システムは正常です。</div>";
+    const totalCount = (_cachedTelemetryErrors || []).length;
+    const msg = totalCount > 0
+      ? `記録されたエラー・警告 (${totalCount}件) はありますが、現在のフィルター「${_telemetryFilter === 'error' ? 'エラーのみ' : '警告のみ'}」に一致する項目はありません。「すべて」を選択してください。`
+      : '記録されたエラーはありません。システムは正常です。';
+    listEl.innerHTML = `<div class='text-center py-8 text-xs text-gray-400 dark:text-gray-500'>${msg}</div>`;
     return;
   }
 
@@ -2998,26 +3032,26 @@ function renderTelemetryErrorsList() {
     const item = document.createElement("div");
     item.className = "p-3.5 bg-white dark:bg-slate-900/70 border border-gray-200/80 dark:border-slate-700/60 rounded-xl shadow-xs text-xs flex flex-col gap-2 relative group";
 
-    const lastTime = err.lastOccurredAt && typeof err.lastOccurredAt.toDate === 'function'
-      ? err.lastOccurredAt.toDate().toLocaleString('ja-JP')
-      : '不明';
-    const firstTime = err.firstOccurredAt && typeof err.firstOccurredAt.toDate === 'function'
-      ? err.firstOccurredAt.toDate().toLocaleString('ja-JP')
-      : lastTime;
-
-    const isWarn = err.type === 'warn';
+    const parseTime = (val) => {
+      if (!val) return '不明';
+      if (typeof val.toDate === 'function') return val.toDate().toLocaleString('ja-JP');
+      if (typeof val === 'number') return new Date(val).toLocaleString('ja-JP');
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? '不明' : d.toLocaleString('ja-JP');
+    };
+    const lastTime = parseTime(err.lastOccurredAt);
+    const firstTime = parseTime(err.firstOccurredAt) || lastTime;
+    const errType = String(err.type || 'error').toLowerCase();
+    const isWarn = errType === 'warn' || errType === 'warning';
     const typeBadge = isWarn
       ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300">警告 (WARN)</span>'
       : '<span class="px-2 py-0.5 rounded text-[10px] font-bold text-rose-600 bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300">エラー (ERROR)</span>';
-
     const countBadge = (err.count && err.count > 1)
       ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white shadow-xs">${err.count}回発生</span>`
       : '';
-
     const affectedEmails = Array.isArray(err.affectedEmails) ? err.affectedEmails : (err.affectedEmails ? [err.affectedEmails] : ['不明']);
     const emailsHtml = affectedEmails.map(e => `<span class="inline-block px-1.5 py-0.5 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded font-mono text-[10px] mr-1 mb-1">${escapeHtml(e)}</span>`).join('');
-
-    const formattedMd = `### [${err.type.toUpperCase()}] ${err.message}\n- **発生回数**: ${err.count || 1}回\n- **初回発生**: ${firstTime}\n- **最新発生**: ${lastTime}\n- **発生ユーザー**: ${affectedEmails.join(', ')}\n- **環境**: ${err.environment?.userAgent || '不明'} (${err.environment?.screenSize || ''})\n\n\`\`\`text\n${err.stack || 'スタックトレースなし'}\n\`\`\``;
+    const formattedMd = `### [${errType.toUpperCase()}] ${err.message || 'エラー'}\n- **発生回数**: ${err.count || 1}回\n- **初回発生**: ${firstTime}\n- **最新発生**: ${lastTime}\n- **発生ユーザー**: ${affectedEmails.join(', ')}\n- **環境**: ${err.environment?.userAgent || '不明'} (${err.environment?.screenSize || ''})\n\n\`\`\`text\n${err.stack || 'スタックトレースなし'}\n\`\`\``;
 
     item.innerHTML = `
       <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -5595,13 +5629,12 @@ if (setNicknameBtnEl && nicknameInpEl) {
       const hdrTitle = document.getElementById("headerTitle");
       if (hdrTitle) hdrTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
       updateUserPanelUI();
-
-      document.body.classList.add("logged-in");
+      document.body.classList.remove("needs-nickname");
+      document.body.classList.add("logged-in", "auth-ready");
       const nicknameCont = document.getElementById("nicknameContainer");
       const appCont = document.getElementById("appContainer");
       const sls = document.getElementById("serverListScreen");
       if (nicknameCont) nicknameCont.classList.add("hidden");
-      
       const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
       if (isDiscordMode) {
         if (sls) sls.classList.add("hidden");
@@ -5614,6 +5647,18 @@ if (setNicknameBtnEl && nicknameInpEl) {
       showServerList();
       startPresenceSystem();
       initializeFCM();
+      LocalStore.initLocalDB().catch(e => console.warn('[LocalStore] init error:', e));
+      subscribeToFeatureFlags();
+      subscribeToRelationships();
+      subscribeToDmChannels();
+      ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => { });
+      setTimeout(() => setupGlobalNotificationListeners(), 1000);
+      initCallListener();
+      initFileShareListener();
+      initReadStatesSync();
+      setupGlobalRtdbListener();
+      setupGlobalAnnouncementListener();
+      checkLatestAnnouncement();
     } catch (error) {
       if (nicknameMsgEl) nicknameMsgEl.textContent = `エラー: ${error.message}`;
     } finally {
@@ -6645,7 +6690,16 @@ function subscribeToUserStatus() {
     const cachedProf = window._userProfileCache?.get(uid);
     usersMap.set(uid, { id: uid, state: 'offline', ...(cachedProf || {}) });
     if (!cachedProf) {
-      window.getUserProfile(uid).catch(() => {});
+      window.getUserProfile(uid).then(prof => {
+        if (prof) {
+          const cur = usersMap.get(uid) || { id: uid };
+          usersMap.set(uid, { ...cur, ...prof });
+          cachedUsers = Array.from(usersMap.values());
+          requestRenderMembersList();
+          if (typeof renderFriendTabs === 'function') renderFriendTabs();
+          if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+        }
+      }).catch(() => {});
     }
   });
   cachedUsers = Array.from(usersMap.values());
@@ -6787,7 +6841,9 @@ function renderMembersList(users) {
       if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
         statusText.className = "member-status-text";
-        statusText.textContent = formatTimeAgo(member.last_changed);
+        const ts = member.last_changed || member.lastSeen || member.updatedAt || member.createdAt;
+        const timeStr = formatTimeAgo(ts);
+        statusText.textContent = timeStr || (member.computedState === 'away' ? '離席中' : 'オフライン');
         info.appendChild(statusText);
       }
 
@@ -8215,9 +8271,8 @@ window.initiateMigrationReceive = async function() {
       status: 'waiting',
       createdAt: serverTimestamp()
     });
-
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
+      iceServers: VC_ICE_SERVERS
     });
     activeMigrationPeer = pc;
 
@@ -8321,18 +8376,21 @@ window.initiateMigrationSend = async function() {
   const progressArea = document.getElementById('migrationSendProgressArea');
   const progressBar = document.getElementById('migrationSendProgressBar');
   const statusEl = document.getElementById('migrationSendStatus');
-
   if (!input) return;
-  const code = input.value.trim().toUpperCase();
-  if (!code) {
+  const rawInput = input.value.trim().toUpperCase();
+  if (!rawInput) {
     alertMessage("移行コードを入力してください", "warning");
     return;
   }
-
+  // コード入力の自動正規化 (COVO- 接頭辞なしやハイフン省略にも完全対応)
+  let cleanCode = rawInput.replace(/[^A-Z0-9]/g, '');
+  if (cleanCode.startsWith('COVO')) cleanCode = cleanCode.slice(4);
+  const code = cleanCode.length === 8 ? `COVO-${cleanCode.slice(0, 4)}-${cleanCode.slice(4, 8)}` : rawInput;
   btn.disabled = true;
   if (progressArea) progressArea.classList.remove('hidden');
   if (statusEl) statusEl.textContent = '新端末に接続中...';
-
+  let unsubTransfer = null;
+  let unsubReceiverCands = null;
   try {
     const transferRef = doc(db, `artifacts/${appId}/device_transfers/${code}`);
     const snap = await getDoc(transferRef);
@@ -8341,78 +8399,86 @@ window.initiateMigrationSend = async function() {
       btn.disabled = false;
       return;
     }
-
     const data = snap.data();
     if (data.uid !== userId) {
       alertMessage("アカウントが一致しません。同一のアカウントでログインしてください。", "error");
       btn.disabled = false;
       return;
     }
-
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
+      iceServers: VC_ICE_SERVERS
     });
-
+    const pendingCandidates = [];
     const channel = pc.createDataChannel('migrationData', { ordered: true });
-    
     channel.onopen = async () => {
       if (statusEl) statusEl.textContent = 'ローカルデータを集約・送信準備中...';
       if (progressBar) progressBar.style.width = '10%';
-
       const bundle = await LocalStore.getAllLocalData();
       const jsonStr = JSON.stringify(bundle);
-
       const CHUNK_SIZE = 16384;
       const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
-
       channel.send(JSON.stringify({ type: 'START', totalChunks }));
-
       for (let i = 0; i < totalChunks; i++) {
         const chunk = jsonStr.substr(i * CHUNK_SIZE, CHUNK_SIZE);
+        while (channel.bufferedAmount > 1024 * 1024) {
+          await new Promise(r => setTimeout(r, 25));
+        }
         channel.send(JSON.stringify({ type: 'CHUNK', index: i, data: chunk }));
         const pct = Math.min(95, Math.round(((i + 1) / totalChunks) * 85) + 10);
         if (progressBar) progressBar.style.width = `${pct}%`;
         if (statusEl) statusEl.textContent = `送信中... (${i + 1}/${totalChunks})`;
-        await new Promise(r => setTimeout(r, 15));
+        await new Promise(r => setTimeout(r, 12));
       }
-
       channel.send(JSON.stringify({ type: 'END' }));
       if (progressBar) progressBar.style.width = '100%';
       if (statusEl) statusEl.textContent = 'データ送信完了！';
       alertMessage("端末データ移行の送信が完了しました！", "success");
       btn.disabled = false;
+      setTimeout(() => {
+        if (unsubTransfer) unsubTransfer();
+        if (unsubReceiverCands) unsubReceiverCands();
+        try { pc.close(); } catch (_) {}
+      }, 3000);
     };
-
     pc.onicecandidate = async (ev) => {
       if (ev.candidate) {
-        await addDoc(collection(db, `artifacts/${appId}/device_transfers/${code}/sender_candidates`), ev.candidate.toJSON());
+        await addDoc(collection(db, `artifacts/${appId}/device_transfers/${code}/sender_candidates`), ev.candidate.toJSON()).catch(() => {});
       }
     };
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await updateDoc(transferRef, { offer: { type: offer.type, sdp: offer.sdp } });
-
-    onSnapshot(transferRef, async (snap) => {
+    unsubTransfer = onSnapshot(transferRef, async (snap) => {
       if (!snap.exists()) return;
       const d = snap.data();
       if (d.answer && !pc.currentRemoteDescription) {
         await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+        while (pendingCandidates.length > 0) {
+          const c = pendingCandidates.shift();
+          try { await pc.addIceCandidate(c); } catch (_) {}
+        }
       }
+    }, (err) => {
+      console.warn('[MigrationSend onSnapshot transferRef] notice:', err?.message || err);
     });
-
-    onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${code}/receiver_candidates`), (snap) => {
+    unsubReceiverCands = onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${code}/receiver_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-          } catch (e) { }
+          const cand = new RTCIceCandidate(change.doc.data());
+          if (pc.currentRemoteDescription) {
+            try { await pc.addIceCandidate(cand); } catch (e) { }
+          } else {
+            pendingCandidates.push(cand);
+          }
         }
       });
+    }, (err) => {
+      console.warn('[MigrationSend onSnapshot receiver_candidates] notice:', err?.message || err);
     });
-
   } catch (err) {
     console.error('Migration send error:', err);
+    if (unsubTransfer) unsubTransfer();
+    if (unsubReceiverCands) unsubReceiverCands();
     alertMessage("送信処理中にエラーが発生しました", "error");
     btn.disabled = false;
   }
@@ -11250,17 +11316,10 @@ window.renderDiscordServerNav = function () {
       const formatLastSeen = (u) => {
         if (u.status === 'online') return 'オンライン';
         if (u.status === 'away') return '離席中';
-        if (u.lastSeen) {
-          try {
-            const diff = Date.now() - (u.lastSeen.toDate ? u.lastSeen.toDate().getTime() : u.lastSeen);
-            const m = Math.floor(diff / 60000);
-            const h = Math.floor(diff / 3600000);
-            const d = Math.floor(diff / 86400000);
-            if (d > 0) return `${d}日前`;
-            if (h > 0) return `${h}時間前`;
-            if (m > 0) return `${m}分前`;
-            return 'たった今';
-          } catch(e) {}
+        const ts = u.last_changed || u.lastSeen || u.updatedAt || u.createdAt;
+        if (ts) {
+          const timeStr = formatTimeAgo(ts);
+          if (timeStr) return timeStr;
         }
         return 'オフライン';
       };
@@ -12171,11 +12230,23 @@ async function subscribeToMessagesRTDB() {
 
   const handleChanged = async (snapshot) => {
     const data = snapshot.val();
+    if (!data) return;
     data.id = snapshot.key;
     data.channelId = chId;
     LocalStore.putMessage(data).catch(() => {});
-    buffer.push(data);
-    processBuffer();
+    await decryptInPlace([data]);
+    const idx = allLoadedMessages.findIndex(m => m.id === data.id);
+    if (idx >= 0) {
+      allLoadedMessages[idx] = data;
+    } else {
+      allLoadedMessages.push(data);
+      allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    }
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+    renderPinnedMessages();
+    renderMessagesWithReadReceipts();
   };
 
   const handleRemoved = (snapshot) => {

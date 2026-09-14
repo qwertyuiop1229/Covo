@@ -8594,50 +8594,6 @@ exit
     }
 </file>
 
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
-</file>
-
 <file path="public/js/debug_ui.js">
 import { safeCopy } from './utils.js';
 import { alertMessage } from './ui_helpers.js';
@@ -8896,6 +8852,50 @@ if (typeof window !== 'undefined') {
   window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
   window.copySystemDiagnosticReport = copySystemDiagnosticReport;
   window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
+}
+</file>
+
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
 }
 </file>
 
@@ -9474,6 +9474,226 @@ if (typeof window !== 'undefined') {
     restoreAllLocalData,
     clearAllLocalData
   };
+}
+</file>
+
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  // 1. コードブロック退避（コピーボタン付き）
+  const codeBlocks = [];
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
+    return id;
+  });
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
+      }
+    }
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!cleanUrl) return rawUrl;
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
+    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
+      return escapeHtml(rawUrl);
+    }
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  return escapedText;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
 }
 </file>
 
@@ -10687,224 +10907,504 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/text_formatter.js">
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
 /**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
  */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
+    return false;
   }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
-    if (!isSafeHttp && !isSafeDataImage) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
-  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
-  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
-  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  // 1. コードブロック退避（コピーボタン付き）
-  const codeBlocks = [];
-  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1.trim());
-    codeBlocks.push(
-      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
-        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
-          `<span>Code</span>` +
-          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
-            `<i class="far fa-copy"></i> コピー` +
-          `</button>` +
-        `</div>` +
-        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
-      `</div>`
-    );
-    return id;
-  });
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]*[a-zA-Z0-9])?\\.)+' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
     }
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
       }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
     }
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
       } else {
-        break;
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
       }
     }
-    if (!cleanUrl) return rawUrl;
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
     }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
     }
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  // 5. 書式装飾
-  // スポイラー記法 (||ネタバレ||)
-  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
-  let mentionCount = 0;
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    if (mentionCount >= 10) return match;
-    mentionCount++;
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  return escapedText;
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
 }
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    let fileEncoding = 'utf-8';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
 }
+run();
 </file>
 
 <file path="public/js/voice_engine_v2.js">
@@ -10949,8 +11449,17 @@ const VC_ICE_SERVERS = [
   // OpenRelay TURN – TCP 443（最も通りやすい・企業Firewall対応）
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
     username: 'openrelayproject', credential: 'openrelayproject' },
+  // OpenRelay TURNS – TLS 443（厳格なDPI/Firewall対応）
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject', credential: 'openrelayproject' },
   // Cloudflare STUN（追加 STUN バックアップ）
   { urls: 'stun:stun.cloudflare.com:3478' },
+];
+const VC_TURN_TEST_SERVERS = [
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 const VC_TURN_INFO = {
   service: 'Open Relay Project (openrelay.metered.ca)',
@@ -11096,11 +11605,13 @@ class VoiceEngine {
       }
       // --- TURN 疎通チェック（非同期・バックグラウンド） ---
       this._checkTurnConnectivity();
+      // --- シグナリングリスナーを最速先行起動（相手からのOffer取りこぼしを完全防止） ---
+      this._setupSignalingListener();
       // --- RTDB に voiceState を書き込み + onDisconnect 設定 ---
       await this._setVoiceState({ isMuted: false, hasVideo: false, hasScreen: false });
       // --- voiceStates を購読 ---
       this._subscribeVoiceStates();
-      // --- 古いシグナリングドキュメントを掃除 ---
+      // --- 古いシグナリングドキュメントを安全に掃除（直近60秒以内のドキュメントは保持） ---
       this._cleanupStaleSignaling();
       // --- UI 更新 ---
       _vcShowBar(channelName);
@@ -11182,7 +11693,7 @@ class VoiceEngine {
     const startTime = Date.now();
     try {
       const pc = new RTCPeerConnection({
-        iceServers: VC_ICE_SERVERS,
+        iceServers: VC_TURN_TEST_SERVERS, // TURN専用設定で不要なSTUN探索待ちをバイパス
         iceTransportPolicy: 'relay' // TURNリレー候補のみを強制探索
       });
       pc.createDataChannel('__vc_turn_check__');
@@ -11192,8 +11703,8 @@ class VoiceEngine {
         const timer = setTimeout(() => {
           pc.onicecandidate = null;
           try { pc.close(); } catch(_){}
-          reject(new Error('TURN 接続タイムアウト (8秒)'));
-        }, 8000);
+          reject(new Error('TURN リレー候補探索タイムアウト (12秒)'));
+        }, 12000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
           if (e.candidate && (e.candidate.type === 'relay' || (e.candidate.candidate && e.candidate.candidate.includes('typ relay')))) {
@@ -11216,7 +11727,7 @@ class VoiceEngine {
       console.log(`[VoiceEngine] ✅ TURN 疎通確認成功 (${res.latencyMs}ms): ${res.candidate}`);
       return res;
     } catch (e) {
-      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
+      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (直接P2P可能環境ではリレー不使用で正常接続されます)`);
       return { success: false, error: e.message, latencyMs: Date.now() - startTime };
     }
   }
@@ -11336,8 +11847,9 @@ class VoiceEngine {
       if (!this.isActive) return;
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
         if (!this.isActive) return;
-        const stateRef = ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}`);
-        const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+        const sId = this.serverId || 'direct';
+        const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}`);
+        const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
         const configHandler = (snapshot) => {
           if (!this.isActive) return;
           const cfg = snapshot.val() || {};
@@ -11396,23 +11908,30 @@ class VoiceEngine {
     const count = Object.keys(currentStates || {}).length;
     const override = this._modeOverride || 'auto';
     if (override === 'turn') {
+      const needPolicyChange = (this.mode === 'p2p' && !this._forceTurnOnly);
       this._forceTurnOnly = true;
       if (this.mode !== 'p2p') {
         await this._switchToP2P(currentStates, 'relay');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('relay', currentStates);
+      } else {
+        this._syncP2PPeers(currentStates);
+      }
+      return;
+    }
+    if (override === 'p2p') {
+      const needPolicyChange = (this.mode === 'p2p' && this._forceTurnOnly);
+      this._forceTurnOnly = false;
+      if (this.mode !== 'p2p') {
+        await this._switchToP2P(currentStates, 'all');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
       return;
     }
     this._forceTurnOnly = false;
-    if (override === 'p2p') {
-      if (this.mode !== 'p2p') {
-        await this._switchToP2P(currentStates, 'all');
-      } else {
-        this._syncP2PPeers(currentStates);
-      }
-      return;
-    }
     if (override === 'agora') {
       if (this.mode !== 'agora') {
         await this._switchToAgora();
@@ -11424,6 +11943,9 @@ class VoiceEngine {
       if (this.mode !== 'p2p') {
         console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
         await this._switchToP2P(currentStates, 'all');
+      } else if (this._forceTurnOnly) {
+        this._forceTurnOnly = false;
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
@@ -11434,8 +11956,34 @@ class VoiceEngine {
       }
     }
   }
+  // 音声ストリームを一切切断せずに、ピア接続の通信ポリシー（直接 ⇔ TURNリレー）のみを瞬時に再構築
+  async _reconnectAllPeersWithPolicy(transportPolicy, currentStates) {
+    if (this._modeSwitching || !this.isActive) return;
+    this._modeSwitching = true;
+    const isRelay = (transportPolicy === 'relay');
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替開始: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = isRelay ? 'P2P (TURNリレー強制) 移行中...' : 'P2P (直接優先) 移行中...';
+    if (rtcBadge) rtcBadge.classList.add('reconnecting');
+    this._forceTurnOnly = isRelay;
+    this._cleanupAllPeers();
+    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    for (const peerUid of others) {
+      const iAmOfferer = this._myUid < peerUid;
+      if (iAmOfferer) {
+        await this._createOffer(peerUid).catch(e =>
+          console.error(`[VoiceEngine] ポリシー切替Offer失敗 (${peerUid.slice(0,8)}):`, e)
+        );
+      } else {
+        this._createPeerConnection(peerUid);
+      }
+    }
+    this._modeSwitching = false;
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替完了: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+  }
   async setChannelModeOverride(mode = 'auto') {
-    if (!this.serverId || !this.channelId) {
+    if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
     }
     const validModes = ['auto', 'p2p', 'turn', 'agora'];
@@ -11444,13 +11992,16 @@ class VoiceEngine {
     }
     const rtdb = await _getOrInitRTDB();
     const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+    const sId = this.serverId || 'direct';
+    const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
     await set(configRef, {
       modeOverride: mode,
       updatedAt: Date.now(),
       updatedBy: this._myUid
     });
     console.log(`[VoiceEngine] ⚙️ 通話モード設定を更新しました: ${mode}`);
+    this._modeOverride = mode;
+    await this._applyCallMode(this._voiceStates);
   }
   // ================================================================
   // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
@@ -11475,8 +12026,22 @@ class VoiceEngine {
             console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
           );
         } else {
-          // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
-          this._createPeerConnection(peerUid);
+          // 自分がAnswererの場合もピア接続を先行生成し、Offer未達時の自律回復タイマーを設定
+          const peerInfo = this._createPeerConnection(peerUid);
+          if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = setTimeout(async () => {
+            if (!this.isActive || this.mode !== 'p2p') return;
+            if (peerInfo.pc.signalingState === 'stable' && peerInfo.pc.iceConnectionState === 'new') {
+              console.warn(`[VoiceEngine] ⏱ Offer待機タイムアウト (${peerUid.slice(0,8)}) → 自発的Offer送信で接続推進`);
+              try {
+                const offer = await peerInfo.pc.createOffer();
+                await peerInfo.pc.setLocalDescription(offer);
+                await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp, fallback: true });
+              } catch (e) {
+                console.warn(`[VoiceEngine] 自発的Offer送信エラー:`, e);
+              }
+            }
+          }, 4500);
         }
       }
     }
@@ -11532,6 +12097,21 @@ class VoiceEngine {
     await pc.setLocalDescription(offer);
     await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp });
     console.log(`[VoiceEngine] 📤 Offer → ${peerUid.slice(0,8)} (ICE: UDP80/443 + TCP443)`);
+    // 相手からのAnswer待機タイムアウト (3.5秒)：相手の受信漏れ・起動遅延時に自動再送
+    if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+    peerInfo.signalingTimer = setTimeout(async () => {
+      if (!this.isActive || this.mode !== 'p2p') return;
+      if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.signalingState === 'have-local-offer') {
+        console.warn(`[VoiceEngine] ⏱ Answer待機タイムアウト (${peerUid.slice(0,8)}) → Offer自動再送`);
+        try {
+          const reOffer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(reOffer);
+          await this._sendSignal(peerUid, { type: 'offer', sdp: reOffer.sdp, retry: true });
+        } catch (e) {
+          console.warn(`[VoiceEngine] Offer自動再送エラー:`, e);
+        }
+      }
+    }, 3500);
   }
   // ================================================================
   // RTCPeerConnection 生成（共通）
@@ -11540,6 +12120,7 @@ class VoiceEngine {
     // 既存があれば閉じる
     const existing = this._peers.get(peerUid);
     if (existing) {
+      if (existing.signalingTimer) clearTimeout(existing.signalingTimer);
       try { existing.pc.close(); } catch(_){}
     }
     const pc = new RTCPeerConnection({
@@ -11548,7 +12129,7 @@ class VoiceEngine {
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, pendingCandidates: [] };
+    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, signalingTimer: null, pendingCandidates: [] };
     this._peers.set(peerUid, peerInfo);
     // ローカルトラックを追加
     if (this._localStream) {
@@ -11569,13 +12150,26 @@ class VoiceEngine {
         if (!audioEl) {
           audioEl = new Audio();
           audioEl.autoplay = true;
+          audioEl.playsInline = true;
           // DOM に追加して GC を確実に防止
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
           this._audioElements.set(peerUid, audioEl);
         }
         audioEl.srcObject = e.streams[0];
-        audioEl.play().catch(() => {});
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn(`[VoiceEngine] 🔈 自動再生制限検知 (${peerUid.slice(0,8)}): タップで再生開始`, err);
+            const resumeAudio = () => {
+              audioEl.play().catch(() => {});
+              document.removeEventListener('click', resumeAudio);
+              document.removeEventListener('touchstart', resumeAudio);
+            };
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+          });
+        }
         this._attachP2PStreamAnalyser(peerUid, e.streams[0], false);
         console.log(`[VoiceEngine] 🔈 音声受信: ${peerUid.slice(0,8)}`);
       }
@@ -11620,17 +12214,30 @@ class VoiceEngine {
       }
       if (state === 'connected' || state === 'completed') {
         peerInfo.iceRestarts = 0;
-        // どのパス（relay/直接）を使っているかをログ出力
+        if (peerInfo.signalingTimer) {
+          clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = null;
+        }
+        // どのパス（relay/直接）を使っているかをログ出力し、UIステータスにも即座に明示
         pc.getStats().then(stats => {
           stats.forEach(r => {
             if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
               const localId = r.localCandidateId;
               stats.forEach(lr => {
                 if (lr.id === localId) {
-                  const via = lr.candidateType === 'relay'
+                  const isRelay = lr.candidateType === 'relay';
+                  const via = isRelay
                     ? `TURN relay (${lr.relayProtocol || '?'} @ ${lr.ip || lr.address || 'openrelay.metered.ca'})`
                     : `直接 P2P (${lr.candidateType})`;
                   console.log(`[VoiceEngine] ✅ ${peerUid.slice(0,8)}: ${via}`);
+                  const rtcText = document.getElementById('discordCallRtcText');
+                  const rtcBadge = document.getElementById('discordCallRtcStatus');
+                  if (rtcText) {
+                    rtcText.textContent = isRelay
+                      ? 'P2P (TURNリレー中継) 接続完了'
+                      : 'P2P (直接接続) 接続完了';
+                  }
+                  if (rtcBadge) rtcBadge.classList.remove('reconnecting');
                 }
               });
             }
@@ -11701,6 +12308,7 @@ class VoiceEngine {
     const peerInfo = this._peers.get(peerUid);
     if (peerInfo) {
       if (peerInfo.iceTimer) clearTimeout(peerInfo.iceTimer);
+      if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
       try {
         peerInfo.pc.onicecandidate = null;
         peerInfo.pc.ontrack = null;
@@ -11784,14 +12392,20 @@ class VoiceEngine {
             await this._handleOffer(fromUid, data);
           } else if (data.type === 'answer') {
             const peerInfo = this._peers.get(fromUid);
-            if (peerInfo && peerInfo.pc.signalingState !== 'stable') {
-              await peerInfo.pc.setRemoteDescription(
-                new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
-              );
-              console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
-              while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
-                const cand = peerInfo.pendingCandidates.shift();
-                try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+            if (peerInfo) {
+              if (peerInfo.signalingTimer) {
+                clearTimeout(peerInfo.signalingTimer);
+                peerInfo.signalingTimer = null;
+              }
+              if (peerInfo.pc.signalingState !== 'stable') {
+                await peerInfo.pc.setRemoteDescription(
+                  new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
+                );
+                console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
+                while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
+                  const cand = peerInfo.pendingCandidates.shift();
+                  try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+                }
               }
             }
           } else if (data.type === 'candidate') {
@@ -11860,17 +12474,24 @@ class VoiceEngine {
   // ================================================================
   async _cleanupStaleSignaling() {
     try {
-      // 自分宛の古いシグナリングを削除
+      // 自分宛の古いシグナリングを安全に掃除（60秒以上前の古い残骸のみ削除、最新のOfferは絶対保持）
       const snap = await getDocs(
         query(
           collection(db, `artifacts/${appId}/vc_signaling`),
           where('toUid', '==', this._myUid)
         )
       );
-      const deletes = snap.docs.map(d => deleteDoc(d.ref));
+      const now = Date.now();
+      const deletes = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (!data.at || (now - data.at > 60000)) {
+          deletes.push(deleteDoc(d.ref));
+        }
+      });
       await Promise.allSettled(deletes);
-      if (snap.docs.length > 0) {
-        console.log(`[VoiceEngine] 🧹 古いシグナリング ${snap.docs.length}件 を削除`);
+      if (deletes.length > 0) {
+        console.log(`[VoiceEngine] 🧹 古いシグナリング残骸 ${deletes.length}件 を削除`);
       }
     } catch(e) {
       // 無視（クリーンアップ失敗は致命的ではない）
@@ -12430,9 +13051,26 @@ window.setVoiceCallMode = async function(mode) {
     if (typeof alertMessage === 'function') alertMessage('ボイスチャンネルまたは通話に参加していません', 'warning');
     return;
   }
+  const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+  if (!isGlobalAdmin) {
+    if (typeof alertMessage === 'function') alertMessage('通話方式の強制変更は全体管理者のみ実行できます', 'error');
+    return;
+  }
   try {
     await window._voiceEngine.setChannelModeOverride(mode);
-    if (typeof alertMessage === 'function') alertMessage(`通話モードを「${mode}」に切り替えました`, 'success');
+    const modeNames = {
+      auto: '自動判定 (通常)',
+      p2p: 'P2P 直接優先 (host/srflx)',
+      turn: 'TURN リレー強制 (openrelay)',
+      agora: 'Agora SFU 強制 (サーバー中継)'
+    };
+    const label = modeNames[mode] || mode;
+    if (typeof alertMessage === 'function') alertMessage(`通話方式を「${label}」に切り替えました。参加者全員へ同期します`, 'success');
+    // メニュー内のボタン表示も即座に更新
+    document.querySelectorAll('.call-mode-btn').forEach(btn => {
+      const isSel = btn.dataset.mode === mode;
+      btn.className = `call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${isSel ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}`;
+    });
   } catch(e) {
     if (typeof alertMessage === 'function') alertMessage('モード切替失敗: ' + e.message, 'error');
   }
@@ -12585,506 +13223,6 @@ window._subscribeVcSidebarStates = function(serverId) {
     _patchVcRooms();
   }
 })();
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
 </file>
 
 <file path="public/auth-desktop.html">
@@ -14228,6 +14366,1013 @@ run();
     }
     body.discord-dark-theme #userProfileBanner {
       background-color: #5865f2 !important;
+    }
+</file>
+
+<file path="public/css/modules/mobile.css">
+/* === PWAインストールバナー === */
+    #pwaInstallBanner {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: white;
+      padding: 14px 16px max(24px, calc(14px + env(safe-area-inset-bottom, 0px)));
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+      animation: bannerSlideUp 0.4s ease-out;
+    }
+    #pwaInstallBanner.show {
+      display: flex;
+    }
+    @keyframes bannerSlideUp {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+    .pwa-banner-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .pwa-banner-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .pwa-banner-text strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+    .pwa-banner-text span {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+    .pwa-banner-btn {
+      background: white;
+      color: #1e293b;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.2s;
+    }
+    .pwa-banner-btn:hover {
+      opacity: 0.85;
+    }
+    .pwa-banner-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    /* 過去メッセージ読み込みスピナー */
+    #topLoadingSpinner {
+      display: none;
+    }
+    .top-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #6b7280;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    /* =============================================
+       Mobile Bottom Navigation & BottomSheet System
+    ============================================= */
+    :root {
+      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
+      --mnav-base-h: 50px;
+      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
+    }
+    /* 汎用ボトムシート（Drawer）共通スタイル */
+    .bottom-sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9998;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .bottom-sheet-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .bottom-sheet-handle,
+    .call-picker-handle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      padding: 12px 0 8px;
+      cursor: grab;
+      flex-shrink: 0;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-sheet-handle:active,
+    .call-picker-handle:active {
+      cursor: grabbing;
+    }
+    .bottom-sheet-handle-bar {
+      width: 40px;
+      height: 5px;
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+      margin: 0 auto;
+      transition: background-color 0.2s, transform 0.2s;
+    }
+    body.dark-server-theme .bottom-sheet-handle-bar {
+      background-color: #475569;
+    }
+    body.discord-dark-theme .bottom-sheet-handle-bar {
+      background-color: #4e5058;
+    }
+    @media (max-width: 768px) {
+      /* スマホUIではファイル共有右側のメンバーボタンを完全非表示 */
+      #toggleMembersSidebarBtn {
+        display: none !important;
+      }
+      .covo-bottom-sheet,
+      #membersSidebar,
+      #callPickerModal .call-picker-box {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: min(85vh, calc(100dvh - 30px)) !important;
+        height: auto !important;
+        border-top-left-radius: 24px !important;
+        border-top-right-radius: 24px !important;
+        border-bottom-left-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.28) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        z-index: 9999 !important;
+        transform: translateY(100%) !important;
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+        touch-action: pan-y !important;
+        padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+      }
+      body.dark-server-theme .covo-bottom-sheet,
+      body.dark-server-theme #membersSidebar,
+      body.dark-server-theme #callPickerModal .call-picker-box {
+        background-color: #1e293b !important;
+      }
+      body.discord-dark-theme .covo-bottom-sheet,
+      body.discord-dark-theme #membersSidebar,
+      body.discord-dark-theme #callPickerModal .call-picker-box {
+        background-color: #2b2d31 !important;
+      }
+      .covo-bottom-sheet.bottom-sheet-open,
+      #membersSidebar.bottom-sheet-open,
+      #callPickerModal.show .call-picker-box {
+        transform: translateY(0) !important;
+      }
+      .covo-bottom-sheet.closing,
+      #membersSidebar.closing,
+      #callPickerModal.closing .call-picker-box {
+        transform: translateY(100%) !important;
+        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+      }
+    }
+    #mobileBottomNav {
+      display: none !important;
+    }
+    .mobile-nav-tab {
+      flex: 1 1 0;
+      height: var(--mnav-base-h);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: rgba(255,255,255,0.5);
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      transition: color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      line-height: 1;
+    }
+    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
+    .mobile-nav-tab i {
+      font-size: 1.1rem;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+    .mobile-nav-tab span {
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+    .mobile-notif-dot {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 14px);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 1.5px solid #1f2937;
+    }
+    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
+    body.in-chat-view #mobileBottomNav {
+      display: none !important;
+    }
+    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
+    #mobileProfileScreen,
+    #mobileNotifScreen,
+    .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+      box-sizing: border-box !important;
+      background: #f8fafc !important;
+    }
+    body.has-mobile-nav #mobileProfileScreen,
+    body.has-mobile-nav #mobileNotifScreen,
+    body.has-mobile-nav .mobile-settings-detail {
+      inset: 0 !important;
+      min-height: 100dvh !important;
+      height: 100dvh !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
+    }
+    body.dark-server-theme #mobileProfileScreen,
+    body.dark-server-theme #mobileNotifScreen,
+    body.dark-server-theme .mobile-settings-detail {
+      background: #111827 !important;
+    }
+    /* =============================================
+       Server list-view toggle
+    ============================================= */
+    #viewToggleBtn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      border-radius: 7px;
+      color: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
+    /* List view overrides */
+    .server-grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 1rem 1rem 0 1rem;
+    }
+    .server-grid.list-view .server-section-label {
+      margin-top: 8px;
+    }
+    .server-grid.list-view .server-section-label:first-child {
+      margin-top: 0;
+    }
+    .server-grid.list-view .server-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 13px;
+      padding: 11px 14px;
+    }
+    .server-grid.list-view .server-card-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-name {
+      font-size: 0.92rem;
+    }
+    .server-grid.list-view .server-card-meta {
+      font-size: 0.72rem;
+    }
+    .server-grid.list-view .server-card-admin-badge {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .server-grid.list-view .server-card-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    /* =============================================
+       PC Discord-style Settings Modal (2-column)
+    ============================================= */
+    .settings-discord-layout {
+      display: flex;
+      height: 100%;
+    }
+    .settings-sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: #111827;
+      padding: 1.25rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+    .settings-sidebar-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px 14px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .settings-sidebar-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .settings-sidebar-avatar img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .settings-sidebar-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: white;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .settings-nav-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.35);
+      padding: 8px 8px 4px;
+    }
+    .settings-nav-item {
+      display: flex;
+      align-items: center !important;
+      gap: 8px !important;
+      padding: 7px 10px !important;
+      border-radius: 6px !important;
+      font-size: 0.85rem !important;
+      font-weight: 500 !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      transition: background 0.12s, color 0.12s !important;
+      border: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      text-align: left !important;
+      min-height: unset !important;
+      height: auto !important;
+      line-height: 1.4 !important;
+    }
+    .settings-nav-item:hover {
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(255,255,255,0.85) !important;
+    }
+    .settings-nav-item.active {
+      background: rgba(255,255,255,0.14) !important;
+      color: white !important;
+    }
+    #settingsModal #adminPanelContainer {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    #settingsModal #adminPanelContainer.hidden {
+      display: none;
+    }
+    .settings-nav-item.danger {
+      color: #f87171 !important;
+      margin-top: 0.5rem !important;
+      flex: 0 0 auto !important;
+    }
+    .settings-nav-item.danger:hover {
+      background: rgba(239,68,68,0.15) !important;
+      color: #f87171 !important;
+    }
+    .settings-nav-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 6px 0;
+    }
+    .settings-content {
+      flex: 1;
+      background: white;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding: 1.75rem 2rem;
+      position: relative;
+    }
+    .settings-content-section {
+      display: none;
+    }
+    .settings-content-section.active {
+      display: block;
+    }
+    .settings-section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .settings-close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: #f3f4f6;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      font-size: 0.9rem;
+      transition: background 0.12s;
+    }
+    .settings-close-btn:hover { background: #e5e7eb; }
+    @media (max-width: 768px) {
+      #serverSettingsModal {
+        padding: 0 !important;
+      }
+      #serverSettingsModal .modal-box {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+      }
+      #serverSettingsModal .settings-discord-layout {
+        flex-direction: column;
+        height: calc(100% - 48px);
+      }
+      #serverSettingsModal .settings-sidebar {
+        display: none !important;
+      }
+      #serverSettingsModal .settings-content {
+        padding: 1rem !important;
+      }
+    }
+    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
+    @media (max-width: 768px) {
+      #settingsModal {
+        display: none !important;
+      }
+      #mobileBottomNav {
+        display: flex;
+      }
+      #serverListNotifBtn {
+        display: none !important;
+      }
+      /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
+      html, body {
+        background-color: #0b0f19 !important;
+      }
+      /* DiscordUIモード(ライト)時 */
+      body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode,
+      html:has(body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode) {
+        background-color: #ffffff !important;
+      }
+      /* ネイビーモード時 */
+      body.dark-server-theme,
+      html:has(body.dark-server-theme) {
+        background-color: #0b0f19 !important;
+      }
+      /* Discordダーク時 */
+      body.discord-dark-theme,
+      html:has(body.discord-dark-theme) {
+        background-color: #1e1f22 !important;
+      }
+      /* チャット画面時はチャット背景(白)と揃える */
+      body.in-chat-view,
+      html:has(body.in-chat-view) {
+        background-color: #ffffff !important;
+      }
+      /* ダークモード+チャット時 */
+      body.in-chat-view.dark-server-theme,
+      html:has(body.in-chat-view.dark-server-theme) {
+        background-color: #1a202c !important;
+      }
+      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
+      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
+         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
+         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
+      body.in-chat-view #mobileBottomNav {
+        background: #ffffff !important;
+      }
+      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
+      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
+      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
+      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
+      body.in-chat-view.dark-server-theme #mobileBottomNav {
+        background: #1a202c !important;
+      }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
+      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
+      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
+      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
+      input[type="text"],
+      input[type="email"],
+      input[type="password"],
+      textarea {
+        font-size: max(16px, 1em) !important;
+      }
+      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
+      /* ローディング中の2層問題を解消:
+         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
+         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
+      body.dark-server-theme #mainContent,
+      body.dark-server-theme .container {
+        background-color: #1f2937 !important;
+      }
+      /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
+      .modal-overlay:not(.hidden) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
+      .modal-overlay:not(.hidden) > div:not(.modal-box) {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
+      .modal-overlay:not(.hidden) .modal-box, 
+      #serverSettingsModal:not(.hidden) .modal-box, 
+      #createServerModal:not(.hidden) .modal-box, 
+      #joinServerModal:not(.hidden) .modal-box, 
+      #settingsModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #adminJoinModal:not(.hidden) .modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
+        overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
+        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
+        background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
+      }
+      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
+      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
+      #createServerModal:not(.hidden) .modal-box,
+      #joinServerModal:not(.hidden) .modal-box,
+      #joinRoomPasswordModal:not(.hidden) .modal-box,
+      #deleteRoomConfirmModal:not(.hidden) .modal-box {
+        padding: var(--safe-top) 24px 90px 24px !important;
+        overflow-y: auto !important;
+        justify-content: center !important;
+      }
+      /* 確認・アラートダイアログ・ユーザープロフィール・ステメ・パスワード等: スマホUIでの全画面化・変形バグを完全解消 */
+      #customConfirmModal:not(.hidden),
+      #customAlertModal:not(.hidden),
+      #messagePreviewModal:not(.hidden),
+      #addServerSelectModal:not(.hidden),
+      #userProfileModal:not(.hidden),
+      #customStatusModal:not(.hidden),
+      #passwordResetModal:not(.hidden),
+      #changePasswordModal:not(.hidden),
+      #recoveryKeyManagerModal:not(.hidden),
+      #feedbackModal:not(.hidden),
+      #windowsDownloadModal:not(.hidden),
+      #whatsNewModal:not(.hidden),
+      #avatarLightbox:not(.hidden),
+      #discordCallIncomingModal:not(.hidden) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 16px !important;
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 100005 !important;
+      }
+      #customConfirmModal:not(.hidden) .modal-box,
+      #customAlertModal:not(.hidden) .modal-box,
+      #messagePreviewModal:not(.hidden) .modal-box,
+      #addServerSelectModal:not(.hidden) .modal-box,
+      #passwordResetModal:not(.hidden) .modal-box,
+      #changePasswordModal:not(.hidden) .modal-box,
+      #recoveryKeyManagerModal:not(.hidden) .modal-box,
+      #feedbackModal:not(.hidden) .modal-box,
+      #windowsDownloadModal:not(.hidden) .modal-box,
+      #whatsNewModal:not(.hidden) .modal-box,
+      #avatarLightbox:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .modal-box,
+      #discordCallIncomingModal:not(.hidden) .discord-incoming-card {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 20px !important;
+        overflow-y: auto !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(88vh, calc(100dvh - 32px)) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+      }
+      /* 確認ダイアログ・アラートダイアログ等のボタンが iPhone / iOS で巨大化・縦伸び・変形するバグを徹底防止 */
+      #customConfirmModal .confirm-box button,
+      #customPromptModal .confirm-box button,
+      #customAlertModal .confirm-box button,
+      #customConfirmModal button#customConfirmCancel,
+      #customConfirmModal button#customConfirmOk,
+      #customPromptModal button#customPromptCancel,
+      #customPromptModal button#customPromptOk,
+      #customAlertModal button#customAlertOk {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        max-height: 44px !important;
+        line-height: normal !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 8px 16px !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+        box-sizing: border-box !important;
+        flex: 1 1 0% !important;
+        margin: 0 !important;
+        width: auto !important;
+      }
+      #customConfirmModal .flex.gap-3,
+      #customPromptModal .flex.gap-3,
+      #customAlertModal .flex.gap-3 {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+        width: 100% !important;
+      }
+      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
+      #userProfileModal:not(.hidden) .modal-box {
+        max-width: 340px !important;
+        width: min(92vw, 340px) !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        justify-content: flex-start !important;
+        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
+        border-radius: 24px !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(90dvh, 620px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
+        background: #232428 !important;
+      }
+      /* カスタムステータス設定モーダル専用スマホスタイル */
+      #customStatusModal:not(.hidden) .modal-box {
+        max-width: 380px !important;
+        width: min(92vw, 380px) !important;
+        padding: 1.25rem !important;
+        overflow-y: auto !important;
+        border-radius: 1.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        max-height: min(85dvh, 520px) !important;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        background: #ffffff !important;
+      }
+      body.dark-server-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #1e293b !important;
+      }
+      body.discord-dark-theme #customStatusModal:not(.hidden) .modal-box {
+        background: #2b2d31 !important;
+      }
+      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 60 !important;
+        width: 100% !important;
+        padding: var(--safe-top) 24px 20px 24px !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        box-sizing: border-box !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
+        background: rgba(30, 41, 59, 0.94) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
+        color: #ffffff !important;
+      }
+      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(100, 116, 139, 0.15) !important;
+        color: #64748b !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+      }
+      /* スタンプ管理画面のコンテンツエリア */
+      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
+        flex: 1 1 auto !important;
+        max-height: none !important;
+        padding: 20px 20px 90px 20px !important;
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      /* =======================================
+         ★スマホ設定画面の息をのむほど美しいパーツ群
+         ======================================= */
+      /* 1. Safe Areaを配慮したモーダルヘッダー */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
+      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 40 !important;
+        width: 100% !important;
+        padding-top: max(12px, var(--safe-top)) !important;
+        padding-bottom: 14px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        background: rgba(30, 41, 59, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
+      }
+      /* ヘッダー内部のテキストのプロフェッショナルな質感強化 */
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:first-child {
+        font-size: 0.75rem !important;
+        letter-spacing: 0.1em !important;
+        color: rgba(255, 255, 255, 0.6) !important;
+        margin-bottom: 4px !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:last-child {
+        font-size: 1.35rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.02em !important;
+        color: #ffffff !important;
+      }
+      /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close {
+        /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
+        top: calc(var(--safe-top) + 4px) !important;
+        right: 22px !important;
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 50 !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
+      .modal-overlay:not(.hidden) .modal-box button.modal-close:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+        transform: scale(0.95) !important;
+      }
+      /* 2. iOSのセグメントコントロール風！圧倒的な洗練度を誇るリッチなタブエリア */
+      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
+        background: inherit !important;
+        border-bottom: none !important;
+        padding: 16px 24px 12px 24px !important; /* 左右の余白とバランスを完璧に揃える */
+        display: flex !important;
+        gap: 8px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        overflow-x: auto !important;
+        flex-shrink: 0 !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        flex: 1 0 auto !important;
+        padding: 12px 18px !important;
+        border-radius: 1.25rem !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        color: #64748b !important;
+        background: rgba(100, 116, 139, 0.12) !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #334155 !important;
+        box-shadow: 0 4px 15px -3px rgba(51, 65, 85, 0.35) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
+        color: #94a3b8 !important;
+        background: rgba(255, 255, 255, 0.06) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
+        color: #ffffff !important;
+        background: #475569 !important;
+        box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.5) !important;
+      }
+      /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
+      .modal-overlay:not(.hidden) .modal-box .p-6 {
+        flex: 1 1 auto !important;
+        max-height: none !important; /* 60vhの強制カットを消去！！！ */
+        padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
+        overflow-y: auto !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
+      .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      .modal-overlay:not(.hidden) .modal-box select,
+      .modal-overlay:not(.hidden) .modal-box textarea {
+        border-radius: 0.85rem !important;
+        padding: 12px 16px !important;
+        font-size: 16px !important;
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
+      }
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
+      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
+        background: #1e293b !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #f1f5f9 !important;
+        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
+      }
+      /* ボタン群のリッチで指に吸い付くようなデザイン */
+      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
+      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
+      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
+      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
+        border-radius: 0.85rem !important;
+        padding: 12px 20px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.15) !important;
+      }
+    }
+    @keyframes mobileFullscreenOpen {
+      0% { transform: translateY(100%); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes modalScaleUp {
+      0% { transform: scale(0.85); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @media (max-width: 640px) {
+      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
+      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
+      #joinServerBtn, #createServerBtn {
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: white !important;
+        font-size: 0.82rem !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex-shrink: 0 !important;
+        min-width: unset !important;
+      }
+      #joinServerBtn:hover, #createServerBtn:hover {
+        background: rgba(255, 255, 255, 0.28) !important;
+      }
     }
 </file>
 
@@ -15758,1013 +16903,6 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-</file>
-
-<file path="public/css/modules/mobile.css">
-/* === PWAインストールバナー === */
-    #pwaInstallBanner {
-      display: none;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 9998;
-      background: linear-gradient(135deg, #1e293b, #334155);
-      color: white;
-      padding: 14px 16px max(24px, calc(14px + env(safe-area-inset-bottom, 0px)));
-      align-items: center;
-      gap: 12px;
-      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
-      animation: bannerSlideUp 0.4s ease-out;
-    }
-    #pwaInstallBanner.show {
-      display: flex;
-    }
-    @keyframes bannerSlideUp {
-      from {
-        transform: translateY(100%);
-      }
-      to {
-        transform: translateY(0);
-      }
-    }
-    .pwa-banner-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      flex-shrink: 0;
-    }
-    .pwa-banner-text {
-      flex: 1;
-      min-width: 0;
-    }
-    .pwa-banner-text strong {
-      display: block;
-      font-size: 0.9rem;
-      margin-bottom: 2px;
-    }
-    .pwa-banner-text span {
-      font-size: 0.75rem;
-      color: #94a3b8;
-    }
-    .pwa-banner-btn {
-      background: white;
-      color: #1e293b;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 16px;
-      font-weight: 700;
-      font-size: 0.85rem;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: opacity 0.2s;
-    }
-    .pwa-banner-btn:hover {
-      opacity: 0.85;
-    }
-    .pwa-banner-close {
-      background: none;
-      border: none;
-      color: #94a3b8;
-      font-size: 1rem;
-      cursor: pointer;
-      padding: 4px;
-      flex-shrink: 0;
-    }
-    /* 過去メッセージ読み込みスピナー */
-    #topLoadingSpinner {
-      display: none;
-    }
-    .top-spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e5e7eb;
-      border-top-color: #6b7280;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    /* =============================================
-       Mobile Bottom Navigation & BottomSheet System
-    ============================================= */
-    :root {
-      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
-      --mnav-base-h: 50px;
-      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
-    }
-    /* 汎用ボトムシート（Drawer）共通スタイル */
-    .bottom-sheet-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      z-index: 9998;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .bottom-sheet-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .bottom-sheet-handle,
-    .call-picker-handle {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-      padding: 12px 0 8px;
-      cursor: grab;
-      flex-shrink: 0;
-      touch-action: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .bottom-sheet-handle:active,
-    .call-picker-handle:active {
-      cursor: grabbing;
-    }
-    .bottom-sheet-handle-bar {
-      width: 40px;
-      height: 5px;
-      background-color: #cbd5e1;
-      border-radius: 9999px;
-      margin: 0 auto;
-      transition: background-color 0.2s, transform 0.2s;
-    }
-    body.dark-server-theme .bottom-sheet-handle-bar {
-      background-color: #475569;
-    }
-    body.discord-dark-theme .bottom-sheet-handle-bar {
-      background-color: #4e5058;
-    }
-    @media (max-width: 768px) {
-      /* スマホUIではファイル共有右側のメンバーボタンを完全非表示 */
-      #toggleMembersSidebarBtn {
-        display: none !important;
-      }
-      .covo-bottom-sheet,
-      #membersSidebar,
-      #callPickerModal .call-picker-box {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        max-height: min(85vh, calc(100dvh - 30px)) !important;
-        height: auto !important;
-        border-top-left-radius: 24px !important;
-        border-top-right-radius: 24px !important;
-        border-bottom-left-radius: 0 !important;
-        border-bottom-right-radius: 0 !important;
-        background-color: #ffffff !important;
-        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.28) !important;
-        display: flex !important;
-        flex-direction: column !important;
-        overflow: hidden !important;
-        z-index: 9999 !important;
-        transform: translateY(100%) !important;
-        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
-        touch-action: pan-y !important;
-        padding-bottom: max(24px, calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
-      }
-      body.dark-server-theme .covo-bottom-sheet,
-      body.dark-server-theme #membersSidebar,
-      body.dark-server-theme #callPickerModal .call-picker-box {
-        background-color: #1e293b !important;
-      }
-      body.discord-dark-theme .covo-bottom-sheet,
-      body.discord-dark-theme #membersSidebar,
-      body.discord-dark-theme #callPickerModal .call-picker-box {
-        background-color: #2b2d31 !important;
-      }
-      .covo-bottom-sheet.bottom-sheet-open,
-      #membersSidebar.bottom-sheet-open,
-      #callPickerModal.show .call-picker-box {
-        transform: translateY(0) !important;
-      }
-      .covo-bottom-sheet.closing,
-      #membersSidebar.closing,
-      #callPickerModal.closing .call-picker-box {
-        transform: translateY(100%) !important;
-        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
-      }
-    }
-    #mobileBottomNav {
-      display: none !important;
-    }
-    .mobile-nav-tab {
-      flex: 1 1 0;
-      height: var(--mnav-base-h);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: rgba(255,255,255,0.5);
-      border: none;
-      background: transparent;
-      padding: 0;
-      margin: 0;
-      transition: color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      position: relative;
-      line-height: 1;
-    }
-    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
-    .mobile-nav-tab i {
-      font-size: 1.1rem;
-      line-height: 1;
-      margin-bottom: 3px;
-    }
-    .mobile-nav-tab span {
-      font-size: 0.64rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      line-height: 1;
-    }
-    .mobile-notif-dot {
-      position: absolute;
-      top: 6px;
-      right: calc(50% - 14px);
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #ef4444;
-      border: 1.5px solid #1f2937;
-    }
-    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
-    body.in-chat-view #mobileBottomNav {
-      display: none !important;
-    }
-    /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
-    #mobileProfileScreen,
-    #mobileNotifScreen,
-    .mobile-settings-detail {
-      inset: 0 !important;
-      min-height: 100dvh !important;
-      height: 100dvh !important;
-      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
-      box-sizing: border-box !important;
-      background: #f8fafc !important;
-    }
-    body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen,
-    body.has-mobile-nav .mobile-settings-detail {
-      inset: 0 !important;
-      min-height: 100dvh !important;
-      height: 100dvh !important;
-      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
-    }
-    body.dark-server-theme #mobileProfileScreen,
-    body.dark-server-theme #mobileNotifScreen,
-    body.dark-server-theme .mobile-settings-detail {
-      background: #111827 !important;
-    }
-    /* =============================================
-       Server list-view toggle
-    ============================================= */
-    #viewToggleBtn {
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255,255,255,0.12);
-      border: none;
-      border-radius: 7px;
-      color: white;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }
-    #viewToggleBtn:hover { background: rgba(255,255,255,0.22); }
-    /* List view overrides */
-    .server-grid.list-view {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 1rem 1rem 0 1rem;
-    }
-    .server-grid.list-view .server-section-label {
-      margin-top: 8px;
-    }
-    .server-grid.list-view .server-section-label:first-child {
-      margin-top: 0;
-    }
-    .server-grid.list-view .server-card {
-      flex-direction: row;
-      align-items: center;
-      gap: 13px;
-      padding: 11px 14px;
-    }
-    .server-grid.list-view .server-card-icon {
-      width: 40px;
-      height: 40px;
-      margin-bottom: 0;
-      flex-shrink: 0;
-    }
-    .server-grid.list-view .server-card-name {
-      font-size: 0.92rem;
-    }
-    .server-grid.list-view .server-card-meta {
-      font-size: 0.72rem;
-    }
-    .server-grid.list-view .server-card-admin-badge {
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-    .server-grid.list-view .server-card-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-    /* =============================================
-       PC Discord-style Settings Modal (2-column)
-    ============================================= */
-    .settings-discord-layout {
-      display: flex;
-      height: 100%;
-    }
-    .settings-sidebar {
-      width: 210px;
-      flex-shrink: 0;
-      background: #111827;
-      padding: 1.25rem 0.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      overflow-y: auto;
-    }
-    .settings-sidebar-user {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 8px 14px;
-      margin-bottom: 4px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .settings-sidebar-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.12);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 700;
-      font-size: 0.9rem;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .settings-sidebar-avatar img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    }
-    .settings-sidebar-name {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: white;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .settings-nav-label {
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: rgba(255,255,255,0.35);
-      padding: 8px 8px 4px;
-    }
-    .settings-nav-item {
-      display: flex;
-      align-items: center !important;
-      gap: 8px !important;
-      padding: 7px 10px !important;
-      border-radius: 6px !important;
-      font-size: 0.85rem !important;
-      font-weight: 500 !important;
-      color: rgba(255,255,255,0.55) !important;
-      cursor: pointer !important;
-      transition: background 0.12s, color 0.12s !important;
-      border: none !important;
-      background: transparent !important;
-      width: 100% !important;
-      text-align: left !important;
-      min-height: unset !important;
-      height: auto !important;
-      line-height: 1.4 !important;
-    }
-    .settings-nav-item:hover {
-      background: rgba(255,255,255,0.08) !important;
-      color: rgba(255,255,255,0.85) !important;
-    }
-    .settings-nav-item.active {
-      background: rgba(255,255,255,0.14) !important;
-      color: white !important;
-    }
-    #settingsModal #adminPanelContainer {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      flex: 0 0 auto;
-    }
-    #settingsModal #adminPanelContainer.hidden {
-      display: none;
-    }
-    .settings-nav-item.danger {
-      color: #f87171 !important;
-      margin-top: 0.5rem !important;
-      flex: 0 0 auto !important;
-    }
-    .settings-nav-item.danger:hover {
-      background: rgba(239,68,68,0.15) !important;
-      color: #f87171 !important;
-    }
-    .settings-nav-divider {
-      height: 1px;
-      background: rgba(255,255,255,0.07);
-      margin: 6px 0;
-    }
-    .settings-content {
-      flex: 1;
-      background: white;
-      overflow-y: auto;
-      scrollbar-gutter: stable;
-      padding: 1.75rem 2rem;
-      position: relative;
-    }
-    .settings-content-section {
-      display: none;
-    }
-    .settings-content-section.active {
-      display: block;
-    }
-    .settings-section-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #111827;
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .settings-close-btn {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: none;
-      background: #f3f4f6;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      font-size: 0.9rem;
-      transition: background 0.12s;
-    }
-    .settings-close-btn:hover { background: #e5e7eb; }
-    @media (max-width: 768px) {
-      #serverSettingsModal {
-        padding: 0 !important;
-      }
-      #serverSettingsModal .modal-box {
-        position: fixed !important;
-        inset: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        max-height: 100% !important;
-        border-radius: 0 !important;
-        margin: 0 !important;
-      }
-      #serverSettingsModal .settings-discord-layout {
-        flex-direction: column;
-        height: calc(100% - 48px);
-      }
-      #serverSettingsModal .settings-sidebar {
-        display: none !important;
-      }
-      #serverSettingsModal .settings-content {
-        padding: 1rem !important;
-      }
-    }
-    /* On mobile, hide the PC 2-column layout; use mobile full-screen instead */
-    @media (max-width: 768px) {
-      #settingsModal {
-        display: none !important;
-      }
-      #mobileBottomNav {
-        display: flex;
-      }
-      #serverListNotifBtn {
-        display: none !important;
-      }
-      /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
-      html, body {
-        background-color: #0b0f19 !important;
-      }
-      /* DiscordUIモード(ライト)時 */
-      body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode,
-      html:has(body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode) {
-        background-color: #ffffff !important;
-      }
-      /* ネイビーモード時 */
-      body.dark-server-theme,
-      html:has(body.dark-server-theme) {
-        background-color: #0b0f19 !important;
-      }
-      /* Discordダーク時 */
-      body.discord-dark-theme,
-      html:has(body.discord-dark-theme) {
-        background-color: #1e1f22 !important;
-      }
-      /* チャット画面時はチャット背景(白)と揃える */
-      body.in-chat-view,
-      html:has(body.in-chat-view) {
-        background-color: #ffffff !important;
-      }
-      /* ダークモード+チャット時 */
-      body.in-chat-view.dark-server-theme,
-      html:has(body.in-chat-view.dark-server-theme) {
-        background-color: #1a202c !important;
-      }
-      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
-      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
-         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
-         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
-      body.in-chat-view #mobileBottomNav {
-        background: #ffffff !important;
-      }
-      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
-      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
-      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
-      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
-      body.in-chat-view.dark-server-theme #mobileBottomNav {
-        background: #1a202c !important;
-      }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
-      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
-      /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
-      input[type="text"],
-      input[type="email"],
-      input[type="password"],
-      textarea {
-        font-size: max(16px, 1em) !important;
-      }
-      /* コンテナ背景はbody側でoverscrollをカバーするため不要 */
-      /* ローディング中の2層問題を解消:
-         dark-server-theme時、#mainContent背景(#111827)がnavバー(#1f2937)と
-         微妙に色が違うため2層に見える。モバイルでは#1f2937に統一する。 */
-      body.dark-server-theme #mainContent,
-      body.dark-server-theme .container {
-        background-color: #1f2937 !important;
-      }
-      /* ★スマホUI専用：サーバー設定や作成画面を根本のデザインから一から作り直した、同等以上の質と洗練さを放つ究極のフルスクリーン仕様 */
-      .modal-overlay:not(.hidden) {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-      }
-      /* 親コンテナの p-6 を強制解除し、隙間や段差を100%根絶 */
-      .modal-overlay:not(.hidden) > div:not(.modal-box) {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        width: 100% !important;
-        height: 100% !important;
-      }
-      /* モーダル本体を完璧なフルスクリーン・美しいネイティブビューへ大劇変（右クリックメニュー等を完全排除！） */
-      .modal-overlay:not(.hidden) .modal-box, 
-      #serverSettingsModal:not(.hidden) .modal-box, 
-      #createServerModal:not(.hidden) .modal-box, 
-      #joinServerModal:not(.hidden) .modal-box, 
-      #settingsModal:not(.hidden) .modal-box,
-      #joinRoomPasswordModal:not(.hidden) .modal-box,
-      #adminJoinModal:not(.hidden) .modal-box {
-        width: 100% !important;
-        max-width: 100% !important;
-        height: 100% !important;
-        max-height: 100% !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        margin: 0 !important;
-        padding: 0 !important; /* 内部ヘッダーとコンテンツエリアを全画面で美しく分けるため0にする */
-        overflow-y: hidden !important; /* 親はスクロールさせず、内部のコンテンツエリアだけを気持ちよくスクロールさせる！ */
-        display: flex; /* !importantを外すか、開いているモーダル内限定にするため完全安全！ */
-        flex-direction: column !important;
-        box-sizing: border-box !important;
-        animation: mobileFullscreenOpen 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
-        background: #f8fafc !important; /* スマホ設定画面にふさわしい、上品でモダンなスレート系ライト背景 */
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box {
-        background: #0f172a !important; /* ダークモード時は極上の重厚ダークスレート背景 */
-      }
-      /* 内部に専用ヘッダーを持たないモーダルは、親全体をスクロール可能にしてSafe Area余白を美しく確保 */
-      /* ※確認ダイアログ・アラートダイアログは小型モーダルなのでフルスクリーン適用除外 */
-      #createServerModal:not(.hidden) .modal-box,
-      #joinServerModal:not(.hidden) .modal-box,
-      #joinRoomPasswordModal:not(.hidden) .modal-box,
-      #deleteRoomConfirmModal:not(.hidden) .modal-box {
-        padding: var(--safe-top) 24px 90px 24px !important;
-        overflow-y: auto !important;
-        justify-content: center !important;
-      }
-      /* 確認・アラートダイアログ・ユーザープロフィール・ステメ・パスワード等: スマホUIでの全画面化・変形バグを完全解消 */
-      #customConfirmModal:not(.hidden),
-      #customAlertModal:not(.hidden),
-      #messagePreviewModal:not(.hidden),
-      #addServerSelectModal:not(.hidden),
-      #userProfileModal:not(.hidden),
-      #customStatusModal:not(.hidden),
-      #passwordResetModal:not(.hidden),
-      #changePasswordModal:not(.hidden),
-      #recoveryKeyManagerModal:not(.hidden),
-      #feedbackModal:not(.hidden),
-      #windowsDownloadModal:not(.hidden),
-      #whatsNewModal:not(.hidden),
-      #avatarLightbox:not(.hidden),
-      #discordCallIncomingModal:not(.hidden) {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 16px !important;
-        position: fixed !important;
-        inset: 0 !important;
-        z-index: 100005 !important;
-      }
-      #customConfirmModal:not(.hidden) .modal-box,
-      #customAlertModal:not(.hidden) .modal-box,
-      #messagePreviewModal:not(.hidden) .modal-box,
-      #addServerSelectModal:not(.hidden) .modal-box,
-      #passwordResetModal:not(.hidden) .modal-box,
-      #changePasswordModal:not(.hidden) .modal-box,
-      #recoveryKeyManagerModal:not(.hidden) .modal-box,
-      #feedbackModal:not(.hidden) .modal-box,
-      #windowsDownloadModal:not(.hidden) .modal-box,
-      #whatsNewModal:not(.hidden) .modal-box,
-      #avatarLightbox:not(.hidden) .modal-box,
-      #discordCallIncomingModal:not(.hidden) .modal-box,
-      #discordCallIncomingModal:not(.hidden) .discord-incoming-card {
-        max-width: 380px !important;
-        width: min(92vw, 380px) !important;
-        padding: 20px !important;
-        overflow-y: auto !important;
-        justify-content: flex-start !important;
-        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 1.5rem !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(88vh, calc(100dvh - 32px)) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-      }
-      /* 確認ダイアログ・アラートダイアログ等のボタンが iPhone / iOS で巨大化・縦伸び・変形するバグを徹底防止 */
-      #customConfirmModal .confirm-box button,
-      #customPromptModal .confirm-box button,
-      #customAlertModal .confirm-box button,
-      #customConfirmModal button#customConfirmCancel,
-      #customConfirmModal button#customConfirmOk,
-      #customPromptModal button#customPromptCancel,
-      #customPromptModal button#customPromptOk,
-      #customAlertModal button#customAlertOk {
-        appearance: none !important;
-        -webkit-appearance: none !important;
-        min-height: 42px !important;
-        height: 42px !important;
-        max-height: 44px !important;
-        line-height: normal !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 8px 16px !important;
-        font-size: 14px !important;
-        font-weight: 700 !important;
-        border-radius: 12px !important;
-        box-sizing: border-box !important;
-        flex: 1 1 0% !important;
-        margin: 0 !important;
-        width: auto !important;
-      }
-      #customConfirmModal .flex.gap-3,
-      #customPromptModal .flex.gap-3,
-      #customAlertModal .flex.gap-3 {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        gap: 12px !important;
-        width: 100% !important;
-      }
-      /* ユーザープロフィールポップアップ専用スマホスタイル (パディングを内部で綺麗に制御・アバター見切れ完全防止) */
-      #userProfileModal:not(.hidden) .modal-box {
-        max-width: 340px !important;
-        width: min(92vw, 340px) !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-        justify-content: flex-start !important;
-        animation: modalScaleUp 0.25s cubic-bezier(0.17, 0.84, 0.44, 1) forwards !important;
-        border-radius: 24px !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(90dvh, 620px) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-        background: #ffffff !important;
-      }
-      body.dark-server-theme #userProfileModal:not(.hidden) .modal-box {
-        background: #1e293b !important;
-      }
-      body.discord-dark-theme #userProfileModal:not(.hidden) .modal-box {
-        background: #232428 !important;
-      }
-      /* カスタムステータス設定モーダル専用スマホスタイル */
-      #customStatusModal:not(.hidden) .modal-box {
-        max-width: 380px !important;
-        width: min(92vw, 380px) !important;
-        padding: 1.25rem !important;
-        overflow-y: auto !important;
-        border-radius: 1.5rem !important;
-        min-height: unset !important;
-        height: auto !important;
-        max-height: min(85dvh, 520px) !important;
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: none !important;
-        margin: 0 auto !important;
-        box-sizing: border-box !important;
-        background: #ffffff !important;
-      }
-      body.dark-server-theme #customStatusModal:not(.hidden) .modal-box {
-        background: #1e293b !important;
-      }
-      body.discord-dark-theme #customStatusModal:not(.hidden) .modal-box {
-        background: #2b2d31 !important;
-      }
-      /* ★スタンプ管理画面のスマホ専用ヘッダー＆コンテンツ仕様 */
-      #stampAdminModal:not(.hidden) .modal-box > div:first-child {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 60 !important;
-        width: 100% !important;
-        padding: var(--safe-top) 24px 20px 24px !important;
-        background: rgba(255, 255, 255, 0.94) !important;
-        backdrop-filter: blur(16px) !important;
-        -webkit-backdrop-filter: blur(16px) !important;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        box-sizing: border-box !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child {
-        background: rgba(30, 41, 59, 0.94) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child h2 {
-        color: #ffffff !important;
-      }
-      #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
-        width: 38px !important;
-        height: 38px !important;
-        border-radius: 50% !important;
-        background: rgba(100, 116, 139, 0.15) !important;
-        color: #64748b !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-      }
-      body.dark-server-theme #stampAdminModal:not(.hidden) .modal-box > div:first-child button {
-        background: rgba(255, 255, 255, 0.18) !important;
-        color: #ffffff !important;
-      }
-      /* スタンプ管理画面のコンテンツエリア */
-      #stampAdminModal:not(.hidden) .modal-box > div:last-child {
-        flex: 1 1 auto !important;
-        max-height: none !important;
-        padding: 20px 20px 90px 20px !important;
-        overflow-y: auto !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      /* =======================================
-         ★スマホ設定画面の息をのむほど美しいパーツ群
-         ======================================= */
-      /* 1. Safe Areaを配慮したモーダルヘッダー */
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header,
-      .modal-overlay:not(.hidden) .modal-box .bg-gray-800 {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 40 !important;
-        width: 100% !important;
-        padding-top: max(12px, var(--safe-top)) !important;
-        padding-bottom: 14px !important;
-        padding-left: 20px !important;
-        padding-right: 20px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        align-items: flex-start !important;
-        background: rgba(30, 41, 59, 0.94) !important;
-        backdrop-filter: blur(16px) !important;
-        -webkit-backdrop-filter: blur(16px) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25) !important;
-      }
-      /* ヘッダー内部のテキストのプロフェッショナルな質感強化 */
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:first-child {
-        font-size: 0.75rem !important;
-        letter-spacing: 0.1em !important;
-        color: rgba(255, 255, 255, 0.6) !important;
-        margin-bottom: 4px !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .modal-dark-header p:last-child {
-        font-size: 1.35rem !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.02em !important;
-        color: #ffffff !important;
-      }
-      /* 閉じるボタンをステータスバー下の完璧な黄金比率位置にスタイリング */
-      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn,
-      .modal-overlay:not(.hidden) .modal-box button.modal-close {
-        /* ★ステータスバーとの衝突を100%排除し、タッチしやすい美しい位置へ移動 */
-        top: calc(var(--safe-top) + 4px) !important;
-        right: 22px !important;
-        width: 38px !important;
-        height: 38px !important;
-        border-radius: 50% !important;
-        background: rgba(255, 255, 255, 0.18) !important;
-        color: #ffffff !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        z-index: 50 !important;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box button#closeServerSettingsBtn:hover,
-      .modal-overlay:not(.hidden) .modal-box button.modal-close:hover {
-        background: rgba(255, 255, 255, 0.28) !important;
-        transform: scale(0.95) !important;
-      }
-      /* 2. iOSのセグメントコントロール風！圧倒的な洗練度を誇るリッチなタブエリア */
-      .modal-overlay:not(.hidden) .modal-box .flex.gap-2.px-5.py-3.bg-white.border-b {
-        background: inherit !important;
-        border-bottom: none !important;
-        padding: 16px 24px 12px 24px !important; /* 左右の余白とバランスを完璧に揃える */
-        display: flex !important;
-        gap: 8px !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        overflow-x: auto !important;
-        flex-shrink: 0 !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .ss-tab {
-        flex: 1 0 auto !important;
-        padding: 12px 18px !important;
-        border-radius: 1.25rem !important;
-        font-weight: 700 !important;
-        font-size: 0.9rem !important;
-        color: #64748b !important;
-        background: rgba(100, 116, 139, 0.12) !important;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-      }
-      .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
-        color: #ffffff !important;
-        background: #334155 !important;
-        box-shadow: 0 4px 15px -3px rgba(51, 65, 85, 0.35) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab {
-        color: #94a3b8 !important;
-        background: rgba(255, 255, 255, 0.06) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box .ss-tab.active {
-        color: #ffffff !important;
-        background: #475569 !important;
-        box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.5) !important;
-      }
-      /* 3. 画面下端まで気持ちよくスクロールできる、極上のコンテンツエリア */
-      .modal-overlay:not(.hidden) .modal-box .p-6 {
-        flex: 1 1 auto !important;
-        max-height: none !important; /* 60vhの強制カットを消去！！！ */
-        padding: 16px 20px 90px 20px !important; /* Safe Areaと底面まで完全に背景を美しく敷き詰める */
-        overflow-y: auto !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      /* 4. 各入力セクションを、iOS風の美しい丸みのあるカードスタイルに格納 */
-      .modal-overlay:not(.hidden) .modal-box input[type="text"],
-      .modal-overlay:not(.hidden) .modal-box input[type="password"],
-      .modal-overlay:not(.hidden) .modal-box input[type="email"],
-      .modal-overlay:not(.hidden) .modal-box select,
-      .modal-overlay:not(.hidden) .modal-box textarea {
-        border-radius: 0.85rem !important;
-        padding: 12px 16px !important;
-        font-size: 16px !important;
-        background: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05) !important;
-      }
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="text"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="password"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box input[type="email"],
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box select,
-      body.dark-server-theme .modal-overlay:not(.hidden) .modal-box textarea {
-        background: #1e293b !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: #f1f5f9 !important;
-        box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
-      }
-      /* ボタン群のリッチで指に吸い付くようなデザイン */
-      .modal-overlay:not(.hidden) .modal-box button#createRoomInServerBtn,
-      .modal-overlay:not(.hidden) .modal-box button#createInviteCodeBtn,
-      .modal-overlay:not(.hidden) .modal-box button#renameServerBtn,
-      .modal-overlay:not(.hidden) .modal-box button#changeServerPasswordBtn,
-      .modal-overlay:not(.hidden) .modal-box button[onclick*="openStampAdminModal"] {
-        border-radius: 0.85rem !important;
-        padding: 12px 20px !important;
-        font-weight: 700 !important;
-        box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.15) !important;
-      }
-    }
-    @keyframes mobileFullscreenOpen {
-      0% { transform: translateY(100%); opacity: 0; }
-      100% { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes modalScaleUp {
-      0% { transform: scale(0.85); opacity: 0; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    @media (max-width: 640px) {
-      #joinServerBtn .btn-text, #createServerBtn .btn-text { display: none; }
-      #joinServerBtn i, #createServerBtn i { margin-right: 0 !important; }
-      #joinServerBtn, #createServerBtn {
-        width: 32px !important;
-        height: 32px !important;
-        border-radius: 50% !important;
-        background: rgba(255, 255, 255, 0.15) !important;
-        color: white !important;
-        font-size: 0.82rem !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        flex-shrink: 0 !important;
-        min-width: unset !important;
-      }
-      #joinServerBtn:hover, #createServerBtn:hover {
-        background: rgba(255, 255, 255, 0.28) !important;
-      }
-    }
 </file>
 
 <file path="public/css/modules/sidebar.css">
@@ -22088,6 +22226,14 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
       }
     },
+    "voiceStatesConfig": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || auth.uid === newData.child('updatedBy').val())"
+        }
+      }
+    },
     "artifacts": {
       "$appId": {
         "settings": {
@@ -25728,13 +25874,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.169" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.171" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.169" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.171" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <!-- heic2any -->
@@ -28888,7 +29034,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.169"></script>
+  <script type="module" src="js/main.js?v=1.1.171"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -29105,7 +29251,7 @@ async function handleD1Api(request, env, url) {
           <i class="fas fa-hashtag text-indigo-400 text-xs" id="discordCallHeaderIcon"></i>
           <span id="discordCallHeaderTitle" class="truncate">音声通話</span>
         </div>
-        <div class="discord-rtc-badge" id="discordCallRtcStatus">
+        <div class="discord-rtc-badge cursor-pointer hover:opacity-90 transition" id="discordCallRtcStatus" onclick="window.handleRtcBadgeClick(event)" title="通話ステータス (全体管理者はクリックで通話方式を変更)">
           <span class="rtc-signal-icon"><i class="fas fa-signal"></i></span>
           <span id="discordCallRtcText">RTC 接続完了</span>
           <span class="discord-call-timer" id="callTimerDisplay">00:00</span>
@@ -48102,6 +48248,11 @@ window.toggleCamera = async function () {
     }
   };
   window.toggleCallScreenShare = window.toggleScreenShare;
+  window.handleRtcBadgeClick = function (event) {
+    if (typeof isAdmin !== 'undefined' && isAdmin) {
+      window.toggleCallDeviceMenu(event);
+    }
+  };
   window.toggleCallFullscreen = function () {
   const overlay = document.getElementById("callOverlay");
   const icon = document.getElementById("callFullscreenIcon");
@@ -48152,6 +48303,32 @@ window.toggleCamera = async function () {
     const mics = await AgoraRTC.getMicrophones();
     const cams = await AgoraRTC.getCameras();
     const speakers = (AgoraRTC.getPlaybackDevices ? await AgoraRTC.getPlaybackDevices() : []);
+    const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+    const currentModeOverride = window._voiceEngine?._modeOverride || 'auto';
+    const adminModeSection = isGlobalAdmin ? `
+      <div class="pt-3 mt-2 border-t border-white/10 space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="block font-bold text-gray-400 text-xs flex items-center gap-1.5">
+            <i class="fas fa-network-wired text-indigo-400"></i>通話方式 (全体管理者専用)
+          </label>
+          <span class="text-[10px] text-amber-400 font-bold px-1.5 py-0.5 bg-amber-400/10 rounded">リアルタイム即時切替</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5" id="callModeButtonGrid">
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'auto' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="auto" onclick="setVoiceCallMode('auto')">
+            自動判定
+          </button>
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'p2p' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="p2p" onclick="setVoiceCallMode('p2p')">
+            P2P直接
+          </button>
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'turn' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="turn" onclick="setVoiceCallMode('turn')">
+            TURNリレー
+          </button>
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'agora' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="agora" onclick="setVoiceCallMode('agora')">
+            Agora SFU
+          </button>
+        </div>
+      </div>
+    ` : '';
     menu.innerHTML = `
       <div class="p-3.5 space-y-3 text-xs text-gray-200">
         <div>
@@ -48174,6 +48351,7 @@ window.toggleCamera = async function () {
           </select>
         </div>
         ` : ''}
+        ${adminModeSection}
       </div>
     `;
     const micSel = document.getElementById("callMicSelect");
@@ -51479,8 +51657,17 @@ const VC_ICE_SERVERS = [
   // OpenRelay TURN – TCP 443（最も通りやすい・企業Firewall対応）
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
     username: 'openrelayproject', credential: 'openrelayproject' },
+  // OpenRelay TURNS – TLS 443（厳格なDPI/Firewall対応）
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject', credential: 'openrelayproject' },
   // Cloudflare STUN（追加 STUN バックアップ）
   { urls: 'stun:stun.cloudflare.com:3478' },
+];
+const VC_TURN_TEST_SERVERS = [
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 const VC_TURN_INFO = {
   service: 'Open Relay Project (openrelay.metered.ca)',
@@ -51626,11 +51813,13 @@ class VoiceEngine {
       }
       // --- TURN 疎通チェック（非同期・バックグラウンド） ---
       this._checkTurnConnectivity();
+      // --- シグナリングリスナーを最速先行起動（相手からのOffer取りこぼしを完全防止） ---
+      this._setupSignalingListener();
       // --- RTDB に voiceState を書き込み + onDisconnect 設定 ---
       await this._setVoiceState({ isMuted: false, hasVideo: false, hasScreen: false });
       // --- voiceStates を購読 ---
       this._subscribeVoiceStates();
-      // --- 古いシグナリングドキュメントを掃除 ---
+      // --- 古いシグナリングドキュメントを安全に掃除（直近60秒以内のドキュメントは保持） ---
       this._cleanupStaleSignaling();
       // --- UI 更新 ---
       _vcShowBar(channelName);
@@ -51712,7 +51901,7 @@ class VoiceEngine {
     const startTime = Date.now();
     try {
       const pc = new RTCPeerConnection({
-        iceServers: VC_ICE_SERVERS,
+        iceServers: VC_TURN_TEST_SERVERS, // TURN専用設定で不要なSTUN探索待ちをバイパス
         iceTransportPolicy: 'relay' // TURNリレー候補のみを強制探索
       });
       pc.createDataChannel('__vc_turn_check__');
@@ -51722,8 +51911,8 @@ class VoiceEngine {
         const timer = setTimeout(() => {
           pc.onicecandidate = null;
           try { pc.close(); } catch(_){}
-          reject(new Error('TURN 接続タイムアウト (8秒)'));
-        }, 8000);
+          reject(new Error('TURN リレー候補探索タイムアウト (12秒)'));
+        }, 12000);
         let foundRelay = false;
         pc.onicecandidate = (e) => {
           if (e.candidate && (e.candidate.type === 'relay' || (e.candidate.candidate && e.candidate.candidate.includes('typ relay')))) {
@@ -51746,7 +51935,7 @@ class VoiceEngine {
       console.log(`[VoiceEngine] ✅ TURN 疎通確認成功 (${res.latencyMs}ms): ${res.candidate}`);
       return res;
     } catch (e) {
-      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (実際の通信時に必要に応じてリレー接続を試行します)`);
+      console.log(`[VoiceEngine] ℹ️ TURN 疎通テスト: ${e.message} (直接P2P可能環境ではリレー不使用で正常接続されます)`);
       return { success: false, error: e.message, latencyMs: Date.now() - startTime };
     }
   }
@@ -51866,8 +52055,9 @@ class VoiceEngine {
       if (!this.isActive) return;
       import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
         if (!this.isActive) return;
-        const stateRef = ref(rtdb, `voiceStates/${this.serverId}/${this.channelId}`);
-        const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+        const sId = this.serverId || 'direct';
+        const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}`);
+        const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
         const configHandler = (snapshot) => {
           if (!this.isActive) return;
           const cfg = snapshot.val() || {};
@@ -51926,23 +52116,30 @@ class VoiceEngine {
     const count = Object.keys(currentStates || {}).length;
     const override = this._modeOverride || 'auto';
     if (override === 'turn') {
+      const needPolicyChange = (this.mode === 'p2p' && !this._forceTurnOnly);
       this._forceTurnOnly = true;
       if (this.mode !== 'p2p') {
         await this._switchToP2P(currentStates, 'relay');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('relay', currentStates);
+      } else {
+        this._syncP2PPeers(currentStates);
+      }
+      return;
+    }
+    if (override === 'p2p') {
+      const needPolicyChange = (this.mode === 'p2p' && this._forceTurnOnly);
+      this._forceTurnOnly = false;
+      if (this.mode !== 'p2p') {
+        await this._switchToP2P(currentStates, 'all');
+      } else if (needPolicyChange) {
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
       return;
     }
     this._forceTurnOnly = false;
-    if (override === 'p2p') {
-      if (this.mode !== 'p2p') {
-        await this._switchToP2P(currentStates, 'all');
-      } else {
-        this._syncP2PPeers(currentStates);
-      }
-      return;
-    }
     if (override === 'agora') {
       if (this.mode !== 'agora') {
         await this._switchToAgora();
@@ -51954,6 +52151,9 @@ class VoiceEngine {
       if (this.mode !== 'p2p') {
         console.log(`[VoiceEngine] 🔵 P2P モードへ切替 (${count}人)`);
         await this._switchToP2P(currentStates, 'all');
+      } else if (this._forceTurnOnly) {
+        this._forceTurnOnly = false;
+        await this._reconnectAllPeersWithPolicy('all', currentStates);
       } else {
         this._syncP2PPeers(currentStates);
       }
@@ -51964,8 +52164,34 @@ class VoiceEngine {
       }
     }
   }
+  // 音声ストリームを一切切断せずに、ピア接続の通信ポリシー（直接 ⇔ TURNリレー）のみを瞬時に再構築
+  async _reconnectAllPeersWithPolicy(transportPolicy, currentStates) {
+    if (this._modeSwitching || !this.isActive) return;
+    this._modeSwitching = true;
+    const isRelay = (transportPolicy === 'relay');
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替開始: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+    const rtcText = document.getElementById('discordCallRtcText');
+    const rtcBadge = document.getElementById('discordCallRtcStatus');
+    if (rtcText) rtcText.textContent = isRelay ? 'P2P (TURNリレー強制) 移行中...' : 'P2P (直接優先) 移行中...';
+    if (rtcBadge) rtcBadge.classList.add('reconnecting');
+    this._forceTurnOnly = isRelay;
+    this._cleanupAllPeers();
+    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    for (const peerUid of others) {
+      const iAmOfferer = this._myUid < peerUid;
+      if (iAmOfferer) {
+        await this._createOffer(peerUid).catch(e =>
+          console.error(`[VoiceEngine] ポリシー切替Offer失敗 (${peerUid.slice(0,8)}):`, e)
+        );
+      } else {
+        this._createPeerConnection(peerUid);
+      }
+    }
+    this._modeSwitching = false;
+    console.log(`[VoiceEngine] 🔄 P2Pポリシー切替完了: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
+  }
   async setChannelModeOverride(mode = 'auto') {
-    if (!this.serverId || !this.channelId) {
+    if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
     }
     const validModes = ['auto', 'p2p', 'turn', 'agora'];
@@ -51974,13 +52200,16 @@ class VoiceEngine {
     }
     const rtdb = await _getOrInitRTDB();
     const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const configRef = ref(rtdb, `voiceStatesConfig/${this.serverId}/${this.channelId}`);
+    const sId = this.serverId || 'direct';
+    const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
     await set(configRef, {
       modeOverride: mode,
       updatedAt: Date.now(),
       updatedBy: this._myUid
     });
     console.log(`[VoiceEngine] ⚙️ 通話モード設定を更新しました: ${mode}`);
+    this._modeOverride = mode;
+    await this._applyCallMode(this._voiceStates);
   }
   // ================================================================
   // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
@@ -52005,8 +52234,22 @@ class VoiceEngine {
             console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
           );
         } else {
-          // 自分がAnswererの場合もピア接続を先行生成してOffer/Candidate受信に備える
-          this._createPeerConnection(peerUid);
+          // 自分がAnswererの場合もピア接続を先行生成し、Offer未達時の自律回復タイマーを設定
+          const peerInfo = this._createPeerConnection(peerUid);
+          if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = setTimeout(async () => {
+            if (!this.isActive || this.mode !== 'p2p') return;
+            if (peerInfo.pc.signalingState === 'stable' && peerInfo.pc.iceConnectionState === 'new') {
+              console.warn(`[VoiceEngine] ⏱ Offer待機タイムアウト (${peerUid.slice(0,8)}) → 自発的Offer送信で接続推進`);
+              try {
+                const offer = await peerInfo.pc.createOffer();
+                await peerInfo.pc.setLocalDescription(offer);
+                await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp, fallback: true });
+              } catch (e) {
+                console.warn(`[VoiceEngine] 自発的Offer送信エラー:`, e);
+              }
+            }
+          }, 4500);
         }
       }
     }
@@ -52062,6 +52305,21 @@ class VoiceEngine {
     await pc.setLocalDescription(offer);
     await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp });
     console.log(`[VoiceEngine] 📤 Offer → ${peerUid.slice(0,8)} (ICE: UDP80/443 + TCP443)`);
+    // 相手からのAnswer待機タイムアウト (3.5秒)：相手の受信漏れ・起動遅延時に自動再送
+    if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
+    peerInfo.signalingTimer = setTimeout(async () => {
+      if (!this.isActive || this.mode !== 'p2p') return;
+      if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.signalingState === 'have-local-offer') {
+        console.warn(`[VoiceEngine] ⏱ Answer待機タイムアウト (${peerUid.slice(0,8)}) → Offer自動再送`);
+        try {
+          const reOffer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(reOffer);
+          await this._sendSignal(peerUid, { type: 'offer', sdp: reOffer.sdp, retry: true });
+        } catch (e) {
+          console.warn(`[VoiceEngine] Offer自動再送エラー:`, e);
+        }
+      }
+    }, 3500);
   }
   // ================================================================
   // RTCPeerConnection 生成（共通）
@@ -52070,6 +52328,7 @@ class VoiceEngine {
     // 既存があれば閉じる
     const existing = this._peers.get(peerUid);
     if (existing) {
+      if (existing.signalingTimer) clearTimeout(existing.signalingTimer);
       try { existing.pc.close(); } catch(_){}
     }
     const pc = new RTCPeerConnection({
@@ -52078,7 +52337,7 @@ class VoiceEngine {
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, pendingCandidates: [] };
+    const peerInfo = { pc, iceRestarts: 0, iceTimer: null, signalingTimer: null, pendingCandidates: [] };
     this._peers.set(peerUid, peerInfo);
     // ローカルトラックを追加
     if (this._localStream) {
@@ -52099,13 +52358,26 @@ class VoiceEngine {
         if (!audioEl) {
           audioEl = new Audio();
           audioEl.autoplay = true;
+          audioEl.playsInline = true;
           // DOM に追加して GC を確実に防止
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
           this._audioElements.set(peerUid, audioEl);
         }
         audioEl.srcObject = e.streams[0];
-        audioEl.play().catch(() => {});
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn(`[VoiceEngine] 🔈 自動再生制限検知 (${peerUid.slice(0,8)}): タップで再生開始`, err);
+            const resumeAudio = () => {
+              audioEl.play().catch(() => {});
+              document.removeEventListener('click', resumeAudio);
+              document.removeEventListener('touchstart', resumeAudio);
+            };
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+          });
+        }
         this._attachP2PStreamAnalyser(peerUid, e.streams[0], false);
         console.log(`[VoiceEngine] 🔈 音声受信: ${peerUid.slice(0,8)}`);
       }
@@ -52150,17 +52422,30 @@ class VoiceEngine {
       }
       if (state === 'connected' || state === 'completed') {
         peerInfo.iceRestarts = 0;
-        // どのパス（relay/直接）を使っているかをログ出力
+        if (peerInfo.signalingTimer) {
+          clearTimeout(peerInfo.signalingTimer);
+          peerInfo.signalingTimer = null;
+        }
+        // どのパス（relay/直接）を使っているかをログ出力し、UIステータスにも即座に明示
         pc.getStats().then(stats => {
           stats.forEach(r => {
             if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
               const localId = r.localCandidateId;
               stats.forEach(lr => {
                 if (lr.id === localId) {
-                  const via = lr.candidateType === 'relay'
+                  const isRelay = lr.candidateType === 'relay';
+                  const via = isRelay
                     ? `TURN relay (${lr.relayProtocol || '?'} @ ${lr.ip || lr.address || 'openrelay.metered.ca'})`
                     : `直接 P2P (${lr.candidateType})`;
                   console.log(`[VoiceEngine] ✅ ${peerUid.slice(0,8)}: ${via}`);
+                  const rtcText = document.getElementById('discordCallRtcText');
+                  const rtcBadge = document.getElementById('discordCallRtcStatus');
+                  if (rtcText) {
+                    rtcText.textContent = isRelay
+                      ? 'P2P (TURNリレー中継) 接続完了'
+                      : 'P2P (直接接続) 接続完了';
+                  }
+                  if (rtcBadge) rtcBadge.classList.remove('reconnecting');
                 }
               });
             }
@@ -52231,6 +52516,7 @@ class VoiceEngine {
     const peerInfo = this._peers.get(peerUid);
     if (peerInfo) {
       if (peerInfo.iceTimer) clearTimeout(peerInfo.iceTimer);
+      if (peerInfo.signalingTimer) clearTimeout(peerInfo.signalingTimer);
       try {
         peerInfo.pc.onicecandidate = null;
         peerInfo.pc.ontrack = null;
@@ -52314,14 +52600,20 @@ class VoiceEngine {
             await this._handleOffer(fromUid, data);
           } else if (data.type === 'answer') {
             const peerInfo = this._peers.get(fromUid);
-            if (peerInfo && peerInfo.pc.signalingState !== 'stable') {
-              await peerInfo.pc.setRemoteDescription(
-                new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
-              );
-              console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
-              while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
-                const cand = peerInfo.pendingCandidates.shift();
-                try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+            if (peerInfo) {
+              if (peerInfo.signalingTimer) {
+                clearTimeout(peerInfo.signalingTimer);
+                peerInfo.signalingTimer = null;
+              }
+              if (peerInfo.pc.signalingState !== 'stable') {
+                await peerInfo.pc.setRemoteDescription(
+                  new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
+                );
+                console.log(`[VoiceEngine] 📥 Answer受信 from ${fromUid.slice(0,8)}`);
+                while (peerInfo.pendingCandidates && peerInfo.pendingCandidates.length > 0) {
+                  const cand = peerInfo.pendingCandidates.shift();
+                  try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
+                }
               }
             }
           } else if (data.type === 'candidate') {
@@ -52390,17 +52682,24 @@ class VoiceEngine {
   // ================================================================
   async _cleanupStaleSignaling() {
     try {
-      // 自分宛の古いシグナリングを削除
+      // 自分宛の古いシグナリングを安全に掃除（60秒以上前の古い残骸のみ削除、最新のOfferは絶対保持）
       const snap = await getDocs(
         query(
           collection(db, `artifacts/${appId}/vc_signaling`),
           where('toUid', '==', this._myUid)
         )
       );
-      const deletes = snap.docs.map(d => deleteDoc(d.ref));
+      const now = Date.now();
+      const deletes = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (!data.at || (now - data.at > 60000)) {
+          deletes.push(deleteDoc(d.ref));
+        }
+      });
       await Promise.allSettled(deletes);
-      if (snap.docs.length > 0) {
-        console.log(`[VoiceEngine] 🧹 古いシグナリング ${snap.docs.length}件 を削除`);
+      if (deletes.length > 0) {
+        console.log(`[VoiceEngine] 🧹 古いシグナリング残骸 ${deletes.length}件 を削除`);
       }
     } catch(e) {
       // 無視（クリーンアップ失敗は致命的ではない）
@@ -52987,9 +53286,26 @@ window.setVoiceCallMode = async function(mode) {
     if (typeof alertMessage === 'function') alertMessage('ボイスチャンネルまたは通話に参加していません', 'warning');
     return;
   }
+  const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+  if (!isGlobalAdmin) {
+    if (typeof alertMessage === 'function') alertMessage('通話方式の強制変更は全体管理者のみ実行できます', 'error');
+    return;
+  }
   try {
     await window._voiceEngine.setChannelModeOverride(mode);
-    if (typeof alertMessage === 'function') alertMessage(`通話モードを「${mode}」に切り替えました`, 'success');
+    const modeNames = {
+      auto: '自動判定 (通常)',
+      p2p: 'P2P 直接優先 (host/srflx)',
+      turn: 'TURN リレー強制 (openrelay)',
+      agora: 'Agora SFU 強制 (サーバー中継)'
+    };
+    const label = modeNames[mode] || mode;
+    if (typeof alertMessage === 'function') alertMessage(`通話方式を「${label}」に切り替えました。参加者全員へ同期します`, 'success');
+    // メニュー内のボタン表示も即座に更新
+    document.querySelectorAll('.call-mode-btn').forEach(btn => {
+      const isSel = btn.dataset.mode === mode;
+      btn.className = `call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${isSel ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}`;
+    });
   } catch(e) {
     if (typeof alertMessage === 'function') alertMessage('モード切替失敗: ' + e.message, 'error');
   }
@@ -53148,7 +53464,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.169",
+  "version": "1.1.171",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -53205,7 +53521,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.169",
+  "version": "1.1.171",
   "force": false
 }
 </file>

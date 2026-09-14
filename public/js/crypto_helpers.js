@@ -840,47 +840,67 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
       const cached = _e2ee.dmKeyCache[dmId];
       if (!cached) return;
+      _e2ee._lastBackfillTime = _e2ee._lastBackfillTime || new Map();
+      const throttleKey = `${dmId}_${targetUid}`;
+      const lastTime = _e2ee._lastBackfillTime.get(throttleKey) || 0;
+      if (!forceUpdate && Date.now() - lastTime < 5000) return;
+      _e2ee._lastBackfillTime.set(throttleKey, Date.now());
       try {
         const targetPub = await __getUserPublicKey(targetUid, forceUpdate);
         if (!targetPub) return;
         const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`)).catch(() => null);
         const existingData = (targetWrapSnap && targetWrapSnap.exists()) ? targetWrapSnap.data() || {} : {};
-        const existingVersions = existingData.versions ? { ...existingData.versions } : {};
-        if (existingData.wrappedKey && !existingVersions["1"]) {
-          existingVersions["1"] = existingData.wrappedKey;
+        // 既存の versions から肥大化の原因となるエイリアスキー(_from_)を完全除外
+        const cleanExistingVersions = {};
+        if (existingData.versions && typeof existingData.versions === 'object') {
+          for (const k of Object.keys(existingData.versions)) {
+            if (!k.includes('_from_') && typeof existingData.versions[k] === 'string') {
+              cleanExistingVersions[k] = existingData.versions[k];
+            }
+          }
         }
-
-        const myUid = _getUserId();
-        const versionsMap = { ...existingVersions };
+        if (existingData.wrappedKey && !cleanExistingVersions["1"]) {
+          cleanExistingVersions["1"] = existingData.wrappedKey;
+        }
+        const versionsMap = { ...cleanExistingVersions };
         let hasNewKeys = false;
-
-        for (const ver of Object.keys(cached)) {
-          if (ver === 'latest' || ver === 'latestVersion' || ver === '_dmId') continue;
+        // cached 内の正規バージョンのみを暗号化（エイリアスキーの生成を完全撤廃）
+        const validCachedVersions = Object.keys(cached).filter(ver => {
+          if (ver === 'latest' || ver === 'latestVersion' || ver === '_dmId') return false;
+          return !ver.includes('_from_');
+        });
+        for (const ver of validCachedVersions) {
           try {
             const rawKey = await window.crypto.subtle.exportKey("raw", cached[ver]);
             const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, targetPub, rawKey);
             const b64 = _abToB64(wrapped);
-            if (!existingVersions[ver] || forceUpdate) {
+            if (!cleanExistingVersions[ver] || forceUpdate) {
               versionsMap[ver] = b64;
-              hasNewKeys = true;
-            }
-            const aliasKey = `${ver}_from_${myUid.slice(0, 8)}`;
-            if (!existingVersions[aliasKey]) {
-              versionsMap[aliasKey] = b64;
               hasNewKeys = true;
             }
           } catch (_) {}
         }
-
-        if (hasNewKeys && Object.keys(versionsMap).length > 0) {
-          const latestVer = cached.latestVersion || existingData.latestVersion || "1";
-          const wrappedLatest = versionsMap[latestVer] || Object.values(versionsMap)[0];
+        // 最新の正規バージョンのみ最大5個に厳格剪定（ドキュメントサイズが数KBを超えないようにする）
+        const sortedVers = Object.keys(versionsMap).sort((a, b) => {
+          const numA = Number(a), numB = Number(b);
+          if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
+          return b.localeCompare(a);
+        });
+        const prunedVersions = {};
+        sortedVers.slice(0, 5).forEach(v => {
+          prunedVersions[v] = versionsMap[v];
+        });
+        const hadJunkKeys = existingData.versions && Object.keys(existingData.versions).length > sortedVers.length;
+        if ((hasNewKeys || hadJunkKeys) && Object.keys(prunedVersions).length > 0) {
+          const latestVer = cached.latestVersion || existingData.latestVersion || sortedVers[0] || "1";
+          const wrappedLatest = prunedVersions[latestVer] || Object.values(prunedVersions)[0];
+          // 1MB超過した既存ドキュメントを完全修復・軽量化するため、余計なフィールドを排して上書き保存
           await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`), {
-            versions: versionsMap,
+            versions: prunedVersions,
             latestVersion: latestVer,
             wrappedKey: wrappedLatest,
             updatedAt: serverTimestamp()
-          }, { merge: true });
+          }, { merge: false });
           console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${dmId})`);
         }
       } catch (err) {
@@ -933,11 +953,18 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           const data = myWrapSnap.data() || {};
           const versionsMap = {};
           if (data.versions && typeof data.versions === 'object') {
-            Object.assign(versionsMap, data.versions);
+            for (const k of Object.keys(data.versions)) {
+              if (!k.includes('_from_')) {
+                versionsMap[k] = data.versions[k];
+              }
+            }
           }
           for (const key of Object.keys(data)) {
             if (key.startsWith('versions.')) {
-              versionsMap[key.slice(9)] = data[key];
+              const subKey = key.slice(9);
+              if (!subKey.includes('_from_')) {
+                versionsMap[subKey] = data[key];
+              }
             }
           }
           if (Object.keys(versionsMap).length === 0 && data.wrappedKey) {
