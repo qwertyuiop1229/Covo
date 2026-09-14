@@ -1824,8 +1824,153 @@
       user-select: auto !important;
     }
 
+    .dm-sidebar-item.has-unread {
+      color: #060607 !important;
+      font-weight: 700 !important;
+    }
+    .dark-server-theme .dm-sidebar-item.has-unread,
+    .dark .dm-sidebar-item.has-unread,
+    .discord-dark-theme .dm-sidebar-item.has-unread {
+      color: #ffffff !important;
+      font-weight: 700 !important;
+    }
+    .dm-unread-pill {
+      position: absolute;
+      left: -8px;
+      width: 4px;
+      height: 8px;
+      background: #060607;
+      border-radius: 0 4px 4px 0;
+      transition: height 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    .dark-server-theme .dm-unread-pill,
+    .dark .dm-unread-pill,
+    .discord-dark-theme .dm-unread-pill {
+      background: #ffffff;
+    }
+    .dm-sidebar-item:hover .dm-unread-pill {
+      height: 20px;
+    }
+    .dm-unread-badge {
+      font-size: 10px;
+      font-weight: 800;
+      color: #ffffff;
+      background-color: #da373c;
+      padding: 1px 5px;
+      border-radius: 9999px;
+      min-width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      margin-left: auto;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
     /* =========================================================================
-       Discord本家準拠 DM会話リスト 未読ピル & 未読赤丸バッジ
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+
+
+    /* =========================================================================
+       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ
+    .dm-sidebar-item {
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      margin: 1px 8px !important;
+      padding: 0 8px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      max-height: 44px !important;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      transition: background-color 0.1s ease, color 0.1s ease !important;
+      position: relative !important;
+      user-select: none !important;
+      box-sizing: border-box !important;
+    }
+    /* ライトモード */
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item {
+      color: #5c5e66;
+      background: transparent;
+    }
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      color: #313338;
+    }
+    body:not(.dark-mode):not(.dark-server-theme) .dm-sidebar-item.active {
+      background: rgba(0, 0, 0, 0.1) !important;
+      color: #060607 !important;
+    }
+    /* ダークモード */
+    body.dark-server-theme .dm-sidebar-item,
+    body.discord-dark-theme .dm-sidebar-item {
+      color: #949ba4;
+      background: transparent;
+    }
+    body.dark-server-theme .dm-sidebar-item:hover,
+    body.discord-dark-theme .dm-sidebar-item:hover {
+      background: rgba(78, 80, 88, 0.2) !important;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .dm-sidebar-item.active,
+    body.discord-dark-theme .dm-sidebar-item.active {
+      background: rgba(78, 80, 88, 0.38) !important;
+      color: #ffffff !important;
+    }
+    /* 未読時 */
+    .dm-sidebar-item.has-unread {
+      font-weight: 700 !important;
+    }
+    /* 未読バッジ (Discord Red #da373c) */
+    .dm-unread-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 18px !important;
+      height: 18px !important;
+      padding: 0 5px !important;
+      border-radius: 9999px !important;
+      background-color: #da373c !important;
+      color: #ffffff !important;
+      font-size: 11px !important;
+      font-weight: 800 !important;
+      line-height: 1 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+      transition: opacity 0.15s ease !important;
+    }
+    /* 閉じるボタン（×）: 通常時は非表示、ホバー時のみ表示 */
+    .dm-sidebar-item .dm-close-btn {
+      width: 18px !important;
+      height: 18px !important;
+      border-radius: 4px !important;
+      display: none !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: #94a3b8 !important;
+      background: transparent !important;
+      border: none !important;
+      cursor: pointer !important;
+      transition: color 0.15s, background-color 0.15s !important;
+      padding: 0 !important;
+      margin-left: 2px !important;
+      font-size: 11px !important;
+    }
+    /* ホバー時: 未読バッジを隠して×ボタンに切り替え (Discord本家のスワップ) */
+    .dm-sidebar-item:hover .dm-close-btn {
+      display: inline-flex !important;
+    }
+    .dm-sidebar-item:hover .dm-unread-badge-wrap {
+      display: none !important;
+    }
+    .dm-sidebar-item .dm-close-btn:hover {
+      color: #ef4444 !important;
+      background-color: rgba(239, 68, 68, 0.15) !important;
+    }
+
+    /* =========================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
     .dm-sidebar-item.has-unread {
       color: #060607 !important;
       font-weight: 700 !important;

@@ -8026,40 +8026,34 @@ function renderDmConversationsList() {
       }).catch(() => {});
     }
     return `
-      <div class="dm-sidebar-item ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
-        ${isUnread ? '<div class="dm-unread-pill"></div>' : ''}
+      <div class="dm-sidebar-item group ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
         <div class="relative w-8 h-8 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
             ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
           </div>
           <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
         </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-xs truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300'}">${escapeHtml(nickname)}</div>
-          <div class="text-[11px] truncate ${isUnread ? 'text-gray-600 dark:text-gray-300 font-semibold' : 'text-gray-400'}" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
+        <div class="flex-1 min-w-0 flex flex-col justify-center">
+          <div class="text-[13px] leading-snug truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-[#949ba4]'}">${escapeHtml(nickname)}</div>
+          <div class="text-[11px] leading-normal truncate ${isUnread ? 'text-gray-800 dark:text-[#dbdee1] font-semibold' : 'text-gray-400 dark:text-[#80848e]'}" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
         </div>
-        ${isUnread ? '<span class="dm-unread-badge ml-auto flex-shrink-0">!</span>' : ''}
-        <button class="dm-close-btn p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs ml-1" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
+        ${isUnread ? `
+          <div class="dm-unread-badge-wrap flex-shrink-0 flex items-center ml-auto">
+            <span class="dm-unread-badge">1</span>
+          </div>
+        ` : ''}
+        <button class="dm-close-btn flex-shrink-0 ml-1" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
           <i class="fas fa-times"></i>
         </button>
       </div>
     `;
   }).join('');
-  // ホームボタンの未読マーク連動
+  // ホームボタンの未読マーク連動（赤丸ドットは削除し、サーバーと同様に左側の白ピル has-unread のみ連動）
   const homeBtn = document.getElementById("discordHomeBtn");
   if (homeBtn) {
     homeBtn.classList.toggle('has-unread', hasAnyDmUnread);
-    let badge = homeBtn.querySelector('.discord-home-unread-dot');
-    if (hasAnyDmUnread) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'discord-home-unread-dot absolute -top-1 -right-1 w-3 h-3 bg-[#da373c] border-2 border-white dark:border-[#1e1f22] rounded-full pointer-events-none';
-        homeBtn.appendChild(badge);
-      }
-      badge.style.display = 'block';
-    } else if (badge) {
-      badge.style.display = 'none';
-    }
+    const oldBadge = homeBtn.querySelector('.discord-home-unread-dot');
+    if (oldBadge) oldBadge.remove();
   }
 }
 

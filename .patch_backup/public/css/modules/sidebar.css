@@ -585,8 +585,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode.discord-dm-chat #roomList,
     body.discord-ui-mode.discord-dm-chat #discordDmHomeView,
     body.discord-ui-mode.discord-dm-chat #discordDiscoverView,
-    body.discord-ui-mode.discord-dm-chat #discordHomeMembers,
-    body.discord-ui-mode.discord-dm-chat #membersSidebar {
+    body.discord-ui-mode.discord-dm-chat #discordHomeMembers {
       display: none !important;
     }
 
