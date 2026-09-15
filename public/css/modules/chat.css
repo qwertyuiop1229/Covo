@@ -2009,22 +2009,28 @@
         display: inline-flex !important;
       }
     }
-    /* ================================================================
-       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel)
+        /* ================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像2準拠)
     #dmProfilePanel {
       display: flex;
       flex-direction: column;
       width: 100%;
       height: 100%;
-      background: inherit;
+      background: #f2f3f5;
+    }
+    body.dark-server-theme #dmProfilePanel {
+      background: #111827 !important;
+    }
+    body.discord-dark-theme #dmProfilePanel {
+      background: #232428 !important;
     }
     #dmProfilePanel.hidden {
       display: none !important;
     }
     .dm-profile-banner {
-      height: 105px;
+      height: 120px;
       width: 100%;
-      background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
       position: relative;
       flex-shrink: 0;
     }
@@ -2032,23 +2038,42 @@
       background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: linear-gradient(135deg, #5865f2 0%, #3b449b 100%);
+      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    }
+    .dm-banner-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.4);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      border: none;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      transition: all 0.15s ease;
+    }
+    .dm-banner-btn:hover {
+      background: rgba(0, 0, 0, 0.65);
+      transform: scale(1.05);
     }
     .dm-profile-avatar-wrap {
       padding: 0 16px;
       margin-top: -46px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       position: relative;
       display: flex;
       align-items: flex-end;
-      justify-content: space-between;
       flex-shrink: 0;
     }
     .dm-profile-avatar {
       width: 80px;
       height: 80px;
       border-radius: 50%;
-      border: 5px solid #ffffff;
+      border: 5px solid #f2f3f5;
       background: #2b2d31;
       color: #ffffff;
       display: flex;
@@ -2070,7 +2095,7 @@
       background: #0f172a;
     }
     body.discord-dark-theme .dm-profile-avatar {
-      border-color: #2b2d31;
+      border-color: #232428;
       background: #111214;
     }
     /* アバター右下にぴったり重なるステータスインジケーター */
@@ -2081,75 +2106,159 @@
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      border: 3.5px solid #ffffff;
+      border: 3.5px solid #f2f3f5;
       z-index: 20;
     }
     body.dark-server-theme .dm-profile-avatar-wrap .status-indicator {
       border-color: #111827;
     }
     body.discord-dark-theme .dm-profile-avatar-wrap .status-indicator {
-      border-color: #2b2d31;
+      border-color: #232428;
     }
-    /* アクションボタンバー (MD3 Tonal Button) */
-    .dm-action-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      border: none;
-      cursor: pointer;
-      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-      background-color: #ebedef;
-      color: #4e5058;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-      -webkit-tap-highlight-color: transparent;
-    }
-    .dm-action-btn:hover {
-      background-color: #d7d9dc;
-      color: #060607;
-      transform: translateY(-1px);
-    }
-    .dm-action-btn:active {
-      transform: scale(0.92);
-    }
-    body.dark-server-theme .dm-action-btn {
-      background-color: #1e293b;
-      color: #94a3b8;
-    }
-    body.dark-server-theme .dm-action-btn:hover {
-      background-color: #243040;
-      color: #f8fafc;
-    }
-    body.discord-dark-theme .dm-action-btn {
-      background-color: #2b2d31;
-      color: #b5bac1;
-    }
-    body.discord-dark-theme .dm-action-btn:hover {
-      background-color: #35373c;
-      color: #f2f3f5;
-    }
-    /* メイン情報カード (Material 3 Card) */
+    /* メイン情報カード (画像2の4列目完全準拠) */
     .dm-profile-card {
       margin: 0 12px 14px 12px;
       background: #ffffff;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #e3e5e8;
       border-radius: 16px;
       padding: 14px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
     body.dark-server-theme .dm-profile-card {
-      background: #162032;
+      background: #1e293b;
       border-color: rgba(255, 255, 255, 0.06);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     }
     body.discord-dark-theme .dm-profile-card {
-      background: #2b2d31;
+      background: #111214;
       border-color: #1f2023;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .dm-profile-divider {
+      height: 1px;
+      background: #e3e5e8;
+      width: 100%;
+      margin: 10px 0;
+    }
+    body.dark-server-theme .dm-profile-divider {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    body.discord-dark-theme .dm-profile-divider {
+      background: #232428;
+    }
+    .dm-view-full-profile-btn {
+      background: #ebedef;
+      color: #313338;
+      border: 1px solid #d7d9dc;
+      cursor: pointer;
+    }
+    .dm-view-full-profile-btn:hover {
+      background: #d7d9dc;
+      color: #060607;
+    }
+    body.dark-server-theme .dm-view-full-profile-btn {
+      background: #1e293b;
+      color: #f8fafc;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+    body.dark-server-theme .dm-view-full-profile-btn:hover {
+      background: #243040;
+    }
+    body.discord-dark-theme .dm-view-full-profile-btn {
+      background: #2b2d31;
+      color: #f2f3f5;
+      border-color: #383a40;
+    }
+    body.discord-dark-theme .dm-view-full-profile-btn:hover {
+      background: #35373c;
+    }
+    /* DM履歴の先頭ヒーローバナー (画像2中央上部完全準拠) */
+    .dm-welcome-banner {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 2.5rem 1.5rem 1.5rem 1.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      margin-bottom: 1.5rem;
+      background: transparent;
+    }
+    .dm-hero-avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      flex-shrink: 0;
+    }
+    .dm-hero-action-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #ebedef;
+      color: #313338;
+      border: 1px solid #d7d9dc;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .dm-hero-action-btn:hover {
+      background: #d7d9dc;
+      color: #060607;
+    }
+    body.dark-server-theme .dm-hero-action-btn {
+      background: #1e293b;
+      color: #f8fafc;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    body.dark-server-theme .dm-hero-action-btn:hover {
+      background: #243040;
+    }
+    body.discord-dark-theme .dm-hero-action-btn {
+      background: #2b2d31;
+      color: #f2f3f5;
+      border-color: #383a40;
+    }
+    body.discord-dark-theme .dm-hero-action-btn:hover {
+      background: #35373c;
+    }
+    /* 現在アクティブ (Active Now) パネル (画像1完全準拠) */
+    #dmActiveNowPanel {
+      background: #f2f3f5;
+    }
+    body.dark-server-theme #dmActiveNowPanel {
+      background: #111827 !important;
+    }
+    body.discord-dark-theme #dmActiveNowPanel {
+      background: #232428 !important;
+    }
+    .active-now-card {
+      background: #ffffff;
+      border: 1px solid #e3e5e8;
+      border-radius: 12px;
+      padding: 12px;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .active-now-card:hover {
+      background: #f2f3f5;
+      border-color: #cbd5e1;
+    }
+    body.dark-server-theme .active-now-card {
+      background: #1e293b;
+      border-color: rgba(255, 255, 255, 0.07);
+    }
+    body.dark-server-theme .active-now-card:hover {
+      background: #243040;
+    }
+    body.discord-dark-theme .active-now-card {
+      background: #1e1f22;
+      border-color: #1f2023;
+    }
+    body.discord-dark-theme .active-now-card:hover {
+      background: #2b2d31;
     }
 
 

@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.175" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.176" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.175" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.176" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
@@ -2888,7 +2888,7 @@
               </div>
             </div>
 
-            <!-- 右側: アクション＆ツール (検索、通話、ファイル共有、メンバー一覧) -->
+            <!-- 右側: アクション＆ツール (検索、通話、ファイル共有、メンバー一覧/プロフィール) -->
             <div class="flex items-center gap-1.5 flex-shrink-0 pl-2">
               <button id="toggleSearchButton" class="topbar-btn" title="検索"><i class="fas fa-search"></i></button>
               <button class="topbar-btn" id="callButton" title="音声通話" onclick="openCallPicker()" disabled>
@@ -2897,9 +2897,9 @@
               <button class="topbar-btn" id="fileShareButton" title="P2Pでファイルを送る" onclick="openFileSharePicker()" disabled>
                 <i class="fas fa-share-from-square"></i>
               </button>
-              <!-- PC用メンバー一覧開閉ボタン（人型マーク: 一番右） -->
-              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバー一覧の表示切替">
-                <i class="fas fa-user-group"></i>
+              <!-- PC用メンバー一覧/プロフィール開閉ボタン（人型/カードマーク: 一番右） -->
+              <button id="toggleMembersSidebarBtn" class="topbar-btn hidden md:flex" title="メンバー一覧・プロフィールの表示切替">
+                <i class="fas fa-user-group" id="toggleMembersSidebarIcon"></i>
               </button>
             </div>
           </div>
@@ -3017,7 +3017,7 @@
           </div>
         </div>
 
-        <!-- メンバーリストサイドバー / DM相手のユーザープロフィールパネル (スマホでは下からスライドインするボトムシート) -->
+        <!-- メンバーリストサイドバー / DM相手のユーザープロフィールパネル / 現在アクティブパネル (スマホでは下からスライドインするボトムシート) -->
         <div id="resizerRight"></div>
         <div id="bottomSheetOverlay" onclick="closeBottomSheet()"></div>
         <div id="membersSidebar" class="hidden md:flex scrollable covo-bottom-sheet select-none">
@@ -3031,6 +3031,10 @@
           <!-- 2. DM (個チャ) 画面用: 相手のユーザープロフィールパネル (Discord本家完全準拠) -->
           <div id="dmProfilePanel" class="w-full flex-1 flex-col overflow-y-auto hidden">
             <!-- JSで動的に相手のプロフィールカードをレンダリング -->
+          </div>
+          <!-- 3. フレンド一覧画面用: 現在アクティブ (Active Now) パネル (Discord本家完全準拠) -->
+          <div id="dmActiveNowPanel" class="w-full flex-1 flex-col overflow-y-auto hidden select-none">
+            <!-- JSで動的にアクティブなフレンドをレンダリング -->
           </div>
         </div>
         </div>
@@ -3432,7 +3436,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.175"></script>
+  <script type="module" src="js/main.js?v=1.1.176"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
