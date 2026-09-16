@@ -1849,7 +1849,7 @@
       background: #ffffff;
     }
     /* =========================================================================
-       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ
+       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ */
     .dm-sidebar-item {
       display: flex !important;
       align-items: center !important;
@@ -2009,14 +2009,17 @@
         display: inline-flex !important;
       }
     }
-        /* ================================================================
-       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像2準拠)
+    /* ================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像1/3準拠)
     #dmProfilePanel {
       display: flex;
       flex-direction: column;
       width: 100%;
       height: 100%;
       background: #f2f3f5;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
     }
     body.dark-server-theme #dmProfilePanel {
       background: #111827 !important;
@@ -2028,17 +2031,17 @@
       display: none !important;
     }
     .dm-profile-banner {
-      height: 120px;
+      height: 110px;
       width: 100%;
-      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+      background: #cbd5e1;
       position: relative;
       flex-shrink: 0;
     }
     body.dark-server-theme .dm-profile-banner {
-      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      background: #1e293b !important;
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+      background: #35373c !important;
     }
     .dm-banner-btn {
       width: 32px;
@@ -2062,7 +2065,7 @@
     }
     .dm-profile-avatar-wrap {
       padding: 0 16px;
-      margin-top: -46px;
+      margin-top: -42px;
       margin-bottom: 8px;
       position: relative;
       display: flex;
@@ -2070,10 +2073,12 @@
       flex-shrink: 0;
     }
     .dm-profile-avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: 5px solid #f2f3f5;
+      width: 80px !important;
+      height: 80px !important;
+      max-width: 80px !important;
+      max-height: 80px !important;
+      border-radius: 50% !important;
+      border: 6px solid #f2f3f5;
       background: #2b2d31;
       color: #ffffff;
       display: flex;
@@ -2081,14 +2086,24 @@
       justify-content: center;
       font-size: 2rem;
       font-weight: 800;
-      overflow: hidden;
+      overflow: hidden !important;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
       cursor: pointer;
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
       position: relative;
+      flex-shrink: 0;
     }
     .dm-profile-avatar:hover {
       transform: scale(1.04);
+    }
+    .dm-profile-avatar img {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      object-fit: cover !important;
+      border-radius: 50% !important;
+      display: block !important;
     }
     body.dark-server-theme .dm-profile-avatar {
       border-color: #111827;
@@ -2103,8 +2118,8 @@
       position: absolute;
       bottom: 2px;
       right: 2px;
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 3.5px solid #f2f3f5;
       z-index: 20;
@@ -2115,7 +2130,7 @@
     body.discord-dark-theme .dm-profile-avatar-wrap .status-indicator {
       border-color: #232428;
     }
-    /* メイン情報カード (画像2の4列目完全準拠) */
+    /* メイン情報カード (Discord完全準拠) */
     .dm-profile-card {
       margin: 0 12px 14px 12px;
       background: #ffffff;
@@ -2224,9 +2239,13 @@
     body.discord-dark-theme .dm-hero-action-btn:hover {
       background: #35373c;
     }
-    /* 現在アクティブ (Active Now) パネル (画像1完全準拠) */
+    /* 現在アクティブ (Active Now) パネル (Discord本家完全準拠) */
     #dmActiveNowPanel {
       background: #f2f3f5;
+      overflow-y: auto;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
     }
     body.dark-server-theme #dmActiveNowPanel {
       background: #111827 !important;
@@ -2234,31 +2253,49 @@
     body.discord-dark-theme #dmActiveNowPanel {
       background: #232428 !important;
     }
-    .active-now-card {
+    .active-now-container {
       background: #ffffff;
       border: 1px solid #e3e5e8;
-      border-radius: 12px;
-      padding: 12px;
-      transition: all 0.15s ease;
-      cursor: pointer;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
-    .active-now-card:hover {
-      background: #f2f3f5;
-      border-color: #cbd5e1;
-    }
-    body.dark-server-theme .active-now-card {
+    body.dark-server-theme .active-now-container {
       background: #1e293b;
       border-color: rgba(255, 255, 255, 0.07);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     }
-    body.dark-server-theme .active-now-card:hover {
-      background: #243040;
-    }
-    body.discord-dark-theme .active-now-card {
-      background: #1e1f22;
-      border-color: #1f2023;
-    }
-    body.discord-dark-theme .active-now-card:hover {
+    body.discord-dark-theme .active-now-container {
       background: #2b2d31;
+      border-color: #1f2023;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .active-now-item {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .active-now-item:last-child {
+      border-bottom: none;
+    }
+    .active-now-item:hover {
+      background-color: rgba(0, 0, 0, 0.04);
+    }
+    body.dark-server-theme .active-now-item {
+      border-bottom-color: rgba(255, 255, 255, 0.05);
+    }
+    body.dark-server-theme .active-now-item:hover {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+    body.discord-dark-theme .active-now-item {
+      border-bottom-color: rgba(255, 255, 255, 0.04);
+    }
+    body.discord-dark-theme .active-now-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
     }
 
 

@@ -78,7 +78,7 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 
-// テレメトリ（リモートFirestore）送信専用のノイズフィルタ
+// テレメトリ送信用のノイズフィルタ（ブラウザ拡張機能や正常キャンセルのみ安全に除外）
 function isTransientTelemetryError(args) {
   try {
     const str = Array.from(args || []).map(a => {
@@ -89,88 +89,33 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-    // Firebase App Check / reCAPTCHA の一時的スロットリング・503 エラー
+
+    // 1. ブラウザ拡張機能・広告ブロッカーのインジェクションエラーのみ除外
     if (
-      str.includes('appcheck') ||
-      str.includes('app-check') ||
-      str.includes('initial-throttle') ||
-      str.includes('fetch-throttle') ||
-      str.includes('fetch-status-error') ||
-      str.includes('exchangerecaptchaprovider') ||
-      str.includes('exchangerecaptchaenterprisetoken') ||
-      str.includes('recaptcha')
-    ) {
-      return true;
-    }
-    // ブラウザ環境非対応（FCM/WebPush）
-    if (
-      str.includes('unsupported-browser') ||
-      str.includes("this browser doesn't support the api") ||
-      str.includes('messaging/unsupported-browser')
-    ) {
-      return true;
-    }
-    // ブラウザ拡張機能・広告ブロッカー・外部注入スクリプト・WebView2内部ノイズ
-    // Safari / iOS やブラウザ拡張機能のノイズ・クロスオリジンエラー
-    if (
-      str.includes('tracking prevention') ||
-      str.includes('blocked access to storage') ||
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
       str.includes('safari-extension://') ||
       str.includes('safari-web-extension://') ||
-      str.includes('a listener indicated an asynchronous response') ||
-      str.includes('could not establish connection') ||
-      str.includes('receiving end does not exist') ||
-      str.includes('disconnected port') ||
-      str.includes('extension context invalidated') ||
-      str.includes('webext-ad-filtering') ||
-      str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
       str.includes('content_script.js') ||
       str.includes('globals-front.js') ||
       str.includes('adblock-picreplacement.js') ||
-      str.includes('usecache') ||
-      str.includes('beforeinstallprompt') ||
-      str.includes('beforeinstallpromptevent') ||
-      str.includes('resizeobserver loop') ||
-      str.includes('violates the following content security policy directive') ||
-      str.includes('content security policy') ||
-      str.trim() === '::'
+      str.includes('extension context invalidated') ||
+      str.includes('tracking prevention')
     ) {
       return true;
     }
-    // Auth ポップアップの正常なユーザーキャンセル動作
+    // 2. ブラウザ標準の無害なリサイズループ警告
+    if (str.includes('resizeobserver loop')) {
+      return true;
+    }
+    // 3. 認証ポップアップの正常なユーザー自身によるキャンセル動作
     if (
-      str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request')
     ) {
       return true;
     }
-    // Firebase RTDB の内部パーミッション警告・旧キャッシュ端末からの残骸ログ
-    if (
-      str.includes('permission_denied') ||
-      str.includes('permission-denied') ||
-      str.includes('permission denied') ||
-      str.includes('@firebase/database') ||
-      str.includes('pruneexcessmessages')
-    ) {
-      return true;
-    }
-    // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
-    if (
-      str.includes('auth/network-request-failed') ||
-      str.includes('network-request-failed') ||
-      str.includes('load failed') ||
-      str.includes('failed to fetch') ||
-      str.includes('network error') ||
-      str.includes('networkerror') ||
-      str.includes('aborterror') ||
-      str.includes('the user aborted a request') ||
-      str.includes('kv delete failed')
-    ) {
-      return true;
-    }
+    // 重要な実行時エラー（failed to fetch, permission_denied, TypeError等）はすべて収集
     return false;
   } catch (_) {
     return false;
@@ -179,7 +124,6 @@ function isTransientTelemetryError(args) {
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 let _cachedTelemetryErrors = window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
-const _dismissedErrorSignatures = new Set();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
 function _createErrorSignature(type, message, stack) {
@@ -197,25 +141,35 @@ function _createErrorSignature(type, message, stack) {
 }
 function _reportTelemetryError(type, message, stack) {
   if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
-  if (isTransientTelemetryError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
+  if (isTransientTelemetryError([message, stack])) return;
   _isReportingTelemetry = true;
   try {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]') return;
     const signature = _createErrorSignature(type, msgStr, stack);
-    if (_dismissedErrorSignatures.has(signature)) return; // 削除済みエラーの再報告を抑止
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 2000) return; // 2秒間ローカル重複排除
+    if (now - lastReported < 1500) return; // 1.5秒間ローカル重複排除
     _reportedSignaturesRecently.set(signature, now);
+
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
     const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
+    const envInfo = {
+      userAgent: navigator.userAgent || 'unknown',
+      appVersion: _appVersion || 'web',
+      screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      isElectron: Boolean(window.electronAPI)
+    };
+
     // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
         window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
         window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        if (!window._cachedTelemetryErrors[existingIdx].affectedEmails.includes(email)) {
+          window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
+        }
       } else {
         window._cachedTelemetryErrors.unshift({
           id: signature,
@@ -227,11 +181,7 @@ function _reportTelemetryError(type, message, stack) {
           lastOccurredAt: new Date(),
           count: 1,
           affectedEmails: [email],
-          environment: {
-            userAgent: navigator.userAgent || 'unknown',
-            appVersion: _appVersion || 'web',
-            screenSize: `${window.innerWidth}x${window.innerHeight}`
-          }
+          environment: envInfo
         });
       }
       const badgeEl = document.getElementById("telemetryCountBadge");
@@ -243,56 +193,72 @@ function _reportTelemetryError(type, message, stack) {
         renderTelemetryErrorsList();
       }
     }
-    if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
-      if (_pendingTelemetryErrors.length < 100) {
-        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-      }
-      return;
-    }
-    const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
-    const envInfo = {
-      userAgent: navigator.userAgent || 'unknown',
-      appVersion: _appVersion || 'web',
-      screenSize: `${window.innerWidth}x${window.innerHeight}`,
-      isElectron: Boolean(window.electronAPI)
-    };
-    setDoc(errorDocRef, {
-      signature: signature,
-      type: type || 'error',
-      message: msgStr.substring(0, 3000),
-      stack: String(stack || '').substring(0, 6000),
-      firstOccurredAt: serverTimestamp(),
-      lastOccurredAt: serverTimestamp(),
-      createdBy: currentUid,
-      count: increment(1),
-      affectedEmails: arrayUnion(email),
-      environment: envInfo
-    }, { merge: true }).catch(err => {
-      // 送信失敗時はキューに退避して再送
-      if (_pendingTelemetryErrors.length < 100) {
-        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-      }
-    });
 
-    // RTDB にも即時反映（フェールセーフ・リアルタイム同期）
-    try {
-      if (typeof _getOrInitRTDB === 'function') {
-        _getOrInitRTDB().then(rtdb => {
-          if (rtdb) {
-            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
-              update(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), {
-                signature,
+    // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+    if (typeof _getOrInitRTDB === 'function') {
+      _getOrInitRTDB().then(rtdb => {
+        if (rtdb) {
+          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update, set, get }) => {
+            const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
+            get(errRef).then(snap => {
+              const prev = snap.val();
+              const prevCount = prev?.count || 0;
+              const prevEmails = Array.isArray(prev?.affectedEmails) ? prev.affectedEmails : [];
+              if (!prevEmails.includes(email)) prevEmails.push(email);
+              const payload = {
+                id: signature,
+                signature: signature,
                 type: type || 'error',
                 message: msgStr.substring(0, 3000),
                 stack: String(stack || '').substring(0, 6000),
+                firstOccurredAt: prev?.firstOccurredAt || Date.now(),
                 lastOccurredAt: Date.now(),
+                count: prevCount + 1,
+                affectedEmails: prevEmails,
+                environment: envInfo
+              };
+              set(errRef, payload).catch(() => {});
+            }).catch(() => {
+              set(errRef, {
+                id: signature,
+                signature: signature,
+                type: type || 'error',
+                message: msgStr.substring(0, 3000),
+                stack: String(stack || '').substring(0, 6000),
+                firstOccurredAt: Date.now(),
+                lastOccurredAt: Date.now(),
+                count: 1,
+                affectedEmails: [email],
                 environment: envInfo
               }).catch(() => {});
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
-    } catch (_) {}
+            });
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    // 2. Firestore へもバックアップ送信
+    if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
+      const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
+      setDoc(errorDocRef, {
+        signature: signature,
+        type: type || 'error',
+        message: msgStr.substring(0, 3000),
+        stack: String(stack || '').substring(0, 6000),
+        firstOccurredAt: serverTimestamp(),
+        lastOccurredAt: serverTimestamp(),
+        createdBy: currentUid,
+        count: increment(1),
+        affectedEmails: arrayUnion(email),
+        environment: envInfo
+      }, { merge: true }).catch(err => {
+        if (_pendingTelemetryErrors.length < 100) {
+          _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+        }
+      });
+    } else if (_pendingTelemetryErrors.length < 100) {
+      _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+    }
   } catch (e) {
   } finally {
     _isReportingTelemetry = false;
@@ -1239,6 +1205,7 @@ function initializeFirebase() {
             subscribeToFeatureFlags();
             subscribeToRelationships();
             subscribeToDmChannels();
+            _loadUserAffinityFromRTDB().catch(() => {});
             // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
             // 続けて管理者ならエスクロー鍵（合鍵）も用意する
             ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => { });
@@ -2932,66 +2899,130 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  // まず現在のローカルキャッシュを表示（画面のちらつき防止）
   renderTelemetryErrorsList();
+
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
-    const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
-    const mergeErrors = (remoteList) => {
-      const mergedMap = new Map();
-      // リモートエラーを追加
-      remoteList.forEach(item => {
-        if (!_dismissedErrorSignatures.has(item.id)) {
-          mergedMap.set(item.id, item);
+
+    const mergedMap = new Map();
+
+    // 1. 既存のローカルキャッシュを取り込む
+    (window._cachedTelemetryErrors || []).forEach(item => {
+      if (item && item.id) mergedMap.set(item.id, item);
+    });
+
+    // 2. ブラウザのコンソールログストリーム (window._covoLogs) から [ERR] 行を即時抽出
+    (window._covoLogs || []).forEach(line => {
+      if (line && line.startsWith('[ERR]')) {
+        const cleanMsg = line.slice(5).trim();
+        if (cleanMsg) {
+          const sig = _createErrorSignature('error', cleanMsg, '');
+          if (!mergedMap.has(sig)) {
+            mergedMap.set(sig, {
+              id: sig,
+              signature: sig,
+              type: 'error',
+              message: cleanMsg,
+              stack: '',
+              firstOccurredAt: new Date(),
+              lastOccurredAt: new Date(),
+              count: 1,
+              affectedEmails: [userAuthEmail || '自分']
+            });
+          }
         }
-      });
-      // 未同期のローカルエラーをマージ（消滅防止）
-      (window._cachedTelemetryErrors || []).forEach(localItem => {
-        if (!_dismissedErrorSignatures.has(localItem.id) && !mergedMap.has(localItem.id)) {
-          mergedMap.set(localItem.id, localItem);
-        }
-      });
-      const result = Array.from(mergedMap.values());
-      result.sort((a, b) => {
-        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-        return timeB - timeA;
-      });
-      window._cachedTelemetryErrors = result;
-      if (badgeEl) {
-        badgeEl.textContent = window._cachedTelemetryErrors.length;
-        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
-      renderTelemetryErrorsList();
-    };
-    // getDocs で同期
-    const snap = await getDocs(q);
-    const remoteErrors = [];
-    snap.forEach(d => {
-      remoteErrors.push({ id: d.id, ...d.data() });
     });
-    mergeErrors(remoteErrors);
-    // リアルタイムリスナーを継続
-    _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
-      const liveErrors = [];
-      liveSnap.forEach(d => {
-        liveErrors.push({ id: d.id, ...d.data() });
+
+    // 3. RTDB (artifacts/${appId}/error_reports) から全件高速取得
+    try {
+      const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const snap = await get(ref(rtdb, `artifacts/${appId}/error_reports`));
+      if (snap.exists()) {
+        const val = snap.val() || {};
+        Object.keys(val).forEach(k => {
+          const remoteItem = val[k];
+          if (remoteItem) {
+            mergedMap.set(k, { id: k, ...remoteItem });
+          }
+        });
+      }
+    } catch (rtdbErr) {
+      console.warn('[loadErrorTelemetry] RTDB read warning:', rtdbErr);
+    }
+
+    // 4. Firestore (artifacts/${appId}/error_reports) からも取得してマージ
+    try {
+      const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
+      fsSnap.forEach(d => {
+        const data = d.data();
+        mergedMap.set(d.id, { id: d.id, ...data });
       });
-      mergeErrors(liveErrors);
-    }, (err) => {
-      console.warn("[Telemetry onSnapshot notice]", err?.message || err);
-      renderTelemetryErrorsList();
+    } catch (fsErr) {
+      console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
+    }
+
+    // 時系列（最新順）にソート
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => {
+      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+      return timeB - timeA;
     });
+
+    window._cachedTelemetryErrors = result;
+    if (badgeEl) {
+      badgeEl.textContent = result.length;
+      badgeEl.classList.toggle('hidden', result.length === 0);
+    }
+    renderTelemetryErrorsList();
+
+    // 5. RTDB リアルタイムリスナーを開始（他ユーザーのエラー発生も即時画面に反映）
+    try {
+      const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
+      const onVal = (snapshot) => {
+        if (!snapshot.exists()) return;
+        const liveVal = snapshot.val() || {};
+        let updated = false;
+        Object.keys(liveVal).forEach(k => {
+          const item = liveVal[k];
+          if (item) {
+            const idx = window._cachedTelemetryErrors.findIndex(e => e.id === k);
+            if (idx >= 0) {
+              window._cachedTelemetryErrors[idx] = { id: k, ...item };
+            } else {
+              window._cachedTelemetryErrors.unshift({ id: k, ...item });
+            }
+            updated = true;
+          }
+        });
+        if (updated) {
+          window._cachedTelemetryErrors.sort((a, b) => {
+            const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+            const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+            return timeB - timeA;
+          });
+          if (badgeEl) {
+            badgeEl.textContent = window._cachedTelemetryErrors.length;
+            badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
+          }
+          renderTelemetryErrorsList();
+        }
+      };
+      onValue(errsRef, onVal);
+      _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
+    } catch (_) {}
   } catch (err) {
     console.warn("[Telemetry loadErrorTelemetry notice]", err?.message || err);
-    // エラー時もローカルキャッシュをそのまま維持して描画
     renderTelemetryErrorsList();
   }
 };
-
 function renderTelemetryErrorsList() {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
@@ -3141,29 +3172,33 @@ window.clearAllTelemetryErrors = async function () {
   if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
   try {
     const toDelete = [..._cachedTelemetryErrors];
-    toDelete.forEach(err => {
-      _dismissedErrorSignatures.add(err.id);
-      _reportedSignaturesRecently.delete(err.id);
-    });
+    // 1. RTDB から一括削除
+    try {
+      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
+    } catch (_) {}
 
-    // 1. Firestore 上の全エラードキュメントをバッチ削除
-    const batch = writeBatch(db);
-    toDelete.forEach(err => {
-      batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-    });
-    await batch.commit();
+    // 2. Firestore 上の全エラードキュメントをバッチ削除
+    try {
+      const batch = writeBatch(db);
+      toDelete.forEach(err => {
+        batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+      });
+      await batch.commit();
+    } catch (_) {}
 
-    // 2. ローカル状態とキューを完全初期化
+    // 3. ローカル状態とキューをクリア（再発時は新しく記録できるよう永久ブロックは行わない）
     _cachedTelemetryErrors = [];
     _pendingTelemetryErrors.length = 0;
     _reportedSignaturesRecently.clear();
 
-    // 3. インメモリログからエラー・警告行を除去
+    // 4. インメモリログからエラー・警告行を除去
     if (window._covoLogs) {
       window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
     }
 
-    // 4. バッジとリストUIを即座に更新
+    // 5. バッジとリストUIを即座に更新
     const badgeEl = document.getElementById("telemetryCountBadge");
     if (badgeEl) {
       badgeEl.textContent = '0';
@@ -3172,7 +3207,7 @@ window.clearAllTelemetryErrors = async function () {
     renderTelemetryErrorsList();
     alertMessage("全エラーログをクリアしました", "success");
   } catch (err) {
-    console.error("Failed to clear all telemetry errors from Firestore:", err);
+    console.error("Failed to clear all telemetry errors:", err);
     alertMessage("クリアに失敗しました: " + (err.message || err), "error");
   }
 };
@@ -6642,6 +6677,73 @@ function requestRenderMembersList() {
   }, 80);
 }
 
+// === ユーザー親密度 (Affinity) & 関わり深さスコア管理 ===
+window._userAffinityCache = window._userAffinityCache || {};
+let _affinitySaveTimer = null;
+let _pendingAffinityUpdates = {};
+
+async function _loadUserAffinityFromRTDB() {
+  if (!userId) return;
+  try {
+    const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const snap = await get(ref(rtdb, `userAffinity/${userId}`));
+    if (snap.exists()) {
+      const data = snap.val() || {};
+      window._userAffinityCache = { ...data, ...(window._userAffinityCache || {}) };
+    }
+  } catch (e) {
+    console.debug('[Affinity] RTDB load skipped:', e?.message || e);
+  }
+}
+
+function _recordUserInteraction(targetUid, points = 10) {
+  if (!userId || !targetUid || targetUid === userId) return;
+  window._userAffinityCache = window._userAffinityCache || {};
+  const current = window._userAffinityCache[targetUid] || 0;
+  const next = current + points;
+  window._userAffinityCache[targetUid] = next;
+  _pendingAffinityUpdates[targetUid] = next;
+
+  // デバウンスしてRTDBに保存（通信量極小化）
+  if (_affinitySaveTimer) clearTimeout(_affinitySaveTimer);
+  _affinitySaveTimer = setTimeout(async () => {
+    const updates = { ..._pendingAffinityUpdates };
+    _pendingAffinityUpdates = {};
+    try {
+      const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await update(ref(rtdb, `userAffinity/${userId}`), updates);
+    } catch (err) {
+      console.debug('[Affinity] RTDB save skipped:', err?.message || err);
+    }
+  }, 3000);
+}
+
+function calculateUserAffinity(targetUid) {
+  let score = window._userAffinityCache?.[targetUid] || 0;
+  if (Array.isArray(allServersCache)) {
+    const sharedCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
+    score += sharedCount * 10;
+  }
+  const rel = friendRelationships?.[targetUid];
+  if (rel?.status === 'friends') score += 30;
+  else if (rel?.status === 'pending_sent' || rel?.status === 'pending_received') score += 10;
+
+  const dmObj = Object.values(dmConversations || {}).find(dm => (dm.participants || []).includes(targetUid));
+  if (dmObj) {
+    score += 20;
+    const lastAt = typeof dmObj.lastMessageAt === 'number' ? dmObj.lastMessageAt : (dmObj.lastMessageAt?.toMillis?.() || (dmObj.lastMessageAt?.seconds ? dmObj.lastMessageAt.seconds * 1000 : 0));
+    if (lastAt > 0) {
+      const daysDiff = (Date.now() - lastAt) / (1000 * 60 * 60 * 24);
+      if (daysDiff < 1) score += 25;
+      else if (daysDiff < 7) score += 15;
+      else if (daysDiff < 30) score += 5;
+    }
+  }
+  return score;
+}
+
 function subscribeToUserStatus() {
   // 旧リスナーを即座に同期クリーンアップ（メモリリーク防止）
   if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
@@ -6666,7 +6768,6 @@ function subscribeToUserStatus() {
     });
   }
   if (userId) targetUidsSet.add(userId);
-
   const memberIds = Array.from(targetUidsSet).filter(Boolean);
   if (memberIds.length === 0) {
     cachedUsers = [];
@@ -6676,22 +6777,58 @@ function subscribeToUserStatus() {
 
   const usersMap = new Map();
   memberIds.forEach(uid => {
-    const cachedProf = window._userProfileCache?.get(uid);
-    usersMap.set(uid, { id: uid, state: 'offline', ...(cachedProf || {}) });
-    if (!cachedProf || !cachedProf.last_changed) {
+    let cachedProf = window._userProfileCache?.get(uid);
+    const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
+    const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
+    const initialLastChanged = cachedProf?.last_changed || cachedProf?.lastSeen || lastSeenNum || null;
+
+    usersMap.set(uid, {
+      id: uid,
+      state: cachedProf?.status || cachedProf?.state || 'offline',
+      ...(cachedProf || {}),
+      last_changed: initialLastChanged,
+      lastSeen: initialLastChanged
+    });
+
+    if (!cachedProf || !cachedProf.nickname) {
       window.getUserProfile(uid).then(prof => {
         if (prof) {
           const cur = usersMap.get(uid) || { id: uid };
-          usersMap.set(uid, { ...cur, ...prof });
+          // プロファイル取得結果で RTDB やキャッシュ済みの last_changed / state を null で破壊しない
+          const merged = {
+            ...prof,
+            ...cur,
+            nickname: prof.nickname || cur.nickname,
+            avatarUrl: prof.avatarUrl || cur.avatarUrl,
+            email: prof.email || cur.email,
+            aboutMe: prof.aboutMe || cur.aboutMe,
+            customStatus: cur.customStatus || prof.customStatus,
+            state: cur.state || cur.status || prof.status || 'offline',
+            computedState: cur.computedState || cur.state || prof.status || 'offline',
+            last_changed: cur.last_changed || prof.last_changed || lastSeenNum || null,
+            lastSeen: cur.last_changed || cur.lastSeen || prof.lastSeen || lastSeenNum || null
+          };
+          usersMap.set(uid, merged);
+          const cProf = window._userProfileCache.get(uid);
+          if (cProf) {
+            if (merged.last_changed && !cProf.last_changed) cProf.last_changed = merged.last_changed;
+            if (merged.state) cProf.status = merged.state;
+          }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
           if (typeof renderFriendTabs === 'function') renderFriendTabs();
           if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+          if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+            renderDmActiveNowPanel();
+          }
         }
       }).catch(() => {});
     }
   });
+
   cachedUsers = Array.from(usersMap.values());
+  requestRenderMembersList();
+
   // RTDBでメンバーのリアルタイムステータスを一元監視
   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
     _getOrInitRTDB().then(rtdb => {
@@ -6700,31 +6837,58 @@ function subscribeToUserStatus() {
         const callback = (snapshot) => {
           const data = snapshot.val();
           const existing = usersMap.get(uid) || { id: uid };
-          const cachedProf = window._userProfileCache?.get(uid);
+          let cachedProf = window._userProfileCache?.get(uid);
+          if (!cachedProf) {
+            cachedProf = { id: uid, uid: uid };
+            window._userProfileCache.set(uid, cachedProf);
+          }
+
           if (data) {
-            const merged = { id: uid, ...existing, ...(cachedProf || {}), ...data };
-            // last_changed のフォールバック保護
-            if (!merged.last_changed && (cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen)) {
-              merged.last_changed = cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen;
+            const rawLc = data.last_changed || data.lastSeen || existing.last_changed || cachedProf.last_changed;
+            if (rawLc) {
+              const ms = parseTimestampToMs(rawLc);
+              if (ms > 0) {
+                try { localStorage.setItem(`covo_last_seen_${uid}`, String(ms)); } catch (_) {}
+              }
             }
+            const merged = {
+              id: uid,
+              ...existing,
+              ...cachedProf,
+              ...data,
+              last_changed: rawLc || existing.last_changed || cachedProf.last_changed || null,
+              lastSeen: rawLc || existing.lastSeen || cachedProf.lastSeen || null
+            };
             usersMap.set(uid, merged);
-            if (cachedProf) {
-              Object.assign(cachedProf, data);
-            }
+            Object.assign(cachedProf, data);
+            if (rawLc) cachedProf.last_changed = rawLc;
           } else {
-            usersMap.set(uid, { id: uid, state: 'offline', ...existing, ...(cachedProf || {}) });
+            const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
+            const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
+            const fallbackLc = existing.last_changed || cachedProf.last_changed || lastSeenNum || null;
+            usersMap.set(uid, {
+              id: uid,
+              state: 'offline',
+              ...existing,
+              ...cachedProf,
+              last_changed: fallbackLc,
+              lastSeen: fallbackLc
+            });
           }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
           if (typeof renderFriendTabs === 'function') renderFriendTabs();
           if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+          if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+            renderDmActiveNowPanel();
+          }
         };
         onValue(statusRef, callback);
         unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
       });
     });
   }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
-  }
+}
 
 function renderMembersList(users) {
   if (!membersList) return;
@@ -7217,6 +7381,18 @@ async function enterServer(serverId, serverData) {
     window._subscribeVcSidebarStates(serverId);
   }
 
+  // サーバー入室時: DM専用パネル・現在アクティブパネルを確実に非表示にし、メンバーリストを表示する
+  const dmProfilePanel = document.getElementById('dmProfilePanel');
+  const dmActiveNowPanel = document.getElementById('dmActiveNowPanel');
+  const membersListEl = document.getElementById('membersList');
+  const toggleBtnEl = document.getElementById('toggleMembersSidebarBtn');
+  const toggleIconEl = document.getElementById('toggleMembersSidebarIcon');
+  if (dmProfilePanel) dmProfilePanel.classList.add('hidden');
+  if (dmActiveNowPanel) dmActiveNowPanel.classList.add('hidden');
+  if (membersListEl) membersListEl.classList.remove('hidden');
+  if (toggleBtnEl) toggleBtnEl.title = 'メンバー一覧の表示切替';
+  if (toggleIconEl) toggleIconEl.className = 'fas fa-user-group';
+
   if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
     membersSidebar.style.setProperty("display", "", "important");
     membersSidebar.classList.remove("hidden");
@@ -7224,7 +7400,6 @@ async function enterServer(serverId, serverData) {
   }
   // サーバーメンバーでメンバーリストを即時更新
   renderMembersList(cachedUsers);
-
   // サーバーに入室したタイミングで、対象メンバーを絞り込んでステータス監視を再設定
   subscribeToUserStatus();
 
@@ -7320,11 +7495,20 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   // DM / フレンド画面の公開状態に応じた表示更新
   updateDmViewVisibility();
   renderDmConversationsList();
+
+  // 右サイドバー: DMプロフィールとメンバーリストを隠し、現在アクティブパネルを展開
+  const dmProfilePanel = document.getElementById('dmProfilePanel');
+  const membersListEl = document.getElementById('membersList');
+  const dmActiveNowPanel = document.getElementById('dmActiveNowPanel');
+  if (dmProfilePanel) dmProfilePanel.classList.add('hidden');
+  if (membersListEl) membersListEl.classList.add('hidden');
+  if (dmActiveNowPanel) dmActiveNowPanel.classList.remove('hidden');
+
   if (typeof renderDmActiveNowPanel === 'function') {
     renderDmActiveNowPanel();
   }
   if (membersSidebar && window.innerWidth >= 768) {
-    membersSidebar.style.setProperty("display", "", "important");
+    membersSidebar.style.setProperty("display", "flex", "important");
     membersSidebar.classList.remove("hidden");
     membersSidebar.classList.add("md:flex");
   }
@@ -8243,8 +8427,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   panel.classList.remove('hidden');
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
+
   const safeName = escapeHtml(targetNickname || 'ユーザー');
-  const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
+  const handleTag = targetUid ? `#${targetUid.slice(-4).toLowerCase()}` : '';
   let mutualServersCount = 0;
   if (Array.isArray(allServersCache)) {
     mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
@@ -8253,9 +8438,10 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof friendRelationships === 'object') {
     mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
   }
-  // Discord画像2完全準拠のプロファイル構造
+
+  // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative">
+    <div class="dm-profile-banner relative flex-shrink-0">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -8277,7 +8463,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap">
+    <div class="dm-profile-avatar-wrap flex-shrink-0">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
@@ -8287,16 +8473,18 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     </div>
     <div class="dm-profile-card">
       <div class="mb-3">
-        <div class="text-xl font-black text-gray-900 dark:text-white truncate leading-tight tracking-tight" id="dmPanelName">${safeName}</div>
-        <div class="text-xs font-mono font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
-          <span id="dmPanelTag">${handleTag}</span>
-          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#5865f2]/10 text-[#5865f2]"><i class="fas fa-sparkles"></i></span>
+        <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
+          <span id="dmPanelName">${safeName}</span>
+          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60"></i>
+        </div>
+        <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
+          ${handleTag}
         </div>
       </div>
-      <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
-        <span>${mutualFriendsCount}人の共通の友だち</span>
-        <span>•</span>
+      <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
+        <i class="fas fa-server text-[11px] text-gray-400"></i>
         <span>${mutualServersCount}個の共通サーバー</span>
+        ${mutualFriendsCount > 0 ? `<span>•</span><span>${mutualFriendsCount}人の共通の友だち</span>` : ''}
       </div>
       <div class="dm-profile-divider"></div>
       <div class="my-3">
@@ -8304,12 +8492,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
           <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
           <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
         </div>
-        <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
-        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text font-normal">読み込み中...</div>
+        <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
+        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
       </div>
       <div class="dm-profile-divider"></div>
       <div class="my-3 flex items-center justify-between text-xs">
-        <span class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider">メンバーになった日</span>
+        <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
         <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
       </div>
     </div>
@@ -8416,55 +8604,129 @@ window.renderDmActiveNowPanel = function () {
   panel.classList.remove('hidden');
   if (toggleBtn) toggleBtn.title = 'アクティブ一覧の表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-user-group';
-  panel.innerHTML = `
-    <h3 class="text-base font-bold text-gray-900 dark:text-white mb-3 tracking-tight">現在アクティブ</h3>
-    <div id="dmActiveNowList" class="space-y-3"></div>
-  `;
-  const targetList = document.getElementById('dmActiveNowList');
-  const rels = Object.values(friendRelationships || {});
-  const friends = rels.filter(r => r.status === 'friends');
-  const activeFriends = friends.filter(f => {
-    const u = (cachedUsers || []).find(cu => cu.id === f.targetUid);
-    return u && (u.computedState === 'online' || u.computedState === 'away' || u.state === 'online' || u.state === 'away');
+
+  // 1. 全参加サーバー + フレンドから対象メンバーを収集 (自分自身は除外)
+  const joinedServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(userId));
+  const candidateUids = new Set();
+
+  joinedServers.forEach(s => {
+    (s.joinedUsers || []).forEach(uid => {
+      if (uid && uid !== userId) candidateUids.add(uid);
+    });
   });
-  if (activeFriends.length === 0) {
-    targetList.innerHTML = `
-      <div class="p-6 text-center text-xs text-gray-400 dark:text-gray-500 bg-white dark:bg-[#111214] rounded-2xl border border-gray-200/60 dark:border-white/5 space-y-2 shadow-xs">
-        <div class="w-12 h-12 rounded-full bg-gray-100 dark:bg-[#232428] flex items-center justify-center mx-auto text-xl text-gray-400">
-          <i class="fas fa-gamepad"></i>
+
+  Object.values(friendRelationships || {}).forEach(rel => {
+    if (rel?.targetUid && rel.targetUid !== userId && rel.status === 'friends') {
+      candidateUids.add(rel.targetUid);
+    }
+  });
+
+  // 2. オンライン・離席中のユーザーのみを抽出（オフラインは完全除外）
+  const activeCandidates = [];
+  candidateUids.forEach(uid => {
+    const u = (cachedUsers || []).find(cu => cu.id === uid) || window._userProfileCache?.get(uid);
+    const state = u?.computedState || u?.state || u?.status || 'offline';
+    if (state === 'online' || state === 'away') {
+      const affinityScore = calculateUserAffinity(uid);
+      const sharedServers = joinedServers.filter(s => (s.joinedUsers || []).includes(uid));
+      activeCandidates.push({
+        id: uid,
+        uid,
+        nickname: u?.nickname || u?.displayName || 'ユーザー',
+        avatarUrl: u?.avatarUrl || '',
+        state,
+        computedState: state,
+        customStatus: u?.customStatus || null,
+        last_changed: u?.last_changed || u?.lastSeen || 0,
+        sharedServers,
+        affinityScore
+      });
+    }
+  });
+
+  // 3. 関わりが深い順 (affinityScore降順) -> 直近アクティブ順 でソート
+  activeCandidates.sort((a, b) => {
+    if (b.affinityScore !== a.affinityScore) {
+      return b.affinityScore - a.affinityScore;
+    }
+    const timeA = parseTimestampToMs(a.last_changed);
+    const timeB = parseTimestampToMs(b.last_changed);
+    return timeB - timeA;
+  });
+
+  // 4. HTML構築 (添付画像2 Discord本家デザイン完全準拠)
+  if (activeCandidates.length === 0) {
+    panel.innerHTML = `
+      <div class="p-4 w-full flex flex-col gap-3 select-none">
+        <h3 class="text-base font-extrabold text-gray-900 dark:text-white tracking-tight">現在アクティブ</h3>
+        <div class="p-6 text-center text-xs text-gray-400 dark:text-gray-500 bg-white dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-white/5 space-y-2 shadow-xs">
+          <div class="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto text-xl text-gray-400">
+            <i class="fas fa-gamepad"></i>
+          </div>
+          <div class="font-bold text-gray-700 dark:text-gray-200 text-sm">現在は静かです...</div>
+          <p class="text-[11px] text-gray-400 leading-relaxed">
+            サーバーのメンバーやフレンドがオンラインになると、ここにアクティビティが表示されます。
+          </p>
         </div>
-        <div class="font-bold text-gray-700 dark:text-gray-300">今は静かです...</div>
-        <p class="text-[11px] text-gray-400 leading-relaxed">フレンドがボイスチャンネルに参加したりステータスを更新すると、ここに表示されます。</p>
       </div>
     `;
     return;
   }
-  targetList.innerHTML = activeFriends.map(f => {
-    const u = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
-    const safeNick = escapeHtml(f.targetNickname || u.nickname || 'フレンド');
-    const safeAv = isUsableAvatarUrl(f.targetAvatarUrl || u.avatarUrl)
-      ? `<img src="${escapeHtml(f.targetAvatarUrl || u.avatarUrl)}" class="w-full h-full rounded-full object-cover">`
-      : `<span class="text-xs font-bold text-white">${safeNick.charAt(0)}</span>`;
-    const statusClass = (u.computedState || u.state) === 'away' ? 'status-away' : 'status-online';
-    const activityText = u.customStatus?.text
-      ? `${u.customStatus.emoji || '💬'} ${escapeHtml(u.customStatus.text)}`
-      : ((u.computedState || u.state) === 'away' ? '離席中' : 'オンライン');
+
+  const itemsHtml = activeCandidates.map(u => {
+    const safeNick = escapeHtml(u.nickname || 'ユーザー');
+    const safeAv = isUsableAvatarUrl(u.avatarUrl)
+      ? `<img src="${escapeHtml(u.avatarUrl)}" class="w-full h-full rounded-full object-cover">`
+      : `<span class="text-xs font-bold text-white">${safeNick.charAt(0).toUpperCase()}</span>`;
+    const isAway = u.state === 'away';
+    const isInVoice = Boolean(window._voiceEngine?.isActive && window._voiceEngine?._voiceStates?.[u.id]);
+    const statusClass = isInVoice ? 'status-online' : (isAway ? 'status-away' : 'status-online');
+
+    let subtext = `<span class="text-emerald-500 font-semibold">オンライン</span>`;
+    if (isInVoice) {
+      subtext = `<span class="text-emerald-500 font-semibold flex items-center gap-1"><i class="fas fa-volume-up text-[10px]"></i> ボイスチャンネルにて</span>`;
+    } else if (u.customStatus?.text) {
+      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${escapeHtml(u.customStatus.emoji || '💬')} ${escapeHtml(u.customStatus.text)}</span>`;
+    } else if (isAway) {
+      subtext = `<span class="text-amber-500 font-semibold">離席中</span>`;
+    }
+
+    // 右側の共有サーバーアイコンまたはバッジ
+    let rightBadgeHtml = '';
+    if (u.sharedServers.length > 0) {
+      const topServer = u.sharedServers[0];
+      if (topServer.iconUrl) {
+        rightBadgeHtml = `<div class="w-5 h-5 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 flex-shrink-0" title="${escapeHtml(topServer.name || '')}"><img src="${escapeHtml(topServer.iconUrl)}" class="w-full h-full object-cover"></div>`;
+      } else {
+        rightBadgeHtml = `<div class="w-5 h-5 rounded-lg bg-slate-600 text-white font-bold text-[9px] flex items-center justify-center flex-shrink-0" title="${escapeHtml(topServer.name || '')}">${escapeHtml((topServer.name || 'S').charAt(0).toUpperCase())}</div>`;
+      }
+    }
+
     return `
-      <div class="active-now-card flex items-center gap-3 p-3 bg-white dark:bg-[#111214] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:border-indigo-500/40 transition-all shadow-xs" onclick="openDm('${escapeHtml(f.targetUid)}', '${safeNick}', '${escapeHtml(f.targetAvatarUrl || u.avatarUrl || '')}')">
-        <div class="relative w-10 h-10 flex-shrink-0 rounded-full bg-slate-700 flex items-center justify-center">
-          ${safeAv}
+      <div class="active-now-item" onclick="openUserProfileModal('${u.id}', '${safeNick.replace(/'/g, "\\'")}', '${escapeHtml(u.avatarUrl).replace(/'/g, "\\'")}')">
+        <div class="relative w-10 h-10 flex-shrink-0">
+          <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-xs">
+            ${safeAv}
+          </div>
           <div class="status-indicator ${statusClass}"></div>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-gray-900 dark:text-white truncate">${safeNick}</div>
-          <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">${activityText}</div>
+          <div class="text-sm font-bold text-gray-900 dark:text-white truncate">${safeNick}</div>
+          <div class="text-xs truncate mt-0.5">${subtext}</div>
         </div>
-        <button class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-[#232428] dark:hover:bg-[#2b2d31] text-gray-500 hover:text-gray-800 dark:text-gray-300 flex items-center justify-center text-xs transition" title="メッセージ">
-          <i class="fas fa-comment-dots"></i>
-        </button>
+        ${rightBadgeHtml}
       </div>
     `;
   }).join('');
+
+  panel.innerHTML = `
+    <div class="active-now-wrapper p-4 w-full flex flex-col gap-3 select-none">
+      <h3 class="text-base font-extrabold text-gray-900 dark:text-white tracking-tight">現在アクティブ</h3>
+      <div class="active-now-container">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
 };
 
 window.handleDmHeroFriendAction = async function (targetUid, targetNickname) {
@@ -12684,13 +12946,17 @@ function selectRoom(roomId, roomName) {
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   currentPinnedMessages = [];
   renderPinnedMessages();
-  // サーバー画面用: 右サイドバーをメンバー一覧モードに設定
+  // サーバー画面用: 右サイドバーをメンバー一覧モードに設定（DMパネル・現在アクティブを確実に非表示）
   const dmPanel = document.getElementById('dmProfilePanel');
+  const dmActiveNow = document.getElementById('dmActiveNowPanel');
   const membersListEl = document.getElementById('membersList');
   const toggleBtnEl = document.getElementById('toggleMembersSidebarBtn');
+  const toggleIconEl = document.getElementById('toggleMembersSidebarIcon');
   if (dmPanel) dmPanel.classList.add('hidden');
+  if (dmActiveNow) dmActiveNow.classList.add('hidden');
   if (membersListEl) membersListEl.classList.remove('hidden');
   if (toggleBtnEl) toggleBtnEl.title = 'メンバー一覧の表示切替';
+  if (toggleIconEl) toggleIconEl.className = 'fas fa-user-group';
   subscribeToMessages();
   subscribeToPinnedMessages(currentServerId, roomId);
 

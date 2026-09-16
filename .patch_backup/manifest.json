@@ -1,10 +1,9 @@
 {
-  "date": "2026-09-15T16:05:49.121Z",
+  "date": "2026-09-16T11:08:27.275Z",
   "files": [
-    "public/js/utils.js",
-    "public/js/main.js",
-    "public/index.html",
+    "database.rules.json",
+    "public/css/modules/chat.css",
     "public/css/modules/sidebar.css",
-    "public/css/modules/chat.css"
+    "public/js/main.js"
   ]
 }

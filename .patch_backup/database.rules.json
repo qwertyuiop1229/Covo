@@ -55,6 +55,14 @@
         }
       }
     },
+    "voiceStatesConfig": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || auth.uid === newData.child('updatedBy').val())"
+        }
+      }
+    },
     "artifacts": {
       "$appId": {
         "settings": {

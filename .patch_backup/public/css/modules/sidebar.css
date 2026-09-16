@@ -1,11 +1,22 @@
-/* --- メンバーリスト用スタイル (Discord風) --- */
+/* --- メンバーリスト・プロフィール・アクティブパネル用スタイル (Discord完全準拠) --- */
     #membersSidebar {
-      width: 240px;
-      background-color: #f9fafb;
+      width: 320px;
+      min-width: 260px;
+      max-width: 360px;
+      background-color: #f2f3f5;
       border-left: 1px solid #e5e7eb;
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
+      position: relative;
+    }
+    body.dark-server-theme #membersSidebar {
+      background-color: #111827 !important;
+      border-left-color: rgba(255, 255, 255, 0.07) !important;
+    }
+    body.discord-dark-theme #membersSidebar {
+      background-color: #232428 !important;
+      border-left-color: #1f2023 !important;
     }
 
     .member-group-title {

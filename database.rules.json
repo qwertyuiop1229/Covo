@@ -63,6 +63,12 @@
         }
       }
     },
+    "userAffinity": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "artifacts": {
       "$appId": {
         "settings": {
@@ -106,9 +112,15 @@
           }
         },
         "error_reports": {
+          ".read": "auth != null",
           "$docId": {
-            ".read": "auth != null",
             ".write": true
+          }
+        },
+        "userAffinity": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
           }
         },
         "recovery_vault": {
