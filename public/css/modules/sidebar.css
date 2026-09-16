@@ -486,6 +486,12 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       cursor: pointer;
       margin-bottom: 8px;
     }
+    .discord-nav-divider {
+      width: 32px !important;
+      height: 2px !important;
+      margin: 0 auto 8px auto !important;
+      align-self: center !important;
+    }
 
     .discord-server-icon {
       width: 48px;

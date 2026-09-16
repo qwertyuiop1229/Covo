@@ -5724,30 +5724,142 @@ window.openUserProfileAvatarLightbox = function () {
   openAvatarLightbox(user.avatarUrl, user.nickname, user.uid?.substring(0, 4));
 };
 
+// =========================================================================
+// 🌟 Discord準拠 アバターアクセントカラー自動抽出 & HSLトーン補正
+// =========================================================================
+const _avatarColorCache = new Map();
+const DISCORD_PRESET_COLORS = [
+  '#376d49', '#322c3b', '#2a4b5d', '#4a3c31', '#5865f2', '#3ba55d', '#faa81a', '#ed4245', '#eb459e'
+];
+
+function getHashColor(str) {
+  if (!str) return DISCORD_PRESET_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return DISCORD_PRESET_COLORS[Math.abs(hash) % DISCORD_PRESET_COLORS.length];
+}
+
+function hslToHex(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+  else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+  else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+  else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+  else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+  else if (300 <= h && h < 360) { r = c; g = 0; b = x; }
+  const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+async function getAvatarAccentColor(avatarUrl, seedId = '') {
+  if (!avatarUrl || !isUsableAvatarUrl(avatarUrl)) {
+    return getHashColor(seedId);
+  }
+  if (_avatarColorCache.has(avatarUrl)) {
+    return _avatarColorCache.get(avatarUrl);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const fallback = () => {
+      const col = getHashColor(seedId || avatarUrl);
+      _avatarColorCache.set(avatarUrl, col);
+      resolve(col);
+    };
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const size = 32;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return fallback();
+        ctx.drawImage(img, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+        const buckets = Array.from({ length: 36 }, () => []);
+        const bucketScores = new Array(36).fill(0);
+        const allColors = [];
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 128) continue;
+          const rf = data[i] / 255, gf = data[i + 1] / 255, bf = data[i + 2] / 255;
+          const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
+          const delta = max - min;
+          const l = (max + min) / 2;
+          let h = 0, s = 0;
+          if (delta > 0) {
+            s = delta / (1 - Math.abs(2 * l - 1) + 1e-6);
+            if (max === rf) h = ((gf - bf) / delta) % 6;
+            else if (max === gf) h = ((bf - rf) / delta) + 2;
+            else h = ((rf - gf) / delta) + 4;
+            h = (h * 60 + 360) % 360;
+          }
+          allColors.push({ h, s, l });
+          if (l > 0.12 && l < 0.88 && s > 0.15) {
+            const bIdx = Math.floor(h / 10) % 36;
+            bucketScores[bIdx] += Math.pow(s, 1.3);
+            buckets[bIdx].push({ h, s, l });
+          }
+        }
+        let bestIdx = 0, maxScore = -1;
+        for (let i = 0; i < 36; i++) {
+          if (bucketScores[i] > maxScore) { maxScore = bucketScores[i]; bestIdx = i; }
+        }
+        let avgH = 0, avgS = 0, avgL = 0;
+        if (maxScore > 0.5 && buckets[bestIdx].length > 0) {
+          const bColors = buckets[bestIdx];
+          avgH = bColors.reduce((sum, c) => sum + c.h, 0) / bColors.length;
+          avgS = bColors.reduce((sum, c) => sum + c.s, 0) / bColors.length;
+          avgL = bColors.reduce((sum, c) => sum + c.l, 0) / bColors.length;
+        } else if (allColors.length > 0) {
+          avgH = allColors.reduce((sum, c) => sum + c.h, 0) / allColors.length;
+          avgS = allColors.reduce((sum, c) => sum + c.s, 0) / allColors.length;
+          avgL = allColors.reduce((sum, c) => sum + c.l, 0) / allColors.length;
+        } else {
+          return fallback();
+        }
+        // Discord風のシックなダークトーン補正
+        const adjS = avgS > 0.08 ? Math.min(0.65, Math.max(0.35, avgS * 1.1)) : 0.12;
+        const adjL = Math.min(0.32, Math.max(0.22, avgL > 0.35 ? avgL * 0.65 : avgL));
+        const hex = hslToHex(avgH, adjS, adjL);
+        _avatarColorCache.set(avatarUrl, hex);
+        resolve(hex);
+      } catch (e) {
+        fallback();
+      }
+    };
+    img.onerror = fallback;
+    img.src = avatarUrl;
+  });
+}
+window.getAvatarAccentColor = getAvatarAccentColor;
+
+// =========================================================================
+// 🌟 Discord準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様)
+// =========================================================================
 window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
   if (!modal) return;
-
   const isSelf = targetUid === userId;
   _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
-
+  const bannerEl = document.getElementById("userProfileBanner");
   const avatarEl = document.getElementById("userProfileAvatar");
   const statusDot = document.getElementById("userProfileStatusDot");
   const nameEl = document.getElementById("userProfileName");
   const tagEl = document.getElementById("userProfileTag");
-  const adminBadge = document.getElementById("userProfileBadgeAdmin");
   const customStatusWrap = document.getElementById("userProfileCustomStatusWrap");
   const statusEmojiEl = document.getElementById("userProfileStatusEmoji");
   const statusTextEl = document.getElementById("userProfileStatusText");
-  const statusEditIcon = document.getElementById("userProfileStatusEditIcon");
-  const aboutMeEl = document.getElementById("userProfileAboutMe");
-  const joinedDateEl = document.getElementById("userProfileJoinedDate");
-  const actionsOther = document.getElementById("userProfileActionsOther");
-  const actionsSelf = document.getElementById("userProfileActionsSelf");
+  const mutualServersCountText = document.getElementById("userProfileMutualServersCountText");
   const quickMsgArea = document.getElementById("userProfileQuickMsgArea");
   const quickMsgInput = document.getElementById("userProfileQuickMsgInput");
-
+  const upBannerFriendBtn = document.getElementById("upBannerFriendBtn");
   const safeName = targetNickname || targetUid.substring(0, 8);
   if (nameEl) nameEl.textContent = safeName;
   if (tagEl) tagEl.textContent = `#${targetUid.slice(-4).toLowerCase()}`;
@@ -5758,103 +5870,72 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       avatarEl.textContent = safeName.charAt(0).toUpperCase();
     }
   }
-
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
-
-  if (isSelf) {
-    if (actionsOther) actionsOther.classList.add("hidden");
-    if (actionsSelf) actionsSelf.classList.remove("hidden");
-    if (quickMsgArea) quickMsgArea.classList.add("hidden");
-    if (customStatusWrap) {
-      customStatusWrap.classList.remove("hidden");
-      customStatusWrap.onclick = () => openCustomStatusModal();
-      customStatusWrap.style.cursor = "pointer";
-      customStatusWrap.title = "タップしてステータスメッセージを設定";
-      if (statusEditIcon) statusEditIcon.classList.remove("hidden");
+  // アバターに応じたアクセントカラーを抽出しバナーに適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
     }
-    if (aboutMeEl) aboutMeEl.textContent = userAboutMe || "自己紹介はまだ設定されていません。";
-  } else {
-    if (actionsOther) actionsOther.classList.remove("hidden");
-    if (actionsSelf) actionsSelf.classList.add("hidden");
-    if (customStatusWrap) {
-      customStatusWrap.onclick = null;
-      customStatusWrap.style.cursor = "default";
-      customStatusWrap.removeAttribute("title");
-      if (statusEditIcon) statusEditIcon.classList.add("hidden");
-    }
-    if (quickMsgArea) {
-      quickMsgArea.classList.remove("hidden");
-      if (quickMsgInput) {
-        quickMsgInput.placeholder = `@${safeName} へのメッセージ...`;
-        quickMsgInput.value = "";
-      }
-    }
-
-    const upActionDmBtn = document.getElementById("upActionDmBtn");
-    const upActionCallBtn = document.getElementById("upActionCallBtn");
-    const upActionFileBtn = document.getElementById("upActionFileBtn");
-    const upActionFriendBtn = document.getElementById("upActionFriendBtn");
-
-    if (upActionDmBtn) {
-      upActionDmBtn.onclick = () => {
-        closeUserProfileModal();
-        openDm(targetUid, safeName, targetAvatarUrl);
-      };
-    }
-    if (upActionCallBtn) {
-      upActionCallBtn.onclick = () => {
-        closeUserProfileModal();
-        startCall(targetUid, safeName, targetAvatarUrl);
-      };
-    }
-    if (upActionFileBtn) {
-      upActionFileBtn.onclick = () => {
-        closeUserProfileModal();
-        _fsPickFileAndSend(targetUid, safeName);
-      };
-    }
-    if (upActionFriendBtn) {
+  });
+  // 右上フレンドボタン状態同期
+  if (upBannerFriendBtn) {
+    if (isSelf) {
+      upBannerFriendBtn.style.display = 'none';
+    } else {
+      upBannerFriendBtn.style.display = 'flex';
       const rel = friendRelationships[targetUid];
       if (rel?.status === 'friends') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-emerald-500/10 hover:bg-rose-500/20 text-emerald-600 hover:text-rose-600 dark:text-emerald-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド解除";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
-        upActionFriendBtn.onclick = async () => {
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド解除";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        upBannerFriendBtn.onclick = async () => {
           if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
-          closeUserProfileModal();
           rejectFriendRequest(targetUid);
         };
       } else if (rel?.status === 'pending_sent') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-amber-500/10 hover:bg-rose-500/20 text-amber-600 hover:text-rose-600 dark:text-amber-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "申請送信済み (タップで取消)";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
-        upActionFriendBtn.onclick = () => {
-          closeUserProfileModal();
-          cancelFriendRequest(targetUid);
-        };
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "申請送信済み (タップで取消)";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        upBannerFriendBtn.onclick = () => cancelFriendRequest(targetUid);
       } else if (rel?.status === 'pending_received') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#5865f2]/15 hover:bg-[#5865f2] text-[#5865f2] hover:text-white flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド申請が届いています (タップで承認)";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
-        upActionFriendBtn.onclick = () => {
-          closeUserProfileModal();
-          acceptFriendRequest(targetUid);
-        };
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-[#5865f2] text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド申請承認";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upBannerFriendBtn.onclick = () => acceptFriendRequest(targetUid);
       } else {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド申請を送信";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
-        upActionFriendBtn.onclick = async () => {
-          closeUserProfileModal();
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド申請を送信";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upBannerFriendBtn.onclick = async () => {
           await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
         };
       }
     }
   }
-
-  // 非同期でユーザー詳細（ステメ・自己紹介・参加日）を取得
+  // 共通サーバー数の計算
+  let mutualServersCount = 0;
+  if (Array.isArray(allServersCache)) {
+    mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
+  }
+  if (mutualServersCountText) {
+    mutualServersCountText.textContent = `${mutualServersCount}個の共通サーバー`;
+  }
+  // クイックメッセージ入力欄
+  if (quickMsgArea) {
+    if (isSelf) {
+      quickMsgArea.classList.add("hidden");
+    } else {
+      quickMsgArea.classList.remove("hidden");
+      if (quickMsgInput) {
+        quickMsgInput.placeholder = `@${safeName} ヘメッセージを...`;
+        quickMsgInput.value = "";
+      }
+    }
+  }
+  // 非同期でユーザー詳細（ステメ）を取得
   try {
     const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
     const snap = await getDoc(userDocRef);
@@ -5864,75 +5945,71 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
         __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
       }
-      // カスタムステータス (ステメ)
+      if (uData.email && tagEl) {
+        tagEl.textContent = `@${uData.email.split('@')[0]}`;
+      }
       if (uData.customStatus && uData.customStatus.text) {
         if (customStatusWrap) customStatusWrap.classList.remove("hidden");
         if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
         if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
       } else {
-        if (isSelf) {
-          if (customStatusWrap) customStatusWrap.classList.remove("hidden");
-          if (statusEmojiEl) statusEmojiEl.textContent = "💬";
-          if (statusTextEl) statusTextEl.textContent = "ステータスメッセージを設定する";
-        } else {
-          if (customStatusWrap) customStatusWrap.classList.add("hidden");
-        }
+        if (customStatusWrap) customStatusWrap.classList.add("hidden");
       }
-
-      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (isSelf ? (userAboutMe || "自己紹介はまだ設定されていません。") : "自己紹介はまだ設定されていません。");
-      if (joinedDateEl) {
-        let dt = "-";
-        if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
-        else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
-        else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
-        joinedDateEl.textContent = dt;
-      }
-      if (adminBadge) {
-        adminBadge.classList.toggle("hidden", !(uData.isAdmin || (isAdmin && isSelf)));
-      }
-      // 共通のサーバー (Mutual Servers)
-      const mutualServersEl = document.getElementById("userProfileMutualServers");
-      const mutualSec = document.getElementById("userProfileMutualServersSection");
-      if (mutualServersEl && Array.isArray(allServersCache)) {
-        const mutuals = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
-        if (mutuals.length === 0) {
-          if (mutualSec) mutualSec.classList.add("hidden");
-        } else {
-          if (mutualSec) mutualSec.classList.remove("hidden");
-          mutualServersEl.innerHTML = mutuals.map(s => `
-            <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-all group" onclick="closeUserProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
-              <div class="w-7 h-7 rounded-xl bg-indigo-500 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
-                ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
-              </div>
-              <span class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex-1">${escapeHtml(s.name || s.id)}</span>
-              <i class="fas fa-chevron-right text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-            </div>
-          `).join('');
-        }
-      }
-      }
-      } catch (err) {
-      console.warn("Failed to fetch full user profile:", err);
-      }
-      openModal(modal);
-      };
+    }
+  } catch (err) {
+    console.warn("Failed to fetch popout user profile:", err);
+  }
+  openModal(modal);
+};
 
 window.closeUserProfileModal = function () {
   const modal = document.getElementById("userProfileModal");
   if (modal) modal.classList.add("hidden");
+  window.closeUpMoreMenu();
   _currentProfileTargetUser = null;
 };
 
+window.toggleUpMoreMenu = function (e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById("upMoreMenuPopover");
+  if (pop) pop.classList.toggle("hidden");
+};
+window.closeUpMoreMenu = function () {
+  const pop = document.getElementById("upMoreMenuPopover");
+  if (pop) pop.classList.add("hidden");
+};
+window.openFullProfileFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  openUserFullProfileModal(uid, nickname, avatarUrl);
+};
+window.openDmFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  openDm(uid, nickname, avatarUrl);
+};
+window.openCallFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  startCall(uid, nickname, avatarUrl);
+};
+window.blockUserFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  blockUser(uid);
+};
 window.submitQuickDmMessage = async function () {
   const input = document.getElementById("userProfileQuickMsgInput");
   if (!input || !_currentProfileTargetUser) return;
   const text = input.value.trim();
   if (!text) return;
-
   const target = _currentProfileTargetUser;
   closeUserProfileModal();
   await openDm(target.uid, target.nickname, target.avatarUrl);
-
   setTimeout(() => {
     const mainInput = document.getElementById("messageInput");
     if (mainInput) {
@@ -5940,6 +6017,316 @@ window.submitQuickDmMessage = async function () {
       sendMessage();
     }
   }, 200);
+};
+
+// =========================================================================
+// 🌟 Discord準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様)
+// =========================================================================
+let _fullProfileTargetUser = null;
+window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+  if (!targetUid) return;
+  const modal = document.getElementById("userFullProfileModal");
+  if (!modal) return;
+  _fullProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  const isSelf = targetUid === userId;
+  const bannerEl = document.getElementById("fullProfileBanner");
+  const avatarEl = document.getElementById("fullProfileAvatar");
+  const statusDot = document.getElementById("fullProfileStatusDot");
+  const nameEl = document.getElementById("fullProfileName");
+  const handleEl = document.getElementById("fullProfileHandle");
+  const aboutMeEl = document.getElementById("fullProfileAboutMe");
+  const joinedDateEl = document.getElementById("fullProfileJoinedDate");
+  const friendDateRow = document.getElementById("fullProfileFriendDateRow");
+  const friendDateEl = document.getElementById("fullProfileFriendDate");
+  const noteContainer = document.getElementById("fullProfileNoteContainer");
+  const noteText = document.getElementById("fullProfileNoteText");
+  const noteEditor = document.getElementById("fullProfileNoteEditor");
+  const noteInput = document.getElementById("fullProfileNoteInput");
+  const msgBtn = document.getElementById("fullProfileMsgBtn");
+  const friendBtn = document.getElementById("fullProfileFriendBtn");
+  const moreBtn = document.getElementById("fullProfileMoreBtn");
+  const safeName = targetNickname || targetUid.substring(0, 8);
+  if (nameEl) nameEl.textContent = safeName;
+  if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
+  if (avatarEl) {
+    if (isUsableAvatarUrl(targetAvatarUrl)) {
+      __setAvatarImg(avatarEl, targetAvatarUrl, safeName, { className: 'w-full h-full rounded-full object-cover' });
+    } else {
+      avatarEl.textContent = safeName.charAt(0).toUpperCase();
+    }
+  }
+  const cachedUser = cachedUsers.find(u => u.id === targetUid);
+  const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
+  if (statusDot) statusDot.className = `status-indicator status-${state}`;
+  // アバターに応じたアクセントカラーを抽出しバナーに適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
+    }
+  });
+  // アクションボタン
+  if (msgBtn) {
+    msgBtn.onclick = () => {
+      closeUserFullProfileModal();
+      openDm(targetUid, safeName, targetAvatarUrl);
+    };
+  }
+  if (friendBtn) {
+    if (isSelf) {
+      friendBtn.style.display = 'none';
+    } else {
+      friendBtn.style.display = 'flex';
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド解除";
+        friendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        friendBtn.onclick = async () => {
+          if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
+          rejectFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else if (rel?.status === 'pending_sent') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "申請送信済み";
+        friendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        friendBtn.onclick = () => {
+          cancelFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else if (rel?.status === 'pending_received') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-[#5865f2] text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド申請承認";
+        friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        friendBtn.onclick = () => {
+          acceptFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド申請";
+        friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        friendBtn.onclick = async () => {
+          await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      }
+    }
+  }
+  // メモ読み込み
+  const noteKey = `covo_user_note_${userId}_${targetUid}`;
+  const savedNote = localStorage.getItem(noteKey) || '';
+  if (noteText) noteText.textContent = savedNote || 'クリックしてメモを追加';
+  if (noteInput) noteInput.value = savedNote;
+  if (noteEditor) noteEditor.classList.add('hidden');
+  if (noteContainer) noteContainer.classList.remove('hidden');
+  // 非同期プロフィール情報読み込み
+  try {
+    const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      const uData = snap.data();
+      if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
+      if (uData.email && handleEl) {
+        handleEl.textContent = `${uData.email.split('@')[0]}${uData.customStatus?.text ? ` • ${uData.customStatus.text}` : ''}`;
+      }
+      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (uData.customStatus?.text || '自己紹介はまだ設定されていません。');
+      if (joinedDateEl) {
+        let dt = '-';
+        if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
+        else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
+        else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
+        joinedDateEl.textContent = dt;
+      }
+      // フレンドになった日
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends' && rel?.updatedAt) {
+        let fdt = '-';
+        if (rel.updatedAt.toDate) fdt = rel.updatedAt.toDate().toLocaleDateString('ja-JP');
+        else if (typeof rel.updatedAt === 'number') fdt = new Date(rel.updatedAt).toLocaleDateString('ja-JP');
+        else if (rel.updatedAt.seconds != null) fdt = new Date(rel.updatedAt.seconds * 1000).toLocaleDateString('ja-JP');
+        if (friendDateEl) friendDateEl.textContent = fdt;
+        if (friendDateRow) friendDateRow.classList.remove('hidden');
+      } else if (friendDateRow) {
+        friendDateRow.classList.add('hidden');
+      }
+    }
+  } catch (err) {
+    console.warn("Full profile fetch error:", err);
+  }
+  // タブの初期表示設定（アクティビティ）
+  switchFullProfileTab('activity');
+  openModal(modal);
+};
+
+window.closeUserFullProfileModal = function () {
+  const modal = document.getElementById("userFullProfileModal");
+  if (modal) modal.classList.add("hidden");
+  window.closeFpMoreMenu();
+  _fullProfileTargetUser = null;
+};
+
+window.openFullProfileAvatarLightbox = function () {
+  if (!_fullProfileTargetUser) return;
+  openAvatarLightbox(_fullProfileTargetUser.avatarUrl, _fullProfileTargetUser.nickname, _fullProfileTargetUser.uid?.slice(-4));
+};
+
+window.switchFullProfileTab = function (tab) {
+  const tabBtns = {
+    activity: document.getElementById('fpTabActivityBtn'),
+    friends: document.getElementById('fpTabFriendsBtn'),
+    servers: document.getElementById('fpTabServersBtn')
+  };
+  const tabContents = {
+    activity: document.getElementById('fpTabActivityContent'),
+    friends: document.getElementById('fpTabFriendsContent'),
+    servers: document.getElementById('fpTabServersContent')
+  };
+  Object.keys(tabBtns).forEach(k => {
+    const btn = tabBtns[k];
+    const cnt = tabContents[k];
+    const isTarget = k === tab;
+    if (btn) {
+      if (isTarget) {
+        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-indigo-600 dark:border-white transition-colors cursor-pointer font-bold";
+      } else {
+        btn.className = "pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold";
+      }
+    }
+    if (cnt) {
+      cnt.classList.toggle('hidden', !isTarget);
+    }
+  });
+  if (!_fullProfileTargetUser) return;
+  const targetUid = _fullProfileTargetUser.uid;
+  const safeName = _fullProfileTargetUser.nickname || 'ユーザー';
+  // 1. アクティビティ
+  if (tab === 'activity') {
+    const headline = document.getElementById('fpActivityHeadline');
+    const msgBtn = document.getElementById('fpActivityMsgBtn');
+    if (headline) headline.textContent = `${safeName}にはここで共有するアクティビティがありません`;
+    if (msgBtn) {
+      msgBtn.onclick = () => {
+        closeUserFullProfileModal();
+        openDm(targetUid, safeName, _fullProfileTargetUser.avatarUrl);
+      };
+    }
+  }
+  // 2. 共通の友だち
+  else if (tab === 'friends') {
+    const friendsListEl = document.getElementById('fpMutualFriendsList');
+    const friendsLabel = document.getElementById('fpMutualFriendsCountLabel');
+    const mutualFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    if (friendsLabel) friendsLabel.textContent = `${mutualFriends.length}人の共通の友だち`;
+    if (friendsListEl) {
+      if (mutualFriends.length === 0) {
+        friendsListEl.innerHTML = `<div class="p-6 text-center text-xs text-gray-400">共通の友だちはまだいません</div>`;
+      } else {
+        friendsListEl.innerHTML = mutualFriends.map(f => `
+          <div class="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-9 h-9 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden flex-shrink-0">
+                ${isUsableAvatarUrl(f.targetAvatarUrl) ? `<img src="${escapeHtml(f.targetAvatarUrl)}" class="w-full h-full object-cover">` : escapeHtml((f.targetNickname || 'U').charAt(0).toUpperCase())}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(f.targetNickname || 'ユーザー')}</div>
+                <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(f.targetEmail || '')}</div>
+              </div>
+            </div>
+            <button onclick="closeUserFullProfileModal(); openDm('${f.targetUid}','${escapeHtml(f.targetNickname || '')}','${escapeHtml(f.targetAvatarUrl || '')}')" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs transition">
+              メッセージ
+            </button>
+          </div>
+        `).join('');
+      }
+    }
+  }
+  // 3. 共通サーバー
+  else if (tab === 'servers') {
+    const serversListEl = document.getElementById('fpMutualServersList');
+    const serversLabel = document.getElementById('fpMutualServersCountLabel');
+    const mutualServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+    if (serversLabel) serversLabel.textContent = `${mutualServers.length}個の共通サーバー`;
+    if (serversListEl) {
+      if (mutualServers.length === 0) {
+        serversListEl.innerHTML = `<div class="col-span-full p-6 text-center text-xs text-gray-400">共通のサーバーはありません</div>`;
+      } else {
+        serversListEl.innerHTML = mutualServers.map(s => `
+          <div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition group" onclick="closeUserFullProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+            <div class="w-10 h-10 rounded-2xl bg-indigo-500 text-white font-bold text-sm flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
+              ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(s.name || s.id)}</div>
+              <div class="text-[10px] text-gray-400">${(s.joinedUsers || []).length} メンバー</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+  }
+};
+
+window.openFullProfileNoteEditor = function () {
+  const container = document.getElementById('fullProfileNoteContainer');
+  const editor = document.getElementById('fullProfileNoteEditor');
+  const input = document.getElementById('fullProfileNoteInput');
+  if (container) container.classList.add('hidden');
+  if (editor) editor.classList.remove('hidden');
+  if (input) input.focus();
+};
+
+window.cancelFullProfileNoteEditor = function () {
+  const container = document.getElementById('fullProfileNoteContainer');
+  const editor = document.getElementById('fullProfileNoteEditor');
+  if (editor) editor.classList.add('hidden');
+  if (container) container.classList.remove('hidden');
+};
+
+window.saveFullProfileNote = function () {
+  if (!_fullProfileTargetUser) return;
+  const input = document.getElementById('fullProfileNoteInput');
+  const textEl = document.getElementById('fullProfileNoteText');
+  const note = input?.value.trim() || '';
+  const noteKey = `covo_user_note_${userId}_${_fullProfileTargetUser.uid}`;
+  if (note) {
+    localStorage.setItem(noteKey, note);
+    if (textEl) textEl.textContent = note;
+  } else {
+    localStorage.removeItem(noteKey);
+    if (textEl) textEl.textContent = 'クリックしてメモを追加';
+  }
+  cancelFullProfileNoteEditor();
+  alertMessage('メモを保存しました', 'success');
+};
+
+window.toggleFpMoreMenu = function (e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById('fpMoreMenuPopover');
+  if (pop) pop.classList.toggle('hidden');
+};
+window.closeFpMoreMenu = function () {
+  const pop = document.getElementById('fpMoreMenuPopover');
+  if (pop) pop.classList.add('hidden');
+};
+window.callFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  startCall(uid, nickname, avatarUrl);
+};
+window.fileShareFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid, nickname } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  _fsPickFileAndSend(uid, nickname);
+};
+window.blockUserFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  blockUser(uid);
 };
 
 window.openCustomStatusModal = function () {
@@ -8438,7 +8825,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
-  const handleTag = targetUid ? `#${targetUid.slice(-4).toLowerCase()}` : '';
+  const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
   let mutualServersCount = 0;
   if (Array.isArray(allServersCache)) {
     mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
@@ -8447,9 +8834,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof friendRelationships === 'object') {
     mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
   }
-  // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
+  // Discord本家完全準拠 (input_file_1.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px;">
+    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -8458,6 +8845,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
           <i class="fas fa-ellipsis"></i>
         </button>
         <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+            <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+          </button>
           <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-phone w-4 text-center"></i> 音声通話
           </button>
@@ -8479,42 +8869,55 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         <div class="status-indicator status-offline" id="dmPanelStatusDot" style="position: absolute; bottom: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%;"></div>
       </div>
     </div>
-    <div class="dm-profile-card">
-      <div class="mb-3">
-        <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
-          <span id="dmPanelName">${safeName}</span>
-          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60"></i>
+    <div class="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-3 pb-3">
+      <div class="dm-profile-card">
+        <div class="mb-3">
+          <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
+            <span id="dmPanelName">${safeName}</span>
+            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
+          </div>
+          <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
+            ${handleTag}
+          </div>
         </div>
-        <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
-          ${handleTag}
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
+          <span class="inline-flex -space-x-1.5 mr-1">
+            <span class="w-4 h-4 rounded-full bg-blue-500 inline-block border border-white dark:border-black"></span>
+            <span class="w-4 h-4 rounded-full bg-amber-500 inline-block border border-white dark:border-black"></span>
+          </span>
+          <span>${mutualFriendsCount > 0 ? `${mutualFriendsCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー</span>
         </div>
-      </div>
-      <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
-        <i class="fas fa-server text-[11px] text-gray-400"></i>
-        <span>${mutualServersCount}個の共通サーバー</span>
-        ${mutualFriendsCount > 0 ? `<span>•</span><span>${mutualFriendsCount}人の共通の友だち</span>` : ''}
-      </div>
-      <div class="dm-profile-divider"></div>
-      <div class="my-3">
-        <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
-          <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
-          <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
+        <div class="dm-profile-divider"></div>
+        <div class="my-3">
+          <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
+            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
+            <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
+          </div>
+          <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
+          <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
         </div>
-        <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
-        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
-      </div>
-      <div class="dm-profile-divider"></div>
-      <div class="my-3 flex items-center justify-between text-xs">
-        <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
-        <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
+        <div class="dm-profile-divider"></div>
+        <div class="my-3 flex items-center justify-between text-xs">
+          <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
+          <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
+        </div>
       </div>
     </div>
-    <div class="p-3 mt-auto flex-shrink-0">
-      <button onclick="openUserProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="dm-view-full-profile-btn w-full py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
-        <i class="fas fa-id-card text-xs opacity-75"></i> プロフィール全体を表示
+    <!-- input_file_1.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
+    <div class="p-3 border-t border-gray-200/60 dark:border-white/5 bg-gray-50 dark:bg-[#232428] flex-shrink-0">
+      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200 dark:bg-[#2b2d31] hover:bg-gray-300 dark:hover:bg-[#35373c] text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+        <span>プロフィール全体を表示</span>
       </button>
     </div>
   `;
+  // バナーのドミナントカラー動的適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    const bannerEl = panel.querySelector('.dm-profile-banner');
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
+    }
+  });
   try {
     const prof = await window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl });
     const nameEl = document.getElementById('dmPanelName');
@@ -8584,7 +8987,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   } catch (err) {
     console.warn('[renderDmProfilePanel] profile load error:', err);
   }
-  };
+};
 
 window.toggleDmBannerMenu = function (e) {
   if (e) e.stopPropagation();
@@ -22913,6 +23316,7 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'pastVersionsModal') { window.closePastVersionsModal(); return; }
       if (topModal.id === 'inAppBrowserModal') { window.closeInAppBrowser(); return; }
       if (topModal.id === 'userProfileModal') { window.closeUserProfileModal(); return; }
+      if (topModal.id === 'userFullProfileModal') { window.closeUserFullProfileModal(); return; }
       if (topModal.id === 'customStatusModal') { window.closeCustomStatusModal(); return; }
       if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
       if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }

@@ -11055,7 +11055,7 @@ if (typeof window !== 'undefined') {
       border-color: #1e293b !important;
     }
     body.dark-server-theme #userProfileBanner {
-      background-color: #3b82f6 !important;
+      background-color: var(--user-banner-color, #1e293b);
     }
     /* 3. Discordダークモード (body.discord-dark-theme) */
     body.discord-dark-theme .user-profile-card {
@@ -11071,7 +11071,7 @@ if (typeof window !== 'undefined') {
       border-color: #232428 !important;
     }
     body.discord-dark-theme #userProfileBanner {
-      background-color: #5865f2 !important;
+      background-color: var(--user-banner-color, #2b2d31);
     }
 </file>
 
@@ -17444,7 +17444,8 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode.discord-home-view.discord-dm-view #chatArea,
     body.discord-ui-mode.discord-home-view.discord-dm-view #serverHeader,
     body.discord-ui-mode.discord-home-view.discord-dm-view #roomList,
-    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView {
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView,
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordHomeMembers {
       display: none !important;
     }
     @media (max-width: 768px) {
@@ -20490,6 +20491,570 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 </file>
 
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // アプリ全体管理者 (Super Admin / Global Admin)
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    // サーバーオーナー (Server Owner: サーバー作成者)
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          )
+        );
+    }
+
+    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          isServerOwner(appId, serverId) ||
+          (
+            'serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          )
+        );
+    }
+
+    // サーバー参加メンバー (Server Member)
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          ) ||
+          (
+            'joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          )
+        );
+    }
+
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
+      match /settings/{docId} {
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リスト (Allowed Emails)
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000 &&
+          (!('category' in request.resource.data) ||
+           request.resource.data.category in ['bug', 'feature', 'other']);
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
+      match /error_reports/{docId} {
+        allow create, update: if
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read: if isAuthenticated();
+        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫
+      match /recovery_vault/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        // 🔒 書き込みは本人のみ。管理者でも他人のリカバリー情報を書き込めない（単一障害点対策）
+        allow write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+      }
+
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false; // 監査ログは改ざん・削除不可
+      }
+
+      // 招待コードインデックス (逆引き)
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報 (Users & Profiles)
+      match /users/{userId} {
+        allow get, list: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // フレンド関係性 (Relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+
+        match /keys/{keyUserId} {
+          allow get, list: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+          allow write: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+        }
+      }
+
+      // 端末間データ移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        match /{subcollection}/{docId} {
+          allow get, list, write: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('uid' in get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // P2P 過去ログ分散補完 (P2P Log Sync)
+      match /p2p_log_sync/{syncId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.requesterUid == request.auth.uid &&
+            // serverId が指定されている場合はメンバーシップを確認
+            (!('serverId' in request.resource.data) ||
+             isJoinedServer(appId, request.resource.data.serverId))));
+        allow update: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+             ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
+        match /{subcollection}/{docId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid) ||
+              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid)
+            );
+        }
+      }
+
+      // 3. グローバルオンライン状態 (Status)
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // 4. P2P音声通話シグナリング (Calls)
+      match /calls/{callId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ((('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+              ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+              ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid) ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング (File Shares)
+      match /fileshares/{shareId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ((('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+              ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid) ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
+
+      match /servers/{serverId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && (
+            ('joinedUsers' in resource.data && request.auth.uid in resource.data.joinedUsers) ||
+            ('createdBy' in resource.data && request.auth.uid == resource.data.createdBy)
+          ));
+
+        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
+
+        // サーバー設定の更新:
+        // 1) サーバーオーナーまたは全体管理者: createdBy は変更不可
+        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
+        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
+
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
+
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
+
+        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+
+        // サーバー内の秘密情報 (パスワードハッシュ等)
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧 (Channels / Rooms)
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          // ルーム更新: 管理者/モデレーターは設定変更（channelTypeを含む）、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+          );
+          allow delete: if isServerAdmin(appId, serverId);
+
+          // ルーム内メッセージ (Messages)
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
+
+            // メッセージ更新:
+            // 1. リアクション追加・削除: 参加メンバー全員可能（自分のUIDキーのみ）
+            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
+            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
+            // 4. 全体管理者によるモデレーション更新
+            allow update: if isJoinedServer(appId, serverId) && (
+              // リアクション: 自分のUIDキーのみ書き込み可能
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
+              || isGlobalAdmin(appId)
+            );
+
+            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
+            allow delete: if isJoinedServer(appId, serverId) && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+          }
+
+          // 既読レシート (Read Receipts)
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム暗号鍵 (Room Keys)
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId);
+            allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          }
+
+          // E2EE 救済リクエスト (Rescue Requests)
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
+            allow delete: if isJoinedServer(appId, serverId);
+          }
+
+          // タイピングインジケーター (Typing)
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
+          }
+        }
+
+        // サーバー別プロフィール (Profiles)
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ (Stamps)
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 &&
+            request.resource.data.name.size() <= 32 &&
+            request.resource.data.url is string &&
+            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ (Stamp Groups)
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード (Invite Codes)
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read: if isAuthenticated() && (
+          resource == null ||
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+        allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+        allow delete: if isAuthenticated() && (
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+      }
+    }
+
+    // ルート直下 VC シグナリング (フォールバック用)
+    match /vc_signaling/{sigDocId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+      allow delete: if isAuthenticated() && (
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+    }
+
+  }
+}
+</file>
+
 <file path="public/css/modules/chat.css">
 /* --- 追加機能用スタイル --- */
     /* リプライ入力バーのスムーズなスライドインアニメーション */
@@ -22465,15 +23030,15 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       height: 110px;
       min-height: 110px;
       width: 100%;
-      background: #5865f2;
+      background: var(--user-banner-color, #5865f2);
       position: relative;
       flex-shrink: 0;
     }
     body.dark-server-theme .dm-profile-banner {
-      background: #3b82f6 !important;
+      background: var(--user-banner-color, #1e293b);
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: #5865f2 !important;
+      background: var(--user-banner-color, #2b2d31);
     }
     .dm-banner-btn {
       width: 32px;
@@ -22779,570 +23344,24 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     body.discord-dark-theme .active-now-item:hover {
       background-color: rgba(255, 255, 255, 0.05);
     }
-</file>
-
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // ========================================================================
-    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
-    // ========================================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
+    /* =========================================================================
+       Discord本家完全準拠 フルプロフィールモーダル (#userFullProfileModal)
+    .user-full-profile-modal {
+      border-radius: 24px !important;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55) !important;
+      overflow: hidden !important;
     }
-
-    // アプリ全体管理者 (Super Admin / Global Admin)
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
+    body.dark-server-theme .user-full-profile-modal {
+      background-color: #0b0f19 !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
     }
-
-    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
+    body.discord-dark-theme .user-full-profile-modal {
+      background-color: #111214 !important;
+      border-color: #1f2023 !important;
     }
-
-    // サーバーオーナー (Server Owner: サーバー作成者)
-    function isServerOwner(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          (
-            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-          )
-        );
+    #fullProfileBanner {
+      background-color: var(--user-banner-color, #376d49);
     }
-
-    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          isServerOwner(appId, serverId) ||
-          (
-            'serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          )
-        );
-    }
-
-    // サーバー参加メンバー (Server Member)
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          (
-            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-          ) ||
-          (
-            'joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          )
-        );
-    }
-
-    // ========================================================================
-    // 📁 各コレクションのセキュリティルール
-    // ========================================================================
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
-      match /settings/{docId} {
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リスト (Allowed Emails)
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000 &&
-          (!('category' in request.resource.data) ||
-           request.resource.data.category in ['bug', 'feature', 'other']);
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
-      match /error_reports/{docId} {
-        allow create, update: if
-          request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read: if isAuthenticated();
-        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫
-      match /recovery_vault/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        // 🔒 書き込みは本人のみ。管理者でも他人のリカバリー情報を書き込めない（単一障害点対策）
-        allow write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
-      }
-
-      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // モデレーション監査ログ (Audit Logs)
-      match /audit_logs/{logId} {
-        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
-        allow create: if isAuthenticated();
-        allow update, delete: if false; // 監査ログは改ざん・削除不可
-      }
-
-      // 招待コードインデックス (逆引き)
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報 (Users & Profiles)
-      match /users/{userId} {
-        allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // フレンド関係性 (Relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-        allow write: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル
-      match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
-        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-
-        match /keys/{keyUserId} {
-          allow get, list: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             request.auth.uid == keyUserId ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-          allow write: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-        }
-      }
-
-      // 端末間データ移行 (P2P Device Transfers)
-      match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        match /{subcollection}/{docId} {
-          allow get, list, write: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('uid' in get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // P2P 過去ログ分散補完 (P2P Log Sync)
-      match /p2p_log_sync/{syncId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.requesterUid == request.auth.uid &&
-            // serverId が指定されている場合はメンバーシップを確認
-            (!('serverId' in request.resource.data) ||
-             isJoinedServer(appId, request.resource.data.serverId))));
-        allow update: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-             ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)) &&
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
-        match /{subcollection}/{docId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid) ||
-              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid)
-            );
-        }
-      }
-
-      // 3. グローバルオンライン状態 (Status)
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // 4. P2P音声通話シグナリング (Calls)
-      match /calls/{callId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ((('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-              ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-              ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)) &&
-             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-            request.resource.data.caller.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング (File Shares)
-      match /fileshares/{shareId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ((('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-              ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)) &&
-             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-            request.resource.data.sender.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // ========================================================================
-      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
-      // ========================================================================
-
-      match /servers/{serverId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && (
-            ('joinedUsers' in resource.data && request.auth.uid in resource.data.joinedUsers) ||
-            ('createdBy' in resource.data && request.auth.uid == resource.data.createdBy)
-          ));
-
-        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.serverAdmins == [request.auth.uid] &&
-            request.resource.data.joinedUsers == [request.auth.uid]));
-
-        // サーバー設定の更新:
-        // 1) サーバーオーナーまたは全体管理者: createdBy は変更不可
-        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
-        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
-
-        allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
-
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
-
-        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
-        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-
-        // サーバー内の秘密情報 (パスワードハッシュ等)
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧 (Channels / Rooms)
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          // ルーム更新: 管理者/モデレーターは設定変更（channelTypeを含む）、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
-          );
-          allow delete: if isServerAdmin(appId, serverId);
-
-          // ルーム内メッセージ (Messages)
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
-
-            // メッセージ更新:
-            // 1. リアクション追加・削除: 参加メンバー全員可能（自分のUIDキーのみ）
-            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
-            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
-            // 4. 全体管理者によるモデレーション更新
-            allow update: if isJoinedServer(appId, serverId) && (
-              // リアクション: 自分のUIDキーのみ書き込み可能
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
-               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
-              || isGlobalAdmin(appId)
-            );
-
-            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
-            allow delete: if isJoinedServer(appId, serverId) && (
-              resource.data.senderId == request.auth.uid ||
-              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
-              isServerAdmin(appId, serverId) ||
-              isServerOwner(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-          }
-
-          // 既読レシート (Read Receipts)
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム暗号鍵 (Room Keys)
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId);
-            allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          }
-
-          // E2EE 救済リクエスト (Rescue Requests)
-          match /rescueRequests/{reqUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
-            allow delete: if isJoinedServer(appId, serverId);
-          }
-
-          // タイピングインジケーター (Typing)
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
-          }
-        }
-
-        // サーバー別プロフィール (Profiles)
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ (Stamps)
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string &&
-            request.resource.data.name.size() > 0 &&
-            request.resource.data.name.size() <= 32 &&
-            request.resource.data.url is string &&
-            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ (Stamp Groups)
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード (Invite Codes)
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-
-      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
-      match /vc_signaling/{sigDocId} {
-        allow read: if isAuthenticated() && (
-          resource == null ||
-          resource.data.toUid == request.auth.uid ||
-          resource.data.fromUid == request.auth.uid
-        );
-        allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
-        allow delete: if isAuthenticated() && (
-          resource.data.toUid == request.auth.uid ||
-          resource.data.fromUid == request.auth.uid
-        );
-      }
-    }
-
-    // ルート直下 VC シグナリング (フォールバック用)
-    match /vc_signaling/{sigDocId} {
-      allow read: if isAuthenticated() && (
-        resource == null ||
-        resource.data.toUid == request.auth.uid ||
-        resource.data.fromUid == request.auth.uid
-      );
-      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
-      allow delete: if isAuthenticated() && (
-        resource.data.toUid == request.auth.uid ||
-        resource.data.fromUid == request.auth.uid
-      );
-    }
-
-  }
-}
 </file>
 
 <file path="database.rules.json">
@@ -26499,13 +26518,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.179" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.180" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.179" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.180" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -29715,7 +29734,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.179"></script>
+  <script type="module" src="js/main.js?v=1.1.180"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -30833,99 +30852,85 @@ async function handleD1Api(request, env, url) {
       </div>
     </div>
   </div>
-  <!-- Covoモダンデザイン ユーザープロフィール詳細ポップアップモーダル (Discord完全準拠・アバター見切れ完全解消版) -->
+  <!-- Discord本家完全準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様) -->
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
-    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[340px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-[#1f2023] relative text-gray-800 dark:text-gray-100 flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[320px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
       <!-- スマホ用ボトムシートドラッグハンドル -->
       <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
-      <!-- 1. バナーヘッダー (Discord本家カラー #5865f2) -->
-      <div id="userProfileBanner" class="h-24 bg-[#5865f2] relative flex items-start justify-end p-3 flex-shrink-0">
-        <button onclick="closeUserProfileModal()" class="w-7 h-7 rounded-full bg-black/25 hover:bg-black/40 text-white/90 hover:text-white flex items-center justify-center transition-all shadow-xs" title="閉じる (ESC)">
-          <i class="fas fa-times text-xs"></i>
-        </button>
+      <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
+      <div id="userProfileBanner" class="h-20 relative flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
+        <div class="flex items-center gap-1.5 z-10">
+          <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
+            <i class="fas fa-user-plus"></i>
+          </button>
+          <button id="upBannerMoreBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="その他のオプション" onclick="window.toggleUpMoreMenu(event)">
+            <i class="fas fa-ellipsis"></i>
+          </button>
+          <div id="upMoreMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+            <button onclick="window.openFullProfileFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+              <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+            </button>
+            <button onclick="window.openDmFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+              <i class="fas fa-comment-dots w-4 text-center"></i> メッセージ
+            </button>
+            <button onclick="window.openCallFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+              <i class="fas fa-phone w-4 text-center"></i> 音声通話
+            </button>
+            <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
+            <button onclick="window.blockUserFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+              <i class="fas fa-ban w-4 text-center"></i> ブロック
+            </button>
+          </div>
+        </div>
       </div>
-      <!-- 2. アバター & アクションバー (スクロールコンテナ外に固定配置して見切れを根絶) -->
-      <div class="px-4 relative flex items-end justify-between -mt-12 mb-2.5 flex-shrink-0">
-        <div class="relative flex-shrink-0 group cursor-pointer" onclick="openUserProfileAvatarLightbox()" title="アイコンをクリックして拡大">
+      <!-- 2. アバター (バナーに食い込み) -->
+      <div class="px-4 relative flex items-end justify-between -mt-10 mb-2 flex-shrink-0">
+        <div class="relative group cursor-pointer" onclick="openUserProfileAvatarLightbox()" title="アイコンをクリックして拡大">
           <div id="userProfileAvatar" class="w-20 h-20 rounded-full border-[5px] border-white dark:border-[#232428] shadow-lg bg-gray-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105">
             U
           </div>
-          <div id="userProfileStatusDot" class="status-indicator status-online" style="bottom: 1px; right: 1px; width: 18px; height: 18px; border: 3px solid white;"></div>
-          <!-- ホバー時のズームインジケーター -->
-          <div class="absolute inset-0 rounded-full bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none text-white text-xs">
-            <i class="fas fa-search-plus"></i>
-          </div>
-        </div>
-        <!-- アクションボタン群 (他人の場合: Discord本家準拠のニュートラルカラー) -->
-        <div id="userProfileActionsOther" class="flex items-center gap-1.5 pb-0.5">
-          <button id="upActionDmBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="ダイレクトメッセージ">
-            <i class="fas fa-comment-dots"></i>
-          </button>
-          <button id="upActionCallBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="音声通話">
-            <i class="fas fa-phone"></i>
-          </button>
-          <button id="upActionFileBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="P2Pファイル送信">
-            <i class="fas fa-share-from-square"></i>
-          </button>
-          <button id="upActionFriendBtn" class="w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none" title="フレンド申請">
-            <i class="fas fa-user-plus"></i>
-          </button>
-        </div>
-        <!-- アクションボタン (自分の場合) -->
-        <div id="userProfileActionsSelf" class="hidden flex items-center gap-1.5 pb-0.5">
-          <button onclick="openProfileEditFromModal()" class="px-3.5 py-1.5 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs border border-gray-200/60 dark:border-white/5 active:scale-95" title="プロフィールを編集">
-            <i class="fas fa-pencil text-[10px] text-[#5865f2]"></i> プロフィール編集
-          </button>
+          <div id="userProfileStatusDot" class="status-indicator status-online" style="bottom: 1px; right: 1px; width: 18px; height: 18px; border: 3px solid #232428;"></div>
         </div>
       </div>
-      <!-- 3. ユーザーネーム & タグ (固定表示) -->
-      <div class="px-4 mb-2 flex-shrink-0">
-        <div class="flex items-center gap-2 flex-wrap">
+      <!-- 3. ユーザーネーム & タグ -->
+      <div class="px-4 mb-2.5 flex-shrink-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
           <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h3>
-          <span id="userProfileBadgeAdmin" class="hidden px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#5865f2]/10 text-[#5865f2] border border-[#5865f2]/20">管理者</span>
+          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openFullProfileFromPopout()" title="メモ / 詳細プロフィール"></i>
         </div>
-        <div class="text-xs text-gray-500 dark:text-gray-400 font-mono font-medium mt-0.5" id="userProfileTag">#0000</div>
+        <div class="text-xs text-[#949ba4] font-mono font-medium mt-0.5" id="userProfileTag">#0000</div>
       </div>
-      <!-- 4. カスタムステータス (ステメ) エリア (固定表示) -->
-      <div id="userProfileCustomStatusWrap" class="mx-4 mb-3 p-2.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] flex items-center justify-between gap-2 shadow-inner transition-colors flex-shrink-0">
-        <div class="flex items-center gap-2 min-w-0 flex-1">
-          <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
-          <span id="userProfileStatusText" class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate select-text">ステータスメッセージ未設定</span>
-        </div>
-        <i id="userProfileStatusEditIcon" class="fas fa-pencil text-[10px] text-gray-400 dark:text-gray-500 hidden flex-shrink-0"></i>
+      <!-- 4. カスタムステータス (ある場合) -->
+      <div id="userProfileCustomStatusWrap" class="mx-4 mb-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2">
+        <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
+        <span id="userProfileStatusText" class="font-medium truncate select-text"></span>
       </div>
-      <!-- 5. 詳細スクロールエリア (About Me、参加日、クイックDM) -->
-      <div class="px-4 pb-4 flex-1 overflow-y-auto custom-scrollbar space-y-3">
-        <!-- プロフィール詳細カード (About Me & 参加日) -->
-        <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] rounded-xl border border-gray-200/60 dark:border-[#1f2023] space-y-3 text-xs shadow-xs">
-          <div>
-            <div class="text-[10px] font-extrabold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
-            <div id="userProfileAboutMe" class="text-xs text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
+      <!-- 5. 共通サーバー数 -->
+      <div class="px-4 mb-3 flex items-center gap-2 text-xs text-[#949ba4] font-medium" id="userProfileMutualServersSummary">
+        <i class="fas fa-server text-[11px]"></i>
+        <span id="userProfileMutualServersCountText">1個の共通サーバー</span>
+      </div>
+      <!-- 6. 最下部 クイックメッセージ入力エリア (input_file_0.png仕様) -->
+      <div id="userProfileQuickMsgArea" class="p-3 pt-0 mt-auto">
+        <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
+          <div class="p-1.5 pl-3 bg-gray-100 dark:bg-[#1e1f22] rounded-xl border border-gray-200 dark:border-white/5 focus-within:border-indigo-500 flex items-center gap-2 transition-all shadow-inner">
+            <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none font-medium" />
+            <button type="button" onclick="document.getElementById('stickerButton')?.click()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 text-sm transition-colors" title="絵文字・スタンプ">
+              <i class="far fa-smile"></i>
+            </button>
           </div>
-          <div class="border-t border-gray-200/60 dark:border-white/5 pt-2.5 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
-            <span class="font-bold uppercase tracking-wider text-[10px]">参加日 (MEMBER SINCE)</span>
-            <span id="userProfileJoinedDate" class="font-semibold text-gray-800 dark:text-gray-200 font-mono">-</span>
-          </div>
-        </div>
-        <!-- 共通のサーバー (MUTUAL SERVERS) -->
-        <div id="userProfileMutualServersSection" class="hidden">
-          <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-1">共通のサーバー</div>
-          <div id="userProfileMutualServers" class="space-y-1.5"></div>
-        </div>
-        <!-- メッセージ送信クイック入力 (他人の場合のみ) -->
-        <div id="userProfileQuickMsgArea" class="pt-0.5">
-          <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
-            <div class="p-1.5 pl-3 bg-[#ebedef] dark:bg-[#1e1f22] rounded-xl border border-transparent focus-within:border-[#5865f2] dark:focus-within:border-[#5865f2] flex items-center gap-2 transition-all shadow-xs">
-              <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-[#949ba4] focus:outline-none font-medium" />
-              <button type="submit" class="w-7 h-7 rounded-lg text-gray-500 hover:text-[#5865f2] dark:text-[#949ba4] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-xs transition-colors active:scale-95 flex-shrink-0" title="送信">
-                <i class="fas fa-paper-plane text-[11px]"></i>
-              </button>
-            </div>
-          </form>
-        </div>
+        </form>
       </div>
     </div>
   </div>
+  <!-- Discord本家完全準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様) -->
+  <div id="userFullProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] hidden p-3 sm:p-6 select-none" onclick="if(event.target===this) closeUserFullProfileModal()">
+    <div class="user-full-profile-modal bg-white dark:bg-[#111214] rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200 flex flex-col max-h-[85vh] h-[680px]" onclick="event.stopPropagation()">
+      <!-- 右上 閉じるボタン -->
+      <button onclick="closeUserFullProfileModal()" class="absolute top-4 right-4 z-50 w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-600 dark:text-white flex items-center justify-center transition-all cursor-pointer" title="閉じる (ESC)">
+        <i class="fas fa-times text-sm"></i>
+      </button>
+      <div class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
   <!-- カスタムステータス（ステメ）設定モーダル -->
   <div id="customStatusModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] hidden p-4 select-none" onclick="if(event.target===this) closeCustomStatusModal()">
     <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200" onclick="event.stopPropagation()">
@@ -36213,27 +36218,138 @@ window.openUserProfileAvatarLightbox = function () {
   const user = _currentProfileTargetUser;
   openAvatarLightbox(user.avatarUrl, user.nickname, user.uid?.substring(0, 4));
 };
+// =========================================================================
+// 🌟 Discord準拠 アバターアクセントカラー自動抽出 & HSLトーン補正
+// =========================================================================
+const _avatarColorCache = new Map();
+const DISCORD_PRESET_COLORS = [
+  '#376d49', '#322c3b', '#2a4b5d', '#4a3c31', '#5865f2', '#3ba55d', '#faa81a', '#ed4245', '#eb459e'
+];
+function getHashColor(str) {
+  if (!str) return DISCORD_PRESET_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return DISCORD_PRESET_COLORS[Math.abs(hash) % DISCORD_PRESET_COLORS.length];
+}
+function hslToHex(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+  else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+  else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+  else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+  else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+  else if (300 <= h && h < 360) { r = c; g = 0; b = x; }
+  const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+async function getAvatarAccentColor(avatarUrl, seedId = '') {
+  if (!avatarUrl || !isUsableAvatarUrl(avatarUrl)) {
+    return getHashColor(seedId);
+  }
+  if (_avatarColorCache.has(avatarUrl)) {
+    return _avatarColorCache.get(avatarUrl);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const fallback = () => {
+      const col = getHashColor(seedId || avatarUrl);
+      _avatarColorCache.set(avatarUrl, col);
+      resolve(col);
+    };
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const size = 32;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return fallback();
+        ctx.drawImage(img, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+        const buckets = Array.from({ length: 36 }, () => []);
+        const bucketScores = new Array(36).fill(0);
+        const allColors = [];
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 128) continue;
+          const rf = data[i] / 255, gf = data[i + 1] / 255, bf = data[i + 2] / 255;
+          const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
+          const delta = max - min;
+          const l = (max + min) / 2;
+          let h = 0, s = 0;
+          if (delta > 0) {
+            s = delta / (1 - Math.abs(2 * l - 1) + 1e-6);
+            if (max === rf) h = ((gf - bf) / delta) % 6;
+            else if (max === gf) h = ((bf - rf) / delta) + 2;
+            else h = ((rf - gf) / delta) + 4;
+            h = (h * 60 + 360) % 360;
+          }
+          allColors.push({ h, s, l });
+          if (l > 0.12 && l < 0.88 && s > 0.15) {
+            const bIdx = Math.floor(h / 10) % 36;
+            bucketScores[bIdx] += Math.pow(s, 1.3);
+            buckets[bIdx].push({ h, s, l });
+          }
+        }
+        let bestIdx = 0, maxScore = -1;
+        for (let i = 0; i < 36; i++) {
+          if (bucketScores[i] > maxScore) { maxScore = bucketScores[i]; bestIdx = i; }
+        }
+        let avgH = 0, avgS = 0, avgL = 0;
+        if (maxScore > 0.5 && buckets[bestIdx].length > 0) {
+          const bColors = buckets[bestIdx];
+          avgH = bColors.reduce((sum, c) => sum + c.h, 0) / bColors.length;
+          avgS = bColors.reduce((sum, c) => sum + c.s, 0) / bColors.length;
+          avgL = bColors.reduce((sum, c) => sum + c.l, 0) / bColors.length;
+        } else if (allColors.length > 0) {
+          avgH = allColors.reduce((sum, c) => sum + c.h, 0) / allColors.length;
+          avgS = allColors.reduce((sum, c) => sum + c.s, 0) / allColors.length;
+          avgL = allColors.reduce((sum, c) => sum + c.l, 0) / allColors.length;
+        } else {
+          return fallback();
+        }
+        // Discord風のシックなダークトーン補正
+        const adjS = avgS > 0.08 ? Math.min(0.65, Math.max(0.35, avgS * 1.1)) : 0.12;
+        const adjL = Math.min(0.32, Math.max(0.22, avgL > 0.35 ? avgL * 0.65 : avgL));
+        const hex = hslToHex(avgH, adjS, adjL);
+        _avatarColorCache.set(avatarUrl, hex);
+        resolve(hex);
+      } catch (e) {
+        fallback();
+      }
+    };
+    img.onerror = fallback;
+    img.src = avatarUrl;
+  });
+}
+window.getAvatarAccentColor = getAvatarAccentColor;
+// =========================================================================
+// 🌟 Discord準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様)
+// =========================================================================
 window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
   if (!modal) return;
   const isSelf = targetUid === userId;
   _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  const bannerEl = document.getElementById("userProfileBanner");
   const avatarEl = document.getElementById("userProfileAvatar");
   const statusDot = document.getElementById("userProfileStatusDot");
   const nameEl = document.getElementById("userProfileName");
   const tagEl = document.getElementById("userProfileTag");
-  const adminBadge = document.getElementById("userProfileBadgeAdmin");
   const customStatusWrap = document.getElementById("userProfileCustomStatusWrap");
   const statusEmojiEl = document.getElementById("userProfileStatusEmoji");
   const statusTextEl = document.getElementById("userProfileStatusText");
-  const statusEditIcon = document.getElementById("userProfileStatusEditIcon");
-  const aboutMeEl = document.getElementById("userProfileAboutMe");
-  const joinedDateEl = document.getElementById("userProfileJoinedDate");
-  const actionsOther = document.getElementById("userProfileActionsOther");
-  const actionsSelf = document.getElementById("userProfileActionsSelf");
+  const mutualServersCountText = document.getElementById("userProfileMutualServersCountText");
   const quickMsgArea = document.getElementById("userProfileQuickMsgArea");
   const quickMsgInput = document.getElementById("userProfileQuickMsgInput");
+  const upBannerFriendBtn = document.getElementById("upBannerFriendBtn");
   const safeName = targetNickname || targetUid.substring(0, 8);
   if (nameEl) nameEl.textContent = safeName;
   if (tagEl) tagEl.textContent = `#${targetUid.slice(-4).toLowerCase()}`;
@@ -36247,95 +36363,69 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
-  if (isSelf) {
-    if (actionsOther) actionsOther.classList.add("hidden");
-    if (actionsSelf) actionsSelf.classList.remove("hidden");
-    if (quickMsgArea) quickMsgArea.classList.add("hidden");
-    if (customStatusWrap) {
-      customStatusWrap.classList.remove("hidden");
-      customStatusWrap.onclick = () => openCustomStatusModal();
-      customStatusWrap.style.cursor = "pointer";
-      customStatusWrap.title = "タップしてステータスメッセージを設定";
-      if (statusEditIcon) statusEditIcon.classList.remove("hidden");
+  // アバターに応じたアクセントカラーを抽出しバナーに適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
     }
-    if (aboutMeEl) aboutMeEl.textContent = userAboutMe || "自己紹介はまだ設定されていません。";
-  } else {
-    if (actionsOther) actionsOther.classList.remove("hidden");
-    if (actionsSelf) actionsSelf.classList.add("hidden");
-    if (customStatusWrap) {
-      customStatusWrap.onclick = null;
-      customStatusWrap.style.cursor = "default";
-      customStatusWrap.removeAttribute("title");
-      if (statusEditIcon) statusEditIcon.classList.add("hidden");
-    }
-    if (quickMsgArea) {
-      quickMsgArea.classList.remove("hidden");
-      if (quickMsgInput) {
-        quickMsgInput.placeholder = `@${safeName} へのメッセージ...`;
-        quickMsgInput.value = "";
-      }
-    }
-    const upActionDmBtn = document.getElementById("upActionDmBtn");
-    const upActionCallBtn = document.getElementById("upActionCallBtn");
-    const upActionFileBtn = document.getElementById("upActionFileBtn");
-    const upActionFriendBtn = document.getElementById("upActionFriendBtn");
-    if (upActionDmBtn) {
-      upActionDmBtn.onclick = () => {
-        closeUserProfileModal();
-        openDm(targetUid, safeName, targetAvatarUrl);
-      };
-    }
-    if (upActionCallBtn) {
-      upActionCallBtn.onclick = () => {
-        closeUserProfileModal();
-        startCall(targetUid, safeName, targetAvatarUrl);
-      };
-    }
-    if (upActionFileBtn) {
-      upActionFileBtn.onclick = () => {
-        closeUserProfileModal();
-        _fsPickFileAndSend(targetUid, safeName);
-      };
-    }
-    if (upActionFriendBtn) {
+  });
+  // 右上フレンドボタン状態同期
+  if (upBannerFriendBtn) {
+    if (isSelf) {
+      upBannerFriendBtn.style.display = 'none';
+    } else {
+      upBannerFriendBtn.style.display = 'flex';
       const rel = friendRelationships[targetUid];
       if (rel?.status === 'friends') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-emerald-500/10 hover:bg-rose-500/20 text-emerald-600 hover:text-rose-600 dark:text-emerald-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド解除";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
-        upActionFriendBtn.onclick = async () => {
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド解除";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        upBannerFriendBtn.onclick = async () => {
           if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
-          closeUserProfileModal();
           rejectFriendRequest(targetUid);
         };
       } else if (rel?.status === 'pending_sent') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-amber-500/10 hover:bg-rose-500/20 text-amber-600 hover:text-rose-600 dark:text-amber-400 dark:hover:text-rose-400 flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "申請送信済み (タップで取消)";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
-        upActionFriendBtn.onclick = () => {
-          closeUserProfileModal();
-          cancelFriendRequest(targetUid);
-        };
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "申請送信済み (タップで取消)";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        upBannerFriendBtn.onclick = () => cancelFriendRequest(targetUid);
       } else if (rel?.status === 'pending_received') {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#5865f2]/15 hover:bg-[#5865f2] text-[#5865f2] hover:text-white flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド申請が届いています (タップで承認)";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
-        upActionFriendBtn.onclick = () => {
-          closeUserProfileModal();
-          acceptFriendRequest(targetUid);
-        };
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-[#5865f2] text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド申請承認";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upBannerFriendBtn.onclick = () => acceptFriendRequest(targetUid);
       } else {
-        upActionFriendBtn.className = "w-9 h-9 rounded-full bg-[#ebedef] hover:bg-[#d7d9dc] text-[#4e5058] hover:text-[#060607] dark:bg-[#2b2d31] dark:hover:bg-[#35373c] dark:text-[#b5bac1] dark:hover:text-[#f2f3f5] flex items-center justify-center text-sm transition-all shadow-xs active:scale-95 border-none";
-        upActionFriendBtn.title = "フレンド申請を送信";
-        upActionFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
-        upActionFriendBtn.onclick = async () => {
-          closeUserProfileModal();
+        upBannerFriendBtn.className = "w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer";
+        upBannerFriendBtn.title = "フレンド申請を送信";
+        upBannerFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        upBannerFriendBtn.onclick = async () => {
           await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
         };
       }
     }
   }
-  // 非同期でユーザー詳細（ステメ・自己紹介・参加日）を取得
+  // 共通サーバー数の計算
+  let mutualServersCount = 0;
+  if (Array.isArray(allServersCache)) {
+    mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
+  }
+  if (mutualServersCountText) {
+    mutualServersCountText.textContent = `${mutualServersCount}個の共通サーバー`;
+  }
+  // クイックメッセージ入力欄
+  if (quickMsgArea) {
+    if (isSelf) {
+      quickMsgArea.classList.add("hidden");
+    } else {
+      quickMsgArea.classList.remove("hidden");
+      if (quickMsgInput) {
+        quickMsgInput.placeholder = `@${safeName} ヘメッセージを...`;
+        quickMsgInput.value = "";
+      }
+    }
+  }
+  // 非同期でユーザー詳細（ステメ）を取得
   try {
     const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
     const snap = await getDoc(userDocRef);
@@ -36345,61 +36435,60 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
         __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
       }
-      // カスタムステータス (ステメ)
+      if (uData.email && tagEl) {
+        tagEl.textContent = `@${uData.email.split('@')[0]}`;
+      }
       if (uData.customStatus && uData.customStatus.text) {
         if (customStatusWrap) customStatusWrap.classList.remove("hidden");
         if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
         if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
       } else {
-        if (isSelf) {
-          if (customStatusWrap) customStatusWrap.classList.remove("hidden");
-          if (statusEmojiEl) statusEmojiEl.textContent = "💬";
-          if (statusTextEl) statusTextEl.textContent = "ステータスメッセージを設定する";
-        } else {
-          if (customStatusWrap) customStatusWrap.classList.add("hidden");
-        }
+        if (customStatusWrap) customStatusWrap.classList.add("hidden");
       }
-      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (isSelf ? (userAboutMe || "自己紹介はまだ設定されていません。") : "自己紹介はまだ設定されていません。");
-      if (joinedDateEl) {
-        let dt = "-";
-        if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
-        else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
-        else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
-        joinedDateEl.textContent = dt;
-      }
-      if (adminBadge) {
-        adminBadge.classList.toggle("hidden", !(uData.isAdmin || (isAdmin && isSelf)));
-      }
-      // 共通のサーバー (Mutual Servers)
-      const mutualServersEl = document.getElementById("userProfileMutualServers");
-      const mutualSec = document.getElementById("userProfileMutualServersSection");
-      if (mutualServersEl && Array.isArray(allServersCache)) {
-        const mutuals = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
-        if (mutuals.length === 0) {
-          if (mutualSec) mutualSec.classList.add("hidden");
-        } else {
-          if (mutualSec) mutualSec.classList.remove("hidden");
-          mutualServersEl.innerHTML = mutuals.map(s => `
-            <div class="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2b2d31] transition-all group" onclick="closeUserProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
-              <div class="w-7 h-7 rounded-xl bg-indigo-500 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
-                ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
-              </div>
-              <span class="text-xs font-bold text-gray-800 dark:text-gray-200 truncate flex-1">${escapeHtml(s.name || s.id)}</span>
-              <i class="fas fa-chevron-right text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-            </div>
-          `).join('');
-        }
-      }
-      }
-      } catch (err) {
-      console.warn("Failed to fetch full user profile:", err);
-      }
-      openModal(modal);
-      };
+    }
+  } catch (err) {
+    console.warn("Failed to fetch popout user profile:", err);
+  }
+  openModal(modal);
+};
 window.closeUserProfileModal = function () {
   const modal = document.getElementById("userProfileModal");
   if (modal) modal.classList.add("hidden");
+  window.closeUpMoreMenu();
   _currentProfileTargetUser = null;
+};
+window.toggleUpMoreMenu = function (e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById("upMoreMenuPopover");
+  if (pop) pop.classList.toggle("hidden");
+};
+window.closeUpMoreMenu = function () {
+  const pop = document.getElementById("upMoreMenuPopover");
+  if (pop) pop.classList.add("hidden");
+};
+window.openFullProfileFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  openUserFullProfileModal(uid, nickname, avatarUrl);
+};
+window.openDmFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  openDm(uid, nickname, avatarUrl);
+};
+window.openCallFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  startCall(uid, nickname, avatarUrl);
+};
+window.blockUserFromPopout = function () {
+  if (!_currentProfileTargetUser) return;
+  const { uid } = _currentProfileTargetUser;
+  closeUserProfileModal();
+  blockUser(uid);
 };
 window.submitQuickDmMessage = async function () {
   const input = document.getElementById("userProfileQuickMsgInput");
@@ -36416,6 +36505,308 @@ window.submitQuickDmMessage = async function () {
       sendMessage();
     }
   }, 200);
+};
+// =========================================================================
+// 🌟 Discord準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様)
+// =========================================================================
+let _fullProfileTargetUser = null;
+window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+  if (!targetUid) return;
+  const modal = document.getElementById("userFullProfileModal");
+  if (!modal) return;
+  _fullProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  const isSelf = targetUid === userId;
+  const bannerEl = document.getElementById("fullProfileBanner");
+  const avatarEl = document.getElementById("fullProfileAvatar");
+  const statusDot = document.getElementById("fullProfileStatusDot");
+  const nameEl = document.getElementById("fullProfileName");
+  const handleEl = document.getElementById("fullProfileHandle");
+  const aboutMeEl = document.getElementById("fullProfileAboutMe");
+  const joinedDateEl = document.getElementById("fullProfileJoinedDate");
+  const friendDateRow = document.getElementById("fullProfileFriendDateRow");
+  const friendDateEl = document.getElementById("fullProfileFriendDate");
+  const noteContainer = document.getElementById("fullProfileNoteContainer");
+  const noteText = document.getElementById("fullProfileNoteText");
+  const noteEditor = document.getElementById("fullProfileNoteEditor");
+  const noteInput = document.getElementById("fullProfileNoteInput");
+  const msgBtn = document.getElementById("fullProfileMsgBtn");
+  const friendBtn = document.getElementById("fullProfileFriendBtn");
+  const moreBtn = document.getElementById("fullProfileMoreBtn");
+  const safeName = targetNickname || targetUid.substring(0, 8);
+  if (nameEl) nameEl.textContent = safeName;
+  if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
+  if (avatarEl) {
+    if (isUsableAvatarUrl(targetAvatarUrl)) {
+      __setAvatarImg(avatarEl, targetAvatarUrl, safeName, { className: 'w-full h-full rounded-full object-cover' });
+    } else {
+      avatarEl.textContent = safeName.charAt(0).toUpperCase();
+    }
+  }
+  const cachedUser = cachedUsers.find(u => u.id === targetUid);
+  const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
+  if (statusDot) statusDot.className = `status-indicator status-${state}`;
+  // アバターに応じたアクセントカラーを抽出しバナーに適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
+    }
+  });
+  // アクションボタン
+  if (msgBtn) {
+    msgBtn.onclick = () => {
+      closeUserFullProfileModal();
+      openDm(targetUid, safeName, targetAvatarUrl);
+    };
+  }
+  if (friendBtn) {
+    if (isSelf) {
+      friendBtn.style.display = 'none';
+    } else {
+      friendBtn.style.display = 'flex';
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド解除";
+        friendBtn.innerHTML = '<i class="fas fa-user-check"></i>';
+        friendBtn.onclick = async () => {
+          if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
+          rejectFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else if (rel?.status === 'pending_sent') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "申請送信済み";
+        friendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
+        friendBtn.onclick = () => {
+          cancelFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else if (rel?.status === 'pending_received') {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-[#5865f2] text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド申請承認";
+        friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        friendBtn.onclick = () => {
+          acceptFriendRequest(targetUid);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      } else {
+        friendBtn.className = "w-9 h-9 rounded-xl bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
+        friendBtn.title = "フレンド申請";
+        friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+        friendBtn.onclick = async () => {
+          await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+        };
+      }
+    }
+  }
+  // メモ読み込み
+  const noteKey = `covo_user_note_${userId}_${targetUid}`;
+  const savedNote = localStorage.getItem(noteKey) || '';
+  if (noteText) noteText.textContent = savedNote || 'クリックしてメモを追加';
+  if (noteInput) noteInput.value = savedNote;
+  if (noteEditor) noteEditor.classList.add('hidden');
+  if (noteContainer) noteContainer.classList.remove('hidden');
+  // 非同期プロフィール情報読み込み
+  try {
+    const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      const uData = snap.data();
+      if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
+      if (uData.email && handleEl) {
+        handleEl.textContent = `${uData.email.split('@')[0]}${uData.customStatus?.text ? ` • ${uData.customStatus.text}` : ''}`;
+      }
+      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (uData.customStatus?.text || '自己紹介はまだ設定されていません。');
+      if (joinedDateEl) {
+        let dt = '-';
+        if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
+        else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
+        else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
+        joinedDateEl.textContent = dt;
+      }
+      // フレンドになった日
+      const rel = friendRelationships[targetUid];
+      if (rel?.status === 'friends' && rel?.updatedAt) {
+        let fdt = '-';
+        if (rel.updatedAt.toDate) fdt = rel.updatedAt.toDate().toLocaleDateString('ja-JP');
+        else if (typeof rel.updatedAt === 'number') fdt = new Date(rel.updatedAt).toLocaleDateString('ja-JP');
+        else if (rel.updatedAt.seconds != null) fdt = new Date(rel.updatedAt.seconds * 1000).toLocaleDateString('ja-JP');
+        if (friendDateEl) friendDateEl.textContent = fdt;
+        if (friendDateRow) friendDateRow.classList.remove('hidden');
+      } else if (friendDateRow) {
+        friendDateRow.classList.add('hidden');
+      }
+    }
+  } catch (err) {
+    console.warn("Full profile fetch error:", err);
+  }
+  // タブの初期表示設定（アクティビティ）
+  switchFullProfileTab('activity');
+  openModal(modal);
+};
+window.closeUserFullProfileModal = function () {
+  const modal = document.getElementById("userFullProfileModal");
+  if (modal) modal.classList.add("hidden");
+  window.closeFpMoreMenu();
+  _fullProfileTargetUser = null;
+};
+window.openFullProfileAvatarLightbox = function () {
+  if (!_fullProfileTargetUser) return;
+  openAvatarLightbox(_fullProfileTargetUser.avatarUrl, _fullProfileTargetUser.nickname, _fullProfileTargetUser.uid?.slice(-4));
+};
+window.switchFullProfileTab = function (tab) {
+  const tabBtns = {
+    activity: document.getElementById('fpTabActivityBtn'),
+    friends: document.getElementById('fpTabFriendsBtn'),
+    servers: document.getElementById('fpTabServersBtn')
+  };
+  const tabContents = {
+    activity: document.getElementById('fpTabActivityContent'),
+    friends: document.getElementById('fpTabFriendsContent'),
+    servers: document.getElementById('fpTabServersContent')
+  };
+  Object.keys(tabBtns).forEach(k => {
+    const btn = tabBtns[k];
+    const cnt = tabContents[k];
+    const isTarget = k === tab;
+    if (btn) {
+      if (isTarget) {
+        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-indigo-600 dark:border-white transition-colors cursor-pointer font-bold";
+      } else {
+        btn.className = "pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold";
+      }
+    }
+    if (cnt) {
+      cnt.classList.toggle('hidden', !isTarget);
+    }
+  });
+  if (!_fullProfileTargetUser) return;
+  const targetUid = _fullProfileTargetUser.uid;
+  const safeName = _fullProfileTargetUser.nickname || 'ユーザー';
+  // 1. アクティビティ
+  if (tab === 'activity') {
+    const headline = document.getElementById('fpActivityHeadline');
+    const msgBtn = document.getElementById('fpActivityMsgBtn');
+    if (headline) headline.textContent = `${safeName}にはここで共有するアクティビティがありません`;
+    if (msgBtn) {
+      msgBtn.onclick = () => {
+        closeUserFullProfileModal();
+        openDm(targetUid, safeName, _fullProfileTargetUser.avatarUrl);
+      };
+    }
+  }
+  // 2. 共通の友だち
+  else if (tab === 'friends') {
+    const friendsListEl = document.getElementById('fpMutualFriendsList');
+    const friendsLabel = document.getElementById('fpMutualFriendsCountLabel');
+    const mutualFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    if (friendsLabel) friendsLabel.textContent = `${mutualFriends.length}人の共通の友だち`;
+    if (friendsListEl) {
+      if (mutualFriends.length === 0) {
+        friendsListEl.innerHTML = `<div class="p-6 text-center text-xs text-gray-400">共通の友だちはまだいません</div>`;
+      } else {
+        friendsListEl.innerHTML = mutualFriends.map(f => `
+          <div class="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-9 h-9 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden flex-shrink-0">
+                ${isUsableAvatarUrl(f.targetAvatarUrl) ? `<img src="${escapeHtml(f.targetAvatarUrl)}" class="w-full h-full object-cover">` : escapeHtml((f.targetNickname || 'U').charAt(0).toUpperCase())}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(f.targetNickname || 'ユーザー')}</div>
+                <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(f.targetEmail || '')}</div>
+              </div>
+            </div>
+            <button onclick="closeUserFullProfileModal(); openDm('${f.targetUid}','${escapeHtml(f.targetNickname || '')}','${escapeHtml(f.targetAvatarUrl || '')}')" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs transition">
+              メッセージ
+            </button>
+          </div>
+        `).join('');
+      }
+    }
+  }
+  // 3. 共通サーバー
+  else if (tab === 'servers') {
+    const serversListEl = document.getElementById('fpMutualServersList');
+    const serversLabel = document.getElementById('fpMutualServersCountLabel');
+    const mutualServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+    if (serversLabel) serversLabel.textContent = `${mutualServers.length}個の共通サーバー`;
+    if (serversListEl) {
+      if (mutualServers.length === 0) {
+        serversListEl.innerHTML = `<div class="col-span-full p-6 text-center text-xs text-gray-400">共通のサーバーはありません</div>`;
+      } else {
+        serversListEl.innerHTML = mutualServers.map(s => `
+          <div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition group" onclick="closeUserFullProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+            <div class="w-10 h-10 rounded-2xl bg-indigo-500 text-white font-bold text-sm flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
+              ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(s.name || s.id)}</div>
+              <div class="text-[10px] text-gray-400">${(s.joinedUsers || []).length} メンバー</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+  }
+};
+window.openFullProfileNoteEditor = function () {
+  const container = document.getElementById('fullProfileNoteContainer');
+  const editor = document.getElementById('fullProfileNoteEditor');
+  const input = document.getElementById('fullProfileNoteInput');
+  if (container) container.classList.add('hidden');
+  if (editor) editor.classList.remove('hidden');
+  if (input) input.focus();
+};
+window.cancelFullProfileNoteEditor = function () {
+  const container = document.getElementById('fullProfileNoteContainer');
+  const editor = document.getElementById('fullProfileNoteEditor');
+  if (editor) editor.classList.add('hidden');
+  if (container) container.classList.remove('hidden');
+};
+window.saveFullProfileNote = function () {
+  if (!_fullProfileTargetUser) return;
+  const input = document.getElementById('fullProfileNoteInput');
+  const textEl = document.getElementById('fullProfileNoteText');
+  const note = input?.value.trim() || '';
+  const noteKey = `covo_user_note_${userId}_${_fullProfileTargetUser.uid}`;
+  if (note) {
+    localStorage.setItem(noteKey, note);
+    if (textEl) textEl.textContent = note;
+  } else {
+    localStorage.removeItem(noteKey);
+    if (textEl) textEl.textContent = 'クリックしてメモを追加';
+  }
+  cancelFullProfileNoteEditor();
+  alertMessage('メモを保存しました', 'success');
+};
+window.toggleFpMoreMenu = function (e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById('fpMoreMenuPopover');
+  if (pop) pop.classList.toggle('hidden');
+};
+window.closeFpMoreMenu = function () {
+  const pop = document.getElementById('fpMoreMenuPopover');
+  if (pop) pop.classList.add('hidden');
+};
+window.callFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid, nickname, avatarUrl } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  startCall(uid, nickname, avatarUrl);
+};
+window.fileShareFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid, nickname } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  _fsPickFileAndSend(uid, nickname);
+};
+window.blockUserFromFullProfile = function () {
+  if (!_fullProfileTargetUser) return;
+  const { uid } = _fullProfileTargetUser;
+  closeUserFullProfileModal();
+  blockUser(uid);
 };
 window.openCustomStatusModal = function () {
   const modal = document.getElementById("customStatusModal");
@@ -38673,7 +39064,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
-  const handleTag = targetUid ? `#${targetUid.slice(-4).toLowerCase()}` : '';
+  const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
   let mutualServersCount = 0;
   if (Array.isArray(allServersCache)) {
     mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
@@ -38682,9 +39073,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof friendRelationships === 'object') {
     mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
   }
-  // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
+  // Discord本家完全準拠 (input_file_1.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px;">
+    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -38693,6 +39084,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
           <i class="fas fa-ellipsis"></i>
         </button>
         <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+            <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+          </button>
           <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-phone w-4 text-center"></i> 音声通話
           </button>
@@ -38714,42 +39108,55 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         <div class="status-indicator status-offline" id="dmPanelStatusDot" style="position: absolute; bottom: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%;"></div>
       </div>
     </div>
-    <div class="dm-profile-card">
-      <div class="mb-3">
-        <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
-          <span id="dmPanelName">${safeName}</span>
-          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60"></i>
+    <div class="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-3 pb-3">
+      <div class="dm-profile-card">
+        <div class="mb-3">
+          <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
+            <span id="dmPanelName">${safeName}</span>
+            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
+          </div>
+          <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
+            ${handleTag}
+          </div>
         </div>
-        <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
-          ${handleTag}
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
+          <span class="inline-flex -space-x-1.5 mr-1">
+            <span class="w-4 h-4 rounded-full bg-blue-500 inline-block border border-white dark:border-black"></span>
+            <span class="w-4 h-4 rounded-full bg-amber-500 inline-block border border-white dark:border-black"></span>
+          </span>
+          <span>${mutualFriendsCount > 0 ? `${mutualFriendsCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー</span>
         </div>
-      </div>
-      <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
-        <i class="fas fa-server text-[11px] text-gray-400"></i>
-        <span>${mutualServersCount}個の共通サーバー</span>
-        ${mutualFriendsCount > 0 ? `<span>•</span><span>${mutualFriendsCount}人の共通の友だち</span>` : ''}
-      </div>
-      <div class="dm-profile-divider"></div>
-      <div class="my-3">
-        <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
-          <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
-          <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
+        <div class="dm-profile-divider"></div>
+        <div class="my-3">
+          <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
+            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
+            <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
+          </div>
+          <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
+          <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
         </div>
-        <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
-        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
-      </div>
-      <div class="dm-profile-divider"></div>
-      <div class="my-3 flex items-center justify-between text-xs">
-        <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
-        <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
+        <div class="dm-profile-divider"></div>
+        <div class="my-3 flex items-center justify-between text-xs">
+          <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
+          <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
+        </div>
       </div>
     </div>
-    <div class="p-3 mt-auto flex-shrink-0">
-      <button onclick="openUserProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="dm-view-full-profile-btn w-full py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
-        <i class="fas fa-id-card text-xs opacity-75"></i> プロフィール全体を表示
+    <!-- input_file_1.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
+    <div class="p-3 border-t border-gray-200/60 dark:border-white/5 bg-gray-50 dark:bg-[#232428] flex-shrink-0">
+      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200 dark:bg-[#2b2d31] hover:bg-gray-300 dark:hover:bg-[#35373c] text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+        <span>プロフィール全体を表示</span>
       </button>
     </div>
   `;
+  // バナーのドミナントカラー動的適用
+  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+    const bannerEl = panel.querySelector('.dm-profile-banner');
+    if (bannerEl) {
+      bannerEl.style.backgroundColor = bannerColor;
+      bannerEl.style.setProperty('--user-banner-color', bannerColor);
+    }
+  });
   try {
     const prof = await window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl });
     const nameEl = document.getElementById('dmPanelName');
@@ -38819,7 +39226,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   } catch (err) {
     console.warn('[renderDmProfilePanel] profile load error:', err);
   }
-  };
+};
 window.toggleDmBannerMenu = function (e) {
   if (e) e.stopPropagation();
   const menu = document.getElementById('dmBannerMenuPopover');
@@ -51870,6 +52277,7 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'pastVersionsModal') { window.closePastVersionsModal(); return; }
       if (topModal.id === 'inAppBrowserModal') { window.closeInAppBrowser(); return; }
       if (topModal.id === 'userProfileModal') { window.closeUserProfileModal(); return; }
+      if (topModal.id === 'userFullProfileModal') { window.closeUserFullProfileModal(); return; }
       if (topModal.id === 'customStatusModal') { window.closeCustomStatusModal(); return; }
       if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
       if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
@@ -54778,7 +55186,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.179",
+  "version": "1.1.180",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -54835,7 +55243,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.179",
+  "version": "1.1.180",
   "force": false
 }
 </file>

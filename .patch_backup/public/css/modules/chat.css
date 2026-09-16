@@ -2035,15 +2035,15 @@
       height: 110px;
       min-height: 110px;
       width: 100%;
-      background: #5865f2;
+      background: var(--user-banner-color, #5865f2);
       position: relative;
       flex-shrink: 0;
     }
     body.dark-server-theme .dm-profile-banner {
-      background: #3b82f6 !important;
+      background: var(--user-banner-color, #1e293b);
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: #5865f2 !important;
+      background: var(--user-banner-color, #2b2d31);
     }
     .dm-banner-btn {
       width: 32px;
@@ -2348,6 +2348,24 @@
     }
     body.discord-dark-theme .active-now-item:hover {
       background-color: rgba(255, 255, 255, 0.05);
+    }
+    /* =========================================================================
+       Discord本家完全準拠 フルプロフィールモーダル (#userFullProfileModal)
+    .user-full-profile-modal {
+      border-radius: 24px !important;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55) !important;
+      overflow: hidden !important;
+    }
+    body.dark-server-theme .user-full-profile-modal {
+      background-color: #0b0f19 !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.discord-dark-theme .user-full-profile-modal {
+      background-color: #111214 !important;
+      border-color: #1f2023 !important;
+    }
+    #fullProfileBanner {
+      background-color: var(--user-banner-color, #376d49);
     }
 
 
