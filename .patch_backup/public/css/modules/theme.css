@@ -947,8 +947,9 @@
       border-color: #1e293b !important;
     }
     body.dark-server-theme #userProfileBanner {
-      background-color: var(--user-banner-color, #1e293b);
+      background-color: #3b82f6 !important;
     }
+
     /* 3. Discordダークモード (body.discord-dark-theme) */
     body.discord-dark-theme .user-profile-card {
       background-color: #232428 !important;
@@ -963,5 +964,5 @@
       border-color: #232428 !important;
     }
     body.discord-dark-theme #userProfileBanner {
-      background-color: var(--user-banner-color, #2b2d31);
+      background-color: #5865f2 !important;
     }

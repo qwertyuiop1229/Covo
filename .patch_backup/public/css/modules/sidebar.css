@@ -575,11 +575,19 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode.discord-home-view.discord-dm-view #chatArea,
     body.discord-ui-mode.discord-home-view.discord-dm-view #serverHeader,
     body.discord-ui-mode.discord-home-view.discord-dm-view #roomList,
-    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView,
-    body.discord-ui-mode.discord-home-view.discord-dm-view #membersSidebar {
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView {
       display: none !important;
     }
-
+    @media (max-width: 768px) {
+      body.discord-ui-mode.discord-home-view.discord-dm-view #membersSidebar {
+        display: none !important;
+      }
+    }
+    @media (min-width: 769px) {
+      body.discord-ui-mode.discord-home-view.discord-dm-view:not(.discord-friends-view) #membersSidebar {
+        display: flex !important;
+      }
+    }
     /* 2. 個別チャット (DM) 表示時 (openDm 実行時) */
     body.discord-ui-mode.discord-dm-chat #chatArea {
       display: flex !important;
