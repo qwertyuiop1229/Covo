@@ -821,16 +821,31 @@ async function handleAgoraToken(request, env, url) {
   try {
     let channelName = url.searchParams.get("channel") || url.searchParams.get("channelName") || "";
     let uid = url.searchParams.get("uid") || "";
-
+    const authHeader = request.headers.get("Authorization") || "";
+    let idToken = authHeader.replace("Bearer ", "").trim() || url.searchParams.get("idToken") || "";
     if (request.method === "POST") {
       try {
         const body = await request.json();
         if (body.channelName) channelName = body.channelName;
         if (body.channel) channelName = body.channel;
         if (body.uid) uid = body.uid;
+        if (body.idToken) idToken = body.idToken;
       } catch (_) {}
     }
-
+    if (!idToken) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized: Missing authentication token" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser || (uid && verifiedUser.uid !== uid)) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized: Invalid token or UID mismatch" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    if (!uid) uid = verifiedUser.uid;
     const appId = env.AGORA_APP_ID;
     const appCert = env.AGORA_PRIMARY_CERTIFICATE;
 

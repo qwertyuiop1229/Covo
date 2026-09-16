@@ -1,11 +1,9 @@
 {
-  "date": "2026-09-16T16:03:46.582Z",
+  "date": "2026-09-16T16:20:51.461Z",
   "files": [
-    "firestore.rules",
-    "database.rules.json",
     "server/src/index.js",
+    "public/js/crypto_helpers.js",
     "public/js/main.js",
-    "public/js/voice_engine_v2.js",
-    "tests/security.test.js"
+    "firestore.rules"
   ]
 }

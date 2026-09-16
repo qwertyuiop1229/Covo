@@ -1007,10 +1007,15 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.dmKeyCache[dmId] = keysObj;
               return keysObj;
             }
-            return null;
+            // 相手宛てのキーはあるが自分宛てが未生成の場合、過去にDMメッセージが存在しないなら
+            // 相手からのキー到着を待たずに自分が新規キーを生成してセッションを確立する
+            const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/dm_messages/${dmId}`), limit(1))).catch(() => null);
+            if (msgsSnap && !msgsSnap.empty) {
+              return null;
+            }
+            console.log(`[E2EE] 過去DMメッセージが存在しないため、新規キーを生成してセッションを確立します (dmId=${dmId})`);
           }
         }
-
         // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布
         try {
           await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`), {
@@ -1186,6 +1191,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m.text = decrypted;
             m._decryptedErrorText = null;
             m._decrypted = true;
+            if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              LocalStore.putMessage(m).catch(() => {});
+            }
           }
         } catch (e) {
           m.text = "（復号化エラー：メッセージを解読できません）";

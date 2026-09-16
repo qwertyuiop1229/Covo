@@ -191,7 +191,7 @@ service cloud.firestore {
 
       // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
       match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
       // 既読状態の同期
@@ -469,8 +469,8 @@ service cloud.firestore {
           // E2EE ルーム暗号鍵 (Room Keys)
           match /roomKeys/{keyId} {
             allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId);
-            allow delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
           }
 
           // E2EE 救済リクエスト (Rescue Requests)
