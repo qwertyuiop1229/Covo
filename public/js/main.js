@@ -614,6 +614,7 @@ function setDiscordUIMode(...args) { return window.setDiscordUIMode ? window.set
 function checkLatestAnnouncement(...args) { return window.checkLatestAnnouncement ? window.checkLatestAnnouncement(...args) : null; }
 function renderServerList(...args) { return window.renderServerList ? window.renderServerList(...args) : null; }
 function renderDiscordServerNav(...args) { return window.renderDiscordServerNav ? window.renderDiscordServerNav(...args) : null; }
+function enterServer(...args) { return window.enterServer ? window.enterServer(...args) : null; }
 function openDm(...args) { return window.openDm ? window.openDm(...args) : null; }
 function openDmHomeView(...args) { return window.openDmHomeView ? window.openDmHomeView(...args) : null; }
 function leaveServerView(...args) { return window.leaveServerView ? window.leaveServerView(...args) : null; }
@@ -6213,7 +6214,7 @@ window.switchFullProfileTab = function (tab) {
     const isTarget = k === tab;
     if (btn) {
       if (isTarget) {
-        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-[#5865f2] dark:border-white transition-colors cursor-pointer font-bold";
+        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-slate-900 dark:border-white transition-colors cursor-pointer font-bold";
       } else {
         btn.className = "pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold";
       }
@@ -6232,8 +6233,9 @@ window.switchFullProfileTab = function (tab) {
     if (headline) headline.textContent = `${safeName}にはここで共有するアクティビティがありません`;
     if (msgBtn) {
       msgBtn.onclick = () => {
+        const targetAvatar = _fullProfileTargetUser?.avatarUrl || '';
         closeUserFullProfileModal();
-        openDm(targetUid, safeName, _fullProfileTargetUser.avatarUrl);
+        openDm(targetUid, safeName, targetAvatar);
       };
     }
   }
@@ -7731,7 +7733,7 @@ async function showServerList() {
 }
 
 // サーバーに入る
-async function enterServer(serverId, serverData) {
+window.enterServer = async function enterServer(serverId, serverData) {
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
@@ -8877,6 +8879,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (membersList) membersList.classList.add('hidden');
   if (activeNowPanel) activeNowPanel.classList.add('hidden');
   panel.classList.remove('hidden');
+  panel.className = "w-full flex-1 flex flex-col h-full overflow-hidden";
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
@@ -8939,7 +8942,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative z-30 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
+    <div class="dm-profile-banner relative z-10 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-40">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -8964,7 +8967,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-10" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
+    <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-20" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}

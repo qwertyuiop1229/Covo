@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.181" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.182" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.181" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.182" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -3046,7 +3046,7 @@
             <!-- メンバーはここに動的に追加されます -->
           </div>
           <!-- 2. DM (個チャ) 画面用: 相手のユーザープロフィールパネル (Discord本家完全準拠) -->
-          <div id="dmProfilePanel" class="w-full flex-1 flex-col overflow-y-auto hidden">
+          <div id="dmProfilePanel" class="w-full flex-1 flex flex-col h-full overflow-hidden hidden">
             <!-- JSで動的に相手のプロフィールカードをレンダリング -->
           </div>
           <!-- 3. フレンド一覧画面用: 現在アクティブ (Active Now) パネル (Discord本家完全準拠) -->
@@ -3453,7 +3453,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.181"></script>
+  <script type="module" src="js/main.js?v=1.1.182"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4723,7 +4723,7 @@
             </div>
             <!-- アクションボタン列 (メッセージ / フレンド / その他) -->
             <div class="flex items-center gap-2 pt-1">
-              <button id="fullProfileMsgBtn" type="button" class="flex-1 py-2 px-4 rounded-xl bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+              <button id="fullProfileMsgBtn" type="button" class="flex-1 py-2 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
                 <i class="fas fa-comment-dots text-sm"></i>
                 <span>メッセージ</span>
               </button>
@@ -4734,7 +4734,7 @@
                 <button id="fullProfileMoreBtn" type="button" onclick="toggleFpMoreMenu(event)" class="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer" title="その他のオプション">
                   <i class="fas fa-ellipsis"></i>
                 </button>
-                <div id="fpMoreMenuPopover" class="hidden absolute left-0 bottom-full mb-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+                <div id="fpMoreMenuPopover" class="hidden absolute right-0 top-full mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
                   <button onclick="callFromFullProfile(); closeFpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
                     <i class="fas fa-phone w-4 text-center"></i> 音声通話
                   </button>
@@ -4775,7 +4775,7 @@
                 <textarea id="fullProfileNoteInput" rows="2" maxlength="200" placeholder="このユーザーに関するプライベートなメモ..." class="w-full p-2 text-xs bg-gray-50 dark:bg-[#1e1f22] border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-gray-800 dark:text-white resize-none"></textarea>
                 <div class="flex justify-end gap-1.5">
                   <button type="button" onclick="cancelFullProfileNoteEditor()" class="px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">キャンセル</button>
-                  <button type="button" onclick="saveFullProfileNote()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs transition">保存</button>
+                  <button type="button" onclick="saveFullProfileNote()" class="px-3 py-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs transition">保存</button>
                 </div>
               </div>
             </div>
@@ -4806,7 +4806,7 @@
                 <div id="fpActivityHeadline" class="text-sm font-bold text-gray-800 dark:text-gray-200">アクティビティはありません</div>
                 <p class="text-xs text-gray-400 dark:text-gray-500 max-w-sm mx-auto leading-relaxed">ゲームのプレイ中やボイスチャンネルへの参加状況がここに表示されます。</p>
                 <div class="pt-2">
-                  <button id="fpActivityMsgBtn" type="button" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95">
+                  <button id="fpActivityMsgBtn" type="button" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95">
                     メッセージを送る
                   </button>
                 </div>

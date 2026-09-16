@@ -8865,50 +8865,6 @@ exit
     }
 </file>
 
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
-</file>
-
 <file path="public/js/local_store.js">
 /**
  * Covo Local-first Storage Engine (local_store.js)
@@ -9484,6 +9440,50 @@ if (typeof window !== 'undefined') {
     restoreAllLocalData,
     clearAllLocalData
   };
+}
+</file>
+
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
 }
 </file>
 
@@ -17363,6 +17363,12 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       cursor: pointer;
       margin-bottom: 8px;
     }
+    .discord-nav-divider {
+      width: 32px !important;
+      height: 2px !important;
+      margin: 0 auto 8px auto !important;
+      align-self: center !important;
+    }
     .discord-server-icon {
       width: 48px;
       height: 48px;
@@ -23356,7 +23362,7 @@ service cloud.firestore {
       border-color: rgba(255, 255, 255, 0.08) !important;
     }
     body.discord-dark-theme .user-full-profile-modal {
-      background-color: #111214 !important;
+      background-color: #2b2d31 !important;
       border-color: #1f2023 !important;
     }
     #fullProfileBanner {
@@ -26518,13 +26524,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.180" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.181" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.180" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.181" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -28879,11 +28885,11 @@ async function handleD1Api(request, env, url) {
               <i class="fas fa-comments text-xl"></i>
             </div>
           </div>
-          <div class="w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] my-2 rounded flex-shrink-0"></div>
+          <div class="discord-nav-divider w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] rounded flex-shrink-0"></div>
           <!-- サーバーアイコン一覧 (スクロール可能) -->
           <div id="discordServerNavList" class="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto hide-scrollbar"></div>
           <!-- サーバーリスト下の仕切り線 -->
-          <div class="w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] my-2 rounded flex-shrink-0"></div>
+          <div class="discord-nav-divider w-8 h-[2px] bg-slate-300 dark:bg-[#35363c] rounded flex-shrink-0"></div>
           <!-- 探索・発見 (コンパスマーク) -->
           <div class="discord-server-item group" id="discordDiscoverBtn" onclick="openDiscoverView()" title="サーバーを発見・探索">
             <div class="discord-server-pill" id="discordDiscoverPill"></div>
@@ -29734,7 +29740,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.180"></script>
+  <script type="module" src="js/main.js?v=1.1.181"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -30858,8 +30864,8 @@ async function handleD1Api(request, env, url) {
       <!-- スマホ用ボトムシートドラッグハンドル -->
       <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
-      <div id="userProfileBanner" class="h-20 relative flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
-        <div class="flex items-center gap-1.5 z-10">
+      <div id="userProfileBanner" class="h-20 relative z-30 flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
+        <div class="flex items-center gap-1.5 z-40">
           <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
             <i class="fas fa-user-plus"></i>
           </button>
@@ -30923,14 +30929,139 @@ async function handleD1Api(request, env, url) {
       </div>
     </div>
   </div>
-  <!-- Discord本家完全準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様) -->
+  <!-- Discord本家完全準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_4.png仕様) -->
   <div id="userFullProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] hidden p-3 sm:p-6 select-none" onclick="if(event.target===this) closeUserFullProfileModal()">
-    <div class="user-full-profile-modal bg-white dark:bg-[#111214] rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200 flex flex-col max-h-[85vh] h-[680px]" onclick="event.stopPropagation()">
+    <div class="user-full-profile-modal bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200 flex flex-col max-h-[90vh] md:h-[640px]" onclick="event.stopPropagation()">
       <!-- 右上 閉じるボタン -->
-      <button onclick="closeUserFullProfileModal()" class="absolute top-4 right-4 z-50 w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-600 dark:text-white flex items-center justify-center transition-all cursor-pointer" title="閉じる (ESC)">
+      <button onclick="closeUserFullProfileModal()" class="absolute top-4 right-4 z-50 w-8 h-8 rounded-full bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 text-gray-600 dark:text-white flex items-center justify-center transition-all cursor-pointer" title="閉じる (ESC)">
         <i class="fas fa-times text-sm"></i>
       </button>
-      <div class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+      <div class="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden min-h-0">
+        <!-- 左カラム: プロフィール詳細カード (幅約380px) -->
+        <div class="w-full md:w-[380px] flex-shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-gray-200/80 dark:border-white/10 bg-white dark:bg-[#232428] overflow-y-auto custom-scrollbar">
+          <!-- バナー -->
+          <div id="fullProfileBanner" class="h-28 relative flex-shrink-0" style="background-color: var(--user-banner-color, #322c3b);"></div>
+          <!-- アバター (バナー食い込み) -->
+          <div class="px-5 relative flex items-end justify-between -mt-12 mb-3 flex-shrink-0">
+            <div class="relative group cursor-pointer" onclick="openFullProfileAvatarLightbox()" title="拡大表示">
+              <div id="fullProfileAvatar" class="w-24 h-24 rounded-full border-4 border-white dark:border-[#232428] shadow-lg bg-gray-700 text-white font-black text-3xl flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105">
+                U
+              </div>
+              <div id="fullProfileStatusDot" class="status-indicator status-offline" style="bottom: 2px; right: 2px; width: 22px; height: 22px; border: 3.5px solid #ffffff;"></div>
+            </div>
+          </div>
+          <!-- ユーザー基本情報 & アクションボタン -->
+          <div class="px-5 space-y-4 pb-6 flex-1">
+            <div>
+              <h2 id="fullProfileName" class="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h2>
+              <div id="fullProfileHandle" class="text-xs text-gray-500 dark:text-[#949ba4] font-mono mt-0.5">user</div>
+            </div>
+            <!-- アクションボタン列 (メッセージ / フレンド / その他) -->
+            <div class="flex items-center gap-2 pt-1">
+              <button id="fullProfileMsgBtn" type="button" class="flex-1 py-2 px-4 rounded-xl bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                <i class="fas fa-comment-dots text-sm"></i>
+                <span>メッセージ</span>
+              </button>
+              <button id="fullProfileFriendBtn" type="button" class="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer" title="フレンドアクション">
+                <i class="fas fa-user-plus"></i>
+              </button>
+              <div class="relative">
+                <button id="fullProfileMoreBtn" type="button" onclick="toggleFpMoreMenu(event)" class="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer" title="その他のオプション">
+                  <i class="fas fa-ellipsis"></i>
+                </button>
+                <div id="fpMoreMenuPopover" class="hidden absolute left-0 bottom-full mb-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+                  <button onclick="callFromFullProfile(); closeFpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+                    <i class="fas fa-phone w-4 text-center"></i> 音声通話
+                  </button>
+                  <button onclick="fileShareFromFullProfile(); closeFpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+                    <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
+                  </button>
+                  <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
+                  <button onclick="blockUserFromFullProfile(); closeFpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+                    <i class="fas fa-ban w-4 text-center"></i> ブロック
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="h-px bg-gray-200/80 dark:bg-white/10"></div>
+            <!-- 自己紹介 (ABOUT ME) -->
+            <div>
+              <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1.5">自己紹介</div>
+              <div id="fullProfileAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
+            </div>
+            <!-- 日付情報 -->
+            <div class="space-y-2 pt-1 text-xs">
+              <div>
+                <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</div>
+                <div id="fullProfileJoinedDate" class="font-medium text-gray-800 dark:text-gray-200 mt-0.5">-</div>
+              </div>
+              <div id="fullProfileFriendDateRow" class="hidden">
+                <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">フレンドになった日 :</div>
+                <div id="fullProfileFriendDate" class="font-medium text-gray-800 dark:text-gray-200 mt-0.5">-</div>
+              </div>
+            </div>
+            <!-- メモ -->
+            <div>
+              <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">メモ（自分だけに表示）</div>
+              <div id="fullProfileNoteContainer" onclick="openFullProfileNoteEditor()" class="p-2 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 cursor-pointer text-xs text-gray-600 dark:text-gray-300 min-h-[32px] transition border border-gray-200/60 dark:border-transparent">
+                <span id="fullProfileNoteText">クリックしてメモを追加</span>
+              </div>
+              <div id="fullProfileNoteEditor" class="hidden space-y-2">
+                <textarea id="fullProfileNoteInput" rows="2" maxlength="200" placeholder="このユーザーに関するプライベートなメモ..." class="w-full p-2 text-xs bg-gray-50 dark:bg-[#1e1f22] border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-gray-800 dark:text-white resize-none"></textarea>
+                <div class="flex justify-end gap-1.5">
+                  <button type="button" onclick="cancelFullProfileNoteEditor()" class="px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">キャンセル</button>
+                  <button type="button" onclick="saveFullProfileNote()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs transition">保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 右カラム: タブ & リスト (アクティビティ / 共通の友だち / 共通サーバー) -->
+        <div class="flex-1 flex flex-col min-w-0 bg-gray-50/50 dark:bg-[#2b2d31] p-5 sm:p-6 overflow-hidden">
+          <!-- タブナビゲーションバー (Discord本家完全準拠) -->
+          <div class="flex items-center gap-6 border-b border-gray-200 dark:border-white/10 text-xs sm:text-sm font-bold pb-px flex-shrink-0">
+            <button id="fpTabActivityBtn" type="button" onclick="switchFullProfileTab('activity')" class="pb-3 text-gray-900 dark:text-white border-b-2 border-indigo-600 dark:border-white transition-colors cursor-pointer font-bold">
+              アクティビティ
+            </button>
+            <button id="fpTabFriendsBtn" type="button" onclick="switchFullProfileTab('friends')" class="pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold">
+              共通の友だち
+            </button>
+            <button id="fpTabServersBtn" type="button" onclick="switchFullProfileTab('servers')" class="pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold">
+              共通サーバー
+            </button>
+          </div>
+          <!-- タブコンテンツエリア -->
+          <div class="flex-1 overflow-y-auto custom-scrollbar pt-4 min-h-0">
+            <!-- 1. アクティビティタブ -->
+            <div id="fpTabActivityContent" class="space-y-4">
+              <div class="p-8 rounded-3xl bg-white dark:bg-white/5 border border-gray-200/60 dark:border-white/5 text-center space-y-3 shadow-xs">
+                <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto text-gray-400 text-2xl">
+                  <i class="fas fa-gamepad"></i>
+                </div>
+                <div id="fpActivityHeadline" class="text-sm font-bold text-gray-800 dark:text-gray-200">アクティビティはありません</div>
+                <p class="text-xs text-gray-400 dark:text-gray-500 max-w-sm mx-auto leading-relaxed">ゲームのプレイ中やボイスチャンネルへの参加状況がここに表示されます。</p>
+                <div class="pt-2">
+                  <button id="fpActivityMsgBtn" type="button" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95">
+                    メッセージを送る
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- 2. 共通の友だちタブ -->
+            <div id="fpTabFriendsContent" class="space-y-3 hidden">
+              <div id="fpMutualFriendsCountLabel" class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">0人の共通の友だち</div>
+              <div id="fpMutualFriendsList" class="space-y-2"></div>
+            </div>
+            <!-- 3. 共通サーバータブ -->
+            <div id="fpTabServersContent" class="space-y-3 hidden">
+              <div id="fpMutualServersCountLabel" class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">0個の共通サーバー</div>
+              <div id="fpMutualServersList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <!-- カスタムステータス（ステメ）設定モーダル -->
   <div id="customStatusModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[110] hidden p-4 select-none" onclick="if(event.target===this) closeCustomStatusModal()">
     <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-md p-6 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200" onclick="event.stopPropagation()">
@@ -36510,7 +36641,7 @@ window.submitQuickDmMessage = async function () {
 // 🌟 Discord準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様)
 // =========================================================================
 let _fullProfileTargetUser = null;
-window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl, initialTab = 'activity') {
   if (!targetUid) return;
   const modal = document.getElementById("userFullProfileModal");
   if (!modal) return;
@@ -36531,8 +36662,32 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const noteInput = document.getElementById("fullProfileNoteInput");
   const msgBtn = document.getElementById("fullProfileMsgBtn");
   const friendBtn = document.getElementById("fullProfileFriendBtn");
-  const moreBtn = document.getElementById("fullProfileMoreBtn");
   const safeName = targetNickname || targetUid.substring(0, 8);
+  // 共通サーバー & 共通フレンドの事前件数算出
+  const mutualServers = Array.isArray(allServersCache)
+    ? allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId))
+    : [];
+  const sharedServerUids = new Set();
+  mutualServers.forEach(s => {
+    (s.joinedUsers || []).forEach(u => {
+      if (u && u !== userId && u !== targetUid) sharedServerUids.add(u);
+    });
+  });
+  let mutualFriends = [];
+  if (typeof friendRelationships === 'object') {
+    mutualFriends = Object.values(friendRelationships).filter(r => {
+      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
+      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
+    });
+    if (mutualFriends.length === 0 && Object.keys(friendRelationships).length > 0) {
+      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    }
+  }
+  // input_file_4.png 準拠: タブのタイトルを動的に件数付きで初期化
+  const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
+  if (tabFriendsBtn) tabFriendsBtn.textContent = `${mutualFriends.length}人の共通の友だち`;
+  const tabServersBtn = document.getElementById('fpTabServersBtn');
+  if (tabServersBtn) tabServersBtn.textContent = `${mutualServers.length}個の共通サーバー`;
   if (nameEl) nameEl.textContent = safeName;
   if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
   if (avatarEl) {
@@ -36572,7 +36727,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
         friendBtn.onclick = async () => {
           if (!await showCustomConfirm(`${safeName} さんをフレンドから削除しますか？`, "削除する", "キャンセル")) return;
           rejectFriendRequest(targetUid);
-          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl, initialTab);
         };
       } else if (rel?.status === 'pending_sent') {
         friendBtn.className = "w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
@@ -36580,7 +36735,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
         friendBtn.innerHTML = '<i class="fas fa-user-clock"></i>';
         friendBtn.onclick = () => {
           cancelFriendRequest(targetUid);
-          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl, initialTab);
         };
       } else if (rel?.status === 'pending_received') {
         friendBtn.className = "w-9 h-9 rounded-xl bg-[#5865f2] text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
@@ -36588,7 +36743,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
         friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         friendBtn.onclick = () => {
           acceptFriendRequest(targetUid);
-          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl, initialTab);
         };
       } else {
         friendBtn.className = "w-9 h-9 rounded-xl bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-700 dark:text-white flex items-center justify-center text-sm transition-all active:scale-95 cursor-pointer";
@@ -36596,7 +36751,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
         friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
         friendBtn.onclick = async () => {
           await window.sendDirectFriendRequest(targetUid, safeName, targetAvatarUrl);
-          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl);
+          openUserFullProfileModal(targetUid, safeName, targetAvatarUrl, initialTab);
         };
       }
     }
@@ -36642,8 +36797,8 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   } catch (err) {
     console.warn("Full profile fetch error:", err);
   }
-  // タブの初期表示設定（アクティビティ）
-  switchFullProfileTab('activity');
+  // 指定されたタブを選択・表示（デフォルトは 'activity'）
+  switchFullProfileTab(initialTab);
   openModal(modal);
 };
 window.closeUserFullProfileModal = function () {
@@ -36673,7 +36828,7 @@ window.switchFullProfileTab = function (tab) {
     const isTarget = k === tab;
     if (btn) {
       if (isTarget) {
-        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-indigo-600 dark:border-white transition-colors cursor-pointer font-bold";
+        btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-[#5865f2] dark:border-white transition-colors cursor-pointer font-bold";
       } else {
         btn.className = "pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold";
       }
@@ -36697,32 +36852,61 @@ window.switchFullProfileTab = function (tab) {
       };
     }
   }
-  // 2. 共通の友だち
+  // 2. 共通の友だち (input_file_4.png 仕様)
   else if (tab === 'friends') {
     const friendsListEl = document.getElementById('fpMutualFriendsList');
     const friendsLabel = document.getElementById('fpMutualFriendsCountLabel');
-    const mutualFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    const mutualServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+    const sharedServerUids = new Set();
+    mutualServers.forEach(s => {
+      (s.joinedUsers || []).forEach(u => {
+        if (u && u !== userId && u !== targetUid) sharedServerUids.add(u);
+      });
+    });
+    let mutualFriends = Object.values(friendRelationships || {}).filter(r => {
+      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
+      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
+    });
+    if (mutualFriends.length === 0 && Object.keys(friendRelationships || {}).length > 0) {
+      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    }
+    const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
+    if (tabFriendsBtn) tabFriendsBtn.textContent = `${mutualFriends.length}人の共通の友だち`;
     if (friendsLabel) friendsLabel.textContent = `${mutualFriends.length}人の共通の友だち`;
     if (friendsListEl) {
       if (mutualFriends.length === 0) {
-        friendsListEl.innerHTML = `<div class="p-6 text-center text-xs text-gray-400">共通の友だちはまだいません</div>`;
+        friendsListEl.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通の友だちはまだいません</div>`;
       } else {
-        friendsListEl.innerHTML = mutualFriends.map(f => `
-          <div class="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-              <div class="w-9 h-9 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden flex-shrink-0">
-                ${isUsableAvatarUrl(f.targetAvatarUrl) ? `<img src="${escapeHtml(f.targetAvatarUrl)}" class="w-full h-full object-cover">` : escapeHtml((f.targetNickname || 'U').charAt(0).toUpperCase())}
+        friendsListEl.innerHTML = mutualFriends.map(f => {
+          const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+          const status = uInfo.computedState || uInfo.state || 'offline';
+          const isOnline = status === 'online' || status === 'away';
+          const fNick = f.targetNickname || uInfo.nickname || 'ユーザー';
+          const avUrl = f.targetAvatarUrl || uInfo.avatarUrl || '';
+          const customStatusText = uInfo.customStatus?.text || '';
+          const statusDesc = customStatusText ? escapeHtml(customStatusText) : (isOnline ? 'オンライン' : 'オフライン');
+          const avatarHtml = isUsableAvatarUrl(avUrl)
+            ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
+            : escapeHtml(fNick.charAt(0).toUpperCase());
+          return `
+            <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${f.targetUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+              <div class="relative w-10 h-10 flex-shrink-0">
+                <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
+                  ${avatarHtml}
+                </div>
+                <div class="status-indicator status-${status}"></div>
               </div>
               <div class="min-w-0 flex-1">
-                <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(f.targetNickname || 'ユーザー')}</div>
-                <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(f.targetEmail || '')}</div>
+                <div class="flex items-center gap-1.5 leading-snug">
+                  <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${escapeHtml(fNick)}</span>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">
+                  <span>${statusDesc}</span>
+                </div>
               </div>
             </div>
-            <button onclick="closeUserFullProfileModal(); openDm('${f.targetUid}','${escapeHtml(f.targetNickname || '')}','${escapeHtml(f.targetAvatarUrl || '')}')" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs transition">
-              メッセージ
-            </button>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
     }
   }
@@ -36731,19 +36915,21 @@ window.switchFullProfileTab = function (tab) {
     const serversListEl = document.getElementById('fpMutualServersList');
     const serversLabel = document.getElementById('fpMutualServersCountLabel');
     const mutualServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
+    const tabServersBtn = document.getElementById('fpTabServersBtn');
+    if (tabServersBtn) tabServersBtn.textContent = `${mutualServers.length}個の共通サーバー`;
     if (serversLabel) serversLabel.textContent = `${mutualServers.length}個の共通サーバー`;
     if (serversListEl) {
       if (mutualServers.length === 0) {
-        serversListEl.innerHTML = `<div class="col-span-full p-6 text-center text-xs text-gray-400">共通のサーバーはありません</div>`;
+        serversListEl.innerHTML = `<div class="col-span-full p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通のサーバーはありません</div>`;
       } else {
         serversListEl.innerHTML = mutualServers.map(s => `
-          <div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition group" onclick="closeUserFullProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+          <div class="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-white/5 border border-gray-200/80 dark:border-white/5 hover:border-indigo-500/40 cursor-pointer transition-all shadow-xs group" onclick="closeUserFullProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
             <div class="w-10 h-10 rounded-2xl bg-indigo-500 text-white font-bold text-sm flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
               ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(s.name || s.id)}</div>
-              <div class="text-[10px] text-gray-400">${(s.joinedUsers || []).length} メンバー</div>
+              <div class="text-xs sm:text-sm font-bold text-gray-900 dark:text-white truncate">${escapeHtml(s.name || s.id)}</div>
+              <div class="text-[11px] text-gray-500 dark:text-[#949ba4] mt-0.5">${(s.joinedUsers || []).length} メンバー</div>
             </div>
           </div>
         `).join('');
@@ -39065,18 +39251,61 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
   const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
-  let mutualServersCount = 0;
-  if (Array.isArray(allServersCache)) {
-    mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
-  }
-  let mutualFriendsCount = 0;
+  // 共通サーバーの計算
+  const mutualServers = Array.isArray(allServersCache)
+    ? allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId))
+    : [];
+  const mutualServersCount = mutualServers.length;
+  // 共通サーバーに所属する全UID（自分と相手以外）
+  const sharedServerUids = new Set();
+  mutualServers.forEach(s => {
+    (s.joinedUsers || []).forEach(u => {
+      if (u && u !== userId && u !== targetUid) sharedServerUids.add(u);
+    });
+  });
+  // 共通の友だち: 共通サーバーにいて、かつ自分ともフレンドであるユーザー（または全フレンド）
+  let mutualFriends = [];
   if (typeof friendRelationships === 'object') {
-    mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
+    mutualFriends = Object.values(friendRelationships).filter(r => {
+      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
+      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
+    });
+    if (mutualFriends.length === 0 && Object.keys(friendRelationships).length > 0) {
+      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
+    }
   }
-  // Discord本家完全準拠 (input_file_1.png 仕様)
+  const mutualFriendsCount = mutualFriends.length;
+  // input_file_3.png 準拠: アバタースタック (最大3人分)
+  let mutualAvatarStackHtml = '';
+  if (mutualFriendsCount > 0) {
+    const stackSlice = mutualFriends.slice(0, 3);
+    mutualAvatarStackHtml = stackSlice.map((f, i) => {
+      const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+      const avUrl = f.targetAvatarUrl || uInfo.avatarUrl;
+      const fNick = f.targetNickname || uInfo.nickname || 'U';
+      if (isUsableAvatarUrl(avUrl)) {
+        return `<img src="${escapeHtml(avUrl)}" class="w-4 h-4 rounded-full border-2 border-white dark:border-[#2b2d31] object-cover inline-block flex-shrink-0" style="z-index: ${4 - i};">`;
+      }
+      return `<span class="w-4 h-4 rounded-full bg-slate-600 border-2 border-white dark:border-[#2b2d31] text-white text-[8px] font-bold inline-flex items-center justify-center flex-shrink-0" style="z-index: ${4 - i};">${escapeHtml(fNick.charAt(0).toUpperCase())}</span>`;
+    }).join('');
+  } else if (mutualServersCount > 0) {
+    const serverSlice = mutualServers.slice(0, 3);
+    mutualAvatarStackHtml = serverSlice.map((s, i) => {
+      if (s.iconUrl) {
+        return `<img src="${escapeHtml(s.iconUrl)}" class="w-4 h-4 rounded-full border-2 border-white dark:border-[#2b2d31] object-cover inline-block flex-shrink-0" style="z-index: ${4 - i};">`;
+      }
+      return `<span class="w-4 h-4 rounded-full bg-indigo-600 border-2 border-white dark:border-[#2b2d31] text-white text-[8px] font-bold inline-flex items-center justify-center flex-shrink-0" style="z-index: ${4 - i};">${escapeHtml((s.name || 'S').charAt(0).toUpperCase())}</span>`;
+    }).join('');
+  } else {
+    mutualAvatarStackHtml = `
+      <span class="w-4 h-4 rounded-full bg-blue-500 inline-block border-2 border-white dark:border-[#2b2d31]"></span>
+      <span class="w-4 h-4 rounded-full bg-amber-500 inline-block border-2 border-white dark:border-[#2b2d31]"></span>
+    `;
+  }
+  // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
-      <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+    <div class="dm-profile-banner relative z-30 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
+      <div class="absolute top-3 right-3 flex items-center gap-1.5 z-40">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
         </button>
@@ -39100,7 +39329,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap flex-shrink-0" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; position: relative; display: flex; align-items: flex-end;">
+    <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-10" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}
@@ -39119,12 +39348,11 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
             ${handleTag}
           </div>
         </div>
-        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
-          <span class="inline-flex -space-x-1.5 mr-1">
-            <span class="w-4 h-4 rounded-full bg-blue-500 inline-block border border-white dark:border-black"></span>
-            <span class="w-4 h-4 rounded-full bg-amber-500 inline-block border border-white dark:border-black"></span>
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}', '${mutualFriendsCount > 0 ? 'friends' : 'servers'}')" title="共通の友だち・共通サーバーを表示">
+          <span class="inline-flex -space-x-1.5 mr-1 flex-shrink-0">
+            ${mutualAvatarStackHtml}
           </span>
-          <span>${mutualFriendsCount > 0 ? `${mutualFriendsCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー</span>
+          <span class="hover:underline">${mutualFriendsCount > 0 ? `${mutualFriendsCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー</span>
         </div>
         <div class="dm-profile-divider"></div>
         <div class="my-3">
@@ -39142,9 +39370,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <!-- input_file_1.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
-    <div class="p-3 border-t border-gray-200/60 dark:border-white/5 bg-gray-50 dark:bg-[#232428] flex-shrink-0">
-      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200 dark:bg-[#2b2d31] hover:bg-gray-300 dark:hover:bg-[#35373c] text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+    <!-- input_file_1.png / input_file_3.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
+    <div class="mt-auto p-3 border-t border-gray-200/60 dark:border-white/5 bg-transparent flex-shrink-0">
+      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
         <span>プロフィール全体を表示</span>
       </button>
     </div>
@@ -55186,7 +55414,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.180",
+  "version": "1.1.181",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -55243,7 +55471,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.180",
+  "version": "1.1.181",
   "force": false
 }
 </file>
