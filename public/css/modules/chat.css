@@ -2369,6 +2369,61 @@
     #fullProfileBanner {
       background-color: var(--user-banner-color, #376d49);
     }
+    /* フルプロフィールモーダル: 右カラム・カード・ボタン (Discord完全準拠) */
+    .fp-right-col {
+      background-color: #f8fafc;
+    }
+    body.dark-server-theme .fp-right-col {
+      background-color: #0f172a !important;
+    }
+    body.discord-dark-theme .fp-right-col {
+      background-color: #1e1f22 !important;
+    }
+    .fp-activity-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+    }
+    body.dark-server-theme .fp-activity-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.discord-dark-theme .fp-activity-card {
+      background-color: #2b2d31 !important;
+      border-color: #1f2023 !important;
+    }
+    .fp-item-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      transition: all 0.15s ease;
+    }
+    .fp-item-card:hover {
+      background-color: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    body.dark-server-theme .fp-item-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme .fp-item-card:hover {
+      background-color: #243248 !important;
+      border-color: rgba(255, 255, 255, 0.18) !important;
+    }
+    body.discord-dark-theme .fp-item-card {
+      background-color: #2b2d31 !important;
+      border-color: #1f2023 !important;
+    }
+    body.discord-dark-theme .fp-item-card:hover {
+      background-color: #35373c !important;
+      border-color: #4e5058 !important;
+    }
+    .fp-primary-btn {
+      background-color: #5865f2 !important;
+      color: #ffffff !important;
+      transition: all 0.15s ease;
+    }
+    .fp-primary-btn:hover {
+      background-color: #4752c4 !important;
+    }
 
 
 

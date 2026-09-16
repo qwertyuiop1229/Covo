@@ -128,6 +128,9 @@ export default {
       if (url.pathname === "/api/admin/storageStats" && request.method === "GET") {
         return await handleStorageStats(request, env);
       }
+      if (url.pathname === "/api/admin/storageCategoryFiles" && request.method === "GET") {
+        return await handleStorageCategoryFiles(request, env, url);
+      }
       if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
         return await handleBulkDeleteFiles(request, env);
       }
@@ -987,16 +990,8 @@ async function handleSendCallNotification(request, env) {
               },
               headers: { "apns-priority": "10" }
             },
+            // Web Push (Chrome/Firefox/Safari PWA): SW の push イベントで表示（二重表示を防ぐため data 駆動に統一）
             webpush: {
-              notification: {
-                title,
-                body,
-                icon: "/img/icon-192x192.png?v=6",
-                badge: "/img/icon-192x192.png?v=6",
-                tag: `call-${callId}`,
-                requireInteraction: true,
-                renotify: true
-              },
               headers: { "Urgency": "high" },
               fcm_options: { link: "/" }
             }
@@ -1100,8 +1095,8 @@ async function handleSendNotification(request, env) {
               if (statusData && !statusData.error) {
                 const state = statusData.state || 'offline'; // RTDB形式
 
-                // オンラインかつ、今そのルームを見ているなら通知不要
-                // ただし last_changed が 5分以上前のステータスは「古い（バックグラウンドに移行中）」とみなして通知を送る
+                // オンラインかつ、今そのルームをフォアグラウンドで見ている場合のみ通知抑制
+                // スマホのスリープやバックグラウンド移行時の未達を防ぐため、判定猶予を45秒に短縮しinBackgroundも確認
                 if (state === 'online') {
                     const lastChangedRaw = statusData.fields?.last_changed?.timestampValue
                       || statusData.fields?.last_changed?.integerValue
@@ -1113,10 +1108,11 @@ async function handleSendNotification(request, env) {
                       lastChangedMs = new Date(lastChangedRaw).getTime(); // Firestore timestamp
                     }
                     const ageMs = lastChangedMs > 0 ? (Date.now() - lastChangedMs) : 0;
-                    const isStale = lastChangedMs > 0 && (ageMs > 5 * 60 * 1000);
+                    const isStale = lastChangedMs > 0 && (ageMs > 45 * 1000);
+                    const inBackground = statusData.inBackground === true || statusData.visible === false;
                     const currentRoomIdStatus = statusData.fields?.currentRoomId?.stringValue
                       || statusData.currentRoomId; // RTDB形式
-                    if (!isStale && currentRoomIdStatus === roomId) {
+                    if (!isStale && !inBackground && currentRoomIdStatus === roomId) {
                         shouldSend = false;
                     }
                 }
@@ -1138,20 +1134,42 @@ async function handleSendNotification(request, env) {
                 const tokens = userData.fields.fcmTokens.arrayValue?.values || [];
                 const invalidTokens = [];
 
-                // E2EE暗号化テキストが渡された場合のサニタイズ（OS通知バーでの暗号文露出防止）
+                // Discord & LINE 準拠の通知テキスト整形 & E2EE暗号文のサニタイズ
                 let safeTitle = String(title || 'Covo');
-                let safeBody = String(body || '新しいメッセージがあります');
+                let safeBody = String(body || '新着メッセージがあります');
+
+                if (safeTitle.startsWith('ダイレクトメッセージ › @')) {
+                  safeTitle = safeTitle.replace('ダイレクトメッセージ › @', '');
+                } else if (safeTitle.includes('enc::v') || safeTitle.startsWith('enc::')) {
+                  safeTitle = 'Covo';
+                }
 
                 if (safeBody.includes('enc::v') || safeBody.startsWith('enc::')) {
-                  if (safeBody.includes(': enc::')) {
-                    const senderPrefix = safeBody.split(': enc::')[0];
-                    safeBody = `${senderPrefix}: 新しいメッセージがあります`;
+                  if (safeBody.includes(': enc::') || safeBody.includes(':enc::')) {
+                    const senderPrefix = safeBody.split(/:\s*enc::/)[0];
+                    safeBody = `${senderPrefix}: 新着メッセージがあります`;
                   } else {
-                    safeBody = '新しいメッセージがあります';
+                    safeBody = '新着メッセージがあります';
                   }
-                }
-                if (safeTitle.includes('enc::v') || safeTitle.startsWith('enc::')) {
-                  safeTitle = 'Covo';
+                } else {
+                  // スタンプ・ファイルURL等の可読化
+                  const formatRaw = (s) => {
+                    const t = String(s || '').trim();
+                    if (t.includes('[STAMP]') || t.includes('/stamps/') || t.includes('covo:') || t.includes('covonew:') || t.includes('serverstamp:') || t.startsWith('スタンプ') || t === '[スタンプ]') return '[スタンプ]';
+                    if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(t) || t === '（画像）' || t === '[画像]') return '📷 [写真]';
+                    if (/\.(mp4|mov|webm|avi|m4v)/i.test(t) || t === '（動画）' || t === '[動画]') return '🎥 [動画]';
+                    if (/\.(mp3|wav|ogg|m4a|aac)/i.test(t) || t === '（音声）' || t === '[ボイスメッセージ]') return '🎤 [ボイスメッセージ]';
+                    if (t.includes('firebase-storage') || t.includes('cloudinary') || t.includes('r2.cloudflarestorage') || t.includes('/api/file/') || t === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(t)) return '📎 [ファイル]';
+                    return t;
+                  };
+                  const colonIdx = safeBody.indexOf(': ');
+                  if (colonIdx !== -1) {
+                    const prefix = safeBody.substring(0, colonIdx);
+                    const rest = safeBody.substring(colonIdx + 2);
+                    safeBody = `${prefix}: ${formatRaw(rest)}`;
+                  } else {
+                    safeBody = formatRaw(safeBody);
+                  }
                 }
 
                 for (const t of tokens) {
@@ -1504,7 +1522,7 @@ async function handleDownloadProxy(request, env, url) {
 }
 
 async function handleDeleteFile(request, env, url) {
-  const cors = getCorsHeaders(request);
+  const cors = getFileCorsHeaders(request);
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
@@ -1513,15 +1531,20 @@ async function handleDeleteFile(request, env, url) {
     }
     if (!env.FILES) return new Response(JSON.stringify({ error: 'ファイルが見つかりません' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-    const requesterId = url.searchParams.get('userId') || '';
-    const idToken = url.searchParams.get('idToken') || '';
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = url.searchParams.get('idToken') || authHeader.replace("Bearer ", "").trim();
+    let requesterId = url.searchParams.get('userId') || '';
 
-    if (!requesterId || !idToken) {
+    if (!idToken) {
       return new Response(JSON.stringify({ error: "Missing authentication parameters" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUser || verifiedUser.uid !== requesterId) {
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    if (!requesterId) requesterId = verifiedUser.uid;
+    if (verifiedUser.uid !== requesterId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
@@ -1541,8 +1564,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認
-        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
+        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId、またはmeta.serverIdが未設定・空文字のレガシー添付ファイル）を確認
+        if (serverId && meta && (!meta.serverId || meta.serverId === serverId)) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
@@ -1708,6 +1731,70 @@ async function handleStorageStats(request, env) {
   } catch (err) {
     return new Response(JSON.stringify({ error: err.toString() }), {
       status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// 管理者: カテゴリ別ファイル一覧取得
+// -------------------------------------------------------------
+async function handleStorageCategoryFiles(request, env, url) {
+  const cors = getCorsHeaders(request);
+  try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim();
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+    const category = url.searchParams.get("category") || "images";
+    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+
+    const isAdmin = await isAppAdmin(appId, verifiedUser, env);
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const files = [];
+    if (env.FILES) {
+      let cursor;
+      do {
+        const listed = await env.FILES.list({ cursor, limit: 1000 });
+        for (const key of listed.keys) {
+          const meta = key.metadata || {};
+          const cat = categorizeKvFile(meta);
+          if (cat === category) {
+            files.push({
+              key: key.name,
+              name: meta.name || key.name,
+              type: meta.type || "application/octet-stream",
+              size: meta.size || 0,
+              folder: meta.folder || "",
+              uploadedAt: meta.uploadedAt || 0,
+              url: `/api/file/${encodeURIComponent(key.name)}`
+            });
+            if (files.length >= 600) break;
+          }
+        }
+        cursor = listed.cursor;
+        if (listed.list_complete || files.length >= 600) break;
+      } while (cursor);
+    }
+
+    // 新しい順にソート
+    files.sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0));
+
+    return new Response(JSON.stringify({ success: true, category, files }), {
+      status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.toString() }), {
+      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
 }

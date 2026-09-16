@@ -535,7 +535,9 @@ service cloud.firestore {
           resource.data.toUid == request.auth.uid ||
           resource.data.fromUid == request.auth.uid
         );
-        allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.fromUid == request.auth.uid &&
+          request.resource.data.toUid is string;
         allow delete: if isAuthenticated() && (
           resource.data.toUid == request.auth.uid ||
           resource.data.fromUid == request.auth.uid
@@ -550,7 +552,9 @@ service cloud.firestore {
         resource.data.toUid == request.auth.uid ||
         resource.data.fromUid == request.auth.uid
       );
-      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.fromUid == request.auth.uid &&
+        request.resource.data.toUid is string;
       allow delete: if isAuthenticated() && (
         resource.data.toUid == request.auth.uid ||
         resource.data.fromUid == request.auth.uid

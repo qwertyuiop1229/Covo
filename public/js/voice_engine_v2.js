@@ -29,28 +29,41 @@ const VC_ICE_SERVERS = [
   // Google STUN（認証不要・無制限）
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
   // OpenRelay STUN
   { urls: 'stun:openrelay.metered.ca:80' },
-  // OpenRelay TURN – UDP 80（ファイアウォール回避率が最も高い）
-  { urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURN – UDP 443
-  { urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURN – TCP 443（最も通りやすい・企業Firewall対応）
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURNS – TLS 443（厳格なDPI/Firewall対応）
-  { urls: 'turns:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'stun:openrelay.metered.ca:3478' },
+  // OpenRelay TURN – 全ポート・プロトコル網羅 (UDP/TCP/TLS 80, 443, 3478)
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:3478?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
   // Cloudflare STUN（追加 STUN バックアップ）
   { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 const VC_TURN_TEST_SERVERS = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ];
 
 const VC_TURN_INFO = {
@@ -85,7 +98,7 @@ class VoiceEngine {
     // --- Local Media ---
     this._localStream = null;      // マイク専用 MediaStream
     this._localScreenStream = null; // 画面共有専用 MediaStream
-
+    this._localVideoStream = null;  // カメラ専用 MediaStream (P2P)
     // --- P2P ---
     this._peers = new Map();        // uid -> { pc, audioEl, iceRestarts, iceTimer }
     this._audioElements = new Map(); // uid -> HTMLAudioElement (GC防止)
@@ -125,12 +138,156 @@ class VoiceEngine {
     this._forceTurnOnly = false;
     this._modeOverride = 'auto'; // 'auto' | 'p2p' | 'turn' | 'agora'
     this._channelConfigUnsub = null;
-  }
+    }
+    // ================================================================
+    // マイク健全性確保（P2P ⇔ Agora 切替時の無音化を完全防止）
+    // ================================================================
+    async _ensureLocalStream() {
+    if (this._localStream) {
+      const tracks = this._localStream.getAudioTracks();
+      if (tracks.length > 0 && tracks[0].readyState === 'live') {
+        tracks[0].enabled = !this._isMuted;
+        return this._localStream;
+      }
+    }
+    try {
+      this._localStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+      });
+      const track = this._localStream.getAudioTracks()[0];
+      if (track) {
+        track.enabled = !this._isMuted;
+        track.onended = () => {
+          if (this.isActive) {
+            console.warn('[VoiceEngine] 🎤 マイクデバイス切断');
+            this._isMuted = true;
+            this._updateMuteUI();
+            this._setVoiceState({ isMuted: true });
+          }
+        };
+      }
+      console.log('[VoiceEngine] ✅ マイクストリーム再初期化完了');
+    } catch (e) {
+      console.error('[VoiceEngine] _ensureLocalStream failed:', e);
+    }
+    return this._localStream;
+    }
+    // ================================================================
+    // ビデオ・画面共有マウント & 静止画残留完全防止
+    // ================================================================
+    _mountVideoTrack(uid, trackOrStream, isLocal = false) {
+    // 1. ボイスチャンネル (vcGridOverlay) タイルへのマウント
+    const vcTile = document.getElementById(`vc-tile-${uid}`);
+    if (vcTile) {
+      let videoContainer = vcTile.querySelector('.vc-grid-video-container');
+      if (!videoContainer) {
+        videoContainer = document.createElement('div');
+        videoContainer.className = 'vc-grid-video-container';
+        vcTile.insertBefore(videoContainer, vcTile.firstChild);
+      }
+      videoContainer.classList.remove('hidden');
+      videoContainer.style.display = 'block';
+      const avatarEl = vcTile.querySelector('.vc-grid-avatar');
+      if (avatarEl) avatarEl.style.display = 'none';
 
-  // ================================================================
-  // JOIN
-  // ================================================================
-  async join(serverId, channelId, channelName) {
+      if (trackOrStream && typeof trackOrStream.play === 'function') {
+        try { trackOrStream.play(videoContainer); } catch (_) {}
+      } else {
+        let vid = videoContainer.querySelector('video');
+        if (!vid) {
+          vid = document.createElement('video');
+          vid.autoplay = true;
+          vid.playsInline = true;
+          vid.muted = isLocal;
+          vid.className = 'w-full h-full object-contain bg-black';
+          videoContainer.appendChild(vid);
+        }
+        if (trackOrStream instanceof MediaStream) {
+          vid.srcObject = trackOrStream;
+        } else if (trackOrStream instanceof MediaStreamTrack) {
+          vid.srcObject = new MediaStream([trackOrStream]);
+        }
+        vid.play().catch(() => {});
+      }
+    }
+
+    // 2. 1対1通話 (callOverlay) タイルへのマウント
+    const callContainerId = isLocal ? 'local-video-container' : `remote-video-${uid}`;
+    let callCont = document.getElementById(callContainerId);
+    if (!callCont && !isLocal) callCont = document.getElementById('remote-video-container');
+    if (callCont) {
+      callCont.classList.remove('hidden');
+      callCont.style.display = 'block';
+      const tile = callCont.closest('.discord-participant-tile');
+      if (tile) {
+        const tileAv = tile.querySelector('.discord-tile-avatar');
+        if (tileAv) tileAv.classList.add('hidden');
+      }
+      if (trackOrStream && typeof trackOrStream.play === 'function') {
+        try { trackOrStream.play(callCont); } catch (_) {}
+      } else {
+        let vid = callCont.querySelector('video');
+        if (!vid) {
+          vid = document.createElement('video');
+          vid.autoplay = true;
+          vid.playsInline = true;
+          vid.muted = isLocal;
+          vid.className = 'w-full h-full object-cover bg-black';
+          callCont.appendChild(vid);
+        }
+        if (trackOrStream instanceof MediaStream) {
+          vid.srcObject = trackOrStream;
+        } else if (trackOrStream instanceof MediaStreamTrack) {
+          vid.srcObject = new MediaStream([trackOrStream]);
+        }
+        vid.play().catch(() => {});
+      }
+    }
+    }
+    _unmountVideoTrack(uid, isLocal = false) {
+    // 1. ボイスチャンネル (vcGridOverlay) タイルからの破棄
+    const vcTile = document.getElementById(`vc-tile-${uid}`);
+    if (vcTile) {
+      const videoContainer = vcTile.querySelector('.vc-grid-video-container');
+      if (videoContainer) {
+        const vid = videoContainer.querySelector('video');
+        if (vid) {
+          try { vid.pause(); vid.srcObject = null; } catch (_) {}
+          vid.remove();
+        }
+        videoContainer.innerHTML = '';
+        videoContainer.classList.add('hidden');
+        videoContainer.style.display = 'none';
+      }
+      const avatarEl = vcTile.querySelector('.vc-grid-avatar');
+      if (avatarEl) avatarEl.style.display = '';
+    }
+
+    // 2. 1対1通話 (callOverlay) タイルからの破棄
+    const callContainerId = isLocal ? 'local-video-container' : `remote-video-${uid}`;
+    let callCont = document.getElementById(callContainerId);
+    if (!callCont && !isLocal) callCont = document.getElementById('remote-video-container');
+    if (callCont) {
+      const vid = callCont.querySelector('video');
+      if (vid) {
+        try { vid.pause(); vid.srcObject = null; } catch (_) {}
+        vid.remove();
+      }
+      callCont.innerHTML = '';
+      callCont.classList.add('hidden');
+      callCont.style.display = 'none';
+      const tile = callCont.closest('.discord-participant-tile');
+      if (tile) {
+        const tileAv = tile.querySelector('.discord-tile-avatar');
+        if (tileAv) tileAv.classList.remove('hidden');
+      }
+    }
+    }
+    // ================================================================
+    // JOIN
+    // ================================================================
+    async join(serverId, channelId, channelName) {
     if (this._isJoining) {
       console.warn('[VoiceEngine] 既にVC参加処理を実行中です。重複参加を抑止しました。');
       return;
@@ -158,36 +315,11 @@ class VoiceEngine {
       console.log(`[VoiceEngine] 🔒 セキュリティ: ${VC_TURN_INFO.securityNote}`);
       console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-      // --- マイク取得 ---
-      try {
-        this._localStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false
-        });
-        console.log('[VoiceEngine] ✅ マイク取得完了');
-
-        // マイク切断検知 (Bluetooth/有線イヤホン切断時のフォールバック)
-        const audioTrack = this._localStream.getAudioTracks()[0];
-        if (audioTrack) {
-          audioTrack.onended = () => {
-            console.warn('[VoiceEngine] 🎤 マイクデバイスが切断または無効化されました');
-            if (this.isActive) {
-              if (typeof alertMessage === 'function') {
-                alertMessage('マイクが切断されました。音声設定を確認してください。', 'warning');
-              }
-              this._isMuted = true;
-              this._updateMuteUI();
-              this._setVoiceState({ isMuted: true });
-            }
-          };
-        }
-      } catch (e) {
+      // --- マイク取得 (共通ヘルパーで確実に初期化) ---
+      await this._ensureLocalStream();
+      if (!this._localStream || this._localStream.getAudioTracks().length === 0) {
         this.isActive = false;
-        const msg = e.name === 'NotAllowedError'
-          ? 'マイクへのアクセスが拒否されています。ブラウザの権限設定を確認してください。'
-          : `マイクの取得に失敗しました: ${e.message}`;
-        console.error('[VoiceEngine] ❌ マイクエラー:', e);
-        if (typeof alertMessage === 'function') alertMessage(msg, 'error');
+        if (typeof alertMessage === 'function') alertMessage('マイクへのアクセスが拒否されたか、デバイスが見つかりません。', 'error');
         return;
       }
 
@@ -224,11 +356,12 @@ class VoiceEngine {
       this._subscribeVoiceStates();
       // --- 古いシグナリングドキュメントを安全に掃除（直近60秒以内のドキュメントは保持） ---
       this._cleanupStaleSignaling();
-
       // --- UI 更新 ---
-      _vcShowBar(channelName);
-      this._setChannelActive(channelId, true);
-
+      const isDirectCall = Boolean(channelId && channelId.startsWith('call_'));
+      if (!isDirectCall) {
+        _vcShowBar(channelName);
+        this._setChannelActive(channelId, true);
+      }
       // --- beforeunload でも確実にクリーンアップ ---
       window.addEventListener('beforeunload', this._boundBeforeUnload = () => {
         this._clearVoiceStateSync();
@@ -290,11 +423,12 @@ class VoiceEngine {
       this._isVideoOn = false;
       this._isScreenOn = false;
       this.serverId = this.channelId = this.channelName = null;
-
       // UI リセット
-      _vcHideBar();
-      this._setChannelActive(channelId, false);
-      this._renderMemberTree(channelId, []);
+      if (channelId && !channelId.startsWith('call_')) {
+        _vcHideBar();
+        this._setChannelActive(channelId, false);
+        this._renderMemberTree(channelId, []);
+      }
       this._renderGrid();
       const rtcText = document.getElementById('discordCallRtcText');
       const rtcBadge = document.getElementById('discordCallRtcStatus');
@@ -504,15 +638,26 @@ class VoiceEngine {
           const data = snapshot.val() || {};
           this._voiceStates = data;
           const count = Object.keys(data).length;
-
           console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'} (設定: ${this._modeOverride})`);
+          // 画面共有・ビデオ終了者の静止画を確実に消去
+          Object.keys(data).forEach(u => {
+            const m = data[u];
+            if (!m.hasVideo && !m.hasScreen) {
+              this._unmountVideoTrack(u, u === this._myUid);
+            }
+          });
           // サイドバーと グリッドを更新
-          this._renderMemberTree(this.channelId, Object.values(data));
+          if (this.channelId && !this.channelId.startsWith('call_')) {
+            this._renderMemberTree(this.channelId, Object.values(data));
+          }
           this._renderGrid();
           const countEl = document.getElementById('vcGridParticipantCount');
           if (countEl) countEl.textContent = `${count}人`;
-          // 個別通話 (call_*) の場合、一度2人以上で接続された後に相手が退出したら自動終了
+          // 個別通話 (call_*) の場合、参加者タイルを更新し、一度2人以上で接続された後に相手が退出したら自動終了
           if (this.channelId && this.channelId.startsWith('call_')) {
+            if (typeof renderParticipantTiles === 'function') {
+              renderParticipantTiles();
+            }
             if (count >= 2) {
               this._directCallConnected = true;
             } else if (this._directCallConnected && count <= 1) {
@@ -625,6 +770,10 @@ class VoiceEngine {
     if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
     }
+    const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+    if (!isGlobalAdmin) {
+      throw new Error('通話方式の強制変更は全体管理者のみ実行できます');
+    }
     const validModes = ['auto', 'p2p', 'turn', 'agora'];
     if (!validModes.includes(mode)) {
       throw new Error(`無効なモード: ${mode} (有効値: ${validModes.join(', ')})`);
@@ -701,12 +850,12 @@ class VoiceEngine {
       await this._cleanupAgora();
     }
     this.mode = 'p2p';
-    this._modeSwitching = false;
+    // マイクストリームが生きていることを確実に保証（Agora解放後の無音化を完全防止）
+    await this._ensureLocalStream();
     console.log(`[VoiceEngine] 🔵 P2P モード (強制リレー: ${this._forceTurnOnly})`);
-    console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
     const rtcText = document.getElementById('discordCallRtcText');
     const rtcBadge = document.getElementById('discordCallRtcStatus');
-    if (rtcText) rtcText.textContent = this._forceTurnOnly ? 'P2P (TURN強制) 接続' : 'P2P (TURN) 接続完了';
+    if (rtcText) rtcText.textContent = this._forceTurnOnly ? 'P2P (TURNリレー中継) 接続完了' : 'P2P (直接接続) 接続完了';
     if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     // 既存ピア接続をクリーンアップしてから再構築
     this._cleanupAllPeers();
@@ -714,10 +863,9 @@ class VoiceEngine {
     this._setupSignalingListener();
     // P2P 音量検知開始
     this._startP2PVolumeMonitor();
-    // 決定論的 Offer 方向：
-    //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
-    //   これにより両端が同時にOfferを送るグリッチを防止
-    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    // 参加者リストの統合（未反映による取りこぼし防止）
+    const allStates = { ...(this._voiceStates || {}), ...(currentStates || {}) };
+    const others = Object.keys(allStates).filter(uid => uid !== this._myUid);
     for (const peerUid of others) {
       const iAmOfferer = this._myUid < peerUid;
       if (iAmOfferer) {
@@ -725,10 +873,10 @@ class VoiceEngine {
           console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
         );
       } else {
-        // Answerer側も先行してピア接続オブジェクトを準備
         this._createPeerConnection(peerUid);
       }
     }
+    this._modeSwitching = false;
   }
 
   // ================================================================
@@ -782,13 +930,16 @@ class VoiceEngine {
         pc.addTrack(track, this._localStream);
       });
     }
-    // 画面共有中なら画面トラックも追加
+    // 画面共有またはカメラONならビデオトラックも追加
     if (this._localScreenStream && this._isScreenOn) {
       this._localScreenStream.getTracks().forEach(track => {
         pc.addTrack(track, this._localScreenStream);
       });
+    } else if (this._localVideoStream && this._isVideoOn) {
+      this._localVideoStream.getTracks().forEach(track => {
+        pc.addTrack(track, this._localVideoStream);
+      });
     }
-
     // リモートトラック受信（Audio GC防止: Map に格納）
     pc.ontrack = (e) => {
       if (e.track.kind === 'audio') {
@@ -821,19 +972,20 @@ class VoiceEngine {
       }
       if (e.track.kind === 'video') {
         console.log(`[VoiceEngine] 📹 映像受信: ${peerUid.slice(0,8)}`);
-        const remContainer = document.getElementById(`remote-video-${peerUid}`) || document.getElementById('remote-video-container');
-        if (remContainer) {
-          let videoEl = remContainer.querySelector('video');
-          if (!videoEl) {
-            videoEl = document.createElement('video');
-            videoEl.autoplay = true;
-            videoEl.playsInline = true;
-            videoEl.className = 'w-full h-full object-cover';
-            remContainer.appendChild(videoEl);
-          }
-          videoEl.srcObject = e.streams[0];
-          remContainer.classList.remove('hidden');
-        }
+        this._mountVideoTrack(peerUid, e.streams[0] || e.track, false);
+        // 静止画残留完全防止: トラック停止/ミュート検知時に即座にアンマウント
+        e.track.onmute = () => {
+          console.log(`[VoiceEngine] 📹 映像ミュート検知 (${peerUid.slice(0,8)}) → 映像消去`);
+          this._unmountVideoTrack(peerUid, false);
+        };
+        e.track.onunmute = () => {
+          console.log(`[VoiceEngine] 📹 映像再開検知 (${peerUid.slice(0,8)}) → 映像再マウント`);
+          this._mountVideoTrack(peerUid, e.streams[0] || e.track, false);
+        };
+        e.track.onended = () => {
+          console.log(`[VoiceEngine] 📹 映像終了検知 (${peerUid.slice(0,8)}) → 映像消去`);
+          this._unmountVideoTrack(peerUid, false);
+        };
       }
     };
 
@@ -921,26 +1073,26 @@ class VoiceEngine {
   async _iceRestart(peerUid) {
     const peerInfo = this._peers.get(peerUid);
     if (!peerInfo || !this.isActive || this.mode !== 'p2p') return;
-    if (peerInfo.iceRestarts >= VC_ICE_MAX_RESTARTS) {
-      console.warn(`[VoiceEngine] ⚠️ ICE Restart 上限 (${peerUid.slice(0,8)}) → Agora SFU へ自動フォールバック`);
-      this._removePeer(peerUid);
-      this._switchToAgora();
-      return;
-    }
-
     peerInfo.iceRestarts++;
     console.log(`[VoiceEngine] 🔄 ICE Restart ${peerInfo.iceRestarts}/${VC_ICE_MAX_RESTARTS} (${peerUid.slice(0,8)})`);
-
-    const { pc } = peerInfo;
     const iAmOfferer = this._myUid < peerUid;
     if (iAmOfferer) {
+      // 直接接続失敗時は自動でTURNリレー強制へエスカレーションして確実に貫通
+      if (peerInfo.iceRestarts >= 2 && !this._forceTurnOnly) {
+        console.log(`[VoiceEngine] ⚡ 直接ICE失敗多発 → TURNリレー強制に切り替えて再接続`);
+        this._forceTurnOnly = true;
+      }
       try {
+        const { pc } = peerInfo;
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
         await this._sendSignal(peerUid, { type: 'offer', sdp: offer.sdp });
       } catch(e) {
         console.error('[VoiceEngine] ICE Restart Offer失敗:', e);
       }
+    } else {
+      // 自分がAnswerer側なら相手にrestart-requestを送信してOfferを促す
+      await this._sendSignal(peerUid, { type: 'restart-request' });
     }
   }
 
@@ -1016,11 +1168,11 @@ class VoiceEngine {
   async _sendSignal(targetUid, payload) {
     if (!this.isActive) return;
     try {
-      // ドキュメントIDに特殊文字が入らないよう両端のUIDのみ使用
+      // ドキュメントIDに一意サフィックスを付与し、既存ドキュメントとの衝突・更新拒否を100%排除
       const docId = [this._myUid, targetUid].sort().join('_') +
         '_' + (this.channelId || '').replace(/[^a-zA-Z0-9]/g, '');
-      const candSuffix = payload.type === 'candidate' ? `_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : '';
-      const sigRef = doc(db, `artifacts/${appId}/vc_signaling/${docId}_${payload.type}${candSuffix}`);
+      const uniqueSuffix = `_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const sigRef = doc(db, `artifacts/${appId}/vc_signaling/${docId}_${payload.type}${uniqueSuffix}`);
       await setDoc(sigRef, {
         ...payload,
         fromUid: this._myUid,
@@ -1087,6 +1239,9 @@ class VoiceEngine {
                 peerInfo.pendingCandidates.push(data.candidate);
               }
             }
+          } else if (data.type === 'restart-request') {
+            console.log(`[VoiceEngine] 🔄 相手(${fromUid.slice(0,8)})からICE再接続要求を受信`);
+            await this._iceRestart(fromUid);
           }
         } catch(e) {
           console.error('[VoiceEngine] シグナリング処理エラー:', e);
@@ -1202,18 +1357,35 @@ class VoiceEngine {
           console.warn('[VoiceEngine] Agora subscribe失敗:', e)
         );
         if (mediaType === 'audio' && user.audioTrack) {
-          user.audioTrack.play();
+          const p = user.audioTrack.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              console.warn('[VoiceEngine] Agora 音声自動再生制限検知:', err);
+              const resumeAudio = () => {
+                user.audioTrack?.play().catch(() => {});
+                document.removeEventListener('click', resumeAudio);
+                document.removeEventListener('touchstart', resumeAudio);
+              };
+              document.addEventListener('click', resumeAudio, { once: true });
+              document.addEventListener('touchstart', resumeAudio, { once: true });
+            });
+          }
         }
         if (mediaType === 'video' && user.videoTrack) {
           this._agoraRemote.set(String(user.uid), user);
           this._renderGrid();
+          this._mountVideoTrack(String(user.uid), user.videoTrack, false);
         }
         this._agoraRemote.set(String(user.uid), user);
       });
       this._agoraClient.on('user-unpublished', (user, mediaType) => {
-        if (mediaType === 'video') this._renderGrid();
+        if (mediaType === 'video') {
+          this._unmountVideoTrack(String(user.uid), false);
+          this._renderGrid();
+        }
       });
       this._agoraClient.on('user-left', (user) => {
+        this._unmountVideoTrack(String(user.uid), false);
         this._agoraRemote.delete(String(user.uid));
         this._renderGrid();
       });
@@ -1264,10 +1436,16 @@ class VoiceEngine {
 
       // チャンネル参加
       await this._agoraClient.join(tokenData.appId, agoraChannel, tokenData.token, this._myUid);
-      // マイクトラック公開
-      this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
-        AEC: true, ANS: true, AGC: true
-      });
+      // マイクトラック公開 (既存ストリームのトラックを再利用してデバイス競合・無音化を完全防止)
+      await this._ensureLocalStream();
+      const localAudioTrack = this._localStream?.getAudioTracks()[0];
+      if (localAudioTrack && typeof AgoraRTC.createCustomAudioTrack === 'function') {
+        this._agoraAudio = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: localAudioTrack });
+      } else {
+        this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
+          AEC: true, ANS: true, AGC: true
+        });
+      }
       if (this._isMuted) await this._agoraAudio.setEnabled(false);
       await this._agoraClient.publish([this._agoraAudio]);
       console.log('[VoiceEngine] ✅ Agora SFU 接続完了');
@@ -1325,6 +1503,10 @@ class VoiceEngine {
       this._localScreenStream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
       this._localScreenStream = null;
     }
+    if (this._localVideoStream) {
+      this._localVideoStream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+      this._localVideoStream = null;
+    }
   }
 
   // ================================================================
@@ -1350,40 +1532,173 @@ class VoiceEngine {
   }
 
   // ================================================================
-  // カメラ切替（Agora のみ / P2P は将来実装）
+  // カメラ切替（P2P + Agora 完全両対応）
   // ================================================================
   async toggleCamera() {
-    if (this.mode === 'p2p') {
-      if (typeof alertMessage === 'function') {
-        alertMessage('📷 カメラは Agora モード（4人以上）でご利用いただけます', 'info');
-      }
+    if (this._isVideoOn) {
+      await this._stopCamera();
+    } else {
+      await this._startCamera();
+    }
+  }
+
+  async _startCamera() {
+    try {
+      this._localVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: false
+      });
+    } catch(e) {
+      console.error('[VoiceEngine] カメラ取得失敗:', e);
+      if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました: ' + (e.message || ''), 'error');
       return;
     }
-    if (!this._agoraClient) return;
-
-    if (this._isVideoOn) {
-      if (this._agoraVideo) {
-        try { await this._agoraClient.unpublish([this._agoraVideo]); } catch(_){}
-        try { this._agoraVideo.stop(); this._agoraVideo.close(); } catch(_){}
-        this._agoraVideo = null;
+    const camTrack = this._localVideoStream.getVideoTracks()[0];
+    if (!camTrack) return;
+    camTrack.onended = () => {
+      if (this._isVideoOn) this._stopCamera();
+    };
+    if (this.mode === 'p2p') {
+      for (const [peerUid, { pc }] of this._peers) {
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          await videoSender.replaceTrack(camTrack).catch(e =>
+            console.warn('[VoiceEngine] P2P replaceTrack(cam)失敗:', e)
+          );
+        } else {
+          pc.addTrack(camTrack, this._localVideoStream);
+          await this._renegotiatePeer(peerUid);
+        }
       }
-      this._isVideoOn = false;
-    } else {
+    } else if (this.mode === 'agora') {
       try {
-        this._agoraVideo = await AgoraRTC.createCameraVideoTrack({ encoderConfig: '720p_1' });
+        if (typeof AgoraRTC !== 'undefined' && AgoraRTC.createCustomVideoTrack) {
+          this._agoraVideo = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: camTrack });
+        } else {
+          this._agoraVideo = await AgoraRTC.createCameraVideoTrack({ encoderConfig: '720p_1' });
+        }
+        if (Array.isArray(this._agoraVideo)) this._agoraVideo = this._agoraVideo[0];
         await this._agoraClient.publish([this._agoraVideo]);
-        this._isVideoOn = true;
       } catch(e) {
-        console.error('[VoiceEngine] カメラ開始失敗:', e);
-        if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました', 'error');
+        console.error('[VoiceEngine] Agora カメラ公開失敗:', e);
+        if (this._localVideoStream) {
+          this._localVideoStream.getTracks().forEach(t => t.stop());
+          this._localVideoStream = null;
+        }
+        if (typeof alertMessage === 'function') alertMessage('Agora カメラの起動に失敗しました', 'error');
         return;
       }
     }
-
-    await this._setVoiceState({ hasVideo: this._isVideoOn }).catch(() => {});
+    this._isVideoOn = true;
+    this._mountVideoTrack(this._myUid, camTrack, true);
+    await this._setVoiceState({ hasVideo: true }).catch(() => {});
     this._updateCamUI();
     this._renderGrid();
-    console.log(`[VoiceEngine] 📷 カメラ: ${this._isVideoOn ? 'オン' : 'オフ'}`);
+    console.log(`[VoiceEngine] 📷 カメラ: オン (モード: ${this.mode})`);
+  }
+
+  async _stopCamera() {
+    if (this.mode === 'p2p') {
+      for (const [peerUid, { pc }] of this._peers) {
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          const screenTrack = this._isScreenOn && this._localScreenStream ? this._localScreenStream.getVideoTracks()[0] : null;
+          await videoSender.replaceTrack(screenTrack).catch(() => {});
+        }
+        await this._renegotiatePeer(peerUid);
+      }
+    } else if (this.mode === 'agora' && this._agoraVideo) {
+      try { await this._agoraClient.unpublish([this._agoraVideo]); } catch(_){}
+      try { this._agoraVideo.stop(); this._agoraVideo.close(); } catch(_){}
+      this._agoraVideo = null;
+    }
+    if (this._localVideoStream) {
+      this._localVideoStream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+      this._localVideoStream = null;
+    }
+    this._isVideoOn = false;
+    this._unmountVideoTrack(this._myUid, true);
+    await this._setVoiceState({ hasVideo: false }).catch(() => {});
+    this._updateCamUI();
+    this._renderGrid();
+    console.log('[VoiceEngine] 📷 カメラ: オフ');
+  }
+
+  async switchMicrophone(deviceId) {
+    if (!deviceId) return;
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+      });
+      const newTrack = newStream.getAudioTracks()[0];
+      if (!newTrack) return;
+      newTrack.enabled = !this._isMuted;
+      if (this._localStream) {
+        this._localStream.getAudioTracks().forEach(t => { try { t.stop(); } catch(_) {} });
+      }
+      this._localStream = newStream;
+      for (const [peerUid, { pc }] of this._peers) {
+        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+        if (audioSender) {
+          await audioSender.replaceTrack(newTrack).catch(e => console.warn('[VoiceEngine] replaceTrack(mic)失敗:', e));
+        }
+      }
+      if (this.mode === 'agora' && this._agoraAudio) {
+        if (typeof this._agoraAudio.setDevice === 'function') {
+          await this._agoraAudio.setDevice(deviceId);
+        }
+      }
+      if (this._p2pAudioContext && this._myUid) {
+        this._attachP2PStreamAnalyser(this._myUid, this._localStream, true);
+      }
+      console.log(`[VoiceEngine] 🎙️ マイク切替成功: ${deviceId}`);
+    } catch(e) {
+      console.error('[VoiceEngine] switchMicrophone failed:', e);
+      throw e;
+    }
+  }
+
+  async switchCamera(deviceId) {
+    if (!deviceId) return;
+    try {
+      if (!this._isVideoOn) return;
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: false
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) return;
+      if (this._localVideoStream) {
+        this._localVideoStream.getTracks().forEach(t => { try { t.stop(); } catch(_) {} });
+      }
+      this._localVideoStream = newStream;
+      for (const [peerUid, { pc }] of this._peers) {
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          await videoSender.replaceTrack(newTrack).catch(e => console.warn('[VoiceEngine] replaceTrack(cam)失敗:', e));
+        }
+      }
+      if (this.mode === 'agora' && this._agoraVideo) {
+        if (typeof this._agoraVideo.setDevice === 'function') {
+          await this._agoraVideo.setDevice(deviceId);
+        }
+      }
+      this._mountVideoTrack(this._myUid, newTrack, true);
+      console.log(`[VoiceEngine] 📹 カメラ切替成功: ${deviceId}`);
+    } catch(e) {
+      console.error('[VoiceEngine] switchCamera failed:', e);
+      throw e;
+    }
+  }
+
+  async switchSpeaker(deviceId) {
+    if (!deviceId) return;
+    for (const [peerUid, audioEl] of this._audioElements) {
+      if (audioEl && typeof audioEl.setSinkId === 'function') {
+        try { await audioEl.setSinkId(deviceId); } catch (e) { console.warn('[VoiceEngine] setSinkId failed:', e); }
+      }
+    }
   }
 
   // ================================================================
@@ -1711,13 +2026,28 @@ window.joinVoiceChannel = async function(channelId, channelName) {
       _vcOpenGrid();
       return;
     }
-    // 別のVCへ移動
-    await window._voiceEngine.leave();
+    if (window._voiceEngine.channelId && window._voiceEngine.channelId.startsWith('call_')) {
+      const ok = await showCustomConfirm('個別通話を終了してボイスチャンネルに参加しますか？', '通話を終了して参加', 'キャンセル');
+      if (!ok) return;
+      if (typeof endCall === 'function') {
+        await endCall(false);
+      } else {
+        await window._voiceEngine.leave();
+      }
+    } else {
+      // 別のVCへ移動
+      await window._voiceEngine.leave();
+    }
   }
   await window._voiceEngine.join(currentServerId, channelId, channelName);
 };
-
 window.leaveVoiceChannel = async function() {
+  if (window._voiceEngine && window._voiceEngine.isActive && window._voiceEngine.channelId && window._voiceEngine.channelId.startsWith('call_')) {
+    if (typeof endCall === 'function') {
+      endCall(false);
+      return;
+    }
+  }
   await window._voiceEngine.leave();
 };
 

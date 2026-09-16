@@ -1,8 +1,11 @@
 {
-  "date": "2026-09-16T13:39:42.708Z",
+  "date": "2026-09-16T16:03:46.582Z",
   "files": [
-    "public/css/modules/chat.css",
-    "public/index.html",
-    "public/js/main.js"
+    "firestore.rules",
+    "database.rules.json",
+    "server/src/index.js",
+    "public/js/main.js",
+    "public/js/voice_engine_v2.js",
+    "tests/security.test.js"
   ]
 }

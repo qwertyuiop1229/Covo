@@ -306,30 +306,6 @@ describe('Firestore Security Rules Testing', () => {
       const adminListPath = `artifacts/${APP_ID}/settings/adminList`;
       await assertFails(setDoc(doc(userDb, adminListPath), { admins: ['regular_user'] }));
     });
-    it('【正常系】シグナリング送信者本人がOffer/Answerを送信・更新できること (Must Pass)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const sigPath = `artifacts/${APP_ID}/vc_signaling/alice_bob_test`;
-      await assertSucceeds(setDoc(doc(aliceDb, sigPath), {
-        fromUid: 'alice',
-        toUid: 'bob',
-        type: 'offer',
-        sdp: 'dummy_sdp'
-      }));
-      await assertSucceeds(setDoc(doc(aliceDb, sigPath), {
-        fromUid: 'alice',
-        toUid: 'bob',
-        type: 'offer',
-        sdp: 'updated_sdp'
-      }));
-    });
-    it('【異常系】シグナリング送信者が他人になりすましてOfferを作成・更新しようとすると弾かれること (Must Fail)', async () => {
-      const aliceDb = getDb({ uid: 'alice' });
-      const sigPath = `artifacts/${APP_ID}/vc_signaling/spoof_test`;
-      await assertFails(setDoc(doc(aliceDb, sigPath), {
-        fromUid: 'charlie',
-        toUid: 'bob',
-        type: 'offer'
-      }));
-    });
-    });
-    });
+  });
+
+});

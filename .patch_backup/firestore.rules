@@ -125,9 +125,9 @@ service cloud.firestore {
         allow write: if isGlobalAdmin(appId);
       }
 
-      // システムエラー・警告テレメトリ
+      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
       match /error_reports/{docId} {
-        allow create, update: if isAuthenticated() &&
+        allow create, update: if
           request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
@@ -527,9 +527,23 @@ service cloud.firestore {
           allow write: if isServerAdmin(appId, serverId);
         }
       }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read: if isAuthenticated() && (
+          resource == null ||
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+        allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+        allow delete: if isAuthenticated() && (
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+      }
     }
 
-    // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換)
+    // ルート直下 VC シグナリング (フォールバック用)
     match /vc_signaling/{sigDocId} {
       allow read: if isAuthenticated() && (
         resource == null ||

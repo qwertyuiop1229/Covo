@@ -614,6 +614,7 @@ function setDiscordUIMode(...args) { return window.setDiscordUIMode ? window.set
 function checkLatestAnnouncement(...args) { return window.checkLatestAnnouncement ? window.checkLatestAnnouncement(...args) : null; }
 function renderServerList(...args) { return window.renderServerList ? window.renderServerList(...args) : null; }
 function renderDiscordServerNav(...args) { return window.renderDiscordServerNav ? window.renderDiscordServerNav(...args) : null; }
+function enterServer(...args) { return window.enterServer ? window.enterServer(...args) : null; }
 function openDm(...args) { return window.openDm ? window.openDm(...args) : null; }
 function openDmHomeView(...args) { return window.openDmHomeView ? window.openDmHomeView(...args) : null; }
 function leaveServerView(...args) { return window.leaveServerView ? window.leaveServerView(...args) : null; }
@@ -6215,7 +6216,7 @@ window.switchFullProfileTab = function (tab) {
       if (isTarget) {
         btn.className = "pb-3 text-gray-900 dark:text-white border-b-2 border-[#5865f2] dark:border-white transition-colors cursor-pointer font-bold";
       } else {
-        btn.className = "pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold";
+        btn.className = "pb-3 text-gray-500 dark:text-[#949ba4] hover:text-gray-900 dark:hover:text-[#dbdee1] border-b-2 border-transparent transition-colors cursor-pointer font-bold";
       }
     }
     if (cnt) {
@@ -6232,8 +6233,9 @@ window.switchFullProfileTab = function (tab) {
     if (headline) headline.textContent = `${safeName}にはここで共有するアクティビティがありません`;
     if (msgBtn) {
       msgBtn.onclick = () => {
+        const targetAvatar = _fullProfileTargetUser?.avatarUrl || '';
         closeUserFullProfileModal();
-        openDm(targetUid, safeName, _fullProfileTargetUser.avatarUrl);
+        openDm(targetUid, safeName, targetAvatar);
       };
     }
   }
@@ -7731,7 +7733,7 @@ async function showServerList() {
 }
 
 // サーバーに入る
-async function enterServer(serverId, serverData) {
+window.enterServer = async function enterServer(serverId, serverData) {
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
@@ -8877,6 +8879,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (membersList) membersList.classList.add('hidden');
   if (activeNowPanel) activeNowPanel.classList.add('hidden');
   panel.classList.remove('hidden');
+  panel.className = "w-full flex-1 flex flex-col h-full overflow-hidden";
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
@@ -8939,32 +8942,33 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
 
   // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative z-30 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
-      <div class="absolute top-3 right-3 flex items-center gap-1.5 z-40">
-        <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
-          <i class="fas fa-user-plus"></i>
+    <div class="dm-profile-banner relative z-0 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
+    </div>
+    <!-- 右上ボタングループ & ポップオーバー (アバター z-20 より前面の z-50) -->
+    <div class="absolute top-3 right-3 flex items-center gap-1.5 z-50 select-none">
+      <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
+        <i class="fas fa-user-plus"></i>
+      </button>
+      <button id="dmBannerMoreBtn" class="dm-banner-btn" title="その他のオプション" onclick="window.toggleDmBannerMenu(event)">
+        <i class="fas fa-ellipsis"></i>
+      </button>
+      <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
+        <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
         </button>
-        <button id="dmBannerMoreBtn" class="dm-banner-btn" title="その他のオプション" onclick="window.toggleDmBannerMenu(event)">
-          <i class="fas fa-ellipsis"></i>
+        <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <i class="fas fa-phone w-4 text-center"></i> 音声通話
         </button>
-        <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
-          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-            <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
-          </button>
-          <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-            <i class="fas fa-phone w-4 text-center"></i> 音声通話
-          </button>
-          <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-            <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
-          </button>
-          <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
-          <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
-            <i class="fas fa-ban w-4 text-center"></i> ブロック
-          </button>
-        </div>
+        <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
+        </button>
+        <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
+        <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+          <i class="fas fa-ban w-4 text-center"></i> ブロック
+        </button>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-10" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
+    <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-20" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}
@@ -14524,13 +14528,13 @@ async function openPhotoSwipeModal(fileUrl, fileName) {
         const ext = (fileName || '').split('.').pop() || 'png';
         downloadFile(fileUrl, fileName || `image_${Date.now()}.${ext}`, `image/${ext}`);
       };
-    }
-    }
-    }
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    const pdfLb = document.getElementById('pdfLightbox');
+      }
+      }
+      }
+      window.openPhotoSwipeModal = openPhotoSwipeModal;
+      document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+      const pdfLb = document.getElementById('pdfLightbox');
     if (pdfLb && pdfLb.style.display === 'flex') closePdfLightbox();
   }
 });
@@ -24587,28 +24591,41 @@ const VC_ICE_SERVERS = [
   // Google STUN（認証不要・無制限）
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
   // OpenRelay STUN
   { urls: 'stun:openrelay.metered.ca:80' },
-  // OpenRelay TURN – UDP 80（ファイアウォール回避率が最も高い）
-  { urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURN – UDP 443
-  { urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURN – TCP 443（最も通りやすい・企業Firewall対応）
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject', credential: 'openrelayproject' },
-  // OpenRelay TURNS – TLS 443（厳格なDPI/Firewall対応）
-  { urls: 'turns:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'stun:openrelay.metered.ca:3478' },
+  // OpenRelay TURN – 全ポート・プロトコル網羅 (UDP/TCP/TLS 80, 443, 3478)
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:3478?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
   // Cloudflare STUN（追加 STUN バックアップ）
   { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 const VC_TURN_TEST_SERVERS = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ];
 
 const VC_TURN_INFO = {
@@ -24683,12 +24700,156 @@ class VoiceEngine {
     this._forceTurnOnly = false;
     this._modeOverride = 'auto'; // 'auto' | 'p2p' | 'turn' | 'agora'
     this._channelConfigUnsub = null;
-  }
+    }
+    // ================================================================
+    // マイク健全性確保（P2P ⇔ Agora 切替時の無音化を完全防止）
+    // ================================================================
+    async _ensureLocalStream() {
+    if (this._localStream) {
+      const tracks = this._localStream.getAudioTracks();
+      if (tracks.length > 0 && tracks[0].readyState === 'live') {
+        tracks[0].enabled = !this._isMuted;
+        return this._localStream;
+      }
+    }
+    try {
+      this._localStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+      });
+      const track = this._localStream.getAudioTracks()[0];
+      if (track) {
+        track.enabled = !this._isMuted;
+        track.onended = () => {
+          if (this.isActive) {
+            console.warn('[VoiceEngine] 🎤 マイクデバイス切断');
+            this._isMuted = true;
+            this._updateMuteUI();
+            this._setVoiceState({ isMuted: true });
+          }
+        };
+      }
+      console.log('[VoiceEngine] ✅ マイクストリーム再初期化完了');
+    } catch (e) {
+      console.error('[VoiceEngine] _ensureLocalStream failed:', e);
+    }
+    return this._localStream;
+    }
+    // ================================================================
+    // ビデオ・画面共有マウント & 静止画残留完全防止
+    // ================================================================
+    _mountVideoTrack(uid, trackOrStream, isLocal = false) {
+    // 1. ボイスチャンネル (vcGridOverlay) タイルへのマウント
+    const vcTile = document.getElementById(`vc-tile-${uid}`);
+    if (vcTile) {
+      let videoContainer = vcTile.querySelector('.vc-grid-video-container');
+      if (!videoContainer) {
+        videoContainer = document.createElement('div');
+        videoContainer.className = 'vc-grid-video-container';
+        vcTile.insertBefore(videoContainer, vcTile.firstChild);
+      }
+      videoContainer.classList.remove('hidden');
+      videoContainer.style.display = 'block';
+      const avatarEl = vcTile.querySelector('.vc-grid-avatar');
+      if (avatarEl) avatarEl.style.display = 'none';
 
-  // ================================================================
-  // JOIN
-  // ================================================================
-  async join(serverId, channelId, channelName) {
+      if (trackOrStream && typeof trackOrStream.play === 'function') {
+        try { trackOrStream.play(videoContainer); } catch (_) {}
+      } else {
+        let vid = videoContainer.querySelector('video');
+        if (!vid) {
+          vid = document.createElement('video');
+          vid.autoplay = true;
+          vid.playsInline = true;
+          vid.muted = isLocal;
+          vid.className = 'w-full h-full object-contain bg-black';
+          videoContainer.appendChild(vid);
+        }
+        if (trackOrStream instanceof MediaStream) {
+          vid.srcObject = trackOrStream;
+        } else if (trackOrStream instanceof MediaStreamTrack) {
+          vid.srcObject = new MediaStream([trackOrStream]);
+        }
+        vid.play().catch(() => {});
+      }
+    }
+
+    // 2. 1対1通話 (callOverlay) タイルへのマウント
+    const callContainerId = isLocal ? 'local-video-container' : `remote-video-${uid}`;
+    let callCont = document.getElementById(callContainerId);
+    if (!callCont && !isLocal) callCont = document.getElementById('remote-video-container');
+    if (callCont) {
+      callCont.classList.remove('hidden');
+      callCont.style.display = 'block';
+      const tile = callCont.closest('.discord-participant-tile');
+      if (tile) {
+        const tileAv = tile.querySelector('.discord-tile-avatar');
+        if (tileAv) tileAv.classList.add('hidden');
+      }
+      if (trackOrStream && typeof trackOrStream.play === 'function') {
+        try { trackOrStream.play(callCont); } catch (_) {}
+      } else {
+        let vid = callCont.querySelector('video');
+        if (!vid) {
+          vid = document.createElement('video');
+          vid.autoplay = true;
+          vid.playsInline = true;
+          vid.muted = isLocal;
+          vid.className = 'w-full h-full object-cover bg-black';
+          callCont.appendChild(vid);
+        }
+        if (trackOrStream instanceof MediaStream) {
+          vid.srcObject = trackOrStream;
+        } else if (trackOrStream instanceof MediaStreamTrack) {
+          vid.srcObject = new MediaStream([trackOrStream]);
+        }
+        vid.play().catch(() => {});
+      }
+    }
+    }
+    _unmountVideoTrack(uid, isLocal = false) {
+    // 1. ボイスチャンネル (vcGridOverlay) タイルからの破棄
+    const vcTile = document.getElementById(`vc-tile-${uid}`);
+    if (vcTile) {
+      const videoContainer = vcTile.querySelector('.vc-grid-video-container');
+      if (videoContainer) {
+        const vid = videoContainer.querySelector('video');
+        if (vid) {
+          try { vid.pause(); vid.srcObject = null; } catch (_) {}
+          vid.remove();
+        }
+        videoContainer.innerHTML = '';
+        videoContainer.classList.add('hidden');
+        videoContainer.style.display = 'none';
+      }
+      const avatarEl = vcTile.querySelector('.vc-grid-avatar');
+      if (avatarEl) avatarEl.style.display = '';
+    }
+
+    // 2. 1対1通話 (callOverlay) タイルからの破棄
+    const callContainerId = isLocal ? 'local-video-container' : `remote-video-${uid}`;
+    let callCont = document.getElementById(callContainerId);
+    if (!callCont && !isLocal) callCont = document.getElementById('remote-video-container');
+    if (callCont) {
+      const vid = callCont.querySelector('video');
+      if (vid) {
+        try { vid.pause(); vid.srcObject = null; } catch (_) {}
+        vid.remove();
+      }
+      callCont.innerHTML = '';
+      callCont.classList.add('hidden');
+      callCont.style.display = 'none';
+      const tile = callCont.closest('.discord-participant-tile');
+      if (tile) {
+        const tileAv = tile.querySelector('.discord-tile-avatar');
+        if (tileAv) tileAv.classList.remove('hidden');
+      }
+    }
+    }
+    // ================================================================
+    // JOIN
+    // ================================================================
+    async join(serverId, channelId, channelName) {
     if (this._isJoining) {
       console.warn('[VoiceEngine] 既にVC参加処理を実行中です。重複参加を抑止しました。');
       return;
@@ -24716,36 +24877,11 @@ class VoiceEngine {
       console.log(`[VoiceEngine] 🔒 セキュリティ: ${VC_TURN_INFO.securityNote}`);
       console.log(`[VoiceEngine] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-      // --- マイク取得 ---
-      try {
-        this._localStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false
-        });
-        console.log('[VoiceEngine] ✅ マイク取得完了');
-
-        // マイク切断検知 (Bluetooth/有線イヤホン切断時のフォールバック)
-        const audioTrack = this._localStream.getAudioTracks()[0];
-        if (audioTrack) {
-          audioTrack.onended = () => {
-            console.warn('[VoiceEngine] 🎤 マイクデバイスが切断または無効化されました');
-            if (this.isActive) {
-              if (typeof alertMessage === 'function') {
-                alertMessage('マイクが切断されました。音声設定を確認してください。', 'warning');
-              }
-              this._isMuted = true;
-              this._updateMuteUI();
-              this._setVoiceState({ isMuted: true });
-            }
-          };
-        }
-      } catch (e) {
+      // --- マイク取得 (共通ヘルパーで確実に初期化) ---
+      await this._ensureLocalStream();
+      if (!this._localStream || this._localStream.getAudioTracks().length === 0) {
         this.isActive = false;
-        const msg = e.name === 'NotAllowedError'
-          ? 'マイクへのアクセスが拒否されています。ブラウザの権限設定を確認してください。'
-          : `マイクの取得に失敗しました: ${e.message}`;
-        console.error('[VoiceEngine] ❌ マイクエラー:', e);
-        if (typeof alertMessage === 'function') alertMessage(msg, 'error');
+        if (typeof alertMessage === 'function') alertMessage('マイクへのアクセスが拒否されたか、デバイスが見つかりません。', 'error');
         return;
       }
 
@@ -25062,8 +25198,14 @@ class VoiceEngine {
           const data = snapshot.val() || {};
           this._voiceStates = data;
           const count = Object.keys(data).length;
-
           console.log(`[VoiceEngine] 👥 参加者: ${count}人 | モード: ${this.mode || '初期化中'} (設定: ${this._modeOverride})`);
+          // 画面共有・ビデオ終了者の静止画を確実に消去
+          Object.keys(data).forEach(u => {
+            const m = data[u];
+            if (!m.hasVideo && !m.hasScreen) {
+              this._unmountVideoTrack(u, u === this._myUid);
+            }
+          });
           // サイドバーと グリッドを更新
           this._renderMemberTree(this.channelId, Object.values(data));
           this._renderGrid();
@@ -25178,11 +25320,14 @@ class VoiceEngine {
     }
     this._modeSwitching = false;
     console.log(`[VoiceEngine] 🔄 P2Pポリシー切替完了: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
-  }
-
-  async setChannelModeOverride(mode = 'auto') {
+    }
+    async setChannelModeOverride(mode = 'auto') {
     if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
+    }
+    const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
+    if (!isGlobalAdmin) {
+      throw new Error('通話方式の強制変更は全体管理者のみ実行できます');
     }
     const validModes = ['auto', 'p2p', 'turn', 'agora'];
     if (!validModes.includes(mode)) {
@@ -25200,7 +25345,7 @@ class VoiceEngine {
     console.log(`[VoiceEngine] ⚙️ 通話モード設定を更新しました: ${mode}`);
     this._modeOverride = mode;
     await this._applyCallMode(this._voiceStates);
-  }
+    }
 
   // ================================================================
   // P2P ピア差分同期（新規参加者の検知とOffer作成・退出者削除）
@@ -25260,12 +25405,12 @@ class VoiceEngine {
       await this._cleanupAgora();
     }
     this.mode = 'p2p';
-    this._modeSwitching = false;
+    // マイクストリームが生きていることを確実に保証（Agora解放後の無音化を完全防止）
+    await this._ensureLocalStream();
     console.log(`[VoiceEngine] 🔵 P2P モード (強制リレー: ${this._forceTurnOnly})`);
-    console.log(`[VoiceEngine] 📡 ICE Servers: STUN(Google) + STUN(OpenRelay) + TURN(UDP80/UDP443/TCP443)`);
     const rtcText = document.getElementById('discordCallRtcText');
     const rtcBadge = document.getElementById('discordCallRtcStatus');
-    if (rtcText) rtcText.textContent = this._forceTurnOnly ? 'P2P (TURN強制) 接続' : 'P2P (TURN) 接続完了';
+    if (rtcText) rtcText.textContent = this._forceTurnOnly ? 'P2P (TURNリレー中継) 接続完了' : 'P2P (直接接続) 接続完了';
     if (rtcBadge) rtcBadge.classList.remove('reconnecting');
     // 既存ピア接続をクリーンアップしてから再構築
     this._cleanupAllPeers();
@@ -25273,10 +25418,9 @@ class VoiceEngine {
     this._setupSignalingListener();
     // P2P 音量検知開始
     this._startP2PVolumeMonitor();
-    // 決定論的 Offer 方向：
-    //   自分のUIDが相手より「小さい（辞書順）」場合に自分がOfferer
-    //   これにより両端が同時にOfferを送るグリッチを防止
-    const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
+    // 参加者リストの統合（未反映による取りこぼし防止）
+    const allStates = { ...(this._voiceStates || {}), ...(currentStates || {}) };
+    const others = Object.keys(allStates).filter(uid => uid !== this._myUid);
     for (const peerUid of others) {
       const iAmOfferer = this._myUid < peerUid;
       if (iAmOfferer) {
@@ -25284,10 +25428,10 @@ class VoiceEngine {
           console.error(`[VoiceEngine] Offer作成失敗 (${peerUid.slice(0,8)}):`, e)
         );
       } else {
-        // Answerer側も先行してピア接続オブジェクトを準備
         this._createPeerConnection(peerUid);
       }
     }
+    this._modeSwitching = false;
   }
 
   // ================================================================
@@ -25380,19 +25524,16 @@ class VoiceEngine {
       }
       if (e.track.kind === 'video') {
         console.log(`[VoiceEngine] 📹 映像受信: ${peerUid.slice(0,8)}`);
-        const remContainer = document.getElementById(`remote-video-${peerUid}`) || document.getElementById('remote-video-container');
-        if (remContainer) {
-          let videoEl = remContainer.querySelector('video');
-          if (!videoEl) {
-            videoEl = document.createElement('video');
-            videoEl.autoplay = true;
-            videoEl.playsInline = true;
-            videoEl.className = 'w-full h-full object-cover';
-            remContainer.appendChild(videoEl);
-          }
-          videoEl.srcObject = e.streams[0];
-          remContainer.classList.remove('hidden');
-        }
+        this._mountVideoTrack(peerUid, e.streams[0] || e.track, false);
+        // 静止画残留完全防止: トラック停止/ミュート検知時に即座にアンマウント
+        e.track.onmute = () => {
+          console.log(`[VoiceEngine] 📹 映像ミュート検知 (${peerUid.slice(0,8)}) → 映像消去`);
+          this._unmountVideoTrack(peerUid, false);
+        };
+        e.track.onended = () => {
+          console.log(`[VoiceEngine] 📹 映像終了検知 (${peerUid.slice(0,8)}) → 映像消去`);
+          this._unmountVideoTrack(peerUid, false);
+        };
       }
     };
 
@@ -25761,18 +25902,35 @@ class VoiceEngine {
           console.warn('[VoiceEngine] Agora subscribe失敗:', e)
         );
         if (mediaType === 'audio' && user.audioTrack) {
-          user.audioTrack.play();
+          const p = user.audioTrack.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              console.warn('[VoiceEngine] Agora 音声自動再生制限検知:', err);
+              const resumeAudio = () => {
+                user.audioTrack?.play().catch(() => {});
+                document.removeEventListener('click', resumeAudio);
+                document.removeEventListener('touchstart', resumeAudio);
+              };
+              document.addEventListener('click', resumeAudio, { once: true });
+              document.addEventListener('touchstart', resumeAudio, { once: true });
+            });
+          }
         }
         if (mediaType === 'video' && user.videoTrack) {
           this._agoraRemote.set(String(user.uid), user);
           this._renderGrid();
+          this._mountVideoTrack(String(user.uid), user.videoTrack, false);
         }
         this._agoraRemote.set(String(user.uid), user);
       });
       this._agoraClient.on('user-unpublished', (user, mediaType) => {
-        if (mediaType === 'video') this._renderGrid();
+        if (mediaType === 'video') {
+          this._unmountVideoTrack(String(user.uid), false);
+          this._renderGrid();
+        }
       });
       this._agoraClient.on('user-left', (user) => {
+        this._unmountVideoTrack(String(user.uid), false);
         this._agoraRemote.delete(String(user.uid));
         this._renderGrid();
       });
@@ -25823,10 +25981,16 @@ class VoiceEngine {
 
       // チャンネル参加
       await this._agoraClient.join(tokenData.appId, agoraChannel, tokenData.token, this._myUid);
-      // マイクトラック公開
-      this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
-        AEC: true, ANS: true, AGC: true
-      });
+      // マイクトラック公開 (既存ストリームのトラックを再利用してデバイス競合・無音化を完全防止)
+      await this._ensureLocalStream();
+      const localAudioTrack = this._localStream?.getAudioTracks()[0];
+      if (localAudioTrack && typeof AgoraRTC.createCustomAudioTrack === 'function') {
+        this._agoraAudio = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: localAudioTrack });
+      } else {
+        this._agoraAudio = await AgoraRTC.createMicrophoneAudioTrack({
+          AEC: true, ANS: true, AGC: true
+        });
+      }
       if (this._isMuted) await this._agoraAudio.setEnabled(false);
       await this._agoraClient.publish([this._agoraAudio]);
       console.log('[VoiceEngine] ✅ Agora SFU 接続完了');
@@ -25960,7 +26124,6 @@ class VoiceEngine {
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     const isPwa = Boolean(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
     const hasDisplayMedia = Boolean(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
-
     if (!hasDisplayMedia || (isIos && isPwa)) {
       const useBackCam = await (typeof showCustomConfirm === 'function'
         ? showCustomConfirm(
@@ -25969,7 +26132,6 @@ class VoiceEngine {
             'キャンセル'
           )
         : Promise.resolve(confirm('iPhoneアプリ版(PWA)では画面キャプチャが制限されています。外カメラで共有しますか？')));
-
       if (useBackCam) {
         try {
           this._localScreenStream = await navigator.mediaDevices.getUserMedia({
@@ -25988,13 +26150,12 @@ class VoiceEngine {
       try {
         try {
           this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: { frameRate: 30 },
+            video: true,
             audio: false
           });
         } catch (fallbackErr) {
-          // iOS Safari / 制限環境向けフォールバック
           this._localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true
+            video: { frameRate: 30 }
           });
         }
       } catch(e) {
@@ -26005,15 +26166,12 @@ class VoiceEngine {
         return;
       }
     }
-
     const screenTrack = this._localScreenStream.getVideoTracks()[0];
     if (!screenTrack) return;
-
     // 共有停止時のハンドラ（ブラウザの「共有を停止」ボタン）
     screenTrack.onended = () => {
       if (this._isScreenOn) this._stopScreenShare();
     };
-
     if (this.mode === 'p2p') {
       // P2P: 全ピア接続に画面トラックを追加 & 再ネゴシエーション
       for (const [peerUid, { pc }] of this._peers) {
@@ -26052,13 +26210,13 @@ class VoiceEngine {
         return;
       }
     }
-
     this._isScreenOn = true;
+    // 自端末のタイルにもプレビューを即時マウント
+    this._mountVideoTrack(this._myUid, screenTrack, true);
     await this._setVoiceState({ hasScreen: true }).catch(() => {});
     this._updateScreenUI();
     console.log(`[VoiceEngine] 🖥️ 画面共有開始 (モード: ${this.mode})`);
   }
-
   async _stopScreenShare() {
     if (this.mode === 'p2p') {
       // P2P: 映像センダーを null にリセット & 再ネゴシエーション
@@ -26074,13 +26232,13 @@ class VoiceEngine {
       try { this._agoraScreen.stop(); this._agoraScreen.close(); } catch(_){}
       this._agoraScreen = null;
     }
-
     if (this._localScreenStream) {
       this._localScreenStream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
       this._localScreenStream = null;
     }
-
     this._isScreenOn = false;
+    // 自端末プレビューも即座にアンマウント（静止画残留防止）
+    this._unmountVideoTrack(this._myUid, true);
     await this._setVoiceState({ hasScreen: false }).catch(() => {});
     this._updateScreenUI();
     console.log('[VoiceEngine] 🖥️ 画面共有停止');

@@ -59,7 +59,7 @@
       "$serverId": {
         "$channelId": {
           ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || auth.uid === newData.child('updatedBy').val())"
+          ".write": "auth != null && root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()"
         }
       }
     },
@@ -78,7 +78,7 @@
             "admins": {
               "$adminUid": {
                 ".read": "auth != null",
-                ".write": "auth != null && (auth.uid === $adminUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
               }
             }
           }

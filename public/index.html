@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.182" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.183" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.182" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.183" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -3453,7 +3453,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.182"></script>
+  <script type="module" src="js/main.js?v=1.1.183"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4782,16 +4782,16 @@
           </div>
         </div>
         <!-- 右カラム: タブ & リスト (アクティビティ / 共通の友だち / 共通サーバー) -->
-        <div class="flex-1 flex flex-col min-w-0 bg-gray-50/50 dark:bg-[#2b2d31] p-5 sm:p-6 overflow-hidden">
+        <div class="fp-right-col flex-1 flex flex-col min-w-0 p-5 sm:p-6 overflow-hidden">
           <!-- タブナビゲーションバー (Discord本家完全準拠) -->
           <div class="flex items-center gap-6 border-b border-gray-200 dark:border-white/10 text-xs sm:text-sm font-bold pb-px flex-shrink-0">
-            <button id="fpTabActivityBtn" type="button" onclick="switchFullProfileTab('activity')" class="pb-3 text-gray-900 dark:text-white border-b-2 border-indigo-600 dark:border-white transition-colors cursor-pointer font-bold">
+            <button id="fpTabActivityBtn" type="button" onclick="switchFullProfileTab('activity')" class="pb-3 text-gray-900 dark:text-white border-b-2 border-[#5865f2] dark:border-white transition-colors cursor-pointer font-bold">
               アクティビティ
             </button>
-            <button id="fpTabFriendsBtn" type="button" onclick="switchFullProfileTab('friends')" class="pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold">
+            <button id="fpTabFriendsBtn" type="button" onclick="switchFullProfileTab('friends')" class="pb-3 text-gray-500 dark:text-[#949ba4] hover:text-gray-900 dark:hover:text-[#dbdee1] border-b-2 border-transparent transition-colors cursor-pointer font-bold">
               共通の友だち
             </button>
-            <button id="fpTabServersBtn" type="button" onclick="switchFullProfileTab('servers')" class="pb-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border-b-2 border-transparent transition-colors cursor-pointer font-bold">
+            <button id="fpTabServersBtn" type="button" onclick="switchFullProfileTab('servers')" class="pb-3 text-gray-500 dark:text-[#949ba4] hover:text-gray-900 dark:hover:text-[#dbdee1] border-b-2 border-transparent transition-colors cursor-pointer font-bold">
               共通サーバー
             </button>
           </div>
@@ -4799,14 +4799,14 @@
           <div class="flex-1 overflow-y-auto custom-scrollbar pt-4 min-h-0">
             <!-- 1. アクティビティタブ -->
             <div id="fpTabActivityContent" class="space-y-4">
-              <div class="p-8 rounded-3xl bg-white dark:bg-white/5 border border-gray-200/60 dark:border-white/5 text-center space-y-3 shadow-xs">
-                <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto text-gray-400 text-2xl">
+              <div class="fp-activity-card p-8 rounded-3xl text-center space-y-3 shadow-xs">
+                <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto text-gray-400 dark:text-gray-500 text-2xl">
                   <i class="fas fa-gamepad"></i>
                 </div>
                 <div id="fpActivityHeadline" class="text-sm font-bold text-gray-800 dark:text-gray-200">アクティビティはありません</div>
-                <p class="text-xs text-gray-400 dark:text-gray-500 max-w-sm mx-auto leading-relaxed">ゲームのプレイ中やボイスチャンネルへの参加状況がここに表示されます。</p>
+                <p class="text-xs text-gray-400 dark:text-[#949ba4] max-w-sm mx-auto leading-relaxed">ゲームのプレイ中やボイスチャンネルへの参加状況がここに表示されます。</p>
                 <div class="pt-2">
-                  <button id="fpActivityMsgBtn" type="button" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95">
+                  <button id="fpActivityMsgBtn" type="button" class="fp-primary-btn px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs transition active:scale-95">
                     メッセージを送る
                   </button>
                 </div>
