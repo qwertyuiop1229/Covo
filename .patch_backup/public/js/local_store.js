@@ -100,15 +100,12 @@ export async function putMessage(msg) {
   if (!msg || !msg.id || !msg.channelId) return;
   const db = await initLocalDB();
   if (!db) return;
+
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("messages", "readwrite");
       const store = tx.objectStore("messages");
       const cleanMsg = { ...msg };
-      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
-      if (cleanMsg._originalText) {
-        cleanMsg.text = cleanMsg._originalText;
-      }
       cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
@@ -131,6 +128,7 @@ export async function upsertMessagesBatch(msgs) {
   if (!Array.isArray(msgs) || msgs.length === 0) return;
   const db = await initLocalDB();
   if (!db) return;
+
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("messages", "readwrite");
@@ -138,10 +136,6 @@ export async function upsertMessagesBatch(msgs) {
       for (const msg of msgs) {
         if (!msg || !msg.id || !msg.channelId) continue;
         const cleanMsg = { ...msg };
-        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
-        if (cleanMsg._originalText) {
-          cleanMsg.text = cleanMsg._originalText;
-        }
         cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
         store.put(cleanMsg);
       }

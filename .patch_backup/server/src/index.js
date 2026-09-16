@@ -1423,14 +1423,13 @@ async function handleUploadFile(request, env) {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
-    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId };
-
+    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId, uploadedAt: Date.now() };
     await env.FILES.put(key, arrayBuffer, {
       metadata: meta,
       expirationTtl: undefined // 期限なし
     });
-
-    const fileUrl = `https://simplechat-api.astro-fray-server.workers.dev/api/file/${key}`;
+    const origin = new URL(request.url).origin || 'https://simplechat-api.astro-fray-server.workers.dev';
+    const fileUrl = `${origin}/api/file/${key}`;
     return new Response(JSON.stringify({ url: fileUrl, name: file.name }), {
       status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
@@ -1586,8 +1585,8 @@ async function handleDeleteFile(request, env, url) {
       }
     }
 
-    // 所有者確認: アップロード者本人、または所有者未記録ファイル（レガシー）、または特権管理者
-    const isOwner = meta && (meta.uploaderId === requesterId || !meta.uploaderId);
+    // 所有者確認: アップロード者本人であること（所有者未記録ファイルは特権管理者のみ削除可能としIDORを完全遮断）
+    const isOwner = meta && Boolean(meta.uploaderId) && meta.uploaderId === requesterId;
     if (!isOwner && !isPrivilegedAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden: Not authorized to delete this file" }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
@@ -2049,23 +2048,53 @@ async function handleAdminDeleteMessage(request, env) {
     if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    const { appId, serverId, roomId, messageId } = await request.json();
-    if (!appId || !serverId || !roomId || !messageId) {
+    const { appId, serverId, roomId, dmId, messageId } = await request.json();
+    if (!appId || !messageId || (!dmId && (!serverId || !roomId))) {
       return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+    const projectId = env.FIREBASE_PROJECT_ID;
+    const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+    const [adminToken, rtdbToken] = await Promise.all([
+      getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+      getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+    ]);
+
+    if (dmId) {
+      // --- DMメッセージの削除処理 ---
+      const dmParticipants = dmId.split('_');
+      const isParticipant = dmParticipants.includes(verifiedUser.uid);
+      if (!isGlobal && !isParticipant) {
+        return new Response(JSON.stringify({ error: "Forbidden: Not authorized for this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      if (!isGlobal) {
+        const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
+        const msgCheckRes = await fetch(msgCheckUrl);
+        const msgCheckData = await msgCheckRes.json().catch(() => null);
+        if (msgCheckData && msgCheckData.senderId && msgCheckData.senderId !== verifiedUser.uid && msgCheckData.userId !== verifiedUser.uid) {
+          return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+      }
+      if (env.DB) {
+        try {
+          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND (room_id = ? OR room_id = ?) AND app_id = ?").bind(messageId, dmId, `dm_${dmId}`, appId).run();
+        } catch (d1Err) {
+          console.warn("handleAdminDeleteMessage D1 DM delete error:", d1Err);
+        }
+      }
+      const rtdbUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
+      await fetch(rtdbUrl, { method: "DELETE" });
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // --- サーバーメッセージの削除処理 ---
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
     if (!isGlobal && !isSvAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    // 0. Cloudflare D1 から削除
     if (env.DB) {
       try {
         await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).run();
@@ -2073,28 +2102,15 @@ async function handleAdminDeleteMessage(request, env) {
         console.warn("handleAdminDeleteMessage D1 delete error:", d1Err);
       }
     }
-
-    const [adminToken, rtdbToken] = await Promise.all([
-      getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
-      getRTDBToken(env.SERVICE_ACCOUNT_JSON)
-    ]);
-    const projectId = env.FIREBASE_PROJECT_ID;
-
-    // 1. Firestore から削除
     const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
     await fetch(fsUrl, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${adminToken}` }
     });
-
-    // 2. RTDB から特権削除
-    const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
     const rtdbUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
     await fetch(rtdbUrl, {
       method: "DELETE"
     });
-
-    // 3. 監査ログ (Audit Log) の記録
     try {
       const auditUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/audit_logs`;
       await fetch(auditUrl, {
@@ -2115,7 +2131,6 @@ async function handleAdminDeleteMessage(request, env) {
     } catch (auditErr) {
       console.warn("Audit log creation error:", auditErr);
     }
-
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("handleAdminDeleteMessage error:", err);

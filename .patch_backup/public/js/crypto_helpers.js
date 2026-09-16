@@ -451,14 +451,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
 
-        // 3) それでも鍵がなく、過去メッセージが存在する場合は上書き防止のためレスキュー発行
-        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1)));
-        if (!msgsSnap.empty && Object.keys(keysObj).length === 0) {
-          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。自動修復を待機します。`);
+        // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
+        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => ({ empty: true }));
+        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => ({ empty: true }));
+        const isExistingRoom = (roomData && (roomData.lastMessageAt || roomData.currentKeyVersion || roomData.sharedKey)) ||
+                               !msgsSnap.empty || !anyKeysSnap.empty;
+        if (isExistingRoom && Object.keys(keysObj).length === 0) {
+          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。既存キーの上書きを防止し、自動修復・配布を待機します。`);
           await _requestEscrowRescue(serverId, roomId);
           return null;
         }
-
         // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布（平文sharedKeyは一切保存しない）
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
@@ -1007,13 +1009,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.dmKeyCache[dmId] = keysObj;
               return keysObj;
             }
-            // 相手宛てのキーはあるが自分宛てが未生成の場合、過去にDMメッセージが存在しないなら
-            // 相手からのキー到着を待たずに自分が新規キーを生成してセッションを確立する
-            const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/dm_messages/${dmId}`), limit(1))).catch(() => null);
-            if (msgsSnap && !msgsSnap.empty) {
-              return null;
-            }
-            console.log(`[E2EE] 過去DMメッセージが存在しないため、新規キーを生成してセッションを確立します (dmId=${dmId})`);
+            // 相手が既に鍵を生成している場合、過去メッセージの有無を問わず相手の鍵を上書き破壊せず、相手からの配布を安全に待機
+            return null;
           }
         }
         // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布

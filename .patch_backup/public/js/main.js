@@ -14909,13 +14909,10 @@ async function sendMessage() {
   clearTimeout(typingTimeout);
   isCurrentlyTyping = false;
   setTypingStatus(false);
-
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
-
+  const chId = snapServerId ? `${snapServerId}_${snapRoomId}` : `dm_${snapDmId}`;
   try {
     let textToStore = text;
     let wasEncrypted = false;
-
     if (text) {
       if (!_subtleOK) {
         console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
@@ -14925,8 +14922,8 @@ async function sendMessage() {
         }
       } else {
         try {
-          if (currentDmId) {
-            const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+          if (snapDmId) {
+            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
             if (!dmKey) {
               messageInput.value = previousInputText;
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
@@ -14942,18 +14939,18 @@ async function sendMessage() {
               return;
             }
           } else {
-            const members = (currentServerData && currentServerData.joinedUsers) || [];
+            const members = snapMembers;
             const overlayWasHidden = loadingOverlay.classList.contains("hidden");
-            if (overlayWasHidden && !_e2ee.roomKeyCache[currentRoomId]) {
+            if (overlayWasHidden && !_e2ee.roomKeyCache[snapRoomId]) {
               loadingOverlay.classList.remove("hidden");
             }
-            const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+            const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (!roomKey) {
               messageInput.value = previousInputText;
-              console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${currentServerId}, room=${currentRoomId})`);
+              console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${snapServerId}, room=${snapRoomId})`);
               loadingOverlay.classList.add("hidden");
               alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
-              await requestEscrowRescue(currentServerId, currentRoomId);
+              await requestEscrowRescue(snapServerId, snapRoomId);
               return;
             } else {
               const enc = await encryptText(text, roomKey);
@@ -14963,7 +14960,7 @@ async function sendMessage() {
               } else {
                 messageInput.value = previousInputText;
                 alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗しました", "error");
-                await requestEscrowRescue(currentServerId, currentRoomId);
+                await requestEscrowRescue(snapServerId, snapRoomId);
                 return;
               }
             }
@@ -14977,11 +14974,10 @@ async function sendMessage() {
         }
       }
     }
-
     const data = { 
       text: textToStore, 
       senderId: userId, 
-      senderNickname: currentServerNickname || userNickname || 'ユーザー', 
+      senderNickname: snapServerNickname || userNickname || 'ユーザー', 
       senderAvatarUrl: userAvatarUrl || null,
       timestamp: serverTimestamp() 
     };
@@ -14995,18 +14991,17 @@ async function sendMessage() {
       try {
         let fileToUpload = attachedFile.file;
         let isFileEncrypted = false;
-
         if (_subtleOK) {
-          if (currentDmId) {
-            const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 2000);
+          if (snapDmId) {
+            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
             if (dmKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
               fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
               isFileEncrypted = true;
             }
           } else {
-            const members = (currentServerData && currentServerData.joinedUsers) || [];
-            const roomKey = await getRoomKeyWithWait(currentServerId, currentRoomId, members, 2000);
+            const members = snapMembers;
+            const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (roomKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
               fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
@@ -15014,7 +15009,6 @@ async function sendMessage() {
             }
           }
         }
-
         const fileUrl = await uploadToExternalService(
           fileToUpload,
           (pct) => {
@@ -15036,36 +15030,30 @@ async function sendMessage() {
         if (progressFill) progressFill.style.width = "0%";
       }
     }
-
-    if (replyingToMessage) {
-      const replyText = replyingToMessage._originalText || replyingToMessage.text || (replyingToMessage.fileName ? "（ファイル）" : replyingToMessage.sticker ? "（スタンプ）" : "...");
+    if (snapReplyTo) {
+      const replyText = snapReplyTo._originalText || snapReplyTo.text || (snapReplyTo.fileName ? "（ファイル）" : snapReplyTo.sticker ? "（スタンプ）" : "...");
       data.replyTo = {
-        messageId: replyingToMessage.id,
-        senderNickname: replyingToMessage.senderNickname,
+        messageId: snapReplyTo.id,
+        senderNickname: snapReplyTo.senderNickname,
         text: replyText
       };
     }
-
     let newMessageId;
-
-    if (currentDmId) {
+    if (snapDmId) {
       newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
       const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${newMessageId}`);
+      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
       const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
       await set(rtdbMsgRef, rtdbData);
-
-      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
-        participants: currentDmParticipants,
+      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
+        participants: snapDmParticipants,
         lastMessageAt: data.timestamp,
         lastMessageSender: userId,
         lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
       }, { merge: true });
-
       LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
-
-      const otherUid = currentDmParticipants.find(id => id !== userId);
+      const otherUid = snapDmParticipants.find(id => id !== userId);
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
@@ -15074,7 +15062,7 @@ async function sendMessage() {
             receiverIds: [otherUid],
             title: userNickname,
             body: cleanDmBody,
-            roomId: currentDmId,
+            roomId: snapDmId,
             messageId: newMessageId,
             appId: appId,
             senderId: userId,
@@ -15089,44 +15077,41 @@ async function sendMessage() {
         } catch (e) { }
       }
     } else {
-      const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+      const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages`), data);
       try {
         const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgRef.id}`);
+        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages/${msgRef.id}`);
         const rtdbData = { ...data, id: msgRef.id, timestamp: Date.now() };
         await set(rtdbMsgRef, rtdbData);
         LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
       } catch (e) {
         console.error("RTDB Dual Write Failed in sendMessage", e);
-        // セルフヒーリング: メンバーシップ未同期の疑いがあるため、即座に syncRtdb を要求
-        if (currentServerId && auth.currentUser) {
+        if (snapServerId && auth.currentUser) {
           auth.currentUser.getIdToken().then(tok => {
             fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ serverId: currentServerId, userId, appId, idToken: tok, rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined })
+              body: JSON.stringify({ serverId: snapServerId, userId, appId, idToken: tok, rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined })
             }).catch(() => {});
           }).catch(() => {});
         }
       }
       newMessageId = msgRef.id;
-
       try {
-        await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+        await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
           lastMessageAt: data.timestamp,
           lastMessageSender: userId,
           lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
       } catch (updateErr) { }
-
       try {
-        const serverData = currentServerData;
+        const serverData = snapServerData;
         if (serverData) {
           const receiverIds = (serverData.joinedUsers || []).filter(id => id !== userId);
           if (receiverIds.length > 0) {
             const serverName = serverData.name || 'Covo';
-            const roomName = roomNames[currentRoomId] || 'room';
+            const roomName = roomNames[snapRoomId] || 'room';
             const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
             const isMention = text && (text.includes('@') || text.includes('@all'));
             const cleanServerBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '[写真]' : attachedKvFile ? '[ファイル]' : '新着メッセージがあります')));
@@ -15140,7 +15125,7 @@ async function sendMessage() {
               receiverIds,
               title: notifTitle,
               body: notifBody,
-              roomId: currentRoomId,
+              roomId: snapRoomId,
               messageId: newMessageId,
               appId: appId,
               senderId: userId,
@@ -15172,24 +15157,32 @@ async function sendMessage() {
     // 複数ファイル添付時の順次バックグラウンドアップロード＆送信 (#70)
     if (remainingFiles.length > 0) {
       (async () => {
+        const destSnapshot = {
+          snapDmId,
+          snapRoomId,
+          snapServerId,
+          snapDmParticipants,
+          snapMembers,
+          snapServerData,
+          snapServerNickname
+        };
         for (const nextF of remainingFiles) {
           try {
-            await sendSingleAttachmentMessage(nextF);
+            await sendSingleAttachmentMessage(nextF, destSnapshot);
           } catch (err) {
             console.error('[MultiFile] send error:', err);
           }
         }
       })();
     }
-
-  } catch (e) {
+    } catch (e) {
     console.error(e);
     if (typeof text !== 'undefined' && text) {
       const mi = document.getElementById("messageInput");
       if (mi && !mi.value) mi.value = text;
     }
     alertMessage("送信に失敗しました", "error");
-  } finally {
+    } finally {
     loadingOverlay.classList.add("hidden");
     if (progressBar) progressBar.classList.add("hidden");
     if (progressFill) progressFill.style.width = "0%";
@@ -15197,33 +15190,34 @@ async function sendMessage() {
     sendMessageButton.disabled = false;
     isSendingMessage = false;
     setTimeout(() => messageInput.focus(), 10);
-  }
-}
-const clearFileBtn = document.getElementById("clearFileButton");
-if (clearFileBtn) {
-  clearFileBtn.addEventListener("click", clearAttachedFile);
-}
-function clearAttachedFile() {
-  attachedFile = null;
-  attachedFiles = [];
-  attachedKvFile = null;
-  updateFilePreview();
-}
-
-async function sendSingleAttachmentMessage(fileObj) {
-  if (!fileObj || (!currentRoomId && !currentDmId)) return;
-  // Snapshot room-state before any await — prevents race condition where the
-  // user navigates to another room while a background upload is in progress.
-  const snapDmId = currentDmId;
-  const snapRoomId = currentRoomId;
-  const snapServerId = currentServerId;
-  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
-  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
-  const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-  const rtdb = await _getOrInitRTDB();
-  let fileToUpload = fileObj.file;
-  let isFileEncrypted = false;
-  if (_subtleOK) {
+    }
+    }
+    const clearFileBtn = document.getElementById("clearFileButton");
+    if (clearFileBtn) {
+    clearFileBtn.addEventListener("click", clearAttachedFile);
+    }
+    function clearAttachedFile() {
+    attachedFile = null;
+    attachedFiles = [];
+    attachedKvFile = null;
+    updateFilePreview();
+    }
+    async function sendSingleAttachmentMessage(fileObj, destSnapshot = null) {
+    const snapDmId = destSnapshot?.snapDmId ?? currentDmId;
+    const snapRoomId = destSnapshot?.snapRoomId ?? currentRoomId;
+    const snapServerId = destSnapshot?.snapServerId ?? currentServerId;
+    if (!fileObj || (!snapRoomId && !snapDmId)) return;
+    // Snapshot room-state before any await — prevents race condition where the
+    // user navigates to another room while a background upload is in progress.
+    const snapDmParticipants = destSnapshot?.snapDmParticipants ?? (currentDmParticipants ? [...currentDmParticipants] : []);
+    const snapMembers = destSnapshot?.snapMembers ?? ((currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : []);
+    const snapServerData = destSnapshot?.snapServerData ?? currentServerData;
+    const snapServerNickname = destSnapshot?.snapServerNickname ?? currentServerNickname;
+    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    let fileToUpload = fileObj.file;
+    let isFileEncrypted = false;
+    if (_subtleOK) {
     if (snapDmId) {
       const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
       if (dmKey) {
@@ -15239,13 +15233,13 @@ async function sendSingleAttachmentMessage(fileObj) {
         isFileEncrypted = true;
       }
     }
-  }
-  const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
-  const data = {
+    }
+    const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+    const data = {
     userId: userId,
     senderId: userId,
-    userNickname: currentServerNickname || userNickname || 'ユーザー',
-    senderNickname: currentServerNickname || userNickname || 'ユーザー',
+    userNickname: snapServerNickname || userNickname || 'ユーザー',
+    senderNickname: snapServerNickname || userNickname || 'ユーザー',
     senderAvatarUrl: userAvatarUrl || null,
     timestamp: Date.now(),
     createdAt: Date.now(),
@@ -15254,8 +15248,8 @@ async function sendSingleAttachmentMessage(fileObj) {
     fileType: fileObj.type,
     fileSize: fileObj.size,
     isFileEncrypted: isFileEncrypted
-  };
-  if (snapDmId) {
+    };
+    if (snapDmId) {
     const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
     const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
     const rtdbData = { ...data, id: newMessageId };
@@ -15291,7 +15285,7 @@ async function sendSingleAttachmentMessage(fileObj) {
         }
       } catch (e) { }
     }
-  } else if (snapServerId && snapRoomId) {
+    } else if (snapServerId && snapRoomId) {
     let msgRefId;
     try {
       const msgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages`), data);
@@ -15313,7 +15307,7 @@ async function sendSingleAttachmentMessage(fileObj) {
       if (snapMembers.length > 0) {
         const receiverIds = snapMembers.filter(id => id !== userId);
         if (receiverIds.length > 0) {
-          const serverName = currentServerData?.name || 'Covo';
+          const serverName = snapServerData?.name || 'Covo';
           const roomName = roomNames[snapRoomId] || 'room';
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
           const notifPayload = JSON.stringify({
@@ -15335,8 +15329,8 @@ async function sendSingleAttachmentMessage(fileObj) {
         }
       }
     } catch (_) {}
-  }
-}
+    }
+    }
 async function handleFilesSelected(filesList) {
   if (!filesList || filesList.length === 0) return;
   const processed = [];
