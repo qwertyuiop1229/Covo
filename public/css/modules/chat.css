@@ -2009,7 +2009,7 @@
         display: inline-flex !important;
       }
     }
-    /* ================================================================
+    /* =========================================================================
        Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像1/3準拠)
     #dmProfilePanel {
       display: flex;
@@ -2030,18 +2030,20 @@
     #dmProfilePanel.hidden {
       display: none !important;
     }
+    /* バナー領域 (Discord本家仕様 110px) */
     .dm-profile-banner {
       height: 110px;
+      min-height: 110px;
       width: 100%;
-      background: #cbd5e1;
+      background: #5865f2;
       position: relative;
       flex-shrink: 0;
     }
     body.dark-server-theme .dm-profile-banner {
-      background: #1e293b !important;
+      background: #3b82f6 !important;
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: #35373c !important;
+      background: #5865f2 !important;
     }
     .dm-banner-btn {
       width: 32px;
@@ -2063,6 +2065,7 @@
       background: rgba(0, 0, 0, 0.65);
       transform: scale(1.05);
     }
+    /* アバター配置ラッパー（バナー下端に42px食い込み） */
     .dm-profile-avatar-wrap {
       padding: 0 16px;
       margin-top: -42px;
@@ -2072,9 +2075,12 @@
       align-items: flex-end;
       flex-shrink: 0;
     }
+    /* アバター本体 (直径80px固定・太枠ボーダー) */
     .dm-profile-avatar {
       width: 80px !important;
       height: 80px !important;
+      min-width: 80px !important;
+      min-height: 80px !important;
       max-width: 80px !important;
       max-height: 80px !important;
       border-radius: 50% !important;
@@ -2106,12 +2112,12 @@
       display: block !important;
     }
     body.dark-server-theme .dm-profile-avatar {
-      border-color: #111827;
-      background: #0f172a;
+      border-color: #111827 !important;
+      background: #0f172a !important;
     }
     body.discord-dark-theme .dm-profile-avatar {
-      border-color: #232428;
-      background: #111214;
+      border-color: #232428 !important;
+      background: #111214 !important;
     }
     /* アバター右下にぴったり重なるステータスインジケーター */
     .dm-profile-avatar-wrap .status-indicator {
@@ -2125,10 +2131,10 @@
       z-index: 20;
     }
     body.dark-server-theme .dm-profile-avatar-wrap .status-indicator {
-      border-color: #111827;
+      border-color: #111827 !important;
     }
     body.discord-dark-theme .dm-profile-avatar-wrap .status-indicator {
-      border-color: #232428;
+      border-color: #232428 !important;
     }
     /* メイン情報カード (Discord完全準拠) */
     .dm-profile-card {
@@ -2141,14 +2147,28 @@
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
     body.dark-server-theme .dm-profile-card {
-      background: #1e293b;
-      border-color: rgba(255, 255, 255, 0.06);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
     body.discord-dark-theme .dm-profile-card {
-      background: #111214;
-      border-color: #1f2023;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      background: #111214 !important;
+      border-color: #1f2023 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+    /* カスタムステータス (ステメ) */
+    #dmPanelCustomStatus {
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    body.dark-server-theme #dmPanelCustomStatus {
+      background: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #e2e8f0 !important;
+    }
+    body.discord-dark-theme #dmPanelCustomStatus {
+      background: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
     }
     .dm-profile-divider {
       height: 1px;
@@ -2157,10 +2177,10 @@
       margin: 10px 0;
     }
     body.dark-server-theme .dm-profile-divider {
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.08) !important;
     }
     body.discord-dark-theme .dm-profile-divider {
-      background: #232428;
+      background: #232428 !important;
     }
     .dm-view-full-profile-btn {
       background: #ebedef;
@@ -2173,20 +2193,52 @@
       color: #060607;
     }
     body.dark-server-theme .dm-view-full-profile-btn {
-      background: #1e293b;
-      color: #f8fafc;
-      border-color: rgba(255, 255, 255, 0.08);
+      background: #1e293b !important;
+      color: #f8fafc !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
     }
     body.dark-server-theme .dm-view-full-profile-btn:hover {
-      background: #243040;
+      background: #243040 !important;
     }
     body.discord-dark-theme .dm-view-full-profile-btn {
-      background: #2b2d31;
-      color: #f2f3f5;
-      border-color: #383a40;
+      background: #2b2d31 !important;
+      color: #f2f3f5 !important;
+      border-color: #383a40 !important;
     }
     body.discord-dark-theme .dm-view-full-profile-btn:hover {
-      background: #35373c;
+      background: #35373c !important;
+    }
+    /* スマホ画面対応 (レスポンシブ) */
+    @media (max-width: 768px) {
+      #dmProfilePanel {
+        max-height: min(85vh, calc(100dvh - 50px)) !important;
+        border-top-left-radius: 24px !important;
+        border-top-right-radius: 24px !important;
+        overflow-y: auto !important;
+      }
+      .dm-profile-banner {
+        height: 100px !important;
+        min-height: 100px !important;
+      }
+      .dm-profile-avatar-wrap {
+        margin-top: -36px !important;
+      }
+      .dm-profile-avatar {
+        width: 72px !important;
+        height: 72px !important;
+        min-width: 72px !important;
+        min-height: 72px !important;
+        max-width: 72px !important;
+        max-height: 72px !important;
+      }
+      .dm-profile-avatar img {
+        width: 72px !important;
+        height: 72px !important;
+      }
+      .dm-profile-avatar-wrap .status-indicator {
+        width: 20px !important;
+        height: 20px !important;
+      }
     }
     /* DM履歴の先頭ヒーローバナー (画像2中央上部完全準拠) */
     .dm-welcome-banner {

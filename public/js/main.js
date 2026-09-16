@@ -8437,7 +8437,6 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   panel.classList.remove('hidden');
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
-
   const safeName = escapeHtml(targetNickname || 'ユーザー');
   const handleTag = targetUid ? `#${targetUid.slice(-4).toLowerCase()}` : '';
   let mutualServersCount = 0;
@@ -8448,10 +8447,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof friendRelationships === 'object') {
     mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
   }
-
   // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative flex-shrink-0">
+    <div class="dm-profile-banner relative flex-shrink-0" style="height: 110px; min-height: 110px;">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -8473,12 +8471,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap flex-shrink-0">
+    <div class="dm-profile-avatar-wrap flex-shrink-0" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; position: relative; display: flex; align-items: flex-end;">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
-        <div class="dm-profile-avatar" id="dmPanelAvatar">
-          ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
+        <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+          ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}
         </div>
-        <div class="status-indicator status-offline" id="dmPanelStatusDot"></div>
+        <div class="status-indicator status-offline" id="dmPanelStatusDot" style="position: absolute; bottom: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%;"></div>
       </div>
     </div>
     <div class="dm-profile-card">
@@ -8530,8 +8528,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const friendBtn = document.getElementById('dmBannerFriendBtn');
     if (prof) {
       if (nameEl && prof.nickname) nameEl.textContent = prof.nickname;
-      if (avEl && isUsableAvatarUrl(prof.avatarUrl)) {
-        avEl.innerHTML = `<img src="${escapeHtml(prof.avatarUrl)}" class="w-full h-full object-cover rounded-full">`;
+      if (avEl) {
+        if (isUsableAvatarUrl(prof.avatarUrl)) {
+          avEl.innerHTML = `<img src="${escapeHtml(prof.avatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">`;
+        } else {
+          avEl.innerHTML = `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml((prof.nickname || safeName).charAt(0).toUpperCase())}</span>`;
+        }
       }
       if (statusDot) {
         statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
@@ -8582,7 +8584,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   } catch (err) {
     console.warn('[renderDmProfilePanel] profile load error:', err);
   }
-};
+  };
 
 window.toggleDmBannerMenu = function (e) {
   if (e) e.stopPropagation();

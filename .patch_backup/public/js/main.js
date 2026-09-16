@@ -289,14 +289,17 @@ window.addEventListener('error', (event) => {
     event.filename.includes('chrome-extension:') ||
     event.filename.includes('moz-extension:') ||
     event.filename.includes('safari-extension:') ||
-    event.filename.includes('safari-web-extension:')
+    event.filename.includes('safari-web-extension:') ||
+    event.filename.includes('content.js') ||
+    event.filename.includes('globals-front.js') ||
+    event.filename.includes('adblock')
   );
   if (isExtension) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (isTransientTelemetryError([event.error, event.message, event.filename])) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (event.error) {
@@ -305,7 +308,6 @@ window.addEventListener('error', (event) => {
     _reportTelemetryError('error', event.message, `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`);
   }
 });
-
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
   const isExtension = reason && (
@@ -313,21 +315,29 @@ window.addEventListener('unhandledrejection', (event) => {
       reason.stack.includes('chrome-extension:') ||
       reason.stack.includes('moz-extension:') ||
       reason.stack.includes('safari-extension:') ||
-      reason.stack.includes('safari-web-extension:')
+      reason.stack.includes('safari-web-extension:') ||
+      reason.stack.includes('content.js') ||
+      reason.stack.includes('globals-front.js') ||
+      reason.stack.includes('adblock')
     )) ||
     (typeof reason.message === 'string' && (
       reason.message.includes('chrome-extension:') ||
       reason.message.includes('moz-extension:') ||
       reason.message.includes('safari-extension:') ||
-      reason.message.includes('safari-web-extension:')
+      reason.message.includes('safari-web-extension:') ||
+      reason.message.includes('usecache') ||
+      reason.message.includes('receiving end does not exist') ||
+      reason.message.includes('could not establish connection') ||
+      reason.message.includes('a listener indicated an asynchronous response') ||
+      reason.message.includes('message channel closed')
     ))
   );
   if (isExtension) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (isTransientTelemetryError([reason])) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (reason instanceof Error) {

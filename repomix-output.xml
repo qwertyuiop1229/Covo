@@ -10917,506 +10917,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
-</file>
-
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -12343,6 +11843,506 @@ run();
     body.discord-dark-theme #userProfileBanner {
       background-color: #5865f2 !important;
     }
+</file>
+
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+/**
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
+    return false;
+  }
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
+    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
+    }
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
+    }
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
+}
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    let fileEncoding = 'utf-8';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
+}
+run();
 </file>
 
 <file path="public/js/voice_engine_v2.js">
@@ -17444,9 +17444,18 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.discord-ui-mode.discord-home-view.discord-dm-view #chatArea,
     body.discord-ui-mode.discord-home-view.discord-dm-view #serverHeader,
     body.discord-ui-mode.discord-home-view.discord-dm-view #roomList,
-    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView,
-    body.discord-ui-mode.discord-home-view.discord-dm-view #membersSidebar {
+    body.discord-ui-mode.discord-home-view.discord-dm-view #discordDiscoverView {
       display: none !important;
+    }
+    @media (max-width: 768px) {
+      body.discord-ui-mode.discord-home-view.discord-dm-view #membersSidebar {
+        display: none !important;
+      }
+    }
+    @media (min-width: 769px) {
+      body.discord-ui-mode.discord-home-view.discord-dm-view:not(.discord-friends-view) #membersSidebar {
+        display: flex !important;
+      }
     }
     /* 2. 個別チャット (DM) 表示時 (openDm 実行時) */
     body.discord-ui-mode.discord-dm-chat #chatArea {
@@ -22270,7 +22279,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       background: #ffffff;
     }
     /* =========================================================================
-       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ
+       Discord本家完全準拠 DMアイテム・未読バッジ & ホバースワップ */
     .dm-sidebar-item {
       display: flex !important;
       align-items: center !important;
@@ -22430,14 +22439,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         display: inline-flex !important;
       }
     }
-        /* ================================================================
-       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像2準拠)
+    /* ================================================================
+       Discord本家完全準拠 DM右側 ユーザープロフィールパネル (#dmProfilePanel) (画像1/3準拠)
     #dmProfilePanel {
       display: flex;
       flex-direction: column;
       width: 100%;
       height: 100%;
       background: #f2f3f5;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
     }
     body.dark-server-theme #dmProfilePanel {
       background: #111827 !important;
@@ -22449,17 +22461,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       display: none !important;
     }
     .dm-profile-banner {
-      height: 120px;
+      height: 110px;
       width: 100%;
-      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+      background: #cbd5e1;
       position: relative;
       flex-shrink: 0;
     }
     body.dark-server-theme .dm-profile-banner {
-      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      background: #1e293b !important;
     }
     body.discord-dark-theme .dm-profile-banner {
-      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+      background: #35373c !important;
     }
     .dm-banner-btn {
       width: 32px;
@@ -22483,7 +22495,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     .dm-profile-avatar-wrap {
       padding: 0 16px;
-      margin-top: -46px;
+      margin-top: -42px;
       margin-bottom: 8px;
       position: relative;
       display: flex;
@@ -22491,10 +22503,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       flex-shrink: 0;
     }
     .dm-profile-avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: 5px solid #f2f3f5;
+      width: 80px !important;
+      height: 80px !important;
+      max-width: 80px !important;
+      max-height: 80px !important;
+      border-radius: 50% !important;
+      border: 6px solid #f2f3f5;
       background: #2b2d31;
       color: #ffffff;
       display: flex;
@@ -22502,14 +22516,24 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       justify-content: center;
       font-size: 2rem;
       font-weight: 800;
-      overflow: hidden;
+      overflow: hidden !important;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
       cursor: pointer;
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
       position: relative;
+      flex-shrink: 0;
     }
     .dm-profile-avatar:hover {
       transform: scale(1.04);
+    }
+    .dm-profile-avatar img {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      object-fit: cover !important;
+      border-radius: 50% !important;
+      display: block !important;
     }
     body.dark-server-theme .dm-profile-avatar {
       border-color: #111827;
@@ -22524,8 +22548,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       position: absolute;
       bottom: 2px;
       right: 2px;
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 3.5px solid #f2f3f5;
       z-index: 20;
@@ -22536,7 +22560,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     body.discord-dark-theme .dm-profile-avatar-wrap .status-indicator {
       border-color: #232428;
     }
-    /* メイン情報カード (画像2の4列目完全準拠) */
+    /* メイン情報カード (Discord完全準拠) */
     .dm-profile-card {
       margin: 0 12px 14px 12px;
       background: #ffffff;
@@ -22645,9 +22669,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     body.discord-dark-theme .dm-hero-action-btn:hover {
       background: #35373c;
     }
-    /* 現在アクティブ (Active Now) パネル (画像1完全準拠) */
+    /* 現在アクティブ (Active Now) パネル (Discord本家完全準拠) */
     #dmActiveNowPanel {
       background: #f2f3f5;
+      overflow-y: auto;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
     }
     body.dark-server-theme #dmActiveNowPanel {
       background: #111827 !important;
@@ -22655,31 +22683,49 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     body.discord-dark-theme #dmActiveNowPanel {
       background: #232428 !important;
     }
-    .active-now-card {
+    .active-now-container {
       background: #ffffff;
       border: 1px solid #e3e5e8;
-      border-radius: 12px;
-      padding: 12px;
-      transition: all 0.15s ease;
-      cursor: pointer;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
-    .active-now-card:hover {
-      background: #f2f3f5;
-      border-color: #cbd5e1;
-    }
-    body.dark-server-theme .active-now-card {
+    body.dark-server-theme .active-now-container {
       background: #1e293b;
       border-color: rgba(255, 255, 255, 0.07);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     }
-    body.dark-server-theme .active-now-card:hover {
-      background: #243040;
-    }
-    body.discord-dark-theme .active-now-card {
-      background: #1e1f22;
-      border-color: #1f2023;
-    }
-    body.discord-dark-theme .active-now-card:hover {
+    body.discord-dark-theme .active-now-container {
       background: #2b2d31;
+      border-color: #1f2023;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .active-now-item {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .active-now-item:last-child {
+      border-bottom: none;
+    }
+    .active-now-item:hover {
+      background-color: rgba(0, 0, 0, 0.04);
+    }
+    body.dark-server-theme .active-now-item {
+      border-bottom-color: rgba(255, 255, 255, 0.05);
+    }
+    body.dark-server-theme .active-now-item:hover {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+    body.discord-dark-theme .active-now-item {
+      border-bottom-color: rgba(255, 255, 255, 0.04);
+    }
+    body.discord-dark-theme .active-now-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
     }
 </file>
 
@@ -23313,6 +23359,12 @@ service cloud.firestore {
         }
       }
     },
+    "userAffinity": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "artifacts": {
       "$appId": {
         "settings": {
@@ -23356,9 +23408,15 @@ service cloud.firestore {
           }
         },
         "error_reports": {
+          ".read": "auth != null",
           "$docId": {
-            ".read": "auth != null",
             ".write": true
+          }
+        },
+        "userAffinity": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
           }
         },
         "recovery_vault": {
@@ -26389,14 +26447,27 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.176" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.178" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.176" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.178" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
+  <script>
+    // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
+    (function() {
+      const _origLog = console.log, _origInfo = console.info, _origDebug = console.debug;
+      const filterAgora = (fn) => function(...args) {
+        if (args && args.some(a => typeof a === 'string' && a.includes('Agora-SDK'))) return;
+        return fn.apply(console, args);
+      };
+      console.log = filterAgora(_origLog);
+      console.info = filterAgora(_origInfo);
+      console.debug = filterAgora(_origDebug);
+    })();
+  </script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
   <script>
     if (typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) {
@@ -26563,7 +26634,10 @@ async function handleD1Api(request, env, url) {
     };
     window._earlyErrors = window._earlyErrors || [];
     window.addEventListener('error', function(e) {
-      if (_isIgnoredEarlyError(e.message, e.filename, e.error)) return;
+      if (_isIgnoredEarlyError(e.message, e.filename, e.error)) {
+        try { e.preventDefault(); e.stopImmediatePropagation(); } catch (_) {}
+        return;
+      }
       console.error('[Global Error Catcher]', e.message, e.error);
       const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
       const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
@@ -26578,7 +26652,10 @@ async function handleD1Api(request, env, url) {
     });
     window.addEventListener('unhandledrejection', function(e) {
       const r = e.reason;
-      if (_isIgnoredEarlyError(r?.message || String(r || ''), '', r)) return;
+      if (_isIgnoredEarlyError(r?.message || String(r || ''), r?.stack || '', r)) {
+        try { e.preventDefault(); e.stopImmediatePropagation(); } catch (_) {}
+        return;
+      }
       console.error('[Global Unhandled Rejection]', e.reason);
       const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
       const stack = (r && r.stack) || '';
@@ -29586,7 +29663,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.176"></script>
+  <script type="module" src="js/main.js?v=1.1.178"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -30931,7 +31008,7 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
 // === コンソールログの自動収集 & 確実なネイティブコンソール出力 ===
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
-// テレメトリ（リモートFirestore）送信専用のノイズフィルタ
+// テレメトリ送信用のノイズフィルタ（ブラウザ拡張機能や正常キャンセルのみ安全に除外）
 function isTransientTelemetryError(args) {
   try {
     const str = Array.from(args || []).map(a => {
@@ -30942,88 +31019,32 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-    // Firebase App Check / reCAPTCHA の一時的スロットリング・503 エラー
+    // 1. ブラウザ拡張機能・広告ブロッカーのインジェクションエラーのみ除外
     if (
-      str.includes('appcheck') ||
-      str.includes('app-check') ||
-      str.includes('initial-throttle') ||
-      str.includes('fetch-throttle') ||
-      str.includes('fetch-status-error') ||
-      str.includes('exchangerecaptchaprovider') ||
-      str.includes('exchangerecaptchaenterprisetoken') ||
-      str.includes('recaptcha')
-    ) {
-      return true;
-    }
-    // ブラウザ環境非対応（FCM/WebPush）
-    if (
-      str.includes('unsupported-browser') ||
-      str.includes("this browser doesn't support the api") ||
-      str.includes('messaging/unsupported-browser')
-    ) {
-      return true;
-    }
-    // ブラウザ拡張機能・広告ブロッカー・外部注入スクリプト・WebView2内部ノイズ
-    // Safari / iOS やブラウザ拡張機能のノイズ・クロスオリジンエラー
-    if (
-      str.includes('tracking prevention') ||
-      str.includes('blocked access to storage') ||
       str.includes('chrome-extension://') ||
       str.includes('moz-extension://') ||
       str.includes('safari-extension://') ||
       str.includes('safari-web-extension://') ||
-      str.includes('a listener indicated an asynchronous response') ||
-      str.includes('could not establish connection') ||
-      str.includes('receiving end does not exist') ||
-      str.includes('disconnected port') ||
-      str.includes('extension context invalidated') ||
-      str.includes('webext-ad-filtering') ||
-      str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
       str.includes('content_script.js') ||
       str.includes('globals-front.js') ||
       str.includes('adblock-picreplacement.js') ||
-      str.includes('usecache') ||
-      str.includes('beforeinstallprompt') ||
-      str.includes('beforeinstallpromptevent') ||
-      str.includes('resizeobserver loop') ||
-      str.includes('violates the following content security policy directive') ||
-      str.includes('content security policy') ||
-      str.trim() === '::'
+      str.includes('extension context invalidated') ||
+      str.includes('tracking prevention')
     ) {
       return true;
     }
-    // Auth ポップアップの正常なユーザーキャンセル動作
+    // 2. ブラウザ標準の無害なリサイズループ警告
+    if (str.includes('resizeobserver loop')) {
+      return true;
+    }
+    // 3. 認証ポップアップの正常なユーザー自身によるキャンセル動作
     if (
-      str.includes('auth/popup-blocked') ||
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request')
     ) {
       return true;
     }
-    // Firebase RTDB の内部パーミッション警告・旧キャッシュ端末からの残骸ログ
-    if (
-      str.includes('permission_denied') ||
-      str.includes('permission-denied') ||
-      str.includes('permission denied') ||
-      str.includes('@firebase/database') ||
-      str.includes('pruneexcessmessages')
-    ) {
-      return true;
-    }
-    // 一時的な通信切断・オフライン・Fetch中断エラー (Safari Load failed 等)
-    if (
-      str.includes('auth/network-request-failed') ||
-      str.includes('network-request-failed') ||
-      str.includes('load failed') ||
-      str.includes('failed to fetch') ||
-      str.includes('network error') ||
-      str.includes('networkerror') ||
-      str.includes('aborterror') ||
-      str.includes('the user aborted a request') ||
-      str.includes('kv delete failed')
-    ) {
-      return true;
-    }
+    // 重要な実行時エラー（failed to fetch, permission_denied, TypeError等）はすべて収集
     return false;
   } catch (_) {
     return false;
@@ -31032,7 +31053,6 @@ function isTransientTelemetryError(args) {
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
 let _cachedTelemetryErrors = window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
 const _reportedSignaturesRecently = new Map();
-const _dismissedErrorSignatures = new Set();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
 function _createErrorSignature(type, message, stack) {
@@ -31050,25 +31070,33 @@ function _createErrorSignature(type, message, stack) {
 }
 function _reportTelemetryError(type, message, stack) {
   if (_isReportingTelemetry) return; // 再帰呼び出し（無限ループ）完全防止
-  if (isTransientTelemetryError([message, stack])) return; // 一時的エラーやAppCheckスロットリングの送信抑止
+  if (isTransientTelemetryError([message, stack])) return;
   _isReportingTelemetry = true;
   try {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]') return;
     const signature = _createErrorSignature(type, msgStr, stack);
-    if (_dismissedErrorSignatures.has(signature)) return; // 削除済みエラーの再報告を抑止
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 2000) return; // 2秒間ローカル重複排除
+    if (now - lastReported < 1500) return; // 1.5秒間ローカル重複排除
     _reportedSignaturesRecently.set(signature, now);
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
     const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
+    const envInfo = {
+      userAgent: navigator.userAgent || 'unknown',
+      appVersion: _appVersion || 'web',
+      screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      isElectron: Boolean(window.electronAPI)
+    };
     // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
         window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
         window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        if (!window._cachedTelemetryErrors[existingIdx].affectedEmails.includes(email)) {
+          window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
+        }
       } else {
         window._cachedTelemetryErrors.unshift({
           id: signature,
@@ -31080,11 +31108,7 @@ function _reportTelemetryError(type, message, stack) {
           lastOccurredAt: new Date(),
           count: 1,
           affectedEmails: [email],
-          environment: {
-            userAgent: navigator.userAgent || 'unknown',
-            appVersion: _appVersion || 'web',
-            screenSize: `${window.innerWidth}x${window.innerHeight}`
-          }
+          environment: envInfo
         });
       }
       const badgeEl = document.getElementById("telemetryCountBadge");
@@ -31096,55 +31120,70 @@ function _reportTelemetryError(type, message, stack) {
         renderTelemetryErrorsList();
       }
     }
-    if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) {
-      if (_pendingTelemetryErrors.length < 100) {
-        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-      }
-      return;
-    }
-    const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
-    const envInfo = {
-      userAgent: navigator.userAgent || 'unknown',
-      appVersion: _appVersion || 'web',
-      screenSize: `${window.innerWidth}x${window.innerHeight}`,
-      isElectron: Boolean(window.electronAPI)
-    };
-    setDoc(errorDocRef, {
-      signature: signature,
-      type: type || 'error',
-      message: msgStr.substring(0, 3000),
-      stack: String(stack || '').substring(0, 6000),
-      firstOccurredAt: serverTimestamp(),
-      lastOccurredAt: serverTimestamp(),
-      createdBy: currentUid,
-      count: increment(1),
-      affectedEmails: arrayUnion(email),
-      environment: envInfo
-    }, { merge: true }).catch(err => {
-      // 送信失敗時はキューに退避して再送
-      if (_pendingTelemetryErrors.length < 100) {
-        _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-      }
-    });
-    // RTDB にも即時反映（フェールセーフ・リアルタイム同期）
-    try {
-      if (typeof _getOrInitRTDB === 'function') {
-        _getOrInitRTDB().then(rtdb => {
-          if (rtdb) {
-            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
-              update(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), {
-                signature,
+    // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+    if (typeof _getOrInitRTDB === 'function') {
+      _getOrInitRTDB().then(rtdb => {
+        if (rtdb) {
+          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update, set, get }) => {
+            const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
+            get(errRef).then(snap => {
+              const prev = snap.val();
+              const prevCount = prev?.count || 0;
+              const prevEmails = Array.isArray(prev?.affectedEmails) ? prev.affectedEmails : [];
+              if (!prevEmails.includes(email)) prevEmails.push(email);
+              const payload = {
+                id: signature,
+                signature: signature,
                 type: type || 'error',
                 message: msgStr.substring(0, 3000),
                 stack: String(stack || '').substring(0, 6000),
+                firstOccurredAt: prev?.firstOccurredAt || Date.now(),
                 lastOccurredAt: Date.now(),
+                count: prevCount + 1,
+                affectedEmails: prevEmails,
+                environment: envInfo
+              };
+              set(errRef, payload).catch(() => {});
+            }).catch(() => {
+              set(errRef, {
+                id: signature,
+                signature: signature,
+                type: type || 'error',
+                message: msgStr.substring(0, 3000),
+                stack: String(stack || '').substring(0, 6000),
+                firstOccurredAt: Date.now(),
+                lastOccurredAt: Date.now(),
+                count: 1,
+                affectedEmails: [email],
                 environment: envInfo
               }).catch(() => {});
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
-    } catch (_) {}
+            });
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+    // 2. Firestore へもバックアップ送信
+    if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
+      const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
+      setDoc(errorDocRef, {
+        signature: signature,
+        type: type || 'error',
+        message: msgStr.substring(0, 3000),
+        stack: String(stack || '').substring(0, 6000),
+        firstOccurredAt: serverTimestamp(),
+        lastOccurredAt: serverTimestamp(),
+        createdBy: currentUid,
+        count: increment(1),
+        affectedEmails: arrayUnion(email),
+        environment: envInfo
+      }, { merge: true }).catch(err => {
+        if (_pendingTelemetryErrors.length < 100) {
+          _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+        }
+      });
+    } else if (_pendingTelemetryErrors.length < 100) {
+      _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+    }
   } catch (e) {
   } finally {
     _isReportingTelemetry = false;
@@ -31171,14 +31210,17 @@ window.addEventListener('error', (event) => {
     event.filename.includes('chrome-extension:') ||
     event.filename.includes('moz-extension:') ||
     event.filename.includes('safari-extension:') ||
-    event.filename.includes('safari-web-extension:')
+    event.filename.includes('safari-web-extension:') ||
+    event.filename.includes('content.js') ||
+    event.filename.includes('globals-front.js') ||
+    event.filename.includes('adblock')
   );
   if (isExtension) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (isTransientTelemetryError([event.error, event.message, event.filename])) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (event.error) {
@@ -31194,21 +31236,29 @@ window.addEventListener('unhandledrejection', (event) => {
       reason.stack.includes('chrome-extension:') ||
       reason.stack.includes('moz-extension:') ||
       reason.stack.includes('safari-extension:') ||
-      reason.stack.includes('safari-web-extension:')
+      reason.stack.includes('safari-web-extension:') ||
+      reason.stack.includes('content.js') ||
+      reason.stack.includes('globals-front.js') ||
+      reason.stack.includes('adblock')
     )) ||
     (typeof reason.message === 'string' && (
       reason.message.includes('chrome-extension:') ||
       reason.message.includes('moz-extension:') ||
       reason.message.includes('safari-extension:') ||
-      reason.message.includes('safari-web-extension:')
+      reason.message.includes('safari-web-extension:') ||
+      reason.message.includes('usecache') ||
+      reason.message.includes('receiving end does not exist') ||
+      reason.message.includes('could not establish connection') ||
+      reason.message.includes('a listener indicated an asynchronous response') ||
+      reason.message.includes('message channel closed')
     ))
   );
   if (isExtension) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (isTransientTelemetryError([reason])) {
-    try { event.preventDefault(); } catch (_) {}
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
     return;
   }
   if (reason instanceof Error) {
@@ -32009,6 +32059,7 @@ function initializeFirebase() {
             subscribeToFeatureFlags();
             subscribeToRelationships();
             subscribeToDmChannels();
+            _loadUserAffinityFromRTDB().catch(() => {});
             // E2EE: 鍵を自動初期化（無ければFirestoreかWeb Cryptoで自動生成・復元）。失敗してもアプリは継続
             // 続けて管理者ならエスクロー鍵（合鍵）も用意する
             ensureE2EEKeys().then(() => ensureEscrowKey()).catch(() => { });
@@ -33533,62 +33584,118 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  // まず現在のローカルキャッシュを表示（画面のちらつき防止）
   renderTelemetryErrorsList();
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
-    const q = query(collection(db, `artifacts/${appId}/error_reports`), orderBy('lastOccurredAt', 'desc'), limit(100));
-    const mergeErrors = (remoteList) => {
-      const mergedMap = new Map();
-      // リモートエラーを追加
-      remoteList.forEach(item => {
-        if (!_dismissedErrorSignatures.has(item.id)) {
-          mergedMap.set(item.id, item);
+    const mergedMap = new Map();
+    // 1. 既存のローカルキャッシュを取り込む
+    (window._cachedTelemetryErrors || []).forEach(item => {
+      if (item && item.id) mergedMap.set(item.id, item);
+    });
+    // 2. ブラウザのコンソールログストリーム (window._covoLogs) から [ERR] 行を即時抽出
+    (window._covoLogs || []).forEach(line => {
+      if (line && line.startsWith('[ERR]')) {
+        const cleanMsg = line.slice(5).trim();
+        if (cleanMsg) {
+          const sig = _createErrorSignature('error', cleanMsg, '');
+          if (!mergedMap.has(sig)) {
+            mergedMap.set(sig, {
+              id: sig,
+              signature: sig,
+              type: 'error',
+              message: cleanMsg,
+              stack: '',
+              firstOccurredAt: new Date(),
+              lastOccurredAt: new Date(),
+              count: 1,
+              affectedEmails: [userAuthEmail || '自分']
+            });
+          }
         }
-      });
-      // 未同期のローカルエラーをマージ（消滅防止）
-      (window._cachedTelemetryErrors || []).forEach(localItem => {
-        if (!_dismissedErrorSignatures.has(localItem.id) && !mergedMap.has(localItem.id)) {
-          mergedMap.set(localItem.id, localItem);
-        }
-      });
-      const result = Array.from(mergedMap.values());
-      result.sort((a, b) => {
-        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-        return timeB - timeA;
-      });
-      window._cachedTelemetryErrors = result;
-      if (badgeEl) {
-        badgeEl.textContent = window._cachedTelemetryErrors.length;
-        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
-      renderTelemetryErrorsList();
-    };
-    // getDocs で同期
-    const snap = await getDocs(q);
-    const remoteErrors = [];
-    snap.forEach(d => {
-      remoteErrors.push({ id: d.id, ...d.data() });
     });
-    mergeErrors(remoteErrors);
-    // リアルタイムリスナーを継続
-    _telemetryErrorsUnsub = onSnapshot(q, (liveSnap) => {
-      const liveErrors = [];
-      liveSnap.forEach(d => {
-        liveErrors.push({ id: d.id, ...d.data() });
+    // 3. RTDB (artifacts/${appId}/error_reports) から全件高速取得
+    try {
+      const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const snap = await get(ref(rtdb, `artifacts/${appId}/error_reports`));
+      if (snap.exists()) {
+        const val = snap.val() || {};
+        Object.keys(val).forEach(k => {
+          const remoteItem = val[k];
+          if (remoteItem) {
+            mergedMap.set(k, { id: k, ...remoteItem });
+          }
+        });
+      }
+    } catch (rtdbErr) {
+      console.warn('[loadErrorTelemetry] RTDB read warning:', rtdbErr);
+    }
+    // 4. Firestore (artifacts/${appId}/error_reports) からも取得してマージ
+    try {
+      const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
+      fsSnap.forEach(d => {
+        const data = d.data();
+        mergedMap.set(d.id, { id: d.id, ...data });
       });
-      mergeErrors(liveErrors);
-    }, (err) => {
-      console.warn("[Telemetry onSnapshot notice]", err?.message || err);
-      renderTelemetryErrorsList();
+    } catch (fsErr) {
+      console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
+    }
+    // 時系列（最新順）にソート
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => {
+      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+      return timeB - timeA;
     });
+    window._cachedTelemetryErrors = result;
+    if (badgeEl) {
+      badgeEl.textContent = result.length;
+      badgeEl.classList.toggle('hidden', result.length === 0);
+    }
+    renderTelemetryErrorsList();
+    // 5. RTDB リアルタイムリスナーを開始（他ユーザーのエラー発生も即時画面に反映）
+    try {
+      const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
+      const onVal = (snapshot) => {
+        if (!snapshot.exists()) return;
+        const liveVal = snapshot.val() || {};
+        let updated = false;
+        Object.keys(liveVal).forEach(k => {
+          const item = liveVal[k];
+          if (item) {
+            const idx = window._cachedTelemetryErrors.findIndex(e => e.id === k);
+            if (idx >= 0) {
+              window._cachedTelemetryErrors[idx] = { id: k, ...item };
+            } else {
+              window._cachedTelemetryErrors.unshift({ id: k, ...item });
+            }
+            updated = true;
+          }
+        });
+        if (updated) {
+          window._cachedTelemetryErrors.sort((a, b) => {
+            const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+            const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+            return timeB - timeA;
+          });
+          if (badgeEl) {
+            badgeEl.textContent = window._cachedTelemetryErrors.length;
+            badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
+          }
+          renderTelemetryErrorsList();
+        }
+      };
+      onValue(errsRef, onVal);
+      _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
+    } catch (_) {}
   } catch (err) {
     console.warn("[Telemetry loadErrorTelemetry notice]", err?.message || err);
-    // エラー時もローカルキャッシュをそのまま維持して描画
     renderTelemetryErrorsList();
   }
 };
@@ -33732,25 +33839,29 @@ window.clearAllTelemetryErrors = async function () {
   if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
   try {
     const toDelete = [..._cachedTelemetryErrors];
-    toDelete.forEach(err => {
-      _dismissedErrorSignatures.add(err.id);
-      _reportedSignaturesRecently.delete(err.id);
-    });
-    // 1. Firestore 上の全エラードキュメントをバッチ削除
-    const batch = writeBatch(db);
-    toDelete.forEach(err => {
-      batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-    });
-    await batch.commit();
-    // 2. ローカル状態とキューを完全初期化
+    // 1. RTDB から一括削除
+    try {
+      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
+    } catch (_) {}
+    // 2. Firestore 上の全エラードキュメントをバッチ削除
+    try {
+      const batch = writeBatch(db);
+      toDelete.forEach(err => {
+        batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+      });
+      await batch.commit();
+    } catch (_) {}
+    // 3. ローカル状態とキューをクリア（再発時は新しく記録できるよう永久ブロックは行わない）
     _cachedTelemetryErrors = [];
     _pendingTelemetryErrors.length = 0;
     _reportedSignaturesRecently.clear();
-    // 3. インメモリログからエラー・警告行を除去
+    // 4. インメモリログからエラー・警告行を除去
     if (window._covoLogs) {
       window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
     }
-    // 4. バッジとリストUIを即座に更新
+    // 5. バッジとリストUIを即座に更新
     const badgeEl = document.getElementById("telemetryCountBadge");
     if (badgeEl) {
       badgeEl.textContent = '0';
@@ -33759,7 +33870,7 @@ window.clearAllTelemetryErrors = async function () {
     renderTelemetryErrorsList();
     alertMessage("全エラーログをクリアしました", "success");
   } catch (err) {
-    console.error("Failed to clear all telemetry errors from Firestore:", err);
+    console.error("Failed to clear all telemetry errors:", err);
     alertMessage("クリアに失敗しました: " + (err.message || err), "error");
   }
 };
@@ -36918,6 +37029,67 @@ function requestRenderMembersList() {
     renderMembersList(cachedUsers);
   }, 80);
 }
+// === ユーザー親密度 (Affinity) & 関わり深さスコア管理 ===
+window._userAffinityCache = window._userAffinityCache || {};
+let _affinitySaveTimer = null;
+let _pendingAffinityUpdates = {};
+async function _loadUserAffinityFromRTDB() {
+  if (!userId) return;
+  try {
+    const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const rtdb = await _getOrInitRTDB();
+    const snap = await get(ref(rtdb, `userAffinity/${userId}`));
+    if (snap.exists()) {
+      const data = snap.val() || {};
+      window._userAffinityCache = { ...data, ...(window._userAffinityCache || {}) };
+    }
+  } catch (e) {
+    console.debug('[Affinity] RTDB load skipped:', e?.message || e);
+  }
+}
+function _recordUserInteraction(targetUid, points = 10) {
+  if (!userId || !targetUid || targetUid === userId) return;
+  window._userAffinityCache = window._userAffinityCache || {};
+  const current = window._userAffinityCache[targetUid] || 0;
+  const next = current + points;
+  window._userAffinityCache[targetUid] = next;
+  _pendingAffinityUpdates[targetUid] = next;
+  // デバウンスしてRTDBに保存（通信量極小化）
+  if (_affinitySaveTimer) clearTimeout(_affinitySaveTimer);
+  _affinitySaveTimer = setTimeout(async () => {
+    const updates = { ..._pendingAffinityUpdates };
+    _pendingAffinityUpdates = {};
+    try {
+      const { ref, update } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      await update(ref(rtdb, `userAffinity/${userId}`), updates);
+    } catch (err) {
+      console.debug('[Affinity] RTDB save skipped:', err?.message || err);
+    }
+  }, 3000);
+}
+function calculateUserAffinity(targetUid) {
+  let score = window._userAffinityCache?.[targetUid] || 0;
+  if (Array.isArray(allServersCache)) {
+    const sharedCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
+    score += sharedCount * 10;
+  }
+  const rel = friendRelationships?.[targetUid];
+  if (rel?.status === 'friends') score += 30;
+  else if (rel?.status === 'pending_sent' || rel?.status === 'pending_received') score += 10;
+  const dmObj = Object.values(dmConversations || {}).find(dm => (dm.participants || []).includes(targetUid));
+  if (dmObj) {
+    score += 20;
+    const lastAt = typeof dmObj.lastMessageAt === 'number' ? dmObj.lastMessageAt : (dmObj.lastMessageAt?.toMillis?.() || (dmObj.lastMessageAt?.seconds ? dmObj.lastMessageAt.seconds * 1000 : 0));
+    if (lastAt > 0) {
+      const daysDiff = (Date.now() - lastAt) / (1000 * 60 * 60 * 24);
+      if (daysDiff < 1) score += 25;
+      else if (daysDiff < 7) score += 15;
+      else if (daysDiff < 30) score += 5;
+    }
+  }
+  return score;
+}
 function subscribeToUserStatus() {
   // 旧リスナーを即座に同期クリーンアップ（メモリリーク防止）
   if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
@@ -36949,22 +37121,54 @@ function subscribeToUserStatus() {
   }
   const usersMap = new Map();
   memberIds.forEach(uid => {
-    const cachedProf = window._userProfileCache?.get(uid);
-    usersMap.set(uid, { id: uid, state: 'offline', ...(cachedProf || {}) });
-    if (!cachedProf || !cachedProf.last_changed) {
+    let cachedProf = window._userProfileCache?.get(uid);
+    const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
+    const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
+    const initialLastChanged = cachedProf?.last_changed || cachedProf?.lastSeen || lastSeenNum || null;
+    usersMap.set(uid, {
+      id: uid,
+      state: cachedProf?.status || cachedProf?.state || 'offline',
+      ...(cachedProf || {}),
+      last_changed: initialLastChanged,
+      lastSeen: initialLastChanged
+    });
+    if (!cachedProf || !cachedProf.nickname) {
       window.getUserProfile(uid).then(prof => {
         if (prof) {
           const cur = usersMap.get(uid) || { id: uid };
-          usersMap.set(uid, { ...cur, ...prof });
+          // プロファイル取得結果で RTDB やキャッシュ済みの last_changed / state を null で破壊しない
+          const merged = {
+            ...prof,
+            ...cur,
+            nickname: prof.nickname || cur.nickname,
+            avatarUrl: prof.avatarUrl || cur.avatarUrl,
+            email: prof.email || cur.email,
+            aboutMe: prof.aboutMe || cur.aboutMe,
+            customStatus: cur.customStatus || prof.customStatus,
+            state: cur.state || cur.status || prof.status || 'offline',
+            computedState: cur.computedState || cur.state || prof.status || 'offline',
+            last_changed: cur.last_changed || prof.last_changed || lastSeenNum || null,
+            lastSeen: cur.last_changed || cur.lastSeen || prof.lastSeen || lastSeenNum || null
+          };
+          usersMap.set(uid, merged);
+          const cProf = window._userProfileCache.get(uid);
+          if (cProf) {
+            if (merged.last_changed && !cProf.last_changed) cProf.last_changed = merged.last_changed;
+            if (merged.state) cProf.status = merged.state;
+          }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
           if (typeof renderFriendTabs === 'function') renderFriendTabs();
           if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+          if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+            renderDmActiveNowPanel();
+          }
         }
       }).catch(() => {});
     }
   });
   cachedUsers = Array.from(usersMap.values());
+  requestRenderMembersList();
   // RTDBでメンバーのリアルタイムステータスを一元監視
   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
     _getOrInitRTDB().then(rtdb => {
@@ -36973,31 +37177,57 @@ function subscribeToUserStatus() {
         const callback = (snapshot) => {
           const data = snapshot.val();
           const existing = usersMap.get(uid) || { id: uid };
-          const cachedProf = window._userProfileCache?.get(uid);
+          let cachedProf = window._userProfileCache?.get(uid);
+          if (!cachedProf) {
+            cachedProf = { id: uid, uid: uid };
+            window._userProfileCache.set(uid, cachedProf);
+          }
           if (data) {
-            const merged = { id: uid, ...existing, ...(cachedProf || {}), ...data };
-            // last_changed のフォールバック保護
-            if (!merged.last_changed && (cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen)) {
-              merged.last_changed = cachedProf?.last_changed || cachedProf?.lastSeen || existing.last_changed || existing.lastSeen;
+            const rawLc = data.last_changed || data.lastSeen || existing.last_changed || cachedProf.last_changed;
+            if (rawLc) {
+              const ms = parseTimestampToMs(rawLc);
+              if (ms > 0) {
+                try { localStorage.setItem(`covo_last_seen_${uid}`, String(ms)); } catch (_) {}
+              }
             }
+            const merged = {
+              id: uid,
+              ...existing,
+              ...cachedProf,
+              ...data,
+              last_changed: rawLc || existing.last_changed || cachedProf.last_changed || null,
+              lastSeen: rawLc || existing.lastSeen || cachedProf.lastSeen || null
+            };
             usersMap.set(uid, merged);
-            if (cachedProf) {
-              Object.assign(cachedProf, data);
-            }
+            Object.assign(cachedProf, data);
+            if (rawLc) cachedProf.last_changed = rawLc;
           } else {
-            usersMap.set(uid, { id: uid, state: 'offline', ...existing, ...(cachedProf || {}) });
+            const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
+            const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
+            const fallbackLc = existing.last_changed || cachedProf.last_changed || lastSeenNum || null;
+            usersMap.set(uid, {
+              id: uid,
+              state: 'offline',
+              ...existing,
+              ...cachedProf,
+              last_changed: fallbackLc,
+              lastSeen: fallbackLc
+            });
           }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
           if (typeof renderFriendTabs === 'function') renderFriendTabs();
           if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+          if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+            renderDmActiveNowPanel();
+          }
         };
         onValue(statusRef, callback);
         unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
       });
     });
   }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
-  }
+}
 function renderMembersList(users) {
   if (!membersList) return;
   membersList.innerHTML = "";
@@ -37433,6 +37663,17 @@ async function enterServer(serverId, serverData) {
   if (typeof window._subscribeVcSidebarStates === 'function') {
     window._subscribeVcSidebarStates(serverId);
   }
+  // サーバー入室時: DM専用パネル・現在アクティブパネルを確実に非表示にし、メンバーリストを表示する
+  const dmProfilePanel = document.getElementById('dmProfilePanel');
+  const dmActiveNowPanel = document.getElementById('dmActiveNowPanel');
+  const membersListEl = document.getElementById('membersList');
+  const toggleBtnEl = document.getElementById('toggleMembersSidebarBtn');
+  const toggleIconEl = document.getElementById('toggleMembersSidebarIcon');
+  if (dmProfilePanel) dmProfilePanel.classList.add('hidden');
+  if (dmActiveNowPanel) dmActiveNowPanel.classList.add('hidden');
+  if (membersListEl) membersListEl.classList.remove('hidden');
+  if (toggleBtnEl) toggleBtnEl.title = 'メンバー一覧の表示切替';
+  if (toggleIconEl) toggleIconEl.className = 'fas fa-user-group';
   if (localStorage.getItem("chatAppMembersCollapsed") !== "true") {
     membersSidebar.style.setProperty("display", "", "important");
     membersSidebar.classList.remove("hidden");
@@ -37524,11 +37765,18 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   // DM / フレンド画面の公開状態に応じた表示更新
   updateDmViewVisibility();
   renderDmConversationsList();
+  // 右サイドバー: DMプロフィールとメンバーリストを隠し、現在アクティブパネルを展開
+  const dmProfilePanel = document.getElementById('dmProfilePanel');
+  const membersListEl = document.getElementById('membersList');
+  const dmActiveNowPanel = document.getElementById('dmActiveNowPanel');
+  if (dmProfilePanel) dmProfilePanel.classList.add('hidden');
+  if (membersListEl) membersListEl.classList.add('hidden');
+  if (dmActiveNowPanel) dmActiveNowPanel.classList.remove('hidden');
   if (typeof renderDmActiveNowPanel === 'function') {
     renderDmActiveNowPanel();
   }
   if (membersSidebar && window.innerWidth >= 768) {
-    membersSidebar.style.setProperty("display", "", "important");
+    membersSidebar.style.setProperty("display", "flex", "important");
     membersSidebar.classList.remove("hidden");
     membersSidebar.classList.add("md:flex");
   }
@@ -38373,7 +38621,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (toggleBtn) toggleBtn.title = 'ユーザープロフィールの表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-id-card';
   const safeName = escapeHtml(targetNickname || 'ユーザー');
-  const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
+  const handleTag = targetUid ? `#${targetUid.slice(-4).toLowerCase()}` : '';
   let mutualServersCount = 0;
   if (Array.isArray(allServersCache)) {
     mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
@@ -38382,9 +38630,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof friendRelationships === 'object') {
     mutualFriendsCount = Object.values(friendRelationships).filter(r => r.status === 'friends').length;
   }
-  // Discord画像2完全準拠のプロファイル構造
+  // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
-    <div class="dm-profile-banner relative">
+    <div class="dm-profile-banner relative flex-shrink-0">
       <div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
           <i class="fas fa-user-plus"></i>
@@ -38406,7 +38654,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         </div>
       </div>
     </div>
-    <div class="dm-profile-avatar-wrap">
+    <div class="dm-profile-avatar-wrap flex-shrink-0">
       <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full">` : escapeHtml(safeName.charAt(0).toUpperCase())}
@@ -38416,16 +38664,18 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     </div>
     <div class="dm-profile-card">
       <div class="mb-3">
-        <div class="text-xl font-black text-gray-900 dark:text-white truncate leading-tight tracking-tight" id="dmPanelName">${safeName}</div>
-        <div class="text-xs font-mono font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
-          <span id="dmPanelTag">${handleTag}</span>
-          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#5865f2]/10 text-[#5865f2]"><i class="fas fa-sparkles"></i></span>
+        <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
+          <span id="dmPanelName">${safeName}</span>
+          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60"></i>
+        </div>
+        <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
+          ${handleTag}
         </div>
       </div>
-      <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
-        <span>${mutualFriendsCount}人の共通の友だち</span>
-        <span>•</span>
+      <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap" id="dmPanelMutualsText">
+        <i class="fas fa-server text-[11px] text-gray-400"></i>
         <span>${mutualServersCount}個の共通サーバー</span>
+        ${mutualFriendsCount > 0 ? `<span>•</span><span>${mutualFriendsCount}人の共通の友だち</span>` : ''}
       </div>
       <div class="dm-profile-divider"></div>
       <div class="my-3">
@@ -38433,12 +38683,12 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
           <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
           <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
         </div>
-        <div class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
-        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text font-normal">読み込み中...</div>
+        <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
+        <div id="dmPanelAboutMe" class="text-xs text-gray-700 dark:text-[#dbdee1] leading-relaxed whitespace-pre-wrap select-text font-normal">自己紹介はまだ設定されていません。</div>
       </div>
       <div class="dm-profile-divider"></div>
       <div class="my-3 flex items-center justify-between text-xs">
-        <span class="text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider">メンバーになった日</span>
+        <span class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">メンバーになった日</span>
         <span id="dmPanelJoinedDate" class="font-mono font-semibold text-gray-800 dark:text-gray-200">-</span>
       </div>
     </div>
@@ -38541,55 +38791,118 @@ window.renderDmActiveNowPanel = function () {
   panel.classList.remove('hidden');
   if (toggleBtn) toggleBtn.title = 'アクティブ一覧の表示切替';
   if (toggleIcon) toggleIcon.className = 'fas fa-user-group';
-  panel.innerHTML = `
-    <h3 class="text-base font-bold text-gray-900 dark:text-white mb-3 tracking-tight">現在アクティブ</h3>
-    <div id="dmActiveNowList" class="space-y-3"></div>
-  `;
-  const targetList = document.getElementById('dmActiveNowList');
-  const rels = Object.values(friendRelationships || {});
-  const friends = rels.filter(r => r.status === 'friends');
-  const activeFriends = friends.filter(f => {
-    const u = (cachedUsers || []).find(cu => cu.id === f.targetUid);
-    return u && (u.computedState === 'online' || u.computedState === 'away' || u.state === 'online' || u.state === 'away');
+  // 1. 全参加サーバー + フレンドから対象メンバーを収集 (自分自身は除外)
+  const joinedServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(userId));
+  const candidateUids = new Set();
+  joinedServers.forEach(s => {
+    (s.joinedUsers || []).forEach(uid => {
+      if (uid && uid !== userId) candidateUids.add(uid);
+    });
   });
-  if (activeFriends.length === 0) {
-    targetList.innerHTML = `
-      <div class="p-6 text-center text-xs text-gray-400 dark:text-gray-500 bg-white dark:bg-[#111214] rounded-2xl border border-gray-200/60 dark:border-white/5 space-y-2 shadow-xs">
-        <div class="w-12 h-12 rounded-full bg-gray-100 dark:bg-[#232428] flex items-center justify-center mx-auto text-xl text-gray-400">
-          <i class="fas fa-gamepad"></i>
+  Object.values(friendRelationships || {}).forEach(rel => {
+    if (rel?.targetUid && rel.targetUid !== userId && rel.status === 'friends') {
+      candidateUids.add(rel.targetUid);
+    }
+  });
+  // 2. オンライン・離席中のユーザーのみを抽出（オフラインは完全除外）
+  const activeCandidates = [];
+  candidateUids.forEach(uid => {
+    const u = (cachedUsers || []).find(cu => cu.id === uid) || window._userProfileCache?.get(uid);
+    const state = u?.computedState || u?.state || u?.status || 'offline';
+    if (state === 'online' || state === 'away') {
+      const affinityScore = calculateUserAffinity(uid);
+      const sharedServers = joinedServers.filter(s => (s.joinedUsers || []).includes(uid));
+      activeCandidates.push({
+        id: uid,
+        uid,
+        nickname: u?.nickname || u?.displayName || 'ユーザー',
+        avatarUrl: u?.avatarUrl || '',
+        state,
+        computedState: state,
+        customStatus: u?.customStatus || null,
+        last_changed: u?.last_changed || u?.lastSeen || 0,
+        sharedServers,
+        affinityScore
+      });
+    }
+  });
+  // 3. 関わりが深い順 (affinityScore降順) -> 直近アクティブ順 でソート
+  activeCandidates.sort((a, b) => {
+    if (b.affinityScore !== a.affinityScore) {
+      return b.affinityScore - a.affinityScore;
+    }
+    const timeA = parseTimestampToMs(a.last_changed);
+    const timeB = parseTimestampToMs(b.last_changed);
+    return timeB - timeA;
+  });
+  // 4. HTML構築 (添付画像2 Discord本家デザイン完全準拠)
+  if (activeCandidates.length === 0) {
+    panel.innerHTML = `
+      <div class="p-4 w-full flex flex-col gap-3 select-none">
+        <h3 class="text-base font-extrabold text-gray-900 dark:text-white tracking-tight">現在アクティブ</h3>
+        <div class="p-6 text-center text-xs text-gray-400 dark:text-gray-500 bg-white dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-white/5 space-y-2 shadow-xs">
+          <div class="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto text-xl text-gray-400">
+            <i class="fas fa-gamepad"></i>
+          </div>
+          <div class="font-bold text-gray-700 dark:text-gray-200 text-sm">現在は静かです...</div>
+          <p class="text-[11px] text-gray-400 leading-relaxed">
+            サーバーのメンバーやフレンドがオンラインになると、ここにアクティビティが表示されます。
+          </p>
         </div>
-        <div class="font-bold text-gray-700 dark:text-gray-300">今は静かです...</div>
-        <p class="text-[11px] text-gray-400 leading-relaxed">フレンドがボイスチャンネルに参加したりステータスを更新すると、ここに表示されます。</p>
       </div>
     `;
     return;
   }
-  targetList.innerHTML = activeFriends.map(f => {
-    const u = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
-    const safeNick = escapeHtml(f.targetNickname || u.nickname || 'フレンド');
-    const safeAv = isUsableAvatarUrl(f.targetAvatarUrl || u.avatarUrl)
-      ? `<img src="${escapeHtml(f.targetAvatarUrl || u.avatarUrl)}" class="w-full h-full rounded-full object-cover">`
-      : `<span class="text-xs font-bold text-white">${safeNick.charAt(0)}</span>`;
-    const statusClass = (u.computedState || u.state) === 'away' ? 'status-away' : 'status-online';
-    const activityText = u.customStatus?.text
-      ? `${u.customStatus.emoji || '💬'} ${escapeHtml(u.customStatus.text)}`
-      : ((u.computedState || u.state) === 'away' ? '離席中' : 'オンライン');
+  const itemsHtml = activeCandidates.map(u => {
+    const safeNick = escapeHtml(u.nickname || 'ユーザー');
+    const safeAv = isUsableAvatarUrl(u.avatarUrl)
+      ? `<img src="${escapeHtml(u.avatarUrl)}" class="w-full h-full rounded-full object-cover">`
+      : `<span class="text-xs font-bold text-white">${safeNick.charAt(0).toUpperCase()}</span>`;
+    const isAway = u.state === 'away';
+    const isInVoice = Boolean(window._voiceEngine?.isActive && window._voiceEngine?._voiceStates?.[u.id]);
+    const statusClass = isInVoice ? 'status-online' : (isAway ? 'status-away' : 'status-online');
+    let subtext = `<span class="text-emerald-500 font-semibold">オンライン</span>`;
+    if (isInVoice) {
+      subtext = `<span class="text-emerald-500 font-semibold flex items-center gap-1"><i class="fas fa-volume-up text-[10px]"></i> ボイスチャンネルにて</span>`;
+    } else if (u.customStatus?.text) {
+      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${escapeHtml(u.customStatus.emoji || '💬')} ${escapeHtml(u.customStatus.text)}</span>`;
+    } else if (isAway) {
+      subtext = `<span class="text-amber-500 font-semibold">離席中</span>`;
+    }
+    // 右側の共有サーバーアイコンまたはバッジ
+    let rightBadgeHtml = '';
+    if (u.sharedServers.length > 0) {
+      const topServer = u.sharedServers[0];
+      if (topServer.iconUrl) {
+        rightBadgeHtml = `<div class="w-5 h-5 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 flex-shrink-0" title="${escapeHtml(topServer.name || '')}"><img src="${escapeHtml(topServer.iconUrl)}" class="w-full h-full object-cover"></div>`;
+      } else {
+        rightBadgeHtml = `<div class="w-5 h-5 rounded-lg bg-slate-600 text-white font-bold text-[9px] flex items-center justify-center flex-shrink-0" title="${escapeHtml(topServer.name || '')}">${escapeHtml((topServer.name || 'S').charAt(0).toUpperCase())}</div>`;
+      }
+    }
     return `
-      <div class="active-now-card flex items-center gap-3 p-3 bg-white dark:bg-[#111214] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:border-indigo-500/40 transition-all shadow-xs" onclick="openDm('${escapeHtml(f.targetUid)}', '${safeNick}', '${escapeHtml(f.targetAvatarUrl || u.avatarUrl || '')}')">
-        <div class="relative w-10 h-10 flex-shrink-0 rounded-full bg-slate-700 flex items-center justify-center">
-          ${safeAv}
+      <div class="active-now-item" onclick="openUserProfileModal('${u.id}', '${safeNick.replace(/'/g, "\\'")}', '${escapeHtml(u.avatarUrl).replace(/'/g, "\\'")}')">
+        <div class="relative w-10 h-10 flex-shrink-0">
+          <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-xs">
+            ${safeAv}
+          </div>
           <div class="status-indicator ${statusClass}"></div>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-gray-900 dark:text-white truncate">${safeNick}</div>
-          <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">${activityText}</div>
+          <div class="text-sm font-bold text-gray-900 dark:text-white truncate">${safeNick}</div>
+          <div class="text-xs truncate mt-0.5">${subtext}</div>
         </div>
-        <button class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-[#232428] dark:hover:bg-[#2b2d31] text-gray-500 hover:text-gray-800 dark:text-gray-300 flex items-center justify-center text-xs transition" title="メッセージ">
-          <i class="fas fa-comment-dots"></i>
-        </button>
+        ${rightBadgeHtml}
       </div>
     `;
   }).join('');
+  panel.innerHTML = `
+    <div class="active-now-wrapper p-4 w-full flex flex-col gap-3 select-none">
+      <h3 class="text-base font-extrabold text-gray-900 dark:text-white tracking-tight">現在アクティブ</h3>
+      <div class="active-now-container">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
 };
 window.handleDmHeroFriendAction = async function (targetUid, targetNickname) {
   const rel = friendRelationships[targetUid];
@@ -42397,13 +42710,17 @@ function selectRoom(roomId, roomName) {
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   currentPinnedMessages = [];
   renderPinnedMessages();
-  // サーバー画面用: 右サイドバーをメンバー一覧モードに設定
+  // サーバー画面用: 右サイドバーをメンバー一覧モードに設定（DMパネル・現在アクティブを確実に非表示）
   const dmPanel = document.getElementById('dmProfilePanel');
+  const dmActiveNow = document.getElementById('dmActiveNowPanel');
   const membersListEl = document.getElementById('membersList');
   const toggleBtnEl = document.getElementById('toggleMembersSidebarBtn');
+  const toggleIconEl = document.getElementById('toggleMembersSidebarIcon');
   if (dmPanel) dmPanel.classList.add('hidden');
+  if (dmActiveNow) dmActiveNow.classList.add('hidden');
   if (membersListEl) membersListEl.classList.remove('hidden');
   if (toggleBtnEl) toggleBtnEl.title = 'メンバー一覧の表示切替';
+  if (toggleIconEl) toggleIconEl.className = 'fas fa-user-group';
   subscribeToMessages();
   subscribeToPinnedMessages(currentServerId, roomId);
   // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
@@ -54405,7 +54722,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.176",
+  "version": "1.1.178",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -54462,7 +54779,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.176",
+  "version": "1.1.178",
   "force": false
 }
 </file>
