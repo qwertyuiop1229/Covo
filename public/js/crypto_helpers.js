@@ -682,14 +682,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
 
         if (typeof m.text !== "string") return;
-        if (m._decrypted) return;            
-
+        if (m._decrypted && !m._decryptedErrorText && typeof m.text === 'string' && !m.text.startsWith('enc::') && !_isEncrypted(m.text)) return;            
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
         }
         const textToDecrypt = m._originalText || m.text;
-
-        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; } 
+        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
@@ -1177,7 +1175,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch (_) {}
         }
         if (typeof m.text !== "string") return;
-        if (m._decrypted && !m._decryptedErrorText) return;
+        if (m._decrypted && !m._decryptedErrorText && typeof m.text === 'string' && !m.text.startsWith('enc::') && !_isEncrypted(m.text)) return;
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
         }

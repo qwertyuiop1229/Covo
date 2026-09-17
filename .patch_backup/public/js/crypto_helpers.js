@@ -666,11 +666,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
-      if (!_subtleOK || !Array.isArray(messages)) return;
-      await Promise.all(messages.map(async (m) => {
-        if (!m) return;
-        
-        // リプライ引用先テキストが暗号化されていた場合の安全な復号
+          if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
+          // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
+          await _getOrCreateRoomKey(serverId, roomId, memberIds || []).catch(() => null);
+          await Promise.all(messages.map(async (m) => {
+            if (!m) return;
+            // リプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
           try {
             const decReply = await _decryptText(m.replyTo.text, serverId, roomId, memberIds);

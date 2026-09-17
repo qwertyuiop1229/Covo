@@ -16590,24 +16590,10 @@ async function jumpToUnloadedMessage(msgId) {
   setTimeout(() => {
     let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
     if (el2) {
-      el2.scrollIntoView({ behavior: 'auto', block: 'center' });
-      setTimeout(() => {
-        messagesDisplay.style.transition = 'opacity 0.3s ease';
-        messagesDisplay.style.opacity = '1';
-        allowPagination = true;
-        el2.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
-        const isStamp = el2.querySelector('img[alt^="stamp_"]') || el2.querySelector('.sticker-content');
-        if (isStamp) {
-          isStamp.classList.remove('stamp-jump-anim');
-          void isStamp.offsetWidth;
-          isStamp.classList.add('stamp-jump-anim');
-          setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
-        } else {
-          void el2.offsetWidth;
-          el2.classList.add('message-jump-anim', 'message-highlight');
-          setTimeout(() => el2.classList.remove('message-jump-anim', 'message-highlight'), 1200);
-        }
-      }, 50);
+      messagesDisplay.style.transition = 'opacity 0.3s ease';
+      messagesDisplay.style.opacity = '1';
+      allowPagination = true;
+      doJumpHighlight(el2);
     } else {
       alertMessage("ジャンプできませんでした。", "warning");
       messagesDisplay.style.transition = 'opacity 0.3s ease';
@@ -17648,27 +17634,24 @@ async function showUnloadedMessagePreview(msgId) {
 
 
 function doJumpHighlight(el) {
+  if (!el) return;
   const container = document.getElementById("messagesDisplay") || messagesDisplay;
   let didScroll = false;
-
   if (container) {
     const row = el.closest('.message-row') || el;
     const cRect = container.getBoundingClientRect();
     const rRect = row.getBoundingClientRect();
     const containerCenterY = (cRect.top + cRect.bottom) / 2;
     const rowCenterY = (rRect.top + rRect.bottom) / 2;
-
     // 「中央より下にある（画面下半分に完全に収まっている）」場合はスクロールしない
     // 最新メッセージ付近で見えているメッセージの不必要なスクロールを防止
     const isBelowCenterAndVisible = (rowCenterY >= containerCenterY && rRect.bottom <= cRect.bottom && rRect.top >= cRect.top);
-
     // 中央より上にある、または画面外・見切れている場合は、画面の真ん中（center）に来るようにスクロール
     if (!isBelowCenterAndVisible) {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       didScroll = true;
     }
   }
-
   // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
   setTimeout(() => {
     el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
@@ -17677,11 +17660,20 @@ function doJumpHighlight(el) {
       isStamp.classList.remove('stamp-jump-anim');
       void isStamp.offsetWidth;
       isStamp.classList.add('stamp-jump-anim');
-      setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+      setTimeout(() => {
+        isStamp.classList.remove('stamp-jump-anim');
+      }, 600);
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      setTimeout(() => el.classList.remove('message-jump-anim', 'message-highlight'), 1200);
+      // 揺れアニメーション（0.55s）終了後にシェイククラスのみ先に削除（下から浮き上がる再発火を防ぐ）
+      setTimeout(() => {
+        el.classList.remove('message-jump-anim');
+      }, 580);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
+      setTimeout(() => {
+        el.classList.remove('message-highlight');
+      }, 1300);
     }
   }, didScroll ? 350 : 50);
 }
