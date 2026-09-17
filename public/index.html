@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.185" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.186" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.185" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.186" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -236,38 +236,43 @@
       }
     };
     window._earlyErrors = window._earlyErrors || [];
+    window._covoLogs = window._covoLogs || [];
     window.addEventListener('error', function(e) {
-      if (_isIgnoredEarlyError(e.message, e.filename, e.error)) {
-        try { e.preventDefault(); e.stopImmediatePropagation(); } catch (_) {}
-        return;
+      const isExt = _isIgnoredEarlyError(e.message, e.filename, e.error);
+      if (isExt) {
+        try { e.preventDefault(); } catch (_) {}
       }
-      console.error('[Global Error Catcher]', e.message, e.error);
+      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
       const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
       const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
+      const logLine = `[ERR] ${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
+      window._covoLogs.push(logLine);
       if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('error', msg, stack);
+        window._reportTelemetryError('error', `${tag}${msg}`, stack);
       } else {
-        window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
+        window._earlyErrors.push({ type: 'error', message: `${tag}${msg}`, stack: stack, time: Date.now() });
       }
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
         showEmergencyRecoveryPanel(msg, e.error);
       }
     });
     window.addEventListener('unhandledrejection', function(e) {
       const r = e.reason;
-      if (_isIgnoredEarlyError(r?.message || String(r || ''), r?.stack || '', r)) {
-        try { e.preventDefault(); e.stopImmediatePropagation(); } catch (_) {}
-        return;
-      }
-      console.error('[Global Unhandled Rejection]', e.reason);
       const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
       const stack = (r && r.stack) || '';
-      if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('unhandledrejection', msg, stack);
-      } else {
-        window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
+      const isExt = _isIgnoredEarlyError(msg, '', r);
+      if (isExt) {
+        try { e.preventDefault(); } catch (_) {}
       }
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
+      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+      const logLine = `[ERR] ${tag}Uncaught (in promise) ${msg}`;
+      window._covoLogs.push(logLine);
+      if (typeof window._reportTelemetryError === 'function') {
+        window._reportTelemetryError('unhandledrejection', `${tag}Uncaught (in promise) ${msg}`, stack);
+      } else {
+        window._earlyErrors.push({ type: 'unhandledrejection', message: `${tag}Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
+      }
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
         showEmergencyRecoveryPanel(msg, e.reason);
       }
     });
@@ -3453,7 +3458,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.185"></script>
+  <script type="module" src="js/main.js?v=1.1.186"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4629,8 +4634,8 @@
       <!-- スマホ用ボトムシートドラッグハンドル -->
       <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
-      <div id="userProfileBanner" class="h-20 relative z-30 flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
-        <div class="flex items-center gap-1.5 z-40">
+      <div id="userProfileBanner" class="h-20 relative z-10 flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
+        <div class="flex items-center gap-1.5 z-30">
           <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
             <i class="fas fa-user-plus"></i>
           </button>
@@ -4654,8 +4659,8 @@
           </div>
         </div>
       </div>
-      <!-- 2. アバター (バナーに食い込み) -->
-      <div class="px-4 relative flex items-end justify-between -mt-10 mb-2 flex-shrink-0">
+      <!-- 2. アバター (バナーに食い込み: z-20でバナーより前面へ確実に配置) -->
+      <div class="px-4 relative z-20 flex items-end justify-between -mt-10 mb-2 flex-shrink-0">
         <div class="relative group cursor-pointer" onclick="openUserProfileAvatarLightbox()" title="アイコンをクリックして拡大">
           <div id="userProfileAvatar" class="w-20 h-20 rounded-full border-[5px] border-white dark:border-[#232428] shadow-lg bg-gray-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105">
             U

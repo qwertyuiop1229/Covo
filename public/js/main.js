@@ -32,6 +32,7 @@ import {
   persistentSingleTabManager,
   persistentMultipleTabManager,
   memoryLocalCache,
+  setLogLevel,
   doc,
   getDoc,
   setDoc,
@@ -78,7 +79,7 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 
-// テレメトリ送信用のノイズフィルタ（ブラウザ拡張機能や正常キャンセルのみ安全に除外）
+// テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
   try {
     const str = Array.from(args || []).map(a => {
@@ -89,33 +90,13 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-
-    // 1. ブラウザ拡張機能・広告ブロッカーのインジェクションエラーのみ除外
-    if (
-      str.includes('chrome-extension://') ||
-      str.includes('moz-extension://') ||
-      str.includes('safari-extension://') ||
-      str.includes('safari-web-extension://') ||
-      str.includes('content_script.js') ||
-      str.includes('globals-front.js') ||
-      str.includes('adblock-picreplacement.js') ||
-      str.includes('extension context invalidated') ||
-      str.includes('tracking prevention')
-    ) {
-      return true;
-    }
-    // 2. ブラウザ標準の無害なリサイズループ警告
-    if (str.includes('resizeobserver loop')) {
-      return true;
-    }
-    // 3. 認証ポップアップの正常なユーザー自身によるキャンセル動作
+    // 認証ポップアップのユーザー自身による手動キャンセルのみ除外（エラー以外の正常動作）
     if (
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request')
     ) {
       return true;
     }
-    // 重要な実行時エラー（failed to fetch, permission_denied, TypeError等）はすべて収集
     return false;
   } catch (_) {
     return false;
@@ -149,7 +130,7 @@ function _reportTelemetryError(type, message, stack) {
     const signature = _createErrorSignature(type, msgStr, stack);
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 1500) return; // 1.5秒間ローカル重複排除
+    const isRapidDuplicate = (now - lastReported < 800);
     _reportedSignaturesRecently.set(signature, now);
 
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
@@ -284,73 +265,54 @@ if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
-window.addEventListener('error', (event) => {
-  const isExtension = event.filename && (
-    event.filename.includes('chrome-extension:') ||
-    event.filename.includes('moz-extension:') ||
-    event.filename.includes('safari-extension:') ||
-    event.filename.includes('safari-web-extension:') ||
-    event.filename.includes('content.js') ||
-    event.filename.includes('globals-front.js') ||
-    event.filename.includes('adblock')
+function _isExtensionScriptError(msg, file, stack) {
+  const s = `${msg || ''} ${file || ''} ${stack || ''}`.toLowerCase();
+  return (
+    s.includes('content.js') ||
+    s.includes('globals-front.js') ||
+    s.includes('adblock') ||
+    s.includes('usecache') ||
+    s.includes('receiving end does not exist') ||
+    s.includes('could not establish connection') ||
+    s.includes('chrome-extension:') ||
+    s.includes('moz-extension:') ||
+    s.includes('safari-extension:') ||
+    s.includes('safari-web-extension:')
   );
-  if (isExtension) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
+}
+
+window.addEventListener('error', (event) => {
+  const msg = event.error ? (event.error.message || String(event.error)) : (event.message || 'Error');
+  const stack = (event.error && event.error.stack) || `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`;
+  const isExt = _isExtensionScriptError(msg, event.filename, stack);
+  // 拡張機能による未処理エラーはブラウザコンソール（F12）の赤文字出力を消音
+  if (isExt) {
+    try { event.preventDefault(); } catch (_) {}
   }
-  if (isTransientTelemetryError([event.error, event.message, event.filename])) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (event.error) {
-    _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
-  } else if (event.message) {
-    _reportTelemetryError('error', event.message, `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`);
-  }
+  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+  const displayLine = event.filename ? `${tag}${msg} (${event.filename}:${event.lineno || 0})` : `${tag}${msg}`;
+  _pushLog('ERR', [displayLine]);
+  _reportTelemetryError('error', `${tag}${msg}`, stack);
 });
+
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  const isExtension = reason && (
-    (typeof reason.stack === 'string' && (
-      reason.stack.includes('chrome-extension:') ||
-      reason.stack.includes('moz-extension:') ||
-      reason.stack.includes('safari-extension:') ||
-      reason.stack.includes('safari-web-extension:') ||
-      reason.stack.includes('content.js') ||
-      reason.stack.includes('globals-front.js') ||
-      reason.stack.includes('adblock')
-    )) ||
-    (typeof reason.message === 'string' && (
-      reason.message.includes('chrome-extension:') ||
-      reason.message.includes('moz-extension:') ||
-      reason.message.includes('safari-extension:') ||
-      reason.message.includes('safari-web-extension:') ||
-      reason.message.includes('usecache') ||
-      reason.message.includes('receiving end does not exist') ||
-      reason.message.includes('could not establish connection') ||
-      reason.message.includes('a listener indicated an asynchronous response') ||
-      reason.message.includes('message channel closed')
-    ))
-  );
-  if (isExtension) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
+  const msg = reason instanceof Error ? (reason.message || reason.stack) : String(reason || 'Unhandled Promise Rejection');
+  const stack = (reason instanceof Error && reason.stack) ? reason.stack : '';
+  const isExt = _isExtensionScriptError(msg, '', stack);
+  // 拡張機能によるPromise拒否エラーをブラウザコンソール（F12）で消音
+  if (isExt) {
+    try { event.preventDefault(); } catch (_) {}
   }
-  if (isTransientTelemetryError([reason])) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (reason instanceof Error) {
-    _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
-  } else {
-    _reportTelemetryError('unhandledrejection', String(reason || 'Unhandled Promise Rejection'), '');
-  }
+  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+  const displayLine = `${tag}Uncaught (in promise) ${msg}`;
+  _pushLog('ERR', [displayLine]);
+  _reportTelemetryError('unhandledrejection', displayLine, stack);
 });
 
 const _pushLog = (type, args) => {
   try {
     if (isTransientTelemetryError(args)) return;
-
     const msg = Array.from(args || []).map(a => {
       if (a instanceof Error) return a.stack || a.message;
       if (typeof a === 'object') {
@@ -358,35 +320,44 @@ const _pushLog = (type, args) => {
       }
       return String(a);
     }).join(' ');
-
-    // 拡張機能による不要なノイズのみアプリ内ログから除外
-    if (msg.includes('chrome-extension://') || msg.includes('moz-extension://') || msg.includes('safari-extension://')) return;
-
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
-    if (window._covoLogs.length > 250) window._covoLogs.shift();
+    if (window._covoLogs.length > 300) window._covoLogs.shift();
+    // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
     const panel = document.getElementById('devConsolePanel');
     if (panel && panel.style.display === 'flex') {
       if (typeof __appendConsoleLine === 'function') {
         __appendConsoleLine(line);
       }
     }
+    // 診断コンソール (#reportsConsoleStreamBody) が開いている場合も即時行追加＆オートスクロール
+    const reportsStreamBody = document.getElementById('reportsConsoleStreamBody');
+    if (reportsStreamBody && reportsStreamBody.offsetParent !== null) {
+      const lineDiv = document.createElement('div');
+      let colorClass = "text-gray-300";
+      if (line.startsWith("[ERR]")) colorClass = "text-rose-400";
+      else if (line.startsWith("[WARN]")) colorClass = "text-amber-400";
+      else if (line.startsWith("[INFO]")) colorClass = "text-blue-300";
+      lineDiv.className = colorClass;
+      lineDiv.textContent = line;
+      if (reportsStreamBody.querySelector('.text-gray-500')) {
+        reportsStreamBody.innerHTML = '';
+      }
+      reportsStreamBody.appendChild(lineDiv);
+      reportsStreamBody.scrollTop = reportsStreamBody.scrollHeight;
+    }
   } catch (e) { }
 };
-
 // コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に出力）
 console.log = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('INFO', args);
   _orgLog.apply(console, args);
 };
 console.warn = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('WARN', args);
   _orgWarn.apply(console, args);
 };
 console.error = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('ERR', args);
   try {
     const errObj = args.find(a => a instanceof Error);
@@ -878,6 +849,8 @@ window.clearMessagesDOM = clearMessagesDOM;
 function initializeFirebase() {
   try {
     if (!app) {
+      // Firestore SDK内部の非致命的警告ログ（BloomFilter error等）を消音
+      try { setLogLevel('error'); } catch (_) {}
       app = initializeApp(firebaseConfig);
       try {
         db = initializeFirestore(app, {

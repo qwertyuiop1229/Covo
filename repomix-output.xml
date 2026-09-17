@@ -2382,584 +2382,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-let _dbInstance = null;
-let _dbInitPromise = null;
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
-  if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        _dbInstance.close();
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-    req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
-      resolve(null);
-    };
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-    };
-  });
-  return _dbInitPromise;
-}
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-function _extractMsgTimestamp(obj) {
-  if (!obj) return Date.now();
-  const ts = obj.timestamp ?? obj.createdAt;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = new Date(ts).getTime();
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (ts && typeof ts === 'object') {
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
-    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
-  }
-  return Date.now();
-}
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
-        resolve([]);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
-      resolve([]);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend || !friend.uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put(friend);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (f && f.uid) store.put(f);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-/**
- * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
- * @returns {Promise<boolean>}
- */
-export async function clearAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return false;
-  return new Promise((resolve) => {
-    try {
-      const stores = ["messages", "channels", "friends", "settings"];
-      const tx = db.transaction(stores, "readwrite");
-      for (const storeName of stores) {
-        if (db.objectStoreNames.contains(storeName)) {
-          tx.objectStore(storeName).clear();
-        }
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] clearAllLocalData exception:", e);
-      resolve(false);
-    }
-  });
-}
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData,
-    clearAllLocalData
-  };
-}
-</file>
-
 <file path="public/js/utils.js">
 /**
  * ユーティリティ関数群 (utils.js)
@@ -9036,6 +8458,592 @@ exit
       height: 14px;
       pointer-events: none;
     }
+</file>
+
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+let _dbInstance = null;
+let _dbInitPromise = null;
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) return _dbInstance;
+  if (_dbInitPromise) return _dbInitPromise;
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
+      }
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        _dbInstance.close();
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+    req.onerror = () => {
+      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      resolve(null);
+    };
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+    };
+  });
+  return _dbInitPromise;
+}
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
+      if (cleanMsg._originalText) {
+        cleanMsg.text = cleanMsg._originalText;
+      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] putMessage failed:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
+        if (cleanMsg._originalText) {
+          cleanMsg.text = cleanMsg._originalText;
+        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        console.warn("[LocalStore] getMessages failed:", req.error);
+        resolve([]);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] getMessages exception:", e);
+      resolve([]);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend || !friend.uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put(friend);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (f && f.uid) store.put(f);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
+  }
+}
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData,
+    clearAllLocalData
+  };
+}
 </file>
 
 <file path="public/js/ui_helpers.js">
@@ -20377,6 +20385,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m.text = decrypted;
             m._decryptedErrorText = null;
             m._decrypted = true;
+            if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              LocalStore.putMessage(m).catch(() => {});
+            }
           }
         } catch (e) {
           m.text = "（復号化エラー：メッセージを解読できません）";
@@ -20857,574 +20868,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
       }));
     }
-</file>
-
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // ========================================================================
-    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
-    // ========================================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // アプリ全体管理者 (Super Admin / Global Admin)
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    // サーバーオーナー (Server Owner: サーバー作成者)
-    function isServerOwner(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          (
-            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-          )
-        );
-    }
-
-    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          isServerOwner(appId, serverId) ||
-          (
-            'serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
-          )
-        );
-    }
-
-    // サーバー参加メンバー (Server Member)
-    function isJoinedServer(appId, serverId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-        (
-          isGlobalAdmin(appId) ||
-          (
-            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-          ) ||
-          (
-            'joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
-          )
-        );
-    }
-
-    // ========================================================================
-    // 📁 各コレクションのセキュリティルール
-    // ========================================================================
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
-      match /settings/{docId} {
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リスト (Allowed Emails)
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000 &&
-          (!('category' in request.resource.data) ||
-           request.resource.data.category in ['bug', 'feature', 'other']);
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
-      match /error_reports/{docId} {
-        allow create, update: if
-          request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read: if isAuthenticated();
-        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫
-      match /recovery_vault/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        // 🔒 書き込みは本人のみ。管理者でも他人のリカバリー情報を書き込めない（単一障害点対策）
-        allow write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
-      }
-
-      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // モデレーション監査ログ (Audit Logs)
-      match /audit_logs/{logId} {
-        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
-        allow create: if isAuthenticated();
-        allow update, delete: if false; // 監査ログは改ざん・削除不可
-      }
-
-      // 招待コードインデックス (逆引き)
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報 (Users & Profiles)
-      match /users/{userId} {
-        allow get, list: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // フレンド関係性 (Relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-        allow write: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル
-      match /dm_channels/{dmId} {
-        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
-        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-
-        match /keys/{keyUserId} {
-          allow get, list: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             request.auth.uid == keyUserId ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-          allow write: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-        }
-      }
-
-      // 端末間データ移行 (P2P Device Transfers)
-      match /device_transfers/{sessionCode} {
-        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        match /{subcollection}/{docId} {
-          allow get, list, write: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('uid' in get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // P2P 過去ログ分散補完 (P2P Log Sync)
-      match /p2p_log_sync/{syncId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.requesterUid == request.auth.uid &&
-            // serverId が指定されている場合はメンバーシップを確認
-            (!('serverId' in request.resource.data) ||
-             isJoinedServer(appId, request.resource.data.serverId))));
-        allow update: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
-             ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)) &&
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
-        match /{subcollection}/{docId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid) ||
-              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid)
-            );
-        }
-      }
-
-      // 3. グローバルオンライン状態 (Status)
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // 4. P2P音声通話シグナリング (Calls)
-      match /calls/{callId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ((('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
-              ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
-              ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)) &&
-             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-            request.resource.data.caller.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid) ||
-              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
-              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング (File Shares)
-      match /fileshares/{shareId} {
-        allow get, list, delete: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
-          );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            ((('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
-              ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)) &&
-             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-            request.resource.data.sender.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow get, list, create, delete: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) &&
-            (
-              isGlobalAdmin(appId) ||
-              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid) ||
-              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
-               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
-               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
-            );
-        }
-      }
-
-      // ========================================================================
-      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
-      // ========================================================================
-
-      match /servers/{serverId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && (
-            ('joinedUsers' in resource.data && request.auth.uid in resource.data.joinedUsers) ||
-            ('createdBy' in resource.data && request.auth.uid == resource.data.createdBy)
-          ));
-
-        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.serverAdmins == [request.auth.uid] &&
-            request.resource.data.joinedUsers == [request.auth.uid]));
-
-        // サーバー設定の更新:
-        // 1) サーバーオーナーまたは全体管理者: createdBy は変更不可
-        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
-        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
-
-        allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
-
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
-
-        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
-        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-
-        // サーバー内の秘密情報 (パスワードハッシュ等)
-        match /secrets/{docId} {
-          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧 (Channels / Rooms)
-        match /rooms/{roomId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId);
-          // ルーム更新: 管理者/モデレーターは設定変更（channelTypeを含む）、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
-          allow update: if isServerAdmin(appId, serverId) || (
-            isJoinedServer(appId, serverId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
-          );
-          allow delete: if isServerAdmin(appId, serverId);
-
-          // ルーム内メッセージ (Messages)
-          match /messages/{messageId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId) &&
-              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
-
-            // メッセージ更新:
-            // 1. リアクション追加・削除: 参加メンバー全員可能（自分のUIDキーのみ）
-            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
-            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
-            // 4. 全体管理者によるモデレーション更新
-            allow update: if isJoinedServer(appId, serverId) && (
-              // リアクション: 自分のUIDキーのみ書き込み可能
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
-               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
-              || isGlobalAdmin(appId)
-            );
-
-            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
-            allow delete: if isJoinedServer(appId, serverId) && (
-              resource.data.senderId == request.auth.uid ||
-              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
-              isServerAdmin(appId, serverId) ||
-              isServerOwner(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-          }
-
-          // 既読レシート (Read Receipts)
-          match /readReceipts/{receiptUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
-            allow delete: if isJoinedServer(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム暗号鍵 (Room Keys)
-          match /roomKeys/{keyId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create: if isJoinedServer(appId, serverId);
-            allow update, delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          }
-
-          // E2EE 救済リクエスト (Rescue Requests)
-          match /rescueRequests/{reqUserId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
-            allow delete: if isJoinedServer(appId, serverId);
-          }
-
-          // タイピングインジケーター (Typing)
-          match /typing/{userId} {
-            allow read: if isJoinedServer(appId, serverId);
-            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
-          }
-        }
-
-        // サーバー別プロフィール (Profiles)
-        match /profiles/{profileUserId} {
-          allow read: if isJoinedServer(appId, serverId);
-          allow create, update: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
-          allow delete: if isJoinedServer(appId, serverId) &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ (Stamps)
-        match /stamps/{stampId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string &&
-            request.resource.data.name.size() > 0 &&
-            request.resource.data.name.size() <= 32 &&
-            request.resource.data.url is string &&
-            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // スタンプグループ (Stamp Groups)
-        match /stampGroups/{groupId} {
-          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
-          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string;
-          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
-            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
-        }
-
-        // 招待コード (Invite Codes)
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-
-      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
-      match /vc_signaling/{sigDocId} {
-        allow read: if isAuthenticated() && (
-          resource == null ||
-          resource.data.toUid == request.auth.uid ||
-          resource.data.fromUid == request.auth.uid
-        );
-        allow create, update: if isAuthenticated() &&
-          request.resource.data.fromUid == request.auth.uid &&
-          request.resource.data.toUid is string;
-        allow delete: if isAuthenticated() && (
-          resource.data.toUid == request.auth.uid ||
-          resource.data.fromUid == request.auth.uid
-        );
-      }
-    }
-
-    // ルート直下 VC シグナリング (フォールバック用)
-    match /vc_signaling/{sigDocId} {
-      allow read: if isAuthenticated() && (
-        resource == null ||
-        resource.data.toUid == request.auth.uid ||
-        resource.data.fromUid == request.auth.uid
-      );
-      allow create, update: if isAuthenticated() &&
-        request.resource.data.fromUid == request.auth.uid &&
-        request.resource.data.toUid is string;
-      allow delete: if isAuthenticated() && (
-        resource.data.toUid == request.auth.uid ||
-        resource.data.fromUid == request.auth.uid
-      );
-    }
-
-  }
-}
 </file>
 
 <file path="public/css/modules/chat.css">
@@ -23793,6 +23236,578 @@ service cloud.firestore {
     }
 </file>
 
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & 厳格なロール判定 (Discord標準準拠)
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // アプリ全体管理者 (Super Admin / Global Admin)
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    // ログイン許可リスト管理者 (List Admin: 招待リスト編集権限のみ)
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    // サーバーオーナー (Server Owner: サーバー作成者)
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          )
+        );
+    }
+
+    // サーバー管理者 / モデレーター (Server Admin: サーバーモデレーション権限)
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          isServerOwner(appId, serverId) ||
+          (
+            'serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins
+          )
+        );
+    }
+
+    // サーバー参加メンバー (Server Member)
+    function isJoinedServer(appId, serverId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+        (
+          isGlobalAdmin(appId) ||
+          (
+            'createdBy' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+          ) ||
+          (
+            'joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers
+          )
+        );
+    }
+
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定 (Settings) - 全体管理者のみ変更可能
+      match /settings/{docId} {
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リスト (Allowed Emails)
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000 &&
+          (!('category' in request.resource.data) ||
+           request.resource.data.category in ['bug', 'feature', 'other']);
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ（未認証・起動時エラーも含めて全クライアントから確実に収集）
+      match /error_reports/{docId} {
+        allow create, update: if
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read: if isAuthenticated();
+        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫
+      match /recovery_vault/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        // 🔒 書き込みは本人のみ。管理者でも他人のリカバリー情報を書き込めない（単一障害点対策）
+        allow write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+      }
+
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false; // 監査ログは改ざん・削除不可
+      }
+
+      // 招待コードインデックス (逆引き)
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報 (Users & Profiles)
+      match /users/{userId} {
+        allow get, list: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き、全体管理者でも他人の秘密鍵は保護)
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // フレンド関係性 (Relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow get, list: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+
+        match /keys/{keyUserId} {
+          allow get, list: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             request.auth.uid == keyUserId ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+          allow write: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+        }
+      }
+
+      // 端末間データ移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow get, list: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        match /{subcollection}/{docId} {
+          allow get, list, write: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('uid' in get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // P2P 過去ログ分散補完 (P2P Log Sync)
+      match /p2p_log_sync/{syncId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+            ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.requesterUid == request.auth.uid &&
+            // serverId が指定されている場合はメンバーシップを確認
+            (!('serverId' in request.resource.data) ||
+             isJoinedServer(appId, request.resource.data.serverId)) &&
+            // dmId が指定されている場合は当事者間（requesterUid と targetUid）の組み合わせであることを検証
+            (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
+             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
+        allow update: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||
+             ('requesterUid' in resource.data && resource.data.requesterUid == request.auth.uid)) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId'])));
+        match /{subcollection}/{docId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('targetUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.targetUid == request.auth.uid) ||
+              ('requesterUid' in get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data.requesterUid == request.auth.uid)
+            );
+        }
+      }
+
+      // 3. グローバルオンライン状態 (Status)
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // 4. P2P音声通話シグナリング (Calls)
+      match /calls/{callId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+            ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+            ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ((('calleeUid' in resource.data && resource.data.calleeUid == request.auth.uid) ||
+              ('caller' in resource.data && 'uid' in resource.data.caller && resource.data.caller.uid == request.auth.uid) ||
+              ('callee' in resource.data && 'uid' in resource.data.callee && resource.data.callee.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid']))
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('calleeUid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.calleeUid == request.auth.uid) ||
+              ('caller' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.caller.uid == request.auth.uid) ||
+              ('callee' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data.callee.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング (File Shares)
+      match /fileshares/{shareId} {
+        allow get, list, delete: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+            ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)
+          );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            ((('receiverUid' in resource.data && resource.data.receiverUid == request.auth.uid) ||
+              ('sender' in resource.data && 'uid' in resource.data.sender && resource.data.sender.uid == request.auth.uid)) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid']))
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow get, list, create, delete: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)) &&
+            (
+              isGlobalAdmin(appId) ||
+              ('receiverUid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.receiverUid == request.auth.uid) ||
+              ('sender' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data &&
+               'uid' in get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender &&
+               get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data.sender.uid == request.auth.uid)
+            );
+        }
+      }
+
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
+
+      match /servers/{serverId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && (
+            ('joinedUsers' in resource.data && request.auth.uid in resource.data.joinedUsers) ||
+            ('createdBy' in resource.data && request.auth.uid == resource.data.createdBy)
+          ));
+
+        // サーバー作成: 一般ユーザーは自分自身のみ管理者・初期参加者として作成可能。全体管理者は自由
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
+
+        // サーバー設定の更新:
+        // 1) サーバーオーナーまたは全体管理者: createdBy は変更不可
+        // 2) サーバー管理者 (モデレーター): サーバー名やカテゴリーなどを更新できるが、オーナー (createdBy) の改ざんやオーナー解任は不可
+        // 3) 一般メンバーによる退出: 自分自身のUIDのみ joinedUsers/serverAdmins から削除する操作のみ許可
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
+
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
+
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
+
+        // サーバー削除: Discord標準に準拠し、サーバーオーナー (createdBy) または全体管理者のみ可能！
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+
+        // サーバー内の秘密情報 (パスワードハッシュ等)
+        match /secrets/{docId} {
+          allow read: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow create, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧 (Channels / Rooms)
+        match /rooms/{roomId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId);
+          // ルーム更新: 管理者/モデレーターは設定変更（channelTypeを含む）、一般メンバーはメッセージ投稿に伴う最終メッセージ情報や暗号鍵メタデータのみ更新可能
+          allow update: if isServerAdmin(appId, serverId) || (
+            isJoinedServer(appId, serverId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+          );
+          allow delete: if isServerAdmin(appId, serverId);
+
+          // ルーム内メッセージ (Messages)
+          match /messages/{messageId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId) &&
+              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
+
+            // メッセージ更新:
+            // 1. リアクション追加・削除: 参加メンバー全員可能（自分のUIDキーのみ）
+            // 2. ピン留め切り替え: 送信者本人 または サーバー管理者 / 全体管理者
+            // 3. メッセージ本文編集: 送信者本人のみ (senderId, createdAt, timestamp は改ざん不可)
+            // 4. 全体管理者によるモデレーション更新
+            allow update: if isJoinedServer(appId, serverId) && (
+              // リアクション: 自分のUIDキーのみ書き込み可能
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
+              || isGlobalAdmin(appId)
+            );
+
+            // メッセージ削除: 送信者本人、サーバー管理者、サーバーオーナー、または全体管理者（モデレーション削除対応）
+            allow delete: if isJoinedServer(appId, serverId) && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+          }
+
+          // 既読レシート (Read Receipts)
+          match /readReceipts/{receiptUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow delete: if isJoinedServer(appId, serverId) &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム暗号鍵 (Room Keys)
+          match /roomKeys/{keyId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create: if isJoinedServer(appId, serverId);
+            allow update, delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          }
+
+          // E2EE 救済リクエスト (Rescue Requests)
+          match /rescueRequests/{reqUserId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow create, update: if isJoinedServer(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
+            allow delete: if isJoinedServer(appId, serverId);
+          }
+
+          // タイピングインジケーター (Typing)
+          match /typing/{userId} {
+            allow read: if isJoinedServer(appId, serverId);
+            allow write: if isJoinedServer(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
+          }
+        }
+
+        // サーバー別プロフィール (Profiles)
+        match /profiles/{profileUserId} {
+          allow read: if isJoinedServer(appId, serverId);
+          allow create, update: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
+          allow delete: if isJoinedServer(appId, serverId) &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ (Stamps)
+        match /stamps/{stampId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 &&
+            request.resource.data.name.size() <= 32 &&
+            request.resource.data.url is string &&
+            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // スタンプグループ (Stamp Groups)
+        match /stampGroups/{groupId} {
+          allow read: if isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId);
+          allow create: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string;
+          allow delete, update: if (isJoinedServer(appId, serverId) || isServerAdmin(appId, serverId)) &&
+            (isServerAdmin(appId, serverId) || isGlobalAdmin(appId));
+        }
+
+        // 招待コード (Invite Codes)
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read: if isAuthenticated() && (
+          resource == null ||
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.fromUid == request.auth.uid &&
+          request.resource.data.toUid is string;
+        allow delete: if isAuthenticated() && (
+          resource.data.toUid == request.auth.uid ||
+          resource.data.fromUid == request.auth.uid
+        );
+      }
+    }
+
+    // ルート直下 VC シグナリング (フォールバック用)
+    match /vc_signaling/{sigDocId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.fromUid == request.auth.uid &&
+        request.resource.data.toUid is string;
+      allow delete: if isAuthenticated() && (
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+    }
+
+  }
+}
+</file>
+
 <file path="database.rules.json">
 {
   "rules": {
@@ -24149,6 +24164,13 @@ service cloud.firestore {
 </file>
 
 <file path="server/src/index.js">
+// 🔒 セキュリティ: appId および ID パラメータの厳格な検証関数
+function isValidAppId(appId, env) {
+  if (!appId || typeof appId !== 'string') return false;
+  if (!/^[a-zA-Z0-9_\-]+$/.test(appId)) return false;
+  if (env && env.FIREBASE_APP_ID && appId !== env.FIREBASE_APP_ID) return false;
+  return true;
+}
 // 🔒 許可するオリジン判定関数（本番・プレビュー・Tauri・ローカル開発を網羅）
 function isAllowedOrigin(origin) {
   if (!origin) return false;
@@ -24304,6 +24326,9 @@ async function handleEmergencyPasswordReset(request, env) {
     const { email, code, newPassword, appId } = await request.json();
     if (!email || !code || !newPassword || !appId) {
       return new Response(JSON.stringify({ success: false, error: "必須項目が不足しています" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ success: false, error: "不正なappIdが指定されました" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (newPassword.length < 6) {
       return new Response(JSON.stringify({ success: false, error: "新しいパスワードは6文字以上で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
@@ -24576,6 +24601,9 @@ async function handleJoinServer(request, env) {
     if (!serverId || !userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(serverId) || !/^[a-zA-Z0-9_\-]+$/.test(userId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
@@ -24795,6 +24823,9 @@ async function handleSyncRtdb(request, env) {
     if (!serverId || !userId || !appId || !idToken || !rtdbUrl) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(serverId) || !/^[a-zA-Z0-9_\-]+$/.test(userId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
@@ -24968,6 +24999,9 @@ async function handleSendCallNotification(request, env) {
     if (!calleeId || !callId || !appId || !callerId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== callerId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
@@ -25098,6 +25132,9 @@ async function handleSendNotification(request, env) {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
+    }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid appId" }), { status: 400, headers: dynamicCors });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== senderId) {
@@ -25412,8 +25449,13 @@ async function handleUploadFile(request, env) {
     const key = crypto.randomUUID().replace(/-/g, '');
     const folder = formData.get('folder') || '';
     const serverId = formData.get('serverId') || '';
-    if (folder && folder.includes('..')) {
+    if (folder && (folder.includes('..') || !/^[a-zA-Z0-9_\-\/]+$/.test(folder))) {
       return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
+      });
+    }
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ error: '不正なサーバー識別子です' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
@@ -25553,8 +25595,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId、またはmeta.serverIdが未設定・空文字のレガシー添付ファイル）を確認
-        if (serverId && meta && (!meta.serverId || meta.serverId === serverId)) {
+        // 🔒 サーバー管理者の場合: 削除対象ファイルが確実に該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認 (IDOR防止)
+        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
@@ -26021,8 +26063,25 @@ async function handleAdminDeleteMessage(request, env) {
     }
     // --- サーバーメッセージの削除処理 ---
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+    let isOwner = false;
     if (!isGlobal && !isSvAdmin) {
-      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      // 🔒 一般メンバーでも自分が送信したメッセージであれば削除を許可する（クライアント直接削除失敗時の安全なフォールバック）
+      const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+      const msgCheckRes = await fetch(msgCheckUrl);
+      const msgCheckData = await msgCheckRes.json().catch(() => null);
+      if (msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid)) {
+        isOwner = true;
+      } else {
+        const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
+        const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+        const fsCheckData = await fsCheckRes.json().catch(() => null);
+        if (fsCheckData && fsCheckData.fields && (fsCheckData.fields.senderId?.stringValue === verifiedUser.uid || fsCheckData.fields.userId?.stringValue === verifiedUser.uid)) {
+          isOwner = true;
+        }
+      }
+      if (!isOwner) {
+        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      }
     }
     if (env.DB) {
       try {
@@ -26988,13 +27047,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.184" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.185" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.184" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.185" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -30204,7 +30263,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.184"></script>
+  <script type="module" src="js/main.js?v=1.1.185"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -32510,6 +32569,7 @@ function initializeFirebase() {
             return;
           }
           userId = user.uid;
+          window.userId = user.uid;
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
@@ -43491,26 +43551,42 @@ function subscribeToMessages() {
   subscribeToMessagesRTDB();
 }
 async function subscribeToMessagesRTDB() {
+  // 🔒 レースコンディション防止: 非同期待機中の部屋移動に備え、対象チャンネル識別子を即座に同期キャプチャ
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const targetServerNickname = currentServerNickname;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
+  const basePath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages` : `artifacts/${appId}/dm_messages/${targetDmId}`;
+  const isStillActive = () => (
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, limitToFirst, orderByChild, startAt, endAt, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  if (!isStillActive()) return;
   const rtdb = await _getOrInitRTDB();
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
-  const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+  if (!isStillActive()) return;
   const messagesRef = ref(rtdb, basePath);
   const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
   // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
   try {
     const localDocs = await LocalStore.getMessages(chId, null, 50);
+    if (!isStillActive()) return;
     if (localDocs && localDocs.length > 0) {
       await decryptInPlace(localDocs);
+      if (!isStillActive()) return;
       allLoadedMessages = [...localDocs];
       allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
@@ -43526,12 +43602,15 @@ async function subscribeToMessagesRTDB() {
   const performDeltaSync = async () => {
     try {
       const snap = await get(q);
+      if (!isStillActive()) return;
       if (snap.exists()) {
         const d = snap.val();
         const rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
         rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         await LocalStore.upsertMessagesBatch(rtdbDocs);
+        if (!isStillActive()) return;
         await decryptInPlace(rtdbDocs);
+        if (!isStillActive()) return;
         // ローカル過去ログを破壊せず安全にマージ
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -43574,6 +43653,7 @@ async function subscribeToMessagesRTDB() {
     updateReadReceiptForCurrentUser();
   };
   const handleAdded = async (snapshot) => {
+    if (!isStillActive()) return;
     const data = snapshot.val();
     if (!data) return;
     data.id = snapshot.key;
@@ -43584,13 +43664,16 @@ async function subscribeToMessagesRTDB() {
       buffer.push(data);
       if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
       initialLoadTimeout = setTimeout(() => {
+        if (!isStillActive()) return;
         isInitialPhase = false;
         isInitialMessageLoad = true;
         processBuffer().then(() => {
+          if (!isStillActive()) return;
           messagesDisplay.scrollTop = 0;
           requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
           isInitialMessageLoad = false;
           setTimeout(() => {
+            if (!isStillActive()) return;
             allowPagination = true;
             if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
               loadOlderMessages();
@@ -43604,11 +43687,11 @@ async function subscribeToMessagesRTDB() {
       let bodyText = data.text;
       try {
         if (isEncrypted(bodyText)) {
-          if (currentServerId) {
-            const _members = (currentServerData && currentServerData.joinedUsers) || [];
-            bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
-          } else if (currentDmId) {
-            const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 1500);
+          if (targetServerId) {
+            const _members = (targetServerData && targetServerData.joinedUsers) || [];
+            bodyText = await decryptText(bodyText, targetServerId, targetRoomId, _members);
+          } else if (targetDmId) {
+            const dmKey = await _getDmKeyWithWait(targetDmId, targetDmParticipants, 1500);
             bodyText = await _decryptDmText(bodyText, dmKey);
           }
         }
@@ -43618,24 +43701,25 @@ async function subscribeToMessagesRTDB() {
       if (isMentioned && document.hasFocus()) {
         showMentionToast(data.senderNickname || "ユーザー");
       }
-      const sName = currentServerId ? (currentServerData?.name || 'Covo') : 'ダイレクトメッセージ';
-      const rName = currentServerId ? (roomNames[currentRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
+      const sName = targetServerId ? (targetServerData?.name || 'Covo') : 'ダイレクトメッセージ';
+      const rName = targetServerId ? (roomNames[targetRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
       notifyNewMessage({
         messageId: data.id,
-        channelId: currentRoomId || currentDmId,
+        channelId: targetRoomId || targetDmId,
         serverName: sName,
         channelName: rName,
         senderName: data.senderNickname || 'ユーザー',
         text: cleanBody,
         sticker: data.sticker,
-        serverId: currentServerId,
-        serverData: currentServerData,
-        isDm: Boolean(currentDmId),
+        serverId: targetServerId,
+        serverData: targetServerData,
+        isDm: Boolean(targetDmId),
         targetUid: currentDmParticipant?.uid || null,
         targetAvatarUrl: currentDmParticipant?.avatarUrl || null
       });
     }
     await decryptInPlace([data]);
+    if (!isStillActive()) return;
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) allLoadedMessages[idx] = data;
     else allLoadedMessages.push(data);
@@ -43649,12 +43733,14 @@ async function subscribeToMessagesRTDB() {
     updateReadReceiptForCurrentUser();
   };
   const handleChanged = async (snapshot) => {
+    if (!isStillActive()) return;
     const data = snapshot.val();
     if (!data) return;
     data.id = snapshot.key;
     data.channelId = chId;
     LocalStore.putMessage(data).catch(() => {});
     await decryptInPlace([data]);
+    if (!isStillActive()) return;
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) {
       allLoadedMessages[idx] = data;
@@ -43669,6 +43755,7 @@ async function subscribeToMessagesRTDB() {
     renderMessagesWithReadReceipts();
   };
   const handleRemoved = async (snapshot) => {
+    if (!isStillActive()) return;
     const key = snapshot.key;
     if (!key) return;
     try {
@@ -43677,6 +43764,7 @@ async function subscribeToMessagesRTDB() {
       const checkSnap = await get(checkRef);
       if (!checkSnap.exists()) {
         LocalStore.deleteMessage(key).catch(() => {});
+        if (!isStillActive()) return;
         allLoadedMessages = allLoadedMessages.filter(m => m.id !== key);
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
@@ -44612,13 +44700,22 @@ class MessageRateLimiter {
 const _covoRateLimiter = new MessageRateLimiter();
 async function sendSticker(emoji) {
   if (!currentRoomId && !currentDmId) return;
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  // 宛先状態のスナップショット（非同期処理中の別部屋遷移による誤送信・上書きを100%防止）
+  const snapDmId = currentDmId;
+  const snapRoomId = currentRoomId;
+  const snapServerId = currentServerId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+  const snapServerData = currentServerData;
+  const snapServerNickname = currentServerNickname;
+  const snapReplyTo = replyingToMessage;
+  const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(snapServerData?.createdBy === userId);
   const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
   // 1. スローモード（Slowmode）検証
-  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
-    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
-    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+  if (!snapDmId && snapServerId && snapRoomId && !isPrivileged) {
+    const currentRoomData = window.__globalRoomsCache?.[snapServerId]?.[snapRoomId] || (Array.isArray(snapServerData?.rooms) ? snapServerData.rooms.find(r => r.id === snapRoomId) : null);
+    const slowmodeSec = currentRoomData?.slowmodeSeconds || 0;
     if (slowmodeSec > 0) {
       const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
       if (elapsedSec < slowmodeSec) {
@@ -44650,32 +44747,32 @@ async function sendSticker(emoji) {
     const data = { 
       sticker: emoji, 
       senderId: userId, 
-      senderNickname: currentServerNickname || userNickname || 'ユーザー', 
+      senderNickname: snapServerNickname || userNickname || 'ユーザー', 
       senderAvatarUrl: userAvatarUrl || null,
       timestamp: serverTimestamp() 
     };
-    if (replyingToMessage) {
+    if (snapReplyTo) {
       data.replyTo = {
-        messageId: replyingToMessage.id,
-        senderNickname: replyingToMessage.senderNickname,
-        text: replyingToMessage._originalText || replyingToMessage.text || "（ファイル）"
+        messageId: snapReplyTo.id,
+        senderNickname: snapReplyTo.senderNickname,
+        text: snapReplyTo._originalText || snapReplyTo.text || "（ファイル）"
       };
     }
-    if (currentDmId) {
+    if (snapDmId) {
       const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
       const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${newMessageId}`);
+      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
       const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
       await set(rtdbMsgRef, rtdbData);
-      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
-        participants: currentDmParticipants,
+      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
+        participants: snapDmParticipants,
         lastMessageAt: data.timestamp,
         lastMessageSender: userId,
         lastMessageText: 'スタンプ'
       }, { merge: true });
-      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
-      const otherUid = currentDmParticipants.find(id => id !== userId);
+      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${snapDmId}` }).catch(() => {});
+      const otherUid = snapDmParticipants.find(id => id !== userId);
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
@@ -44683,7 +44780,7 @@ async function sendSticker(emoji) {
             receiverIds: [otherUid],
             title: userNickname,
             body: '[スタンプ]',
-            roomId: currentDmId,
+            roomId: snapDmId,
             messageId: newMessageId,
             appId: appId,
             senderId: userId,
@@ -44698,21 +44795,21 @@ async function sendSticker(emoji) {
         } catch (e) { }
       }
     } else {
-      const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+      const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages`), data);
       try {
         const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${replyMsgRef.id}`);
+        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages/${replyMsgRef.id}`);
         const rtdbData = { ...data, id: replyMsgRef.id, timestamp: Date.now() };
         await set(rtdbMsgRef, rtdbData);
-        LocalStore.putMessage({ ...rtdbData, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
+        LocalStore.putMessage({ ...rtdbData, channelId: `${snapServerId}_${snapRoomId}` }).catch(() => {});
       } catch (e) { console.error("RTDB Dual Write Failed in Reply", e); }
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
         lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ'
       });
       // 通知 (Discord 準拠)
       try {
-        const sd = currentServerData;
+        const sd = snapServerData;
         if (sd) {
           const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
           if (receiverIds.length > 0) {
@@ -44721,9 +44818,9 @@ async function sendSticker(emoji) {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 receiverIds,
-                title: `${sd.name || 'Covo'} (#${roomNames[currentRoomId] || 'room'})`,
+                title: `${sd.name || 'Covo'} (#${roomNames[snapRoomId] || 'room'})`,
                 body: `${userNickname}: [スタンプ]`,
-                roomId: currentRoomId,
+                roomId: snapRoomId,
                 messageId: replyMsgRef.id,
                 appId,
                 senderId: userId,
@@ -45127,13 +45224,13 @@ async function sendMessage() {
     alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
     return;
   }
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(snapServerData?.createdBy === userId);
   const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
-  // 1. スローモード（Slowmode）検証
-  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
-    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
-    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+  // 1. スローモード（Slowmode）検証 (キャッシュおよびコレクションから正しく解決)
+  if (!snapDmId && snapServerId && snapRoomId && !isPrivileged) {
+    const currentRoomData = window.__globalRoomsCache?.[snapServerId]?.[snapRoomId] || (Array.isArray(snapServerData?.rooms) ? snapServerData.rooms.find(r => r.id === snapRoomId) : null);
+    const slowmodeSec = currentRoomData?.slowmodeSeconds || 0;
     if (slowmodeSec > 0) {
       const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
       if (elapsedSec < slowmodeSec) {
@@ -54368,6 +54465,12 @@ class VoiceEngine {
       this.channelName = channelName;
       this.isActive = true;
       this._directCallConnected = false;
+      if (!userId) {
+        console.warn('[VoiceEngine] ログインセッションが確立されていないため参加できません');
+        this.isActive = false;
+        this._isJoining = false;
+        return;
+      }
       this._myUid = userId;
       this._myNickname = currentServerNickname || userNickname || 'ユーザー';
       this._myAvatar = userAvatarUrl || '';
@@ -56265,7 +56368,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.184",
+  "version": "1.1.185",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -56322,7 +56425,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.184",
+  "version": "1.1.185",
   "force": false
 }
 </file>

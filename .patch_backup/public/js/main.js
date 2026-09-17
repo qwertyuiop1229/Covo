@@ -78,7 +78,7 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
 window._covoLogs = [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 
-// テレメトリ送信用のノイズフィルタ（ブラウザ拡張機能や正常キャンセルのみ安全に除外）
+// テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
   try {
     const str = Array.from(args || []).map(a => {
@@ -89,33 +89,13 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-
-    // 1. ブラウザ拡張機能・広告ブロッカーのインジェクションエラーのみ除外
-    if (
-      str.includes('chrome-extension://') ||
-      str.includes('moz-extension://') ||
-      str.includes('safari-extension://') ||
-      str.includes('safari-web-extension://') ||
-      str.includes('content_script.js') ||
-      str.includes('globals-front.js') ||
-      str.includes('adblock-picreplacement.js') ||
-      str.includes('extension context invalidated') ||
-      str.includes('tracking prevention')
-    ) {
-      return true;
-    }
-    // 2. ブラウザ標準の無害なリサイズループ警告
-    if (str.includes('resizeobserver loop')) {
-      return true;
-    }
-    // 3. 認証ポップアップの正常なユーザー自身によるキャンセル動作
+    // 認証ポップアップのユーザー自身による手動キャンセルのみ除外（エラー以外の正常動作）
     if (
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request')
     ) {
       return true;
     }
-    // 重要な実行時エラー（failed to fetch, permission_denied, TypeError等）はすべて収集
     return false;
   } catch (_) {
     return false;
@@ -149,7 +129,7 @@ function _reportTelemetryError(type, message, stack) {
     const signature = _createErrorSignature(type, msgStr, stack);
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
-    if (now - lastReported < 1500) return; // 1.5秒間ローカル重複排除
+    const isRapidDuplicate = (now - lastReported < 800);
     _reportedSignaturesRecently.set(signature, now);
 
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
@@ -285,72 +265,24 @@ window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
 window.addEventListener('error', (event) => {
-  const isExtension = event.filename && (
-    event.filename.includes('chrome-extension:') ||
-    event.filename.includes('moz-extension:') ||
-    event.filename.includes('safari-extension:') ||
-    event.filename.includes('safari-web-extension:') ||
-    event.filename.includes('content.js') ||
-    event.filename.includes('globals-front.js') ||
-    event.filename.includes('adblock')
-  );
-  if (isExtension) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (isTransientTelemetryError([event.error, event.message, event.filename])) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (event.error) {
-    _reportTelemetryError('error', event.error.message || event.message, event.error.stack || '');
-  } else if (event.message) {
-    _reportTelemetryError('error', event.message, `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`);
-  }
+  const msg = event.error ? (event.error.message || String(event.error)) : (event.message || 'Error');
+  const stack = (event.error && event.error.stack) || `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`;
+  const displayLine = event.filename ? `${msg} (${event.filename}:${event.lineno || 0})` : msg;
+  _pushLog('ERR', [displayLine]);
+  _reportTelemetryError('error', msg, stack);
 });
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  const isExtension = reason && (
-    (typeof reason.stack === 'string' && (
-      reason.stack.includes('chrome-extension:') ||
-      reason.stack.includes('moz-extension:') ||
-      reason.stack.includes('safari-extension:') ||
-      reason.stack.includes('safari-web-extension:') ||
-      reason.stack.includes('content.js') ||
-      reason.stack.includes('globals-front.js') ||
-      reason.stack.includes('adblock')
-    )) ||
-    (typeof reason.message === 'string' && (
-      reason.message.includes('chrome-extension:') ||
-      reason.message.includes('moz-extension:') ||
-      reason.message.includes('safari-extension:') ||
-      reason.message.includes('safari-web-extension:') ||
-      reason.message.includes('usecache') ||
-      reason.message.includes('receiving end does not exist') ||
-      reason.message.includes('could not establish connection') ||
-      reason.message.includes('a listener indicated an asynchronous response') ||
-      reason.message.includes('message channel closed')
-    ))
-  );
-  if (isExtension) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (isTransientTelemetryError([reason])) {
-    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
-    return;
-  }
-  if (reason instanceof Error) {
-    _reportTelemetryError('unhandledrejection', reason.message, reason.stack || '');
-  } else {
-    _reportTelemetryError('unhandledrejection', String(reason || 'Unhandled Promise Rejection'), '');
-  }
+  const msg = reason instanceof Error ? (reason.message || reason.stack) : String(reason || 'Unhandled Promise Rejection');
+  const stack = (reason instanceof Error && reason.stack) ? reason.stack : '';
+  const displayLine = `Uncaught (in promise) ${msg}`;
+  _pushLog('ERR', [displayLine]);
+  _reportTelemetryError('unhandledrejection', displayLine, stack);
 });
 
 const _pushLog = (type, args) => {
   try {
     if (isTransientTelemetryError(args)) return;
-
     const msg = Array.from(args || []).map(a => {
       if (a instanceof Error) return a.stack || a.message;
       if (typeof a === 'object') {
@@ -358,35 +290,44 @@ const _pushLog = (type, args) => {
       }
       return String(a);
     }).join(' ');
-
-    // 拡張機能による不要なノイズのみアプリ内ログから除外
-    if (msg.includes('chrome-extension://') || msg.includes('moz-extension://') || msg.includes('safari-extension://')) return;
-
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
-    if (window._covoLogs.length > 250) window._covoLogs.shift();
+    if (window._covoLogs.length > 300) window._covoLogs.shift();
+    // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
     const panel = document.getElementById('devConsolePanel');
     if (panel && panel.style.display === 'flex') {
       if (typeof __appendConsoleLine === 'function') {
         __appendConsoleLine(line);
       }
     }
+    // 診断コンソール (#reportsConsoleStreamBody) が開いている場合も即時行追加＆オートスクロール
+    const reportsStreamBody = document.getElementById('reportsConsoleStreamBody');
+    if (reportsStreamBody && reportsStreamBody.offsetParent !== null) {
+      const lineDiv = document.createElement('div');
+      let colorClass = "text-gray-300";
+      if (line.startsWith("[ERR]")) colorClass = "text-rose-400";
+      else if (line.startsWith("[WARN]")) colorClass = "text-amber-400";
+      else if (line.startsWith("[INFO]")) colorClass = "text-blue-300";
+      lineDiv.className = colorClass;
+      lineDiv.textContent = line;
+      if (reportsStreamBody.querySelector('.text-gray-500')) {
+        reportsStreamBody.innerHTML = '';
+      }
+      reportsStreamBody.appendChild(lineDiv);
+      reportsStreamBody.scrollTop = reportsStreamBody.scrollHeight;
+    }
   } catch (e) { }
 };
-
 // コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に出力）
 console.log = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('INFO', args);
   _orgLog.apply(console, args);
 };
 console.warn = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('WARN', args);
   _orgWarn.apply(console, args);
 };
 console.error = function (...args) {
-  if (isTransientTelemetryError(args)) return;
   _pushLog('ERR', args);
   try {
     const errObj = args.find(a => a instanceof Error);
@@ -988,6 +929,7 @@ function initializeFirebase() {
             return;
           }
           userId = user.uid;
+          window.userId = user.uid;
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
@@ -13053,51 +12995,67 @@ function subscribeToMessages() {
 }
 
 async function subscribeToMessagesRTDB() {
+  // 🔒 レースコンディション防止: 非同期待機中の部屋移動に備え、対象チャンネル識別子を即座に同期キャプチャ
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const targetServerNickname = currentServerNickname;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
+  const basePath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages` : `artifacts/${appId}/dm_messages/${targetDmId}`;
+  const isStillActive = () => (
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, limitToFirst, orderByChild, startAt, endAt, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+  if (!isStillActive()) return;
   const rtdb = await _getOrInitRTDB();
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
-  const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+  if (!isStillActive()) return;
   const messagesRef = ref(rtdb, basePath);
   const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
-
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
 
   // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
   try {
     const localDocs = await LocalStore.getMessages(chId, null, 50);
+    if (!isStillActive()) return;
     if (localDocs && localDocs.length > 0) {
       await decryptInPlace(localDocs);
+      if (!isStillActive()) return;
       allLoadedMessages = [...localDocs];
       allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
       messagesIndexMap = {};
       lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
       renderPinnedMessages();
       renderMessagesWithReadReceipts();
     }
   } catch (localErr) {
     console.warn('[LocalStore] initial load error:', localErr);
   }
-
   // STEP 2: 通信量極小化 Delta Sync（RTDBとの安全なマージ同期 ＆ メッセージ保持）
   const performDeltaSync = async () => {
     try {
       const snap = await get(q);
+      if (!isStillActive()) return;
       if (snap.exists()) {
         const d = snap.val();
         const rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
         rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         await LocalStore.upsertMessagesBatch(rtdbDocs);
+        if (!isStillActive()) return;
         await decryptInPlace(rtdbDocs);
+        if (!isStillActive()) return;
         // ローカル過去ログを破壊せず安全にマージ
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -13116,7 +13074,6 @@ async function subscribeToMessagesRTDB() {
       console.warn('[RTDB] Delta Sync error:', err);
     }
   };
-
   performDeltaSync();
 
   let initialLoadTimeout = null;
@@ -13144,25 +13101,27 @@ async function subscribeToMessagesRTDB() {
   };
 
   const handleAdded = async (snapshot) => {
+    if (!isStillActive()) return;
     const data = snapshot.val();
     if (!data) return;
     data.id = snapshot.key;
     data.channelId = chId;
-
     // IndexedDB に保存
     LocalStore.putMessage(data).catch(() => {});
-
     if (isInitialPhase) {
       buffer.push(data);
       if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
       initialLoadTimeout = setTimeout(() => {
+        if (!isStillActive()) return;
         isInitialPhase = false;
         isInitialMessageLoad = true;
         processBuffer().then(() => {
+          if (!isStillActive()) return;
           messagesDisplay.scrollTop = 0;
           requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
           isInitialMessageLoad = false;
           setTimeout(() => {
+            if (!isStillActive()) return;
             allowPagination = true;
             if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
               loadOlderMessages();
@@ -13172,16 +13131,15 @@ async function subscribeToMessagesRTDB() {
       }, 100);
       return;
     }
-
     if (data.senderId !== userId) {
       let bodyText = data.text;
       try {
         if (isEncrypted(bodyText)) {
-          if (currentServerId) {
-            const _members = (currentServerData && currentServerData.joinedUsers) || [];
-            bodyText = await decryptText(bodyText, currentServerId, currentRoomId, _members);
-          } else if (currentDmId) {
-            const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 1500);
+          if (targetServerId) {
+            const _members = (targetServerData && targetServerData.joinedUsers) || [];
+            bodyText = await decryptText(bodyText, targetServerId, targetRoomId, _members);
+          } else if (targetDmId) {
+            const dmKey = await _getDmKeyWithWait(targetDmId, targetDmParticipants, 1500);
             bodyText = await _decryptDmText(bodyText, dmKey);
           }
         }
@@ -13191,49 +13149,46 @@ async function subscribeToMessagesRTDB() {
       if (isMentioned && document.hasFocus()) {
         showMentionToast(data.senderNickname || "ユーザー");
       }
-      
-      const sName = currentServerId ? (currentServerData?.name || 'Covo') : 'ダイレクトメッセージ';
-      const rName = currentServerId ? (roomNames[currentRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
+      const sName = targetServerId ? (targetServerData?.name || 'Covo') : 'ダイレクトメッセージ';
+      const rName = targetServerId ? (roomNames[targetRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
       notifyNewMessage({
         messageId: data.id,
-        channelId: currentRoomId || currentDmId,
+        channelId: targetRoomId || targetDmId,
         serverName: sName,
         channelName: rName,
         senderName: data.senderNickname || 'ユーザー',
         text: cleanBody,
         sticker: data.sticker,
-        serverId: currentServerId,
-        serverData: currentServerData,
-        isDm: Boolean(currentDmId),
+        serverId: targetServerId,
+        serverData: targetServerData,
+        isDm: Boolean(targetDmId),
         targetUid: currentDmParticipant?.uid || null,
         targetAvatarUrl: currentDmParticipant?.avatarUrl || null
       });
     }
-
     await decryptInPlace([data]);
-
+    if (!isStillActive()) return;
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) allLoadedMessages[idx] = data;
     else allLoadedMessages.push(data);
-
     allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
     const wasScrolledToBottom = (messagesDisplay.scrollTop <= 50);
     renderMessagesWithReadReceipts();
     if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
     updateReadReceiptForCurrentUser();
   };
-
   const handleChanged = async (snapshot) => {
+    if (!isStillActive()) return;
     const data = snapshot.val();
     if (!data) return;
     data.id = snapshot.key;
     data.channelId = chId;
     LocalStore.putMessage(data).catch(() => {});
     await decryptInPlace([data]);
+    if (!isStillActive()) return;
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) {
       allLoadedMessages[idx] = data;
@@ -13247,8 +13202,8 @@ async function subscribeToMessagesRTDB() {
     renderPinnedMessages();
     renderMessagesWithReadReceipts();
   };
-
   const handleRemoved = async (snapshot) => {
+    if (!isStillActive()) return;
     const key = snapshot.key;
     if (!key) return;
     try {
@@ -13257,6 +13212,7 @@ async function subscribeToMessagesRTDB() {
       const checkSnap = await get(checkRef);
       if (!checkSnap.exists()) {
         LocalStore.deleteMessage(key).catch(() => {});
+        if (!isStillActive()) return;
         allLoadedMessages = allLoadedMessages.filter(m => m.id !== key);
         lastMessagesData = [...allLoadedMessages];
         messagesIndexMap = {};
@@ -14290,15 +14246,22 @@ const _covoRateLimiter = new MessageRateLimiter();
 
 async function sendSticker(emoji) {
   if (!currentRoomId && !currentDmId) return;
-
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  // 宛先状態のスナップショット（非同期処理中の別部屋遷移による誤送信・上書きを100%防止）
+  const snapDmId = currentDmId;
+  const snapRoomId = currentRoomId;
+  const snapServerId = currentServerId;
+  const snapDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const snapMembers = (currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : [];
+  const snapServerData = currentServerData;
+  const snapServerNickname = currentServerNickname;
+  const snapReplyTo = replyingToMessage;
+  const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(snapServerData?.createdBy === userId);
   const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
-
   // 1. スローモード（Slowmode）検証
-  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
-    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
-    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+  if (!snapDmId && snapServerId && snapRoomId && !isPrivileged) {
+    const currentRoomData = window.__globalRoomsCache?.[snapServerId]?.[snapRoomId] || (Array.isArray(snapServerData?.rooms) ? snapServerData.rooms.find(r => r.id === snapRoomId) : null);
+    const slowmodeSec = currentRoomData?.slowmodeSeconds || 0;
     if (slowmodeSec > 0) {
       const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
       if (elapsedSec < slowmodeSec) {
@@ -14308,14 +14271,12 @@ async function sendSticker(emoji) {
       }
     }
   }
-
   // 2. スタンプ連打・レートリミット検証
   const stickerCheck = _covoRateLimiter.canSendSticker(emoji, isPrivileged);
   if (!stickerCheck.allowed) {
     alertMessage(stickerCheck.reason || "少し待ってから送信してください", "warning");
     return;
   }
-
   _skPushRecent(emoji);
   document.getElementById('stickerPicker').classList.remove('show');
   if (window._reactionTargetMessageId) {
@@ -14323,47 +14284,41 @@ async function sendSticker(emoji) {
     window._reactionTargetMessageId = null;
     return;
   }
-
   // 自分が送信した時は未読境界線をクリア
   unreadBoundaryAt = 0;
   unreadBoundaryMessageId = null;
   const existingDiv = messagesDisplay.querySelector('.unread-divider');
   if (existingDiv) existingDiv.remove();
-
   try {
     const data = { 
       sticker: emoji, 
       senderId: userId, 
-      senderNickname: currentServerNickname || userNickname || 'ユーザー', 
+      senderNickname: snapServerNickname || userNickname || 'ユーザー', 
       senderAvatarUrl: userAvatarUrl || null,
       timestamp: serverTimestamp() 
     };
-    if (replyingToMessage) {
+    if (snapReplyTo) {
       data.replyTo = {
-        messageId: replyingToMessage.id,
-        senderNickname: replyingToMessage.senderNickname,
-        text: replyingToMessage._originalText || replyingToMessage.text || "（ファイル）"
+        messageId: snapReplyTo.id,
+        senderNickname: snapReplyTo.senderNickname,
+        text: snapReplyTo._originalText || snapReplyTo.text || "（ファイル）"
       };
     }
-
-    if (currentDmId) {
+    if (snapDmId) {
       const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
       const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${newMessageId}`);
+      const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
       const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
       await set(rtdbMsgRef, rtdbData);
-
-      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${currentDmId}`), {
-        participants: currentDmParticipants,
+      await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
+        participants: snapDmParticipants,
         lastMessageAt: data.timestamp,
         lastMessageSender: userId,
         lastMessageText: 'スタンプ'
       }, { merge: true });
-
-      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${currentDmId}` }).catch(() => {});
-
-      const otherUid = currentDmParticipants.find(id => id !== userId);
+      LocalStore.putMessage({ ...rtdbData, channelId: `dm_${snapDmId}` }).catch(() => {});
+      const otherUid = snapDmParticipants.find(id => id !== userId);
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
@@ -14371,7 +14326,7 @@ async function sendSticker(emoji) {
             receiverIds: [otherUid],
             title: userNickname,
             body: '[スタンプ]',
-            roomId: currentDmId,
+            roomId: snapDmId,
             messageId: newMessageId,
             appId: appId,
             senderId: userId,
@@ -14386,22 +14341,21 @@ async function sendSticker(emoji) {
         } catch (e) { }
       }
     } else {
-      const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`), data);
+      const replyMsgRef = await addDoc(collection(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages`), data);
       try {
         const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${replyMsgRef.id}`);
+        const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}/messages/${replyMsgRef.id}`);
         const rtdbData = { ...data, id: replyMsgRef.id, timestamp: Date.now() };
         await set(rtdbMsgRef, rtdbData);
-        LocalStore.putMessage({ ...rtdbData, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
+        LocalStore.putMessage({ ...rtdbData, channelId: `${snapServerId}_${snapRoomId}` }).catch(() => {});
       } catch (e) { console.error("RTDB Dual Write Failed in Reply", e); }
-      await updateDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}`), {
+      await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
         lastMessageAt: data.timestamp, lastMessageSender: userId, lastMessageText: 'スタンプ'
       });
-
       // 通知 (Discord 準拠)
       try {
-        const sd = currentServerData;
+        const sd = snapServerData;
         if (sd) {
           const receiverIds = (sd.joinedUsers || []).filter(id => id !== userId);
           if (receiverIds.length > 0) {
@@ -14410,9 +14364,9 @@ async function sendSticker(emoji) {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 receiverIds,
-                title: `${sd.name || 'Covo'} (#${roomNames[currentRoomId] || 'room'})`,
+                title: `${sd.name || 'Covo'} (#${roomNames[snapRoomId] || 'room'})`,
                 body: `${userNickname}: [スタンプ]`,
-                roomId: currentRoomId,
+                roomId: snapRoomId,
                 messageId: replyMsgRef.id,
                 appId,
                 senderId: userId,
@@ -14842,7 +14796,6 @@ async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
   if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
-
   // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
   const snapDmId = currentDmId;
   const snapRoomId = currentRoomId;
@@ -14852,21 +14805,18 @@ async function sendMessage() {
   const snapServerData = currentServerData;
   const snapServerNickname = currentServerNickname;
   const snapReplyTo = replyingToMessage;
-
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
   if (text && text.length > 10000) {
     alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
     return;
   }
-
-  const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const isSvOwner = Boolean(currentServerData?.createdBy === userId);
+  const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
+  const isSvOwner = Boolean(snapServerData?.createdBy === userId);
   const isPrivileged = isAdmin || isSvAdmin || isSvOwner;
-
-  // 1. スローモード（Slowmode）検証
-  if (!currentDmId && currentServerData?.rooms && currentRoomId && !isPrivileged) {
-    const currentRoom = currentServerData.rooms.find(r => r.id === currentRoomId);
-    const slowmodeSec = currentRoom?.slowmodeSeconds || 0;
+  // 1. スローモード（Slowmode）検証 (キャッシュおよびコレクションから正しく解決)
+  if (!snapDmId && snapServerId && snapRoomId && !isPrivileged) {
+    const currentRoomData = window.__globalRoomsCache?.[snapServerId]?.[snapRoomId] || (Array.isArray(snapServerData?.rooms) ? snapServerData.rooms.find(r => r.id === snapRoomId) : null);
+    const slowmodeSec = currentRoomData?.slowmodeSeconds || 0;
     if (slowmodeSec > 0) {
       const elapsedSec = (Date.now() - _covoRateLimiter.lastSentAt) / 1000;
       if (elapsedSec < slowmodeSec) {
@@ -24893,6 +24843,12 @@ class VoiceEngine {
       this.channelName = channelName;
       this.isActive = true;
       this._directCallConnected = false;
+      if (!userId) {
+        console.warn('[VoiceEngine] ログインセッションが確立されていないため参加できません');
+        this.isActive = false;
+        this._isJoining = false;
+        return;
+      }
       this._myUid = userId;
       this._myNickname = currentServerNickname || userNickname || 'ユーザー';
       this._myAvatar = userAvatarUrl || '';
