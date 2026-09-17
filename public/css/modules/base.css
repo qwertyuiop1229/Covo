@@ -64,37 +64,34 @@
     select {
       font-size: 16px !important;
     }
-    /* スタンプ用（LINE完全準拠のキレのあるポップ＆高周波シェイク） */
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
     .stamp-jump-anim {
-      animation: stampWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+      animation: stampSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
-    @keyframes stampWiggle {
-      0% { transform: scale(1) rotate(0deg); }
-      12% { transform: scale(1.06) rotate(-2.2deg); }
-      24% { transform: scale(1.04) rotate(2deg); }
-      36% { transform: scale(1.025) rotate(-1.5deg); }
-      50% { transform: scale(1.012) rotate(1deg); }
-      65% { transform: scale(1.005) rotate(-0.6deg); }
-      80% { transform: scale(1.002) rotate(0.3deg); }
-      100% { transform: scale(1) rotate(0deg); }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      16%  { transform: translateX(8px); }
+      36%  { transform: translateX(-5px); }
+      58%  { transform: translateX(2.5px); }
+      78%  { transform: translateX(-1px); }
+      92%  { transform: translateX(0.3px); }
+      100% { transform: translateX(0); }
     }
-    /* 通常メッセージ用 LINE完全準拠の小刻みなブルブル振動＆ポップバウンス */
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
     .message-jump-anim,
     .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+      animation: messageSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
-    @keyframes messageWiggle {
-      0% { transform: scale(1) translateX(0); }
-      12% { transform: scale(1.045) translateX(-4.5px); }
-      24% { transform: scale(1.035) translateX(4px); }
-      36% { transform: scale(1.02) translateX(-3px); }
-      48% { transform: scale(1.01) translateX(2.2px); }
-      62% { transform: scale(1.005) translateX(-1.5px); }
-      76% { transform: scale(1.002) translateX(1px); }
-      90% { transform: scale(1) translateX(-0.4px); }
-      100% { transform: scale(1) translateX(0); }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      16%  { transform: translateX(8px); }
+      36%  { transform: translateX(-5px); }
+      58%  { transform: translateX(2.5px); }
+      78%  { transform: translateX(-1px); }
+      92%  { transform: translateX(0.3px); }
+      100% { transform: translateX(0); }
     }
     /* Reactions */
     .reaction-picker-bar {

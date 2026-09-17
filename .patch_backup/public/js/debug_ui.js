@@ -189,9 +189,6 @@ export function clearDevConsole() {
   const body = document.getElementById('devConsoleBody');
   if (body) body.innerHTML = '';
   window._covoLogs = [];
-  try {
-    sessionStorage.removeItem('covo_recent_logs');
-  } catch (_) {}
 }
 
 export function copyDevConsole() {

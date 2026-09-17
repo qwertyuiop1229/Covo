@@ -1,11 +1,9 @@
 {
-  "date": "2026-09-17T13:11:34.692Z",
+  "date": "2026-09-17T15:23:04.721Z",
   "files": [
     "public/css/modules/base.css",
-    "firestore.rules",
-    "public/js/crypto_helpers.js",
-    "server/src/index.js",
+    "public/index.html",
     "public/js/main.js",
-    "public/firebase-messaging-sw.js"
+    "public/js/debug_ui.js"
   ]
 }

@@ -3159,335 +3159,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用（LINE準拠の軽快で上品なポップバウンス） */
-    .stamp-jump-anim {
-      animation: stampWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampWiggle {
-      0% { transform: scale(1) rotate(0deg); }
-      20% { transform: scale(1.08) rotate(-2.5deg); }
-      40% { transform: scale(1.04) rotate(2deg); }
-      60% { transform: scale(1.02) rotate(-1deg); }
-      80% { transform: scale(1.005) rotate(0.5deg); }
-      100% { transform: scale(1) rotate(0deg); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の上品なパルス＆微小シェイク */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageWiggle {
-      0% { transform: scale(1) translateX(0); }
-      15% { transform: scale(1.035) translateX(-5px); }
-      30% { transform: scale(1.025) translateX(4px); }
-      45% { transform: scale(1.015) translateX(-3px); }
-      65% { transform: scale(1.008) translateX(2px); }
-      80% { transform: scale(1.002) translateX(-1px); }
-      100% { transform: scale(1) translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="public/js/file_uploader.js">
 import { alertMessage } from './ui_helpers.js';
 const BLOCKED_EXTENSIONS = new Set([
@@ -4611,6 +4282,339 @@ if (typeof window !== 'undefined') {
     ]
   }
 }
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用（LINE完全準拠のキレのあるポップ＆高周波シェイク） */
+    .stamp-jump-anim {
+      animation: stampWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+      will-change: transform;
+    }
+    @keyframes stampWiggle {
+      0% { transform: scale(1) rotate(0deg); }
+      12% { transform: scale(1.06) rotate(-2.2deg); }
+      24% { transform: scale(1.04) rotate(2deg); }
+      36% { transform: scale(1.025) rotate(-1.5deg); }
+      50% { transform: scale(1.012) rotate(1deg); }
+      65% { transform: scale(1.005) rotate(-0.6deg); }
+      80% { transform: scale(1.002) rotate(0.3deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の小刻みなブルブル振動＆ポップバウンス */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+      will-change: transform;
+    }
+    @keyframes messageWiggle {
+      0% { transform: scale(1) translateX(0); }
+      12% { transform: scale(1.045) translateX(-4.5px); }
+      24% { transform: scale(1.035) translateX(4px); }
+      36% { transform: scale(1.02) translateX(-3px); }
+      48% { transform: scale(1.01) translateX(2.2px); }
+      62% { transform: scale(1.005) translateX(-1.5px); }
+      76% { transform: scale(1.002) translateX(1px); }
+      90% { transform: scale(1) translateX(-0.4px); }
+      100% { transform: scale(1) translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -5981,298 +5985,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-self._notifEnabled  = true; // 通知トグル状態
-// 重複通知防止キャッシュ (iOS PWA多重受信防止)
-const _recentNotifs = new Map();
-function _isDuplicate(key) {
-  const now = Date.now();
-  for (const [k, time] of _recentNotifs.entries()) {
-    if (now - time > 15000) _recentNotifs.delete(k);
-  }
-  if (_recentNotifs.has(key)) return true;
-  _recentNotifs.set(key, now);
-  return false;
-}
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  switch (event.data.type) {
-    case 'SET_NOTIF_ENABLED':
-      self._notifEnabled = event.data.enabled !== false;
-      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
-      break;
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      if (typeof event.data.notifEnabled === 'boolean') {
-        self._notifEnabled = event.data.notifEnabled;
-      }
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
-}
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
-    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
-    if (clientList.length === 0) {
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
-  if (typeof body === 'string') {
-    if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::') || body.includes(':enc::')) {
-        const senderPart = body.split(/:\s*enc::/)[0];
-        body = `${senderPart}: 新着メッセージがあります`;
-      } else {
-        body = '新着メッセージがあります';
-      }
-    }
-  }
-  if (typeof title === 'string') {
-    if (title.includes('enc::v') || title.startsWith('enc::')) {
-      title = 'Covo';
-    } else if (title.startsWith('ダイレクトメッセージ › @')) {
-      title = title.replace('ダイレクトメッセージ › @', '');
-    }
-  }
-  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
-  if (typeof body === 'string') {
-    function _swFormatContent(s) {
-      if (!s || typeof s !== 'string') return '新着メッセージがあります';
-      const trimmed = s.trim();
-      if (
-        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
-        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
-        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
-      ) {
-        return '[スタンプ]';
-      }
-      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
-        return '📷 [写真]';
-      }
-      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
-        return '🎥 [動画]';
-      }
-      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
-        return '🎤 [ボイスメッセージ]';
-      }
-      if (
-        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
-        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
-        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
-      ) {
-        return '📎 [ファイル]';
-      }
-      return trimmed;
-    }
-    const colonIdx = body.indexOf(': ');
-    if (colonIdx !== -1) {
-      const senderPart = body.substring(0, colonIdx);
-      const rest = body.substring(colonIdx + 2);
-      body = `${senderPart}: ${_swFormatContent(rest)}`;
-    } else {
-      body = _swFormatContent(body);
-    }
-  }
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-  // 通知設定がオフならスキップ
-  if (self._notifEnabled === false) {
-    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
-    return;
-  }
-  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
-  const dedupKey = (data.type === 'incoming_call' && data.callId)
-    ? `call-${data.callId}`
-    : (data.messageId
-      ? `msg-${data.messageId}`
-      : `${data.roomId || 'covo'}_${title}_${body}`);
-  if (_isDuplicate(dedupKey)) {
-    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
-    return;
-  }
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-  return self.registration.showNotification(title, notificationOptions);
-});
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
-</file>
-
 <file path="patch.js">
 #!/usr/bin/env node
 /**
@@ -6680,6 +6392,304 @@ function run() {
   console.log('============================================================');
 }
 run();
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+self._notifEnabled  = true; // 通知トグル状態
+// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+const _recentNotifs = new Map();
+function _isDuplicate(key) {
+  const now = Date.now();
+  for (const [k, time] of _recentNotifs.entries()) {
+    if (now - time > 15000) _recentNotifs.delete(k);
+  }
+  if (_recentNotifs.has(key)) return true;
+  _recentNotifs.set(key, now);
+  return false;
+}
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+  switch (event.data.type) {
+    case 'SET_NOTIF_ENABLED':
+      self._notifEnabled = event.data.enabled !== false;
+      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
+      break;
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      if (typeof event.data.notifEnabled === 'boolean') {
+        self._notifEnabled = event.data.notifEnabled;
+      }
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
+    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
+    if (clientList.length === 0) {
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::') || body.includes(':enc::')) {
+        const senderPart = body.split(/:\s*enc::/)[0];
+        body = `${senderPart}: 新着メッセージがあります`;
+      } else {
+        body = '新着メッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string') {
+    if (title.includes('enc::v') || title.startsWith('enc::')) {
+      title = 'Covo';
+    } else if (title.startsWith('ダイレクトメッセージ › @')) {
+      title = title.replace('ダイレクトメッセージ › @', '');
+    }
+  }
+  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
+  if (typeof body === 'string') {
+    function _swFormatContent(s) {
+      if (!s || typeof s !== 'string') return '新着メッセージがあります';
+      const trimmed = s.trim();
+      if (
+        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
+        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
+        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
+      ) {
+        return '[スタンプ]';
+      }
+      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
+        return '📷 [写真]';
+      }
+      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
+        return '🎥 [動画]';
+      }
+      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
+        return '🎤 [ボイスメッセージ]';
+      }
+      if (
+        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
+        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
+        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
+      ) {
+        return '📎 [ファイル]';
+      }
+      return trimmed;
+    }
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      body = `${senderPart}: ${_swFormatContent(rest)}`;
+    } else {
+      body = _swFormatContent(body);
+    }
+  }
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+  // 通知設定がオフならスキップ
+  if (self._notifEnabled === false) {
+    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
+    return;
+  }
+  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
+  const dedupKey = (data.type === 'incoming_call' && data.callId)
+    ? `call-${data.callId}`
+    : (data.messageId
+      ? `msg-${data.messageId}`
+      : `${data.roomId || 'covo'}_${title}_${body}`);
+  if (_isDuplicate(dedupKey)) {
+    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
+    return;
+  }
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+  return self.registration.showNotification(title, notificationOptions);
+});
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く（通知対象のURLパラメータを付与して直接遷移可能にする）
+      if (clients.openWindow) {
+        let launchUrl = urlToOpen;
+        if (data.callId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `callId=${encodeURIComponent(data.callId)}`;
+        } else if (data.roomId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `roomId=${encodeURIComponent(data.roomId)}` + (data.serverId ? `&serverId=${encodeURIComponent(data.serverId)}` : '');
+        }
+        return clients.openWindow(launchUrl).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -12323,8 +12333,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.dmKeyCache[dmId] = keysObj;
               return keysObj;
             }
-            // 相手が既に鍵を生成している場合、過去メッセージの有無を問わず相手の鍵を上書き破壊せず、相手からの配布を安全に待機
-            return null;
+            // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
+            // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
+            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+            const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
+            if (hasExistingDmHistory) {
+              return null;
+            }
           }
         }
         // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布
@@ -12875,10 +12890,9 @@ service cloud.firestore {
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム暗号鍵 (Room Keys)
+          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
           match /roomKeys/{keyId} {
-            allow read, create: if isAuthenticated();
-            allow update, delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+            allow read, write: if isAuthenticated();
           }
 
           // E2EE 救済リクエスト (Rescue Requests)
@@ -13603,12 +13617,14 @@ async function handleEmergencyPasswordReset(request, env) {
     ];
     if (targetUid) {
       writes.push({
-        transform: {
-          document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
-          fieldTransforms: [
-            { fieldPath: "used", setToServerValue: "REQUEST_TIME" }
-          ]
-        }
+        update: {
+          name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
+          fields: {
+            used: { booleanValue: true },
+            usedAt: { timestampValue: new Date().toISOString() }
+          }
+        },
+        updateMask: { fieldPaths: ["used", "usedAt"] }
       });
     }
     await fetch(commitUrl, {
@@ -15861,7 +15877,8 @@ async function handleD1Api(request, env, url) {
           const row = await env.DB.prepare("SELECT reactions FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
           if (!row) return new Response(JSON.stringify({ error: "Message not found" }), { status: 404, headers: d1Cors });
           const rx = row.reactions ? JSON.parse(row.reactions) : {};
-          if (!reactionEmoji) { delete rx[reactionUserId]; } else { rx[reactionUserId] = reactionEmoji; }
+          const targetReactUid = verifiedUser.uid; // 🔒 IDOR防止: 認証済み本人のUIDのみを強制適用
+          if (!reactionEmoji) { delete rx[targetReactUid]; } else { rx[targetReactUid] = reactionEmoji; }
           await env.DB.prepare("UPDATE messages SET reactions = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(JSON.stringify(rx), messageId, roomId, appId).run();
           // リアクション変更もRTDBへ通知
           if (env.SERVICE_ACCOUNT_JSON) {
@@ -18567,13 +18584,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.194" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.195" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.194" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.195" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -21825,7 +21842,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.194"></script>
+  <script type="module" src="js/main.js?v=1.1.195"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -24385,6 +24402,26 @@ function initializeFirebase() {
               window.__pendingNotifJump = null;
               setTimeout(() => { try { jumpFn(); } catch(e){} }, 600);
             }
+            // URLクエリパラメータからの自動ジャンプ（PWA/Web通知タップ起動対応）
+            try {
+              const urlParams = new URLSearchParams(window.location.search);
+              const pRoomId = urlParams.get('roomId');
+              const pServerId = urlParams.get('serverId');
+              const pCallId = urlParams.get('callId');
+              if (pCallId) {
+                handleCallNotificationClick({ callId: pCallId });
+                window.history.replaceState({}, document.title, window.location.pathname);
+              } else if (pRoomId) {
+                setTimeout(() => {
+                  if (pServerId && pServerId !== currentServerId) {
+                    if (typeof goToServerRoom === 'function') goToServerRoom(pServerId, pRoomId);
+                  } else {
+                    if (typeof goToRoom === 'function') goToRoom(pRoomId);
+                  }
+                }, 700);
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }
+            } catch (_) {}
           } else {
             document.body.classList.add("auth-ready", "needs-nickname");
             document.body.classList.remove("logged-in");
@@ -27471,7 +27508,11 @@ window.goToRoom = function (rid) {
     }
   }
   const rItem = document.getElementById('room-item-' + rid);
-  if (rItem) rItem.click();
+  if (rItem) {
+    rItem.click();
+  } else if (typeof selectRoom === 'function') {
+    selectRoom(rid, roomNames[rid] || 'ルーム');
+  }
 };
 // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
 let _scanUnreadBusy = false;
@@ -27488,9 +27529,8 @@ async function scanAllUnreadAndRender() {
       servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
     const items = (safeJsonParse(localStorage.getItem('covo_global_items'), []) || []).filter(it => it.serverId === currentServerId);
-    // 1. サーバーのルーム未読スキャン
+    // 1. サーバーのルーム未読スキャン (同一サーバー内の別ルームも網羅)
     for (const sv of servers) {
-      if (sv.id === currentServerId) continue;
       let roomsData = window.__globalRoomsCache[sv.id];
       if (!roomsData) {
         try {
@@ -32697,11 +32737,14 @@ async function loadServerSettingsRooms() {
       el.addEventListener('click', (e) => {
         const val = e.target.dataset.val;
         const label = e.target.textContent;
-        document.getElementById('newRoomCategorySelect').value = val;
-        document.getElementById('newRoomCategoryLabel').textContent = label;
+        const catSel = document.getElementById('newRoomCategorySelect');
+        if (catSel) catSel.value = val;
+        const catLbl = document.getElementById('newRoomCategoryLabel');
+        if (catLbl) catLbl.textContent = label;
         const dd = document.getElementById('newRoomCategoryDropdown');
-        dd.classList.add('opacity-0');
-        document.getElementById('newRoomCategoryIcon').classList.remove('rotate-180');
+        if (dd) dd.classList.add('opacity-0');
+        const catIcn = document.getElementById('newRoomCategoryIcon');
+        if (catIcn) catIcn.classList.remove('rotate-180');
         setTimeout(() => dd.classList.add('hidden'), 200);
       });
     });
@@ -39446,10 +39489,10 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.55s）終了後にシェイククラスのみ先に削除（下から浮き上がる再発火を防ぐ）
+      // 揺れアニメーション（0.38s）終了後にシェイククラスのみ先に削除（LINE完全準拠のキレのある振動）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 580);
+      }, 400);
       // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
@@ -48094,7 +48137,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.194",
+  "version": "1.1.195",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48151,7 +48194,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.194",
+  "version": "1.1.195",
   "force": false
 }
 </file>

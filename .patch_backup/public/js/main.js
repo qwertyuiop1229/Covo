@@ -1257,6 +1257,26 @@ function initializeFirebase() {
               window.__pendingNotifJump = null;
               setTimeout(() => { try { jumpFn(); } catch(e){} }, 600);
             }
+            // URLクエリパラメータからの自動ジャンプ（PWA/Web通知タップ起動対応）
+            try {
+              const urlParams = new URLSearchParams(window.location.search);
+              const pRoomId = urlParams.get('roomId');
+              const pServerId = urlParams.get('serverId');
+              const pCallId = urlParams.get('callId');
+              if (pCallId) {
+                handleCallNotificationClick({ callId: pCallId });
+                window.history.replaceState({}, document.title, window.location.pathname);
+              } else if (pRoomId) {
+                setTimeout(() => {
+                  if (pServerId && pServerId !== currentServerId) {
+                    if (typeof goToServerRoom === 'function') goToServerRoom(pServerId, pRoomId);
+                  } else {
+                    if (typeof goToRoom === 'function') goToRoom(pRoomId);
+                  }
+                }, 700);
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }
+            } catch (_) {}
           } else {
             document.body.classList.add("auth-ready", "needs-nickname");
             document.body.classList.remove("logged-in");
@@ -4669,7 +4689,11 @@ window.goToRoom = function (rid) {
     }
   }
   const rItem = document.getElementById('room-item-' + rid);
-  if (rItem) rItem.click();
+  if (rItem) {
+    rItem.click();
+  } else if (typeof selectRoom === 'function') {
+    selectRoom(rid, roomNames[rid] || 'ルーム');
+  }
 };
 
 // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
@@ -4687,11 +4711,8 @@ async function scanAllUnreadAndRender() {
       servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
     const items = (safeJsonParse(localStorage.getItem('covo_global_items'), []) || []).filter(it => it.serverId === currentServerId);
-
-    // 1. サーバーのルーム未読スキャン
+    // 1. サーバーのルーム未読スキャン (同一サーバー内の別ルームも網羅)
     for (const sv of servers) {
-      if (sv.id === currentServerId) continue;
-
       let roomsData = window.__globalRoomsCache[sv.id];
       if (!roomsData) {
         try {
@@ -10353,11 +10374,14 @@ async function loadServerSettingsRooms() {
       el.addEventListener('click', (e) => {
         const val = e.target.dataset.val;
         const label = e.target.textContent;
-        document.getElementById('newRoomCategorySelect').value = val;
-        document.getElementById('newRoomCategoryLabel').textContent = label;
+        const catSel = document.getElementById('newRoomCategorySelect');
+        if (catSel) catSel.value = val;
+        const catLbl = document.getElementById('newRoomCategoryLabel');
+        if (catLbl) catLbl.textContent = label;
         const dd = document.getElementById('newRoomCategoryDropdown');
-        dd.classList.add('opacity-0');
-        document.getElementById('newRoomCategoryIcon').classList.remove('rotate-180');
+        if (dd) dd.classList.add('opacity-0');
+        const catIcn = document.getElementById('newRoomCategoryIcon');
+        if (catIcn) catIcn.classList.remove('rotate-180');
         setTimeout(() => dd.classList.add('hidden'), 200);
       });
     });
@@ -17720,10 +17744,10 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.55s）終了後にシェイククラスのみ先に削除（下から浮き上がる再発火を防ぐ）
+      // 揺れアニメーション（0.38s）終了後にシェイククラスのみ先に削除（LINE完全準拠のキレのある振動）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 580);
+      }, 400);
       // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
