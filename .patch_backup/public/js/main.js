@@ -1003,18 +1003,22 @@ function initializeFirebase() {
             }
           }
 
-          // 直列処理による遅延を防ぐため、初期化に必要なデータを一斉取得
+          // 直列処理による遅延を防ぐため、初期化に必要なデータを一斉取得（最大3秒でタイムアウトして起動ハングを完全防止）
+          const withTimeout = (prom, ms = 3000, fallback = null) => Promise.race([prom, new Promise(r => setTimeout(() => r(fallback), ms))]);
           const adminDocRef = doc(db, `artifacts/${appId}/settings`, "adminList");
           const configRef = doc(db, `artifacts/${appId}/settings`, "allowedEmailsConfig");
           const listAdminRef = doc(db, `artifacts/${appId}/settings`, "listAdminList");
           const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-
-          const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await Promise.all([
-            getDoc(adminDocRef).catch(e => { console.error("Admin check error:", e); return null; }),
-            getDoc(configRef).catch(e => { console.error("allowedEmails check error:", e); return null; }),
-            getDoc(listAdminRef).catch(e => { console.error("list admin check error:", e); return null; }),
-            getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
-          ]);
+          const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await withTimeout(
+            Promise.all([
+              getDoc(adminDocRef).catch(e => { console.error("Admin check error:", e); return null; }),
+              getDoc(configRef).catch(e => { console.error("allowedEmails check error:", e); return null; }),
+              getDoc(listAdminRef).catch(e => { console.error("list admin check error:", e); return null; }),
+              getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
+            ]),
+            3000,
+            [null, null, null, null]
+          );
 
           // アカウントに紐づくすべてのメールアドレス（Google連携メール・元の登録メール両方）を網羅的に収集
           const candidateEmails = new Set();
@@ -1117,7 +1121,6 @@ function initializeFirebase() {
           let initialNickname = null;
           let initialAvatarUrl = null;
           let initialAboutMe = "";
-
           if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
             initialNickname = userProfileSnap.data().nickname;
             initialAvatarUrl = userProfileSnap.data().avatarUrl || null;
@@ -1126,7 +1129,6 @@ function initializeFirebase() {
             // Googleログイン等の場合、Googleの名前・アイコンを自動取得して初期プロファイルを自動生成
             initialNickname = user.displayName.slice(0, 20);
             initialAvatarUrl = user.photoURL || null;
-
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             await setDoc(profileDocRef, {
               nickname: initialNickname,
@@ -1134,6 +1136,19 @@ function initializeFirebase() {
               aboutMe: initialAboutMe,
               createdAt: serverTimestamp()
             }, { merge: true }).catch(() => {});
+          } else {
+            // タイムアウトまたはキャッシュ時の高速フォールバック復旧
+            const savedNick = localStorage.getItem('covo_cached_nick_' + userId);
+            if (savedNick) {
+              initialNickname = savedNick;
+              initialAvatarUrl = localStorage.getItem('covo_cached_avatar_' + userId) || null;
+            }
+          }
+          if (initialNickname) {
+            try {
+              localStorage.setItem('covo_cached_nick_' + userId, initialNickname);
+              if (initialAvatarUrl) localStorage.setItem('covo_cached_avatar_' + userId, initialAvatarUrl);
+            } catch (_) {}
           }
 
           // ルートの users/{uid} からも aboutMe と customStatus を確実に取得
@@ -5702,11 +5717,24 @@ window.openUserProfileAvatarLightbox = function () {
 // =========================================================================
 // 🌟 Discord準拠 アバターアクセントカラー自動抽出 & HSLトーン補正
 // =========================================================================
-const _avatarColorCache = new Map();
+// === 🌟 Discord準拠 アバターアクセントカラー自動抽出 & HSLトーン補正 ===
+const _avatarColorCache = (() => {
+  try {
+    const raw = localStorage.getItem('covo_avatar_accent_colors');
+    return raw ? new Map(JSON.parse(raw)) : new Map();
+  } catch (_) {
+    return new Map();
+  }
+})();
+function saveAvatarColorCache() {
+  try {
+    const arr = Array.from(_avatarColorCache.entries()).slice(-150);
+    localStorage.setItem('covo_avatar_accent_colors', JSON.stringify(arr));
+  } catch (_) {}
+}
 const DISCORD_PRESET_COLORS = [
   '#376d49', '#322c3b', '#2a4b5d', '#4a3c31', '#5865f2', '#3ba55d', '#faa81a', '#ed4245', '#eb459e'
 ];
-
 function getHashColor(str) {
   if (!str) return DISCORD_PRESET_COLORS[0];
   let hash = 0;
@@ -5716,7 +5744,16 @@ function getHashColor(str) {
   }
   return DISCORD_PRESET_COLORS[Math.abs(hash) % DISCORD_PRESET_COLORS.length];
 }
-
+function getInstantAccentColor(avatarUrl, seedId = '') {
+  if (avatarUrl && _avatarColorCache.has(avatarUrl)) {
+    return _avatarColorCache.get(avatarUrl);
+  }
+  if (seedId && _avatarColorCache.has('uid_' + seedId)) {
+    return _avatarColorCache.get('uid_' + seedId);
+  }
+  return getHashColor(seedId || avatarUrl);
+}
+window.getInstantAccentColor = getInstantAccentColor;
 function hslToHex(h, s, l) {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs((h / 60) % 2 - 1));
@@ -5731,7 +5768,6 @@ function hslToHex(h, s, l) {
   const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
-
 async function getAvatarAccentColor(avatarUrl, seedId = '') {
   if (!avatarUrl || !isUsableAvatarUrl(avatarUrl)) {
     return getHashColor(seedId);
@@ -5745,6 +5781,8 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
     const fallback = () => {
       const col = getHashColor(seedId || avatarUrl);
       _avatarColorCache.set(avatarUrl, col);
+      if (seedId) _avatarColorCache.set('uid_' + seedId, col);
+      saveAvatarColorCache();
       resolve(col);
     };
     img.onload = () => {
@@ -5803,6 +5841,8 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
         const adjL = Math.min(0.32, Math.max(0.22, avgL > 0.35 ? avgL * 0.65 : avgL));
         const hex = hslToHex(avgH, adjS, adjL);
         _avatarColorCache.set(avatarUrl, hex);
+        if (seedId) _avatarColorCache.set('uid_' + seedId, hex);
+        saveAvatarColorCache();
         resolve(hex);
       } catch (e) {
         fallback();
@@ -5848,9 +5888,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
+  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
+  const instantColor = getInstantAccentColor(targetAvatarUrl, targetUid);
+  if (bannerEl) {
+    bannerEl.style.backgroundColor = instantColor;
+    bannerEl.style.setProperty('--user-banner-color', instantColor);
+  }
   // アバターに応じたアクセントカラーを抽出しバナーに適用
   getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-    if (bannerEl) {
+    if (bannerEl && bannerColor) {
       bannerEl.style.backgroundColor = bannerColor;
       bannerEl.style.setProperty('--user-banner-color', bannerColor);
     }
@@ -6060,9 +6106,15 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
+  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
+  const instantColor = getInstantAccentColor(targetAvatarUrl, targetUid);
+  if (bannerEl) {
+    bannerEl.style.backgroundColor = instantColor;
+    bannerEl.style.setProperty('--user-banner-color', instantColor);
+  }
   // アバターに応じたアクセントカラーを抽出しバナーに適用
   getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-    if (bannerEl) {
+    if (bannerEl && bannerColor) {
       bannerEl.style.backgroundColor = bannerColor;
       bannerEl.style.setProperty('--user-banner-color', bannerColor);
     }
@@ -7707,26 +7759,30 @@ async function showServerList() {
 }
 
 // サーバーに入る
+let _serverSwitchGeneration = 0;
 window.enterServer = async function enterServer(serverId, serverData) {
+  _serverSwitchGeneration++;
+  const thisGen = _serverSwitchGeneration;
+  if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
   if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
   if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
   if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
-  
   currentServerId = serverId;
   currentServerData = serverData;
   currentDmId = null;
   currentDmParticipant = null;
   currentDmParticipants = [];
   currentRoomId = null; // ルームを一旦リセットして前サーバーのチャットを閉じる
-
   // チャット欄とメッセージDOMをクリア
   clearMessagesDOM();
   const currentRoomHeader = document.getElementById("currentRoomHeader");
   if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
   if (messageInput) messageInput.disabled = true;
   if (sendMessageButton) sendMessageButton.disabled = true;
+  // チャンネル一覧の即時読み込み（非同期処理を待たずに最優先で起動し遅延ゼロ化）
+  loadServerRooms(serverId, 0, thisGen);
 
   // Sync RTDB membership securely via Worker API (一元化により permission_denied を完全防止)
   if (serverData && (serverData.joinedUsers || []).includes(userId)) {
@@ -7800,9 +7856,6 @@ window.enterServer = async function enterServer(serverId, serverData) {
   if (typeof loadCurrentServerStamps === 'function') {
     loadCurrentServerStamps();
   }
-
-  // ルームを読み込む（前回開いていたルーム、または一番上のルームを自動選択）
-  loadServerRooms(serverId);
 
   // ボイスチャンネルのリアルタイム参加者ツリーを購読開始
   if (typeof window._subscribeVcSidebarStates === 'function') {
@@ -8990,10 +9043,17 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       </button>
     </div>
   `;
+  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
+  const instantBannerColor = getInstantAccentColor(targetAvatarUrl, targetUid);
+  const bannerElInitial = panel.querySelector('.dm-profile-banner');
+  if (bannerElInitial) {
+    bannerElInitial.style.backgroundColor = instantBannerColor;
+    bannerElInitial.style.setProperty('--user-banner-color', instantBannerColor);
+  }
   // バナーのドミナントカラー動的適用
   getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
     const bannerEl = panel.querySelector('.dm-profile-banner');
-    if (bannerEl) {
+    if (bannerEl && bannerColor) {
       bannerEl.style.backgroundColor = bannerColor;
       bannerEl.style.setProperty('--user-banner-color', bannerColor);
     }
@@ -12601,14 +12661,24 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
 // =========================================================================
 // Room Features (Server-based)
 // =========================================================================
-function loadServerRooms(serverId, _retry = 0) {
-  if (loadServerRooms._unsub) { loadServerRooms._unsub(); }
-
+function loadServerRooms(serverId, _retry = 0, targetGen = null) {
+  if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
+  if (currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
   const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
-
   let hasLoaded = false;
 
+  // ローカルキャッシュがあれば0msで即座にルーム一覧を描画
+  const cachedRoomsMap = window.__globalRoomsCache?.[serverId];
+  if (cachedRoomsMap && Object.keys(cachedRoomsMap).length > 0) {
+    const cachedDocs = Object.keys(cachedRoomsMap).map(id => ({
+      id,
+      data: () => cachedRoomsMap[id]
+    }));
+    renderRooms({ forEach: (cb) => cachedDocs.forEach(cb) });
+  }
+
   function renderRooms(snapshot) {
+    if (currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
     hasLoaded = true;
     roomList.innerHTML = "";
     const currentRoomIds = new Set();
@@ -12766,6 +12836,7 @@ function loadServerRooms(serverId, _retry = 0) {
 
   let isRoomsFirst = true;
   function onRoomsChanged(snapshot) {
+    if (currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
     renderRooms(snapshot);
     if (!isRoomsFirst) {
       snapshot.docChanges().forEach(change => {
@@ -12815,18 +12886,32 @@ function loadServerRooms(serverId, _retry = 0) {
     isRoomsFirst = false;
   }
 
-  loadServerRooms._unsub = onSnapshot(roomsQuery, onRoomsChanged, async (error) => {
+  // セーフティタイマー: 1.2秒経過しても onSnapshot からスナップショットが届かない場合、getDocs で強制取得
+  const fallbackTimer = setTimeout(() => {
+    if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
+      getDocs(roomsQuery).then(snap => {
+        if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
+          renderRooms(snap);
+        }
+      }).catch(e => console.error("loadServerRooms fallback error:", e));
+    }
+  }, 1200);
+
+  loadServerRooms._unsub = onSnapshot(roomsQuery, (snapshot) => {
+    clearTimeout(fallbackTimer);
+    onRoomsChanged(snapshot);
+  }, async (error) => {
+    clearTimeout(fallbackTimer);
     if (!auth.currentUser || !userId || currentServerId !== serverId || error?.code === 'permission-denied') return;
     console.error("loadServerRooms error:", error);
-    if (_retry < 3 && currentServerId === serverId) {
+    if (_retry < 3 && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
       try { await auth.currentUser?.getIdToken(true); } catch (_) { }
-      setTimeout(() => loadServerRooms(serverId, _retry + 1), 1200 * (_retry + 1));
+      setTimeout(() => loadServerRooms(serverId, _retry + 1, targetGen), 1000 * (_retry + 1));
     }
   });
-
-  // Firebaseリスナー沈黙（ハング）対策のKickstart強制取得
+  // 即時キックスタート取得
   getDocs(roomsQuery).then(snap => {
-    if (currentServerId === serverId && snap.size > 0 && roomList.children.length === 0) {
+    if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
       renderRooms(snap);
     }
   }).catch(e => console.error("loadServerRooms kickstart error:", e));
@@ -15839,7 +15924,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
     const textSpan = document.createElement('span');
     textSpan.className = 'reply-quote-text';
-    const replyText = message.replyTo._decryptedErrorText || message.replyTo.text || '（ファイル）';
+    const replyRaw = message.replyTo._decryptedErrorText || message.replyTo.text || '（ファイル）';
+    const replyText = isEncrypted(replyRaw) ? '（暗号化メッセージを復号中...）' : replyRaw;
     textSpan.textContent = replyText.length > 40 ? replyText.slice(0, 40) + '…' : replyText;
 
     replyQuoteDiv.appendChild(nicknameSpan);
@@ -15876,12 +15962,26 @@ function createMessageElement(message, messageId, readByCount = 0) {
   if (message.text) {
     const messageTextSpan = document.createElement("span");
     messageTextSpan.className = `message-content text-gray-900 text-left`;
-    const textToDisplay = message._decryptedErrorText || message.text;
-    messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
-    // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
-    if (message.senderId !== userId && (message.text.includes(`@${userNickname}`) || message.text.includes('@all'))) {
-      messageElement.classList.add("mention-highlight");
+    const isEnc = isEncrypted(message.text) || (message._originalText && isEncrypted(message._originalText));
+    let textToDisplay;
+    if (message._decrypted) {
+      textToDisplay = message.text;
+    } else if (message._decryptedErrorText) {
+      textToDisplay = message._decryptedErrorText;
+    } else if (isEnc) {
+      textToDisplay = null;
+    } else {
+      textToDisplay = message.text;
     }
+    if (textToDisplay === null) {
+      messageTextSpan.innerHTML = '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
+      messageElement.appendChild(messageTextSpan);
+    } else {
+      messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
+      // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
+      if (message.senderId !== userId && (textToDisplay.includes(`@${userNickname}`) || textToDisplay.includes('@all'))) {
+        messageElement.classList.add("mention-highlight");
+      }
 
     // 長文メッセージの「もっと見る」展開 (#73)
     const lineCount = (textToDisplay.match(/\n/g) || []).length;
@@ -16579,7 +16679,16 @@ function renderMessagesWithReadReceipts() {
       }
       const textSpan = row.querySelector('.message-content');
       if (textSpan && msg.text) {
-        textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+        const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText));
+        if (msg._decrypted) {
+          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+        } else if (msg._decryptedErrorText) {
+          textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);
+        } else if (isEnc) {
+          textSpan.innerHTML = '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
+        } else {
+          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+        }
       }
       const bubbleElement = row.querySelector('.message-bubble');
       if (bubbleElement) updateReactionsUI(bubbleElement, msg);
