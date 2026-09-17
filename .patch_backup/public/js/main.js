@@ -15937,8 +15937,12 @@ function createMessageElement(message, messageId, readByCount = 0) {
     const textSpan = document.createElement('span');
     textSpan.className = 'reply-quote-text';
     const replyRaw = message.replyTo._decryptedErrorText || message.replyTo.text || '（ファイル）';
-    const replyText = isEncrypted(replyRaw) ? '（暗号化メッセージを復号中...）' : replyRaw;
-    textSpan.textContent = replyText.length > 40 ? replyText.slice(0, 40) + '…' : replyText;
+    const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
+    if (isReplyEnc) {
+      textSpan.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
+    } else {
+      textSpan.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
+    }
 
     replyQuoteDiv.appendChild(nicknameSpan);
     replyQuoteDiv.appendChild(textSpan);
@@ -15986,7 +15990,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
       textToDisplay = message.text;
     }
     if (textToDisplay === null || (typeof textToDisplay === 'string' && textToDisplay.startsWith('enc::'))) {
-      messageTextSpan.innerHTML = '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
+      messageTextSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
       messageElement.appendChild(messageTextSpan);
     } else {
       messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
@@ -16694,7 +16698,7 @@ function renderMessagesWithReadReceipts() {
         } else if (msg._decryptedErrorText) {
           textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);
         } else if (isEnc) {
-          textSpan.innerHTML = '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
+          textSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
         } else {
           textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
         }
@@ -23641,7 +23645,7 @@ window.promptSetupAppPin = function () {
 let _lastSetupPinInputTime = 0;
 window.inputSetupPinDigit = async function (digit) {
   const now = performance.now();
-  if (now - _lastSetupPinInputTime < 50) return;
+  if (now - _lastSetupPinInputTime < 120) return;
   _lastSetupPinInputTime = now;
   if (_currentSetupInput.length >= 4) return;
   _currentSetupInput += digit;
@@ -23660,7 +23664,7 @@ window.inputSetupPinDigit = async function (digit) {
 let _lastSetupPinBsTime = 0;
 window.backspaceSetupPinDigit = function () {
   const now = performance.now();
-  if (now - _lastSetupPinBsTime < 50) return;
+  if (now - _lastSetupPinBsTime < 120) return;
   _lastSetupPinBsTime = now;
   if (_currentSetupInput.length > 0) {
     _currentSetupInput = _currentSetupInput.slice(0, -1);
@@ -23954,7 +23958,7 @@ window.inputAppPinDigit = async function (digit) {
     return;
   }
   const perfNow = performance.now();
-  if (perfNow - _lastAppPinInputTime < 50) return;
+  if (perfNow - _lastAppPinInputTime < 120) return;
   _lastAppPinInputTime = perfNow;
   if (_currentPinInput.length >= 4) return;
   _currentPinInput += digit;
@@ -23996,7 +24000,7 @@ window.inputAppPinDigit = async function (digit) {
 let _lastAppPinBsTime = 0;
 window.backspaceAppPinDigit = function () {
   const perfNow = performance.now();
-  if (perfNow - _lastAppPinBsTime < 50) return;
+  if (perfNow - _lastAppPinBsTime < 120) return;
   _lastAppPinBsTime = perfNow;
   if (_currentPinInput.length > 0) {
     _currentPinInput = _currentPinInput.slice(0, -1);
@@ -24061,23 +24065,7 @@ function initPinLockSystem() {
     }
   });
 
-  // タッチ操作時の300msタップ遅延を根絶する即時pointerdownバインド
-  const bindFastKeypad = (containerId, inputFn) => {
-    const cont = document.getElementById(containerId);
-    if (!cont) return;
-    cont.addEventListener('pointerdown', (e) => {
-      const btn = e.target.closest('.pin-keypad-btn');
-      if (!btn) return;
-      // 数字テキストを取得
-      const text = btn.textContent?.trim();
-      if (/^[0-9]$/.test(text)) {
-        e.preventDefault();
-        inputFn(text);
-      }
-    });
-  };
-  bindFastKeypad('appPinLockOverlay', window.inputAppPinDigit);
-  bindFastKeypad('pinSetupModal', window.inputSetupPinDigit);
+  // キーパッドのタップ操作（touch-action: manipulation により300ms遅延なしで安全に1回のみ発火）
 
   const onUserActivity = () => { _lastUserInteractionTime = Date.now(); };
   window.addEventListener('mousemove', onUserActivity, { passive: true });

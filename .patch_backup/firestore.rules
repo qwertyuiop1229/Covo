@@ -266,7 +266,11 @@ service cloud.firestore {
            (request.resource.data.requesterUid == request.auth.uid &&
             // serverId が指定されている場合はメンバーシップを確認
             (!('serverId' in request.resource.data) ||
-             isJoinedServer(appId, request.resource.data.serverId))));
+             isJoinedServer(appId, request.resource.data.serverId)) &&
+            // dmId が指定されている場合は当事者間（requesterUid と targetUid）の組み合わせであることを検証
+            (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
+             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
         allow update: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
            ((('targetUid' in resource.data && resource.data.targetUid == request.auth.uid) ||

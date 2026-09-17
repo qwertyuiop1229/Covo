@@ -9425,8 +9425,9 @@ window.initiateMigrationReceive = async function() {
         await pc.setLocalDescription(answer);
         await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
       }
+    }, (err) => {
+      console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
     });
-
     onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
@@ -9435,6 +9436,8 @@ window.initiateMigrationReceive = async function() {
           } catch (e) { }
         }
       });
+    }, (err) => {
+      console.warn('[Migration sender_candidates onSnapshot] notice:', err?.message || err);
     });
 
   } catch (err) {
@@ -19745,6 +19748,8 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
           }
         }
       });
+    }, (err) => {
+      console.warn('[P2P LogSync requesterCandidates onSnapshot] notice:', err?.message || err);
     });
 
     await pc.setRemoteDescription(new RTCSessionDescription(reqData.offer));
@@ -19894,8 +19899,9 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
           }
         }
       });
+    }, (err) => {
+      console.warn('[P2P LogSync targetCandidates onSnapshot] notice:', err?.message || err);
     });
-
     unsubDoc = onSnapshot(syncDocRef, async (snap) => {
       if (!snap.exists()) return;
       const d = snap.data();
@@ -19906,6 +19912,8 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
           try { await pc.addIceCandidate(cand); } catch (e) {}
         }
       }
+    }, (err) => {
+      console.warn('[P2P LogSync syncDocRef onSnapshot] notice:', err?.message || err);
     });
 
     // 5秒タイムアウト（ベストエフォートで終了）
