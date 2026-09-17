@@ -112,7 +112,14 @@ let _cachedTelemetryErrors = window._cachedTelemetryErrors = (() => {
   }
 })();
 const _reportedSignaturesRecently = new Map();
-const _pendingTelemetryErrors = [];
+const _pendingTelemetryErrors = (() => {
+  try {
+    const saved = localStorage.getItem('covo_pending_telemetry_queue');
+    return saved ? JSON.parse(saved) : [];
+  } catch (_) {
+    return [];
+  }
+})();
 let _isReportingTelemetry = false;
 function _saveTelemetryErrorsToStorage() {
   try {
@@ -120,6 +127,34 @@ function _saveTelemetryErrorsToStorage() {
       localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(_cachedTelemetryErrors.slice(0, 100)));
     }
   } catch (_) {}
+}
+function _savePendingTelemetryQueue() {
+  try {
+    localStorage.setItem('covo_pending_telemetry_queue', JSON.stringify(_pendingTelemetryErrors.slice(0, 100)));
+  } catch (_) {}
+}
+function _safeSerializeError(val) {
+  if (val == null) return 'Unknown error';
+  if (val instanceof Error) return val.stack || `${val.name}: ${val.message}`;
+  if (typeof val === 'string') return val;
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(val, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) return '[Circular]';
+        seen.add(value);
+      }
+      return value;
+    });
+  } catch (_) {
+    try {
+      const keys = Object.keys(val);
+      const parts = keys.map(k => `${k}: ${val[k]}`);
+      return parts.length ? `{ ${parts.join(', ')} }` : String(val);
+    } catch (_) {
+      return String(val);
+    }
+  }
 }
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
@@ -139,8 +174,8 @@ function _reportTelemetryError(type, message, stack) {
   if (isTransientTelemetryError([message, stack])) return;
   _isReportingTelemetry = true;
   try {
-    const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
-    if (!msgStr || msgStr === '[object Object]') return;
+    const msgStr = _safeSerializeError(message);
+    if (!msgStr) return;
     const signature = _createErrorSignature(type, msgStr, stack);
     // 管理者が解決済みとして削除したエラーはセッション内での復活を抑制
     if (_dismissedErrorSignatures.has(signature)) return;
@@ -156,15 +191,19 @@ function _reportTelemetryError(type, message, stack) {
       screenSize: `${window.innerWidth}x${window.innerHeight}`,
       isElectron: Boolean(window.electronAPI)
     };
+    let currentCount = 1;
+    let affectedList = [email];
     // 1. ローカル配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
         window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
         window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        currentCount = window._cachedTelemetryErrors[existingIdx].count;
         if (!window._cachedTelemetryErrors[existingIdx].affectedEmails.includes(email)) {
           window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
         }
+        affectedList = window._cachedTelemetryErrors[existingIdx].affectedEmails;
       } else {
         window._cachedTelemetryErrors.unshift({
           id: signature,
@@ -191,26 +230,25 @@ function _reportTelemetryError(type, message, stack) {
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
     if (isRapidDuplicate) return;
-    // 2. RTDB へ即時直接プッシュ（get往復待ちを完全廃止し、ミリ秒単位でクラウドへ即時保存）
-    if (typeof _getOrInitRTDB === 'function') {
-      _getOrInitRTDB().then(rtdb => {
-        if (rtdb) {
-          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
-            const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
-            const payload = {
-              id: signature,
-              signature: signature,
-              type: type || 'error',
-              message: msgStr.substring(0, 3000),
-              stack: String(stack || '').substring(0, 6000),
-              lastOccurredAt: Date.now(),
-              environment: envInfo
-            };
-            update(errRef, payload).catch(() => {});
-          }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
+    // 2. 🛡️ RTDB REST API への即時送信（Firebase SDK の初期化状態や app の有無に依存せず 100% 確実に即時到達）
+    const rtdbPayload = {
+      id: signature,
+      signature: signature,
+      type: type || 'error',
+      message: msgStr.substring(0, 3000),
+      stack: String(stack || '').substring(0, 6000),
+      lastOccurredAt: Date.now(),
+      count: currentCount,
+      affectedEmails: affectedList,
+      environment: envInfo
+    };
+    const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
+    fetch(rtdbUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rtdbPayload),
+      keepalive: true
+    }).catch(() => {});
     // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
       const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
@@ -228,10 +266,12 @@ function _reportTelemetryError(type, message, stack) {
       }, { merge: true }).catch(err => {
         if (_pendingTelemetryErrors.length < 100) {
           _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+          _savePendingTelemetryQueue();
         }
       });
     } else if (_pendingTelemetryErrors.length < 100) {
       _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+      _savePendingTelemetryQueue();
     }
   } catch (e) {
   } finally {
@@ -240,8 +280,8 @@ function _reportTelemetryError(type, message, stack) {
 }
 window._reportTelemetryError = _reportTelemetryError;
 function _flushPendingTelemetryErrors() {
-  if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
   const items = _pendingTelemetryErrors.splice(0, _pendingTelemetryErrors.length);
+  _savePendingTelemetryQueue();
   for (const item of items) {
     _reportTelemetryError(item.type, item.message, item.stack);
   }
@@ -251,6 +291,7 @@ if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
   const early = window._earlyErrors.splice(0, window._earlyErrors.length);
   early.forEach(e => _reportTelemetryError(e.type, e.message, e.stack));
 }
+_flushPendingTelemetryErrors();
 // オンライン復帰時および定期的なフラッシュ
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);

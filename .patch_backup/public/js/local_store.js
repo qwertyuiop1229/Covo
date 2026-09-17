@@ -109,6 +109,10 @@ export async function putMessage(msg) {
       if (cleanMsg._originalText) {
         cleanMsg.text = cleanMsg._originalText;
       }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
       cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
@@ -141,6 +145,10 @@ export async function upsertMessagesBatch(msgs) {
         // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
         if (cleanMsg._originalText) {
           cleanMsg.text = cleanMsg._originalText;
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
         }
         cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
         store.put(cleanMsg);

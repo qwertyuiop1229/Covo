@@ -227,6 +227,7 @@ service cloud.firestore {
           (isGlobalAdmin(appId) ||
            (request.resource.data.requesterUid == request.auth.uid &&
             (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == null ||
              request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
              request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
         allow update: if isAuthenticated();

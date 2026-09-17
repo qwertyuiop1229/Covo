@@ -183,13 +183,14 @@ async function handleEmergencyPasswordReset(request, env) {
     if (newPassword.length < 6) {
       return new Response(JSON.stringify({ success: false, error: "新しいパスワードは6文字以上で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     const cleanEmail = email.trim().toLowerCase();
     const cleanCode = code.trim().replace(/[^0-9A-Za-z]/g, '');
+    if (!/^[0-9A-Za-z]{6}$/.test(cleanCode)) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードは6桁の英数字で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
     // 1. メールアドレスのSHA-256ハッシュを計算
     const enc = new TextEncoder();
@@ -1432,9 +1433,18 @@ async function handleUploadFile(request, env) {
         status: 413, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
-
     if (isFileExtensionBlocked(file.name)) {
       return new Response(JSON.stringify({ error: 'このファイル形式はセキュリティのためアップロードできません' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+      });
+    }
+    const DANGEROUS_MIMES = new Set([
+      'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+      'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+      'application/hta', 'application/x-msi'
+    ]);
+    if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+      return new Response(JSON.stringify({ error: 'セキュリティ保護のため、この形式のファイルはアップロードできません' }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
@@ -2108,7 +2118,8 @@ async function handleAdminDeleteMessage(request, env) {
         const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
         const msgCheckRes = await fetch(msgCheckUrl);
         const msgCheckData = await msgCheckRes.json().catch(() => null);
-        if (msgCheckData && msgCheckData.senderId && msgCheckData.senderId !== verifiedUser.uid && msgCheckData.userId !== verifiedUser.uid) {
+        const isSender = Boolean(msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid));
+        if (!isSender) {
           return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
       }

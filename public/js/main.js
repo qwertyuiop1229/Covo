@@ -5538,7 +5538,10 @@ window.executeLogout = async function (skipConfirm = false) {
         }
       }).catch(() => {});
     }
-    // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+    // IndexedDB (LocalStore) & メディアキャッシュ内の全ローカルデータを完全削除
+    if ('caches' in window) {
+      await caches.delete('covo_media_cache_v1').catch(() => {});
+    }
     if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
       await LocalStore.clearAllLocalData().catch(() => {});
     }
@@ -8864,6 +8867,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
     requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
+  pruneExcessMessages(null, null, dmId);
   };
 
   // =========================================================================
@@ -9389,12 +9393,34 @@ window.initiateMigrationReceive = async function() {
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
     });
+    const pendingCandidates = [];
+    onSnapshot(transferRef, async (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.offer && !pc.currentRemoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        while (pendingCandidates.length > 0) {
+          const cand = pendingCandidates.shift();
+          try { await pc.addIceCandidate(cand); } catch(e){}
+        }
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+      }
+    }, (err) => {
+      console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
+    });
     onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-          } catch (e) { }
+          const cand = new RTCIceCandidate(change.doc.data());
+          if (pc.currentRemoteDescription) {
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (e) { }
+          } else {
+            pendingCandidates.push(cand);
+          }
         }
       });
     }, (err) => {
@@ -13608,6 +13634,7 @@ function selectRoom(roomId, roomName) {
       requestP2PLogBackfill('server', roomId, oldestTs);
     }).catch(() => {});
   } catch (e) { }
+  pruneExcessMessages(currentServerId, roomId, null);
 }
 
 let floatingDateTimer = null;
@@ -14454,6 +14481,7 @@ async function sendSticker(emoji) {
 
     cancelReply();
     resetAwayTimer();
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
   } catch (e) {
     console.error('[Sticker] 送信失敗:', e);
     alertMessage('スタンプの送信に失敗しました', 'error');
@@ -14860,12 +14888,80 @@ document.addEventListener('click', (e) => {
 
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
-
-// RTDBメッセージローテーション後方互換ダミー関数（クライアント側不正削除完全廃止）
-async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
-  return;
+// === ローカルメディアキャッシュ (Cache Storage API 活用) ===
+// サーバーで100件を超過してKVから削除された後でも、ローカルに履歴を持つ端末では画像を永久に表示可能にする
+async function fetchWithMediaCache(url) {
+  if (!url || typeof url !== 'string' || !('caches' in window)) {
+    return fetch(url);
+  }
+  try {
+    const cache = await caches.open('covo_media_cache_v1');
+    const cachedResponse = await cache.match(url);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    const networkResponse = await fetch(url);
+    if (networkResponse.ok) {
+      cache.put(url, networkResponse.clone()).catch(() => {});
+    }
+    return networkResponse;
+  } catch (err) {
+    return fetch(url);
+  }
 }
 
+async function cacheLocalMediaFile(url, fileOrBlob) {
+  if (!url || !fileOrBlob || !('caches' in window)) return;
+  try {
+    const cache = await caches.open('covo_media_cache_v1');
+    const response = new Response(fileOrBlob, {
+      headers: {
+        'Content-Type': fileOrBlob.type || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000'
+      }
+    });
+    await cache.put(url, response);
+  } catch (_) {}
+}
+
+// === メッセージ自動プルーニング（最新100件超過分の自動削除 & KV添付ファイル完全消去） ===
+let _pruneThrottleMap = new Map();
+async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
+  if ((!serverId || !roomId) && !dmId) return;
+  const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
+  const now = Date.now();
+  if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;
+  _pruneThrottleMap.set(channelKey, now);
+
+  try {
+    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+    if (!idToken) return;
+
+    fetch(`${WORKER_BASE_URL}/api/pruneChannelMessages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        appId,
+        serverId: serverId || null,
+        roomId: roomId || null,
+        dmId: dmId || null
+      }),
+      keepalive: true
+    }).then(async res => {
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        if (d.prunedCount > 0) {
+          console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+        }
+      }
+    }).catch(err => {
+      console.warn('[Prune] background prune notice:', err);
+    });
+  } catch (_) {}
+}
 async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
@@ -15042,6 +15138,7 @@ async function sendMessage() {
           "simplechat/messages",
           snapServerId
         );
+        cacheLocalMediaFile(fileUrl, fileToUpload);
         Object.assign(data, {
           fileData: fileUrl,
           fileName: attachedFile.name,
@@ -15177,6 +15274,7 @@ async function sendMessage() {
     const remainingFiles = (attachedFiles && attachedFiles.length > 1) ? attachedFiles.slice(1) : [];
     clearAttachedFile(); cancelReply();
     resetAwayTimer();
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
 
     // 複数ファイル添付時の順次バックグラウンドアップロード＆送信 (#70)
     if (remainingFiles.length > 0) {
@@ -15259,6 +15357,7 @@ async function sendMessage() {
     }
     }
     const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+    cacheLocalMediaFile(fileUrl, fileToUpload);
     const data = {
     userId: userId,
     senderId: userId,
@@ -15355,6 +15454,7 @@ async function sendMessage() {
         }
       }
     } catch (_) {}
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
     }
     }
 async function handleFilesSelected(filesList) {
@@ -16063,7 +16163,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   // 鍵の取得待機中は削除カードにせず、そのままリトライ待機
                   return;
                 }
-                const res = await fetch(message.fileData);
+                const res = await fetchWithMediaCache(message.fileData);
                 if (res.status === 404 || res.status === 410) {
                   markFileAsMissing(message.fileData);
                   message._fileExpired = true;
@@ -16220,7 +16320,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                     key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
                   }
                   if (!key) return;
-                  const res = await fetch(message.fileData);
+                  const res = await fetchWithMediaCache(message.fileData);
                   if (res.status === 404 || res.status === 410 || !res.ok) {
                     markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                     message._fileExpired = true;
@@ -16283,7 +16383,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
               }
               if (!key) throw new Error("鍵が見つかりません");
-              const res = await fetch(message.fileData);
+              const res = await fetchWithMediaCache(message.fileData);
               if (res.status === 404 || res.status === 410 || !res.ok) {
                 markFileAsMissing(message.fileData);
                 message._fileExpired = true;
@@ -16362,7 +16462,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
           return;
         }
         try {
-          const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
+          const res = await fetchWithMediaCache(message.kvFileUrl).catch(() => null);
           if (res && (res.status === 404 || res.status === 410)) {
             markFileAsMissing(message.kvFileUrl);
             message._fileExpired = true;
@@ -19705,25 +19805,38 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
     return;
   }
 
-  // 3. WebRTC DataChannel 経由で暗号化メッセージを送信
+  // 3. WebRTC DataChannel 経由で暗号化メッセージを送信 (TURN対応で100%貫通)
   let unsubRequesterCands = null;
   try {
-    const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    const pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     let dc = null;
     const pendingCandidates = [];
-
     pc.ondatachannel = (ev) => {
       dc = ev.channel;
-      dc.onopen = () => {
-        // 暗号化された状態のメッセージ配列のみを送信（秘密鍵や別チャンネルのログは一切除外）
-        const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: localMsgs });
-        dc.send(payload);
+      const sendData = () => {
+        // メッセージ配列を安全なバッチサイズに整流して送信
+        const validMsgs = localMsgs.filter(m => m && m.id && (beforeTs == null || getMsgTimestamp(m) <= beforeTs));
+        const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs });
+        try {
+          dc.send(payload);
+        } catch (sendErr) {
+          console.warn('[P2P LogSync] Large payload batching fallback:', sendErr);
+          // 64KB超過時の小分けフォールバック
+          for (let i = 0; i < validMsgs.length; i += 25) {
+            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 25) }));
+          }
+        }
         setTimeout(() => {
           if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
           try { pc.close(); } catch (e) {}
           deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
-        }, 1000);
+        }, 1200);
       };
+      if (dc.readyState === 'open') {
+        sendData();
+      } else {
+        dc.onopen = sendData;
+      }
     };
 
     pc.onicecandidate = (e) => {
@@ -19820,16 +19933,16 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
   };
 
   try {
-    pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     const dc = pc.createDataChannel('logSync', { ordered: true });
-
     dc.onmessage = async (ev) => {
       try {
         const res = JSON.parse(ev.data);
         if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
-          console.log(`[P2P LogSync] Received ${res.messages.length} backfilled messages for ${res.channelId}`);
-          await LocalStore.upsertMessagesBatch(res.messages);
-
+          // 届いたメッセージが安全なデータか検証（要求した過去日時より古い、または新規追加分のみ安全に合流）
+          const filteredIncoming = res.messages.filter(m => m && m.id && typeof m.channelId === 'string');
+          console.log(`[P2P LogSync] Received ${filteredIncoming.length} backfilled messages for ${res.channelId}`);
+          await LocalStore.upsertMessagesBatch(filteredIncoming);
           // 現在開いているチャンネルと一致していれば復号して即時画面反映
           const activeChId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
           if (res.channelId === activeChId) {
@@ -19841,8 +19954,8 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
                 await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
               }
             };
-            await decryptInPlace(res.messages);
-            res.messages.forEach(msg => {
+            await decryptInPlace(filteredIncoming);
+            filteredIncoming.forEach(msg => {
               const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
               if (idx >= 0) allLoadedMessages[idx] = msg;
               else allLoadedMessages.push(msg);
@@ -19860,28 +19973,29 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         cleanupP2P();
       }
     };
-
     pc.onicecandidate = (e) => {
       if (e.candidate) {
         addDoc(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/requesterCandidates`), e.candidate.toJSON()).catch(() => {});
       }
     };
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    await setDoc(syncDocRef, {
+    const syncPayload = {
       requesterUid: userId,
       targetUid: targetUid,
       channelType,
-      serverId: currentServerId || null,
-      roomId: channelType === 'server' ? targetId : null,
-      dmId: channelType === 'dm' ? targetId : null,
       beforeTs: oldestLocalTs || null,
       offer: { type: offer.type, sdp: offer.sdp },
       status: 'offering',
       createdAt: serverTimestamp()
-    });
+    };
+    if (channelType === 'server') {
+      syncPayload.serverId = currentServerId || null;
+      syncPayload.roomId = targetId;
+    } else {
+      syncPayload.dmId = targetId;
+    }
+    await setDoc(syncDocRef, syncPayload);
 
     unsubCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), (snap) => {
       snap.docChanges().forEach(async (ch) => {

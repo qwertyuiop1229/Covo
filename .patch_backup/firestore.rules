@@ -361,10 +361,9 @@ service cloud.firestore {
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム暗号鍵 (Room Keys)
+          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
           match /roomKeys/{keyId} {
-            allow read, create: if isAuthenticated();
-            allow update, delete: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+            allow read, write: if isAuthenticated();
           }
 
           // E2EE 救済リクエスト (Rescue Requests)
