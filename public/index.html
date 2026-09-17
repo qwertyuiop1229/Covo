@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.186" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.187" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.186" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.187" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -276,13 +276,27 @@
         showEmergencyRecoveryPanel(msg, e.reason);
       }
     });
-    // 35秒間のウォッチドッグタイマー：バックグラウンド待機中やロード完了時はリカバリーパネルを展開しない
+    // 起動スプラッシュのセーフティタイマー（初期読み込み停滞・IndexedDBロック時のハングを完全防止）
+    setTimeout(function() {
+      const splash = document.getElementById("appLoadingSplash");
+      if (splash && document.body.classList.contains("auth-ready")) {
+        splash.style.opacity = '0';
+        setTimeout(function() { splash.remove(); }, 300);
+      }
+    }, 4500);
+    setTimeout(function() {
+      const splash = document.getElementById("appLoadingSplash");
+      if (splash) {
+        splash.style.opacity = '0';
+        setTimeout(function() { splash.remove(); }, 300);
+      }
+    }, 7000);
     setTimeout(function() {
       if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
         console.warn('[Watchdog Timer] アプリ起動完了タイムアウトを確認しました。リカバリーパネルを展開します。');
         showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（通信遮断またはネットワーク遅延の可能性）', null);
       }
-    }, 35000);
+    }, 18000);
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
@@ -3458,7 +3472,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.186"></script>
+  <script type="module" src="js/main.js?v=1.1.187"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4634,15 +4648,18 @@
       <!-- スマホ用ボトムシートドラッグハンドル -->
       <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
-      <div id="userProfileBanner" class="h-20 relative z-10 flex items-start justify-end p-2.5 flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
-        <div class="flex items-center gap-1.5 z-30">
-          <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
-            <i class="fas fa-user-plus"></i>
-          </button>
+      <div id="userProfileBanner" class="h-20 relative flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
+      </div>
+      <!-- 右上ボタングループ & ポップオーバー (アバターより確実に前面の z-50) -->
+      <div class="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-50 select-none">
+        <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
+          <i class="fas fa-user-plus"></i>
+        </button>
+        <div class="relative">
           <button id="upBannerMoreBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="その他のオプション" onclick="window.toggleUpMoreMenu(event)">
             <i class="fas fa-ellipsis"></i>
           </button>
-          <div id="upMoreMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-1 z-50 text-xs font-semibold">
+          <div id="upMoreMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
             <button onclick="window.openFullProfileFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
               <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
             </button>

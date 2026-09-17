@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.185" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.186" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.185" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.186" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -238,17 +238,21 @@
     window._earlyErrors = window._earlyErrors || [];
     window._covoLogs = window._covoLogs || [];
     window.addEventListener('error', function(e) {
+      const isExt = _isIgnoredEarlyError(e.message, e.filename, e.error);
+      if (isExt) {
+        try { e.preventDefault(); } catch (_) {}
+      }
+      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
       const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
       const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
-      const logLine = `[ERR] ${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
+      const logLine = `[ERR] ${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
       window._covoLogs.push(logLine);
       if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('error', msg, stack);
+        window._reportTelemetryError('error', `${tag}${msg}`, stack);
       } else {
-        window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
+        window._earlyErrors.push({ type: 'error', message: `${tag}${msg}`, stack: stack, time: Date.now() });
       }
-      // 拡張機能等のエラーで画面全体が赤画面ロックされるのを防止しつつ、エラー自体は100%収集
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !_isIgnoredEarlyError(e.message, e.filename, e.error)) {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
         showEmergencyRecoveryPanel(msg, e.error);
       }
     });
@@ -256,14 +260,19 @@
       const r = e.reason;
       const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
       const stack = (r && r.stack) || '';
-      const logLine = `[ERR] Uncaught (in promise) ${msg}`;
+      const isExt = _isIgnoredEarlyError(msg, '', r);
+      if (isExt) {
+        try { e.preventDefault(); } catch (_) {}
+      }
+      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+      const logLine = `[ERR] ${tag}Uncaught (in promise) ${msg}`;
       window._covoLogs.push(logLine);
       if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('unhandledrejection', `Uncaught (in promise) ${msg}`, stack);
+        window._reportTelemetryError('unhandledrejection', `${tag}Uncaught (in promise) ${msg}`, stack);
       } else {
-        window._earlyErrors.push({ type: 'unhandledrejection', message: `Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
+        window._earlyErrors.push({ type: 'unhandledrejection', message: `${tag}Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
       }
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !_isIgnoredEarlyError(r?.message || String(r || ''), r?.stack || '', r)) {
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
         showEmergencyRecoveryPanel(msg, e.reason);
       }
     });
@@ -3449,7 +3458,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.185"></script>
+  <script type="module" src="js/main.js?v=1.1.186"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

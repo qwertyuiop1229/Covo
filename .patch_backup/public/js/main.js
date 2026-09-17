@@ -32,6 +32,7 @@ import {
   persistentSingleTabManager,
   persistentMultipleTabManager,
   memoryLocalCache,
+  setLogLevel,
   doc,
   getDoc,
   setDoc,
@@ -264,18 +265,47 @@ if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
 
+function _isExtensionScriptError(msg, file, stack) {
+  const s = `${msg || ''} ${file || ''} ${stack || ''}`.toLowerCase();
+  return (
+    s.includes('content.js') ||
+    s.includes('globals-front.js') ||
+    s.includes('adblock') ||
+    s.includes('usecache') ||
+    s.includes('receiving end does not exist') ||
+    s.includes('could not establish connection') ||
+    s.includes('chrome-extension:') ||
+    s.includes('moz-extension:') ||
+    s.includes('safari-extension:') ||
+    s.includes('safari-web-extension:')
+  );
+}
+
 window.addEventListener('error', (event) => {
   const msg = event.error ? (event.error.message || String(event.error)) : (event.message || 'Error');
   const stack = (event.error && event.error.stack) || `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`;
-  const displayLine = event.filename ? `${msg} (${event.filename}:${event.lineno || 0})` : msg;
+  const isExt = _isExtensionScriptError(msg, event.filename, stack);
+  // 拡張機能による未処理エラーはブラウザコンソール（F12）の赤文字出力を消音
+  if (isExt) {
+    try { event.preventDefault(); } catch (_) {}
+  }
+  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+  const displayLine = event.filename ? `${tag}${msg} (${event.filename}:${event.lineno || 0})` : `${tag}${msg}`;
   _pushLog('ERR', [displayLine]);
-  _reportTelemetryError('error', msg, stack);
+  _reportTelemetryError('error', `${tag}${msg}`, stack);
 });
+
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
   const msg = reason instanceof Error ? (reason.message || reason.stack) : String(reason || 'Unhandled Promise Rejection');
   const stack = (reason instanceof Error && reason.stack) ? reason.stack : '';
-  const displayLine = `Uncaught (in promise) ${msg}`;
+  const isExt = _isExtensionScriptError(msg, '', stack);
+  // 拡張機能によるPromise拒否エラーをブラウザコンソール（F12）で消音
+  if (isExt) {
+    try { event.preventDefault(); } catch (_) {}
+  }
+  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+  const displayLine = `${tag}Uncaught (in promise) ${msg}`;
   _pushLog('ERR', [displayLine]);
   _reportTelemetryError('unhandledrejection', displayLine, stack);
 });
@@ -819,6 +849,8 @@ window.clearMessagesDOM = clearMessagesDOM;
 function initializeFirebase() {
   try {
     if (!app) {
+      // Firestore SDK内部の非致命的警告ログ（BloomFilter error等）を消音
+      try { setLogLevel('error'); } catch (_) {}
       app = initializeApp(firebaseConfig);
       try {
         db = initializeFirestore(app, {
