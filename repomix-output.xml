@@ -759,267 +759,6 @@ jobs:
 @import url('./modules/theme.css');
 </file>
 
-<file path="public/js/debug_ui.js">
-import { safeCopy } from './utils.js';
-import { alertMessage } from './ui_helpers.js';
-export function _runShadowHunter() {
-      const lines = [];
-      try {
-        const desc = (el) => {
-          if (!el || !el.tagName) return '?';
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-          return el.tagName.toLowerCase() + id + cls;
-        };
-        // 影・境界・グラデを持つか判定し、持つなら記録
-        const inspect = (el, tag) => {
-          if (!el) return;
-          const cs = getComputedStyle(el);
-          const hits = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
-          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
-          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
-          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
-          // ::after / ::before も調べる
-          for (const pseudo of ['::before', '::after']) {
-            const pcs = getComputedStyle(el, pseudo);
-            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
-              const ph = [];
-              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
-              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
-              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
-              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
-            }
-          }
-          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
-        };
-        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
-        const input = document.getElementById('messageInputArea');
-        const nav = document.getElementById('mobileBottomNav');
-        inspect(input, 'IN');
-        inspect(input && input.parentElement, 'IN.parent');
-        inspect(nav, 'NAV');
-        inspect(document.getElementById('chatArea'), 'chat');
-        inspect(document.getElementById('messageInputInner'), 'inner');
-        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
-        if (input) {
-          const ir = input.getBoundingClientRect();
-          const x = Math.round(ir.left + ir.width / 2);
-          for (const dy of [-2, 0, 2, 4, 8]) {
-            const y = Math.round(ir.bottom + dy);
-            const stack = document.elementsFromPoint(x, y) || [];
-            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
-          }
-        }
-        const uniq = [...new Set(lines)];
-        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-export function _updateLayoutDebugUI() {
-  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
-  if (!els.length) return;
-  const txt = _runShadowHunter();
-  const n = txt.split('\n').length;
-  els.forEach(el => {
-    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
-    el.style.cursor = 'pointer';
-    el.style.textDecoration = 'underline';
-    el.style.whiteSpace = 'normal';
-    el.title = 'タップでコピー';
-    el.onclick = () => copyDebugText(txt, el);
-  });
-}
-let _inspectHL = null;
-export function __clearInspectHighlight() {
-      if (_inspectHL) { _inspectHL.style.display = 'none'; }
-    }
-export function __showInspectHighlight(rect) {
-      if (!_inspectHL) {
-        _inspectHL = document.createElement('div');
-        _inspectHL.setAttribute('data-inspect-ignore', '1');
-        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
-        document.body.appendChild(_inspectHL);
-      }
-      _inspectHL.style.display = 'block';
-      _inspectHL.style.left = rect.left + 'px';
-      _inspectHL.style.top = rect.top + 'px';
-      _inspectHL.style.width = rect.width + 'px';
-      _inspectHL.style.height = rect.height + 'px';
-    }
-export function _inspectPoint(x, y) {
-      try {
-        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
-        const out = [];
-        stack.forEach((el, i) => {
-          const cs = getComputedStyle(el);
-          const id = el.id ? '#' + el.id : '';
-          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
-          const name = el.tagName.toLowerCase() + id + cls;
-          const r = el.getBoundingClientRect();
-          const props = [];
-          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
-          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
-          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
-          // 擬似要素
-          for (const ps of ['::before', '::after']) {
-            const p = getComputedStyle(el, ps);
-            if (p.content && p.content !== 'none' && p.content !== 'normal') {
-              const pp = [];
-              if (p.boxShadow !== 'none') pp.push('shadow');
-              if (p.backgroundImage !== 'none') pp.push('bg');
-              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
-              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
-            }
-          }
-          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
-        });
-        return out.join('\n');
-      } catch (e) {
-        return 'err:' + (e && e.message);
-      }
-    }
-export function _lineColor(line) {
-      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
-      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
-      if (line.includes('[E2EE]')) return '#34d399';
-      if (line.includes('[INFO]')) return '#60a5fa';
-      return '#cbd5e1';
-    }
-export function _appendConsoleLine(line) {
-      const body = document.getElementById('devConsoleBody');
-      if (!body) return;
-      const div = document.createElement('div');
-      div.textContent = line;
-      div.style.color = _lineColor(line);
-      div.style.padding = '2px 0';
-      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
-      body.appendChild(div);
-      body.scrollTop = body.scrollHeight;
-    }
-let _inspectMode = false;
-export function setInspectMode(enabled) {
-  _inspectMode = !!enabled;
-  const bar = document.getElementById('inspectModeBar');
-  const pcCb = document.getElementById('pcToggleInspectMode');
-  const mobileCb = document.getElementById('toggleInspectMode');
-  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
-  if (pcCb) pcCb.checked = _inspectMode;
-  if (mobileCb) mobileCb.checked = _inspectMode;
-  if (!_inspectMode) {
-    __clearInspectHighlight();
-  }
-}
-export function toggleDevConsole() {
-  const panel = document.getElementById('devConsolePanel');
-  if (!panel) return;
-  const isHidden = panel.style.display === 'none' || !panel.style.display;
-  panel.style.display = isHidden ? 'flex' : 'none';
-  if (isHidden) {
-    const body = document.getElementById('devConsoleBody');
-    if (body) {
-      body.innerHTML = '';
-      const logs = window._covoLogs || [];
-      if (logs.length === 0) {
-        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
-      } else {
-        logs.forEach(line => _appendConsoleLine(line));
-      }
-    }
-  }
-}
-export function clearDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  if (body) body.innerHTML = '';
-  window._covoLogs = [];
-}
-export function copyDevConsole() {
-  const body = document.getElementById('devConsoleBody');
-  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
-  if (!text || text.trim() === '') {
-    alertMessage('コピーするコンソールログがありません', 'info');
-    return;
-  }
-  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
-}
-export function copyDebugText(txt) {
-  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
-}
-export function getSystemDiagnosticInfo() {
-  const info = {
-    timestamp: new Date().toLocaleString('ja-JP'),
-    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
-    userAgent: navigator.userAgent,
-    language: navigator.language || 'ja',
-    online: navigator.onLine,
-    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
-    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
-    screenSize: `${window.innerWidth}x${window.innerHeight}`,
-    viewport: `${window.innerWidth}x${window.innerHeight}`,
-    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
-    memory: (window.performance && window.performance.memory) ? {
-      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
-      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
-      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
-    } : null,
-    network: navigator.connection ? {
-      type: navigator.connection.effectiveType || 'unknown',
-      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
-      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
-    } : null,
-    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
-    localStorageCount: (() => {
-      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
-    })()
-  };
-  return info;
-}
-export function formatDiagnosticMarkdown(info) {
-  let md = `### Covo システム診断レポート\n`;
-  md += `- **記録日時**: ${info.timestamp}\n`;
-  md += `- **アプリ種別**: ${info.appType}\n`;
-  md += `- **アプリバージョン**: ${info.appVersion}\n`;
-  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
-  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
-  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
-  if (info.memory) {
-    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
-  }
-  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
-  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
-  return md;
-}
-export function copySystemDiagnosticReport() {
-  const info = getSystemDiagnosticInfo();
-  const md = formatDiagnosticMarkdown(info);
-  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
-}
-export function copyFullDiagnosticAndConsoleReport() {
-  const info = getSystemDiagnosticInfo();
-  let md = formatDiagnosticMarkdown(info);
-  const logs = window._covoLogs || [];
-  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
-  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
-}
-if (typeof window !== 'undefined') {
-  window.setInspectMode = setInspectMode;
-  window.toggleDevConsole = toggleDevConsole;
-  window.clearDevConsole = clearDevConsole;
-  window.copyDevConsole = copyDevConsole;
-  window.copyDebugText = copyDebugText;
-  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
-  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
-  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
-}
-</file>
-
 <file path="public/manifest.json">
 {
   "name": "Covo",
@@ -1768,6 +1507,270 @@ module.exports = {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+}
+</file>
+
+<file path="public/js/debug_ui.js">
+import { safeCopy } from './utils.js';
+import { alertMessage } from './ui_helpers.js';
+export function _runShadowHunter() {
+      const lines = [];
+      try {
+        const desc = (el) => {
+          if (!el || !el.tagName) return '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+          return el.tagName.toLowerCase() + id + cls;
+        };
+        // 影・境界・グラデを持つか判定し、持つなら記録
+        const inspect = (el, tag) => {
+          if (!el) return;
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') hits.push('shadow:' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'c').slice(0, 40));
+          const bw = [cs.borderTopWidth, cs.borderBottomWidth];
+          if (bw[0] !== '0px') hits.push('bT:' + cs.borderTopWidth + ' ' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (bw[1] !== '0px') hits.push('bB:' + cs.borderBottomWidth + ' ' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'c'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') hits.push('bgImg:' + cs.backgroundImage.slice(0, 30));
+          if (cs.filter && cs.filter !== 'none') hits.push('filter:' + cs.filter.slice(0, 20));
+          // ::after / ::before も調べる
+          for (const pseudo of ['::before', '::after']) {
+            const pcs = getComputedStyle(el, pseudo);
+            if (pcs.content && pcs.content !== 'none' && pcs.content !== 'normal') {
+              const ph = [];
+              if (pcs.boxShadow && pcs.boxShadow !== 'none') ph.push('shadow');
+              if (pcs.backgroundImage && pcs.backgroundImage !== 'none') ph.push('bgImg');
+              if (pcs.borderTopWidth !== '0px' || pcs.borderBottomWidth !== '0px') ph.push('border');
+              if (ph.length) hits.push(pseudo + '{' + ph.join(',') + '}');
+            }
+          }
+          if (hits.length) lines.push(`${tag}[${desc(el)}] ${hits.join(' | ')}`);
+        };
+        // 入力欄の下端座標を基準に、その付近の要素を縦に走査
+        const input = document.getElementById('messageInputArea');
+        const nav = document.getElementById('mobileBottomNav');
+        inspect(input, 'IN');
+        inspect(input && input.parentElement, 'IN.parent');
+        inspect(nav, 'NAV');
+        inspect(document.getElementById('chatArea'), 'chat');
+        inspect(document.getElementById('messageInputInner'), 'inner');
+        // 入力欄の下端のすぐ下の点にある要素を elementsFromPoint で全部拾う
+        if (input) {
+          const ir = input.getBoundingClientRect();
+          const x = Math.round(ir.left + ir.width / 2);
+          for (const dy of [-2, 0, 2, 4, 8]) {
+            const y = Math.round(ir.bottom + dy);
+            const stack = document.elementsFromPoint(x, y) || [];
+            stack.slice(0, 4).forEach(e => inspect(e, `@y${dy >= 0 ? '+' : ''}${dy}`));
+          }
+        }
+        const uniq = [...new Set(lines)];
+        return uniq.length ? uniq.join('\n') : '影/境界の容疑者なし';
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+export function _updateLayoutDebugUI() {
+  const els = [document.getElementById('appInfoLayoutDbg'), document.getElementById('mobileAppInfoLayoutDbg')].filter(Boolean);
+  if (!els.length) return;
+  const txt = _runShadowHunter();
+  const n = txt.split('\n').length;
+  els.forEach(el => {
+    el.textContent = (txt.startsWith('影/') || txt.startsWith('err')) ? txt : `容疑者${n}件（タップでコピー）`;
+    el.style.cursor = 'pointer';
+    el.style.textDecoration = 'underline';
+    el.style.whiteSpace = 'normal';
+    el.title = 'タップでコピー';
+    el.onclick = () => copyDebugText(txt, el);
+  });
+}
+let _inspectHL = null;
+export function __clearInspectHighlight() {
+      if (_inspectHL) { _inspectHL.style.display = 'none'; }
+    }
+export function __showInspectHighlight(rect) {
+      if (!_inspectHL) {
+        _inspectHL = document.createElement('div');
+        _inspectHL.setAttribute('data-inspect-ignore', '1');
+        _inspectHL.style.cssText = 'position:fixed;z-index:100000;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.18);border-radius:3px;transition:all 0.1s;box-shadow:0 0 0 9999px rgba(0,0,0,0.02);';
+        document.body.appendChild(_inspectHL);
+      }
+      _inspectHL.style.display = 'block';
+      _inspectHL.style.left = rect.left + 'px';
+      _inspectHL.style.top = rect.top + 'px';
+      _inspectHL.style.width = rect.width + 'px';
+      _inspectHL.style.height = rect.height + 'px';
+    }
+export function _inspectPoint(x, y) {
+      try {
+        const stack = (document.elementsFromPoint(x, y) || []).slice(0, 6);
+        const out = [];
+        stack.forEach((el, i) => {
+          const cs = getComputedStyle(el);
+          const id = el.id ? '#' + el.id : '';
+          const cls = (typeof el.className === 'string' && el.className) ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+          const name = el.tagName.toLowerCase() + id + cls;
+          const r = el.getBoundingClientRect();
+          const props = [];
+          if (cs.boxShadow && cs.boxShadow !== 'none') props.push('shadow=' + cs.boxShadow.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderTopWidth !== '0px') props.push('bTop=' + cs.borderTopWidth + '/' + cs.borderTopColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.borderBottomWidth !== '0px') props.push('bBot=' + cs.borderBottomWidth + '/' + cs.borderBottomColor.replace(/rgba?\([^)]*\)/g, 'C'));
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') props.push('bgImg=' + cs.backgroundImage.slice(0, 24));
+          if (cs.filter && cs.filter !== 'none') props.push('filter=' + cs.filter.slice(0, 18));
+          // 擬似要素
+          for (const ps of ['::before', '::after']) {
+            const p = getComputedStyle(el, ps);
+            if (p.content && p.content !== 'none' && p.content !== 'normal') {
+              const pp = [];
+              if (p.boxShadow !== 'none') pp.push('shadow');
+              if (p.backgroundImage !== 'none') pp.push('bg');
+              if (p.borderTopWidth !== '0px' || p.borderBottomWidth !== '0px') pp.push('border');
+              if (pp.length) props.push(ps + '{' + pp.join(',') + '}');
+            }
+          }
+          out.push(`[${i}] ${name} y:${Math.round(r.top)}-${Math.round(r.bottom)} bg=${cs.backgroundColor.replace(/rgba?\([^)]*\)/g, m => m)} ${props.length ? '★' + props.join(' ') : ''}`);
+        });
+        return out.join('\n');
+      } catch (e) {
+        return 'err:' + (e && e.message);
+      }
+    }
+export function _lineColor(line) {
+      if (line.includes('[error]') || line.includes('[uncaught]') || line.includes('[promise]') || line.includes('[ERR]')) return '#f87171';
+      if (line.includes('[warn]') || line.includes('[WARN]')) return '#fbbf24';
+      if (line.includes('[E2EE]')) return '#34d399';
+      if (line.includes('[INFO]')) return '#60a5fa';
+      return '#cbd5e1';
+    }
+export function _appendConsoleLine(line) {
+      const body = document.getElementById('devConsoleBody');
+      if (!body) return;
+      const div = document.createElement('div');
+      div.textContent = line;
+      div.style.color = _lineColor(line);
+      div.style.padding = '2px 0';
+      div.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+      body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
+    }
+let _inspectMode = false;
+export function setInspectMode(enabled) {
+  _inspectMode = !!enabled;
+  const bar = document.getElementById('inspectModeBar');
+  const pcCb = document.getElementById('pcToggleInspectMode');
+  const mobileCb = document.getElementById('toggleInspectMode');
+  if (bar) bar.style.display = _inspectMode ? 'flex' : 'none';
+  if (pcCb) pcCb.checked = _inspectMode;
+  if (mobileCb) mobileCb.checked = _inspectMode;
+  if (!_inspectMode) {
+    __clearInspectHighlight();
+  }
+}
+export function toggleDevConsole() {
+  const panel = document.getElementById('devConsolePanel');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    const body = document.getElementById('devConsoleBody');
+    if (body) {
+      body.innerHTML = '';
+      const logs = window._covoLogs || [];
+      if (logs.length === 0) {
+        body.innerHTML = '<div style="color:#64748b;font-style:italic;padding:8px 0;">ログはまだありません</div>';
+      } else {
+        logs.forEach(line => _appendConsoleLine(line));
+      }
+    }
+  }
+}
+export function clearDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  if (body) body.innerHTML = '';
+  window._covoLogs = [];
+  try {
+    sessionStorage.removeItem('covo_recent_logs');
+  } catch (_) {}
+}
+export function copyDevConsole() {
+  const body = document.getElementById('devConsoleBody');
+  const text = (body ? body.innerText : '') || (window._covoLogs ? window._covoLogs.join('\n') : '');
+  if (!text || text.trim() === '') {
+    alertMessage('コピーするコンソールログがありません', 'info');
+    return;
+  }
+  safeCopy(text).then(() => alertMessage('コンソールログをコピーしました', 'success'));
+}
+export function copyDebugText(txt) {
+  safeCopy(txt).then(() => alertMessage('診断情報をコピーしました', 'success'));
+}
+export function getSystemDiagnosticInfo() {
+  const info = {
+    timestamp: new Date().toLocaleString('ja-JP'),
+    appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
+    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    userAgent: navigator.userAgent,
+    language: navigator.language || 'ja',
+    online: navigator.onLine,
+    onlineText: navigator.onLine ? 'オンライン (接続中)' : 'オフライン (切断)',
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0} (DPR: ${window.devicePixelRatio || 1})`,
+    screenSize: `${window.innerWidth}x${window.innerHeight}`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? 'あり' : 'なし',
+    memory: (window.performance && window.performance.memory) ? {
+      used: `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`,
+      total: `${Math.round(window.performance.memory.totalJSHeapSize / 1048576)} MB`,
+      limit: `${Math.round(window.performance.memory.jsHeapSizeLimit / 1048576)} MB`
+    } : null,
+    network: navigator.connection ? {
+      type: navigator.connection.effectiveType || 'unknown',
+      downlink: navigator.connection.downlink ? `${navigator.connection.downlink} Mbps` : 'unknown',
+      rtt: navigator.connection.rtt ? `${navigator.connection.rtt} ms` : 'unknown'
+    } : null,
+    cryptoE2EE: typeof crypto !== 'undefined' && crypto.subtle ? 'WebCrypto 有効 (E2EE対応)' : 'WebCrypto 無効',
+    localStorageCount: (() => {
+      try { return Object.keys(localStorage).length; } catch (_) { return 0; }
+    })()
+  };
+  return info;
+}
+export function formatDiagnosticMarkdown(info) {
+  let md = `### Covo システム診断レポート\n`;
+  md += `- **記録日時**: ${info.timestamp}\n`;
+  md += `- **アプリ種別**: ${info.appType}\n`;
+  md += `- **アプリバージョン**: ${info.appVersion}\n`;
+  md += `- **ネットワーク**: ${info.online}${info.network ? ` (${info.network.type}, RTT: ${info.network.rtt}, Downlink: ${info.network.downlink})` : ''}\n`;
+  md += `- **画面/ウィンドウ**: 解像度 ${info.screen} / 表示域 ${info.viewport} / タッチ: ${info.touchSupport}\n`;
+  md += `- **暗号化エンジン**: ${info.cryptoE2EE}\n`;
+  if (info.memory) {
+    md += `- **メモリ使用状況**: ${info.memory.used} / ${info.memory.total} (上限: ${info.memory.limit})\n`;
+  }
+  md += `- **LocalStorage保存項目**: ${info.localStorageCount}件\n`;
+  md += `- **User Agent**: \`${info.userAgent}\`\n\n`;
+  return md;
+}
+export function copySystemDiagnosticReport() {
+  const info = getSystemDiagnosticInfo();
+  const md = formatDiagnosticMarkdown(info);
+  safeCopy(md).then(() => alertMessage('システム診断情報をコピーしました', 'success'));
+}
+export function copyFullDiagnosticAndConsoleReport() {
+  const info = getSystemDiagnosticInfo();
+  let md = formatDiagnosticMarkdown(info);
+  const logs = window._covoLogs || [];
+  md += `### コンソールログ (最新${logs.length}件)\n\`\`\`text\n${logs.join('\n') || '(ログなし)'}\n\`\`\`\n`;
+  safeCopy(md).then(() => alertMessage('診断情報とコンソールログを一括コピーしました', 'success'));
+}
+if (typeof window !== 'undefined') {
+  window.setInspectMode = setInspectMode;
+  window.toggleDevConsole = toggleDevConsole;
+  window.clearDevConsole = clearDevConsole;
+  window.copyDevConsole = copyDevConsole;
+  window.copyDebugText = copyDebugText;
+  window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+  window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+  window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
 </file>
 
@@ -4284,339 +4287,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用（LINE完全準拠のキレのあるポップ＆高周波シェイク） */
-    .stamp-jump-anim {
-      animation: stampWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
-      will-change: transform;
-    }
-    @keyframes stampWiggle {
-      0% { transform: scale(1) rotate(0deg); }
-      12% { transform: scale(1.06) rotate(-2.2deg); }
-      24% { transform: scale(1.04) rotate(2deg); }
-      36% { transform: scale(1.025) rotate(-1.5deg); }
-      50% { transform: scale(1.012) rotate(1deg); }
-      65% { transform: scale(1.005) rotate(-0.6deg); }
-      80% { transform: scale(1.002) rotate(0.3deg); }
-      100% { transform: scale(1) rotate(0deg); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の小刻みなブルブル振動＆ポップバウンス */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
-      will-change: transform;
-    }
-    @keyframes messageWiggle {
-      0% { transform: scale(1) translateX(0); }
-      12% { transform: scale(1.045) translateX(-4.5px); }
-      24% { transform: scale(1.035) translateX(4px); }
-      36% { transform: scale(1.02) translateX(-3px); }
-      48% { transform: scale(1.01) translateX(2.2px); }
-      62% { transform: scale(1.005) translateX(-1.5px); }
-      76% { transform: scale(1.002) translateX(1px); }
-      90% { transform: scale(1) translateX(-0.4px); }
-      100% { transform: scale(1) translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -5759,6 +5429,336 @@ if (typeof window !== 'undefined') {
     </div>
 </body>
 </html>
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      16%  { transform: translateX(8px); }
+      36%  { transform: translateX(-5px); }
+      58%  { transform: translateX(2.5px); }
+      78%  { transform: translateX(-1px); }
+      92%  { transform: translateX(0.3px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      16%  { transform: translateX(8px); }
+      36%  { transform: translateX(-5px); }
+      58%  { transform: translateX(2.5px); }
+      78%  { transform: translateX(-1px); }
+      92%  { transform: translateX(0.3px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
 </file>
 
 <file path="public/js/text_formatter.js">
@@ -18584,13 +18584,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.195" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.196" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.195" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.196" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -18771,68 +18771,111 @@ async function handleD1Api(request, env, url) {
     };
     window._earlyErrors = window._earlyErrors || [];
     window._covoLogs = window._covoLogs || [];
-    // 初期警告＆エラーの先行フック（WebGPU / ブラウザ警告を確実に捕捉）
-    (function() {
-      const origWarn = console.warn;
-      const origError = console.error;
-      const origLog = console.log;
+    // ネイティブコンソール関数の退避
+    if (!window.__covo_native_console__) {
+      window.__covo_native_console__ = {
+        log: console.log.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+        info: (console.info || console.log).bind(console),
+        debug: (console.debug || console.log).bind(console)
+      };
+    }
+    // 共通ログ追加関数（直近同一メッセージの二重登録・多重ループを完全排除）
+    window._pushCovoLog = function(type, text) {
+      if (!text) return;
+      const line = `[${type}] ${text}`;
+      const logs = window._covoLogs || [];
+      // 直前に追加された行と同一内容の場合は多重記録を即座に破棄
+      if (logs.length > 0 && logs[logs.length - 1] === line) {
+        return;
+      }
+      logs.push(line);
+      if (logs.length > 300) logs.shift();
+      window._covoLogs = logs;
+      try {
+        sessionStorage.setItem('covo_recent_logs', JSON.stringify(logs.slice(-100)));
+      } catch (_) {}
+      const panel = document.getElementById('devConsolePanel');
+      if (panel && panel.style.display === 'flex' && typeof window.__appendConsoleLine === 'function') {
+        window.__appendConsoleLine(line);
+      }
+      const streamBody = document.getElementById('reportsConsoleStreamBody');
+      if (streamBody && streamBody.offsetParent !== null) {
+        const div = document.createElement('div');
+        div.className = line.startsWith('[ERR]') ? 'text-rose-400' : line.startsWith('[WARN]') ? 'text-amber-400' : 'text-blue-300';
+        div.textContent = line;
+        if (streamBody.querySelector('.text-gray-500')) streamBody.innerHTML = '';
+        streamBody.appendChild(div);
+        streamBody.scrollTop = streamBody.scrollHeight;
+      }
+    };
+    // コンソールの先行フック（二重フックを完全防止）
+    if (!window.__covo_console_hooked__) {
+      window.__covo_console_hooked__ = true;
       console.warn = function(...args) {
         const msg = args.map(a => (typeof a === 'object' ? (a instanceof Error ? (a.message || a.stack) : JSON.stringify(a)) : String(a))).join(' ');
-        window._covoLogs.push(`[WARN] ${msg}`);
+        window._pushCovoLog('WARN', msg);
         window._earlyErrors.push({ type: 'warn', message: msg, stack: '', time: Date.now() });
-        origWarn.apply(console, args);
+        if (typeof window._reportTelemetryError === 'function') window._reportTelemetryError('warn', msg, '');
+        window.__covo_native_console__.warn.apply(console, args);
       };
       console.error = function(...args) {
         const msg = args.map(a => (typeof a === 'object' ? (a instanceof Error ? (a.message || a.stack) : JSON.stringify(a)) : String(a))).join(' ');
-        window._covoLogs.push(`[ERR] ${msg}`);
+        window._pushCovoLog('ERR', msg);
         window._earlyErrors.push({ type: 'error', message: msg, stack: '', time: Date.now() });
-        origError.apply(console, args);
+        if (typeof window._reportTelemetryError === 'function') window._reportTelemetryError('error', msg, '');
+        window.__covo_native_console__.error.apply(console, args);
       };
       console.log = function(...args) {
         const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-        window._covoLogs.push(`[INFO] ${msg}`);
-        origLog.apply(console, args);
+        window._pushCovoLog('INFO', msg);
+        window.__covo_native_console__.log.apply(console, args);
       };
-    })();
-    window.addEventListener('error', function(e) {
-      const isExt = _isIgnoredEarlyError(e.message, e.filename, e.error);
-      if (isExt) {
-        try { e.preventDefault(); } catch (_) {}
-      }
-      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-      const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
-      const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
-      const logLine = `[ERR] ${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
-      window._covoLogs.push(logLine);
-      if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('error', `${tag}${msg}`, stack);
-      } else {
-        window._earlyErrors.push({ type: 'error', message: `${tag}${msg}`, stack: stack, time: Date.now() });
-      }
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
-        showEmergencyRecoveryPanel(msg, e.error);
-      }
-    });
-    window.addEventListener('unhandledrejection', function(e) {
-      const r = e.reason;
-      const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
-      const stack = (r && r.stack) || '';
-      const isExt = _isIgnoredEarlyError(msg, '', r);
-      if (isExt) {
-        try { e.preventDefault(); } catch (_) {}
-      }
-      const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-      const logLine = `[ERR] ${tag}Uncaught (in promise) ${msg}`;
-      window._covoLogs.push(logLine);
-      if (typeof window._reportTelemetryError === 'function') {
-        window._reportTelemetryError('unhandledrejection', `${tag}Uncaught (in promise) ${msg}`, stack);
-      } else {
-        window._earlyErrors.push({ type: 'unhandledrejection', message: `${tag}Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
-      }
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
-        showEmergencyRecoveryPanel(msg, e.reason);
-      }
-    });
+    }
+    // エラーリスナーの先行登録（二重登録を完全防止）
+    if (!window.__covo_error_listeners_attached__) {
+      window.__covo_error_listeners_attached__ = true;
+      window.addEventListener('error', function(e) {
+        const isExt = _isIgnoredEarlyError(e.message, e.filename, e.error);
+        if (isExt) {
+          try { e.preventDefault(); } catch (_) {}
+        }
+        const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+        const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
+        const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
+        const logLine = `${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
+        window._pushCovoLog('ERR', logLine);
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('error', `${tag}${msg}`, stack);
+        } else {
+          window._earlyErrors.push({ type: 'error', message: `${tag}${msg}`, stack: stack, time: Date.now() });
+        }
+        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
+          showEmergencyRecoveryPanel(msg, e.error);
+        }
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        const r = e.reason;
+        const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
+        const stack = (r && r.stack) || '';
+        const isExt = _isIgnoredEarlyError(msg, '', r);
+        if (isExt) {
+          try { e.preventDefault(); } catch (_) {}
+        }
+        const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
+        const logLine = `${tag}Uncaught (in promise) ${msg}`;
+        window._pushCovoLog('ERR', logLine);
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('unhandledrejection', `${tag}Uncaught (in promise) ${msg}`, stack);
+        } else {
+          window._earlyErrors.push({ type: 'unhandledrejection', message: `${tag}Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
+        }
+        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
+          showEmergencyRecoveryPanel(msg, e.reason);
+        }
+      });
+    }
     // 起動スプラッシュのセーフティタイマー（初期読み込み停滞・IndexedDBロック時のハングを完全防止）
     setTimeout(function() {
       const splash = document.getElementById("appLoadingSplash");
@@ -21842,7 +21885,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.195"></script>
+  <script type="module" src="js/main.js?v=1.1.196"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -23299,16 +23342,10 @@ import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from '
 import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
-// === コンソールログの自動収集 & 確実なネイティブコンソール出力 (リロード間引き継ぎ対応) ===
-window._covoLogs = (() => {
-  try {
-    const saved = sessionStorage.getItem('covo_recent_logs');
-    return saved ? JSON.parse(saved) : (window._covoLogs || []);
-  } catch (_) {
-    return window._covoLogs || [];
-  }
-})();
-const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
+// === コンソールログの自動収集 & 二重出力完全防止システム ===
+window._covoLogs = window._covoLogs || [];
+// 削除済みエラーシグネチャの追跡セット（未定義エラーを完全根絶）
+const _dismissedErrorSignatures = new Set();
 // テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
   try {
@@ -23372,6 +23409,8 @@ function _reportTelemetryError(type, message, stack) {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]') return;
     const signature = _createErrorSignature(type, msgStr, stack);
+    // 管理者が解決済みとして削除したエラーはセッション内での復活を抑制
+    if (_dismissedErrorSignatures.has(signature)) return;
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
     const isRapidDuplicate = (now - lastReported < 800);
@@ -23384,7 +23423,7 @@ function _reportTelemetryError(type, message, stack) {
       screenSize: `${window.innerWidth}x${window.innerHeight}`,
       isElectron: Boolean(window.electronAPI)
     };
-    // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
+    // 1. ローカル配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
@@ -23416,50 +23455,30 @@ function _reportTelemetryError(type, message, stack) {
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
         renderTelemetryErrorsList();
       }
-      }
-      // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+    }
+    // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
+    if (isRapidDuplicate) return;
+    // 2. RTDB へ即時直接プッシュ（get往復待ちを完全廃止し、ミリ秒単位でクラウドへ即時保存）
     if (typeof _getOrInitRTDB === 'function') {
       _getOrInitRTDB().then(rtdb => {
         if (rtdb) {
-          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update, set, get }) => {
+          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
             const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
-            get(errRef).then(snap => {
-              const prev = snap.val();
-              const prevCount = prev?.count || 0;
-              const prevEmails = Array.isArray(prev?.affectedEmails) ? prev.affectedEmails : [];
-              if (!prevEmails.includes(email)) prevEmails.push(email);
-              const payload = {
-                id: signature,
-                signature: signature,
-                type: type || 'error',
-                message: msgStr.substring(0, 3000),
-                stack: String(stack || '').substring(0, 6000),
-                firstOccurredAt: prev?.firstOccurredAt || Date.now(),
-                lastOccurredAt: Date.now(),
-                count: prevCount + 1,
-                affectedEmails: prevEmails,
-                environment: envInfo
-              };
-              set(errRef, payload).catch(() => {});
-            }).catch(() => {
-              set(errRef, {
-                id: signature,
-                signature: signature,
-                type: type || 'error',
-                message: msgStr.substring(0, 3000),
-                stack: String(stack || '').substring(0, 6000),
-                firstOccurredAt: Date.now(),
-                lastOccurredAt: Date.now(),
-                count: 1,
-                affectedEmails: [email],
-                environment: envInfo
-              }).catch(() => {});
-            });
+            const payload = {
+              id: signature,
+              signature: signature,
+              type: type || 'error',
+              message: msgStr.substring(0, 3000),
+              stack: String(stack || '').substring(0, 6000),
+              lastOccurredAt: Date.now(),
+              environment: envInfo
+            };
+            update(errRef, payload).catch(() => {});
           }).catch(() => {});
         }
       }).catch(() => {});
     }
-    // 2. Firestore へもバックアップ送信
+    // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
       const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
       setDoc(errorDocRef, {
@@ -23502,124 +23521,6 @@ if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
 // オンライン復帰時および定期的なフラッシュ
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
-function _isExtensionScriptError(msg, file, stack) {
-  const s = `${msg || ''} ${file || ''} ${stack || ''}`.toLowerCase();
-  return (
-    s.includes('content.js') ||
-    s.includes('globals-front.js') ||
-    s.includes('adblock') ||
-    s.includes('usecache') ||
-    s.includes('receiving end does not exist') ||
-    s.includes('could not establish connection') ||
-    s.includes('chrome-extension:') ||
-    s.includes('moz-extension:') ||
-    s.includes('safari-extension:') ||
-    s.includes('safari-web-extension:')
-  );
-}
-window.addEventListener('error', (event) => {
-  const msg = event.error ? (event.error.message || String(event.error)) : (event.message || 'Error');
-  const stack = (event.error && event.error.stack) || `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`;
-  const isExt = _isExtensionScriptError(msg, event.filename, stack);
-  // 拡張機能による未処理エラーはブラウザコンソール（F12）の赤文字出力を消音
-  if (isExt) {
-    try { event.preventDefault(); } catch (_) {}
-  }
-  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-  const displayLine = event.filename ? `${tag}${msg} (${event.filename}:${event.lineno || 0})` : `${tag}${msg}`;
-  _pushLog('ERR', [displayLine]);
-  _reportTelemetryError('error', `${tag}${msg}`, stack);
-});
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason;
-  const msg = reason instanceof Error ? (reason.message || reason.stack) : String(reason || 'Unhandled Promise Rejection');
-  const stack = (reason instanceof Error && reason.stack) ? reason.stack : '';
-  const isExt = _isExtensionScriptError(msg, '', stack);
-  // 拡張機能によるPromise拒否エラーをブラウザコンソール（F12）で消音
-  if (isExt) {
-    try { event.preventDefault(); } catch (_) {}
-  }
-  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-  const displayLine = `${tag}Uncaught (in promise) ${msg}`;
-  _pushLog('ERR', [displayLine]);
-  _reportTelemetryError('unhandledrejection', displayLine, stack);
-});
-const _pushLog = (type, args) => {
-  try {
-    if (isTransientTelemetryError(args)) return;
-    const msg = Array.from(args || []).map(a => {
-      if (a instanceof Error) return a.stack || a.message;
-      if (typeof a === 'object') {
-        try { return JSON.stringify(a); } catch (err) { return String(a); }
-      }
-      return String(a);
-    }).join(' ');
-    const line = `[${type}] ${msg}`;
-    window._covoLogs.push(line);
-    if (window._covoLogs.length > 300) window._covoLogs.shift();
-    try {
-      sessionStorage.setItem('covo_recent_logs', JSON.stringify(window._covoLogs.slice(-150)));
-    } catch (_) {}
-    // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
-    const panel = document.getElementById('devConsolePanel');
-    if (panel && panel.style.display === 'flex') {
-      if (typeof __appendConsoleLine === 'function') {
-        __appendConsoleLine(line);
-      }
-    }
-    // 診断コンソール (#reportsConsoleStreamBody) が開いている場合も即時行追加＆オートスクロール
-    const reportsStreamBody = document.getElementById('reportsConsoleStreamBody');
-    if (reportsStreamBody && reportsStreamBody.offsetParent !== null) {
-      const lineDiv = document.createElement('div');
-      let colorClass = "text-gray-300";
-      if (line.startsWith("[ERR]")) colorClass = "text-rose-400";
-      else if (line.startsWith("[WARN]")) colorClass = "text-amber-400";
-      else if (line.startsWith("[INFO]")) colorClass = "text-blue-300";
-      lineDiv.className = colorClass;
-      lineDiv.textContent = line;
-      if (reportsStreamBody.querySelector('.text-gray-500')) {
-        reportsStreamBody.innerHTML = '';
-      }
-      reportsStreamBody.appendChild(lineDiv);
-      reportsStreamBody.scrollTop = reportsStreamBody.scrollHeight;
-    }
-  } catch (e) { }
-};
-// コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に出力）
-console.log = function (...args) {
-  _pushLog('INFO', args);
-  _orgLog.apply(console, args);
-};
-console.warn = function (...args) {
-  _pushLog('WARN', args);
-  try {
-    const errObj = args.find(a => a instanceof Error);
-    if (errObj) {
-      _reportTelemetryError('warn', errObj.message || String(errObj), errObj.stack || '');
-    } else {
-      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
-      if (msg && msg.trim()) {
-        _reportTelemetryError('warn', msg, '');
-      }
-    }
-  } catch (_) {}
-  _orgWarn.apply(console, args);
-};
-console.error = function (...args) {
-  _pushLog('ERR', args);
-  try {
-    const errObj = args.find(a => a instanceof Error);
-    if (errObj) {
-      _reportTelemetryError('error', errObj.message || String(errObj), errObj.stack || '');
-    } else {
-      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
-      if (msg && msg.trim()) {
-        _reportTelemetryError('error', msg, '');
-      }
-    }
-  } catch (_) {}
-  _orgErr.apply(console, args);
-};
 // ========= Cloudflare Worker ベースURL =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // ========= バージョン管理 =========
@@ -26128,8 +26029,17 @@ function renderTelemetryErrorsList() {
       try {
         _dismissedErrorSignatures.add(err.id);
         _reportedSignaturesRecently.delete(err.id);
+        // 1. Firestore から削除
         await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        // 2. RTDB からも確実に削除
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports/${err.id}`));
+        } catch (_) {}
+        // 3. ローカル配列 & localStorage キャッシュから完全除去
         _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+        _saveTelemetryErrorsToStorage();
         if (window._covoLogs && err.message) {
           window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
         }
@@ -26142,7 +26052,7 @@ function renderTelemetryErrorsList() {
         alertMessage("エラーログを削除しました", "success");
       } catch (e) {
         _dismissedErrorSignatures.delete(err.id);
-        console.error("Failed to delete error report from Firestore:", e);
+        console.error("Failed to delete error report:", e);
         alertMessage("削除に失敗しました: " + (e.message || e), "error");
       }
     });
@@ -26183,7 +26093,7 @@ window.clearAllTelemetryErrors = async function () {
     try {
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
+      if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
     } catch (_) {}
     // 2. Firestore 上の全エラードキュメントをバッチ削除
     try {
@@ -26193,10 +26103,12 @@ window.clearAllTelemetryErrors = async function () {
       });
       await batch.commit();
     } catch (_) {}
-    // 3. ローカル状態とキューをクリア（再発時は新しく記録できるよう永久ブロックは行わない）
+    // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
     _cachedTelemetryErrors = [];
+    _saveTelemetryErrorsToStorage();
     _pendingTelemetryErrors.length = 0;
     _reportedSignaturesRecently.clear();
+    _dismissedErrorSignatures.clear();
     // 4. インメモリログからエラー・警告行を除去
     if (window._covoLogs) {
       window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
@@ -29759,6 +29671,7 @@ let _rtdbStatusRef = null;
 let _rtdbOnDisconnect = null;
 async function _getOrInitRTDB() {
   if (_rtdb) return _rtdb;
+  if (!app) return null;
   const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   _rtdb = getDatabase(app);
   return _rtdb;
@@ -32635,7 +32548,7 @@ window.switchSsTab = function (tab) {
   });
   if (tab === "rooms") loadServerSettingsRooms();
   else if (tab === "members") {
-    if (typeof loadServerMembers === 'function') loadServerMembers();
+    if (typeof loadServerSettingsMembers === 'function') loadServerSettingsMembers();
   } else if (tab === "invites") {
     if (typeof loadInviteCodes === 'function') loadInviteCodes();
   } else if (tab === "stamps") {
@@ -39489,14 +39402,14 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.38s）終了後にシェイククラスのみ先に削除（LINE完全準拠のキレのある振動）
+      // 揺れアニメーション（0.7s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 400);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
+      }, 750);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.4s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
-      }, 1300);
+      }, 1400);
     }
   }, didScroll ? 350 : 50);
 }
@@ -48137,7 +48050,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.195",
+  "version": "1.1.196",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48194,7 +48107,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.195",
+  "version": "1.1.196",
   "force": false
 }
 </file>

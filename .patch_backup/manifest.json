@@ -1,9 +1,6 @@
 {
-  "date": "2026-09-17T15:23:04.721Z",
+  "date": "2026-09-17T15:48:29.453Z",
   "files": [
-    "public/css/modules/base.css",
-    "public/index.html",
-    "public/js/main.js",
-    "public/js/debug_ui.js"
+    "public/js/main.js"
   ]
 }

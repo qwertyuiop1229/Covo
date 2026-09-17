@@ -1011,8 +1011,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.dmKeyCache[dmId] = keysObj;
               return keysObj;
             }
-            // 相手が既に鍵を生成している場合、過去メッセージの有無を問わず相手の鍵を上書き破壊せず、相手からの配布を安全に待機
-            return null;
+            // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
+            // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
+            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+            const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
+            if (hasExistingDmHistory) {
+              return null;
+            }
           }
         }
         // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布

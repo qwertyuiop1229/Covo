@@ -323,12 +323,14 @@ async function handleEmergencyPasswordReset(request, env) {
 
     if (targetUid) {
       writes.push({
-        transform: {
-          document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
-          fieldTransforms: [
-            { fieldPath: "used", setToServerValue: "REQUEST_TIME" }
-          ]
-        }
+        update: {
+          name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_requests/${targetUid}`,
+          fields: {
+            used: { booleanValue: true },
+            usedAt: { timestampValue: new Date().toISOString() }
+          }
+        },
+        updateMask: { fieldPaths: ["used", "usedAt"] }
       });
     }
 
@@ -2839,7 +2841,8 @@ async function handleD1Api(request, env, url) {
           const row = await env.DB.prepare("SELECT reactions FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
           if (!row) return new Response(JSON.stringify({ error: "Message not found" }), { status: 404, headers: d1Cors });
           const rx = row.reactions ? JSON.parse(row.reactions) : {};
-          if (!reactionEmoji) { delete rx[reactionUserId]; } else { rx[reactionUserId] = reactionEmoji; }
+          const targetReactUid = verifiedUser.uid; // 🔒 IDOR防止: 認証済み本人のUIDのみを強制適用
+          if (!reactionEmoji) { delete rx[targetReactUid]; } else { rx[targetReactUid] = reactionEmoji; }
           await env.DB.prepare("UPDATE messages SET reactions = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(JSON.stringify(rx), messageId, roomId, appId).run();
           
           // リアクション変更もRTDBへ通知

@@ -297,6 +297,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }, { merge: true });
         console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
         delete _e2ee.roomKeyCache[roomId];
+        delete _e2ee._roomKeyPromises[roomId];
       } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
     }
 
@@ -513,6 +514,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                await __distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
                await updateDoc(roomRef, { currentKeyVersion: nextVer });
                delete _e2ee.roomKeyCache[roomId];
+               delete _e2ee._roomKeyPromises[roomId];
             })());
          });
          await Promise.all(promises);
@@ -657,10 +659,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
         // それでも復号できない場合は、古い鍵キャッシュを破棄して自動救済トリガーを発行
         delete _e2ee.roomKeyCache[roomId];
+        delete _e2ee._roomKeyPromises[roomId];
         await _requestEscrowRescue(serverId, roomId);
         return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
       } catch (e) {
         delete _e2ee.roomKeyCache[roomId];
+        delete _e2ee._roomKeyPromises[roomId];
         return "（復号化エラー：メッセージを解読できません）";
       }
     }
@@ -1156,8 +1160,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
           }
         }
+        delete _e2ee.dmKeyCache[dmId];
+        delete _e2ee._dmKeyPromises[dmId];
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
+        delete _e2ee.dmKeyCache[dmId];
+        delete _e2ee._dmKeyPromises[dmId];
         return "（復号化エラー：メッセージを解読できません）";
       }
     }

@@ -112,7 +112,14 @@ let _cachedTelemetryErrors = window._cachedTelemetryErrors = (() => {
   }
 })();
 const _reportedSignaturesRecently = new Map();
-const _pendingTelemetryErrors = [];
+const _pendingTelemetryErrors = (() => {
+  try {
+    const saved = localStorage.getItem('covo_pending_telemetry_queue');
+    return saved ? JSON.parse(saved) : [];
+  } catch (_) {
+    return [];
+  }
+})();
 let _isReportingTelemetry = false;
 function _saveTelemetryErrorsToStorage() {
   try {
@@ -120,6 +127,34 @@ function _saveTelemetryErrorsToStorage() {
       localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(_cachedTelemetryErrors.slice(0, 100)));
     }
   } catch (_) {}
+}
+function _savePendingTelemetryQueue() {
+  try {
+    localStorage.setItem('covo_pending_telemetry_queue', JSON.stringify(_pendingTelemetryErrors.slice(0, 100)));
+  } catch (_) {}
+}
+function _safeSerializeError(val) {
+  if (val == null) return 'Unknown error';
+  if (val instanceof Error) return val.stack || `${val.name}: ${val.message}`;
+  if (typeof val === 'string') return val;
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(val, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) return '[Circular]';
+        seen.add(value);
+      }
+      return value;
+    });
+  } catch (_) {
+    try {
+      const keys = Object.keys(val);
+      const parts = keys.map(k => `${k}: ${val[k]}`);
+      return parts.length ? `{ ${parts.join(', ')} }` : String(val);
+    } catch (_) {
+      return String(val);
+    }
+  }
 }
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
@@ -139,8 +174,8 @@ function _reportTelemetryError(type, message, stack) {
   if (isTransientTelemetryError([message, stack])) return;
   _isReportingTelemetry = true;
   try {
-    const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
-    if (!msgStr || msgStr === '[object Object]') return;
+    const msgStr = _safeSerializeError(message);
+    if (!msgStr) return;
     const signature = _createErrorSignature(type, msgStr, stack);
     // 管理者が解決済みとして削除したエラーはセッション内での復活を抑制
     if (_dismissedErrorSignatures.has(signature)) return;
@@ -156,15 +191,19 @@ function _reportTelemetryError(type, message, stack) {
       screenSize: `${window.innerWidth}x${window.innerHeight}`,
       isElectron: Boolean(window.electronAPI)
     };
+    let currentCount = 1;
+    let affectedList = [email];
     // 1. ローカル配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
         window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
         window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        currentCount = window._cachedTelemetryErrors[existingIdx].count;
         if (!window._cachedTelemetryErrors[existingIdx].affectedEmails.includes(email)) {
           window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
         }
+        affectedList = window._cachedTelemetryErrors[existingIdx].affectedEmails;
       } else {
         window._cachedTelemetryErrors.unshift({
           id: signature,
@@ -191,26 +230,25 @@ function _reportTelemetryError(type, message, stack) {
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
     if (isRapidDuplicate) return;
-    // 2. RTDB へ即時直接プッシュ（get往復待ちを完全廃止し、ミリ秒単位でクラウドへ即時保存）
-    if (typeof _getOrInitRTDB === 'function') {
-      _getOrInitRTDB().then(rtdb => {
-        if (rtdb) {
-          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
-            const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
-            const payload = {
-              id: signature,
-              signature: signature,
-              type: type || 'error',
-              message: msgStr.substring(0, 3000),
-              stack: String(stack || '').substring(0, 6000),
-              lastOccurredAt: Date.now(),
-              environment: envInfo
-            };
-            update(errRef, payload).catch(() => {});
-          }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
+    // 2. 🛡️ RTDB REST API への即時送信（Firebase SDK の初期化状態や app の有無に依存せず 100% 確実に即時到達）
+    const rtdbPayload = {
+      id: signature,
+      signature: signature,
+      type: type || 'error',
+      message: msgStr.substring(0, 3000),
+      stack: String(stack || '').substring(0, 6000),
+      lastOccurredAt: Date.now(),
+      count: currentCount,
+      affectedEmails: affectedList,
+      environment: envInfo
+    };
+    const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
+    fetch(rtdbUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rtdbPayload),
+      keepalive: true
+    }).catch(() => {});
     // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
       const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
@@ -228,10 +266,12 @@ function _reportTelemetryError(type, message, stack) {
       }, { merge: true }).catch(err => {
         if (_pendingTelemetryErrors.length < 100) {
           _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+          _savePendingTelemetryQueue();
         }
       });
     } else if (_pendingTelemetryErrors.length < 100) {
       _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+      _savePendingTelemetryQueue();
     }
   } catch (e) {
   } finally {
@@ -240,8 +280,8 @@ function _reportTelemetryError(type, message, stack) {
 }
 window._reportTelemetryError = _reportTelemetryError;
 function _flushPendingTelemetryErrors() {
-  if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
   const items = _pendingTelemetryErrors.splice(0, _pendingTelemetryErrors.length);
+  _savePendingTelemetryQueue();
   for (const item of items) {
     _reportTelemetryError(item.type, item.message, item.stack);
   }
@@ -251,6 +291,7 @@ if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
   const early = window._earlyErrors.splice(0, window._earlyErrors.length);
   early.forEach(e => _reportTelemetryError(e.type, e.message, e.stack));
 }
+_flushPendingTelemetryErrors();
 // オンライン復帰時および定期的なフラッシュ
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
@@ -3083,13 +3124,16 @@ window.clearAllTelemetryErrors = async function () {
       const rtdb = await _getOrInitRTDB();
       if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
     } catch (_) {}
-    // 2. Firestore 上の全エラードキュメントをバッチ削除
+    // 2. Firestore 上の全エラードキュメントをバッチ削除 (500件上限を安全に分割コミット)
     try {
-      const batch = writeBatch(db);
-      toDelete.forEach(err => {
-        batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-      });
-      await batch.commit();
+      for (let i = 0; i < toDelete.length; i += 450) {
+        const chunk = toDelete.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach(err => {
+          batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        });
+        await batch.commit();
+      }
     } catch (_) {}
     // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
     _cachedTelemetryErrors = [];
@@ -6791,6 +6835,17 @@ async function resyncActiveRoomMessages() {
           changed = true;
         }
       });
+      // 取得範囲内で他者によって削除されたメッセージを検知して除外
+      if (docs.length > 0) {
+        const docIdSet = new Set(docs.map(d => d.id));
+        const minDocTs = getMsgTimestamp(docs[0]);
+        const removedMsgs = allLoadedMessages.filter(m => getMsgTimestamp(m) >= minDocTs && !docIdSet.has(m.id));
+        if (removedMsgs.length > 0) {
+          removedMsgs.forEach(rm => LocalStore.deleteMessage(rm.id).catch(() => {}));
+          allLoadedMessages = allLoadedMessages.filter(m => getMsgTimestamp(m) < minDocTs || docIdSet.has(m.id));
+          changed = true;
+        }
+      }
       if (changed || allLoadedMessages.length === docs.length) {
         allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         lastMessagesData = [...allLoadedMessages];
@@ -6886,6 +6941,9 @@ if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
 const handlePageClose = (e) => {
   if ((typeof _callId !== 'undefined' && _callId) || (typeof _agoraClient !== 'undefined' && _agoraClient)) {
     try { endCall(false); } catch (_) {}
+  }
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    try { window._voiceEngine.leave(); } catch (_) {}
   }
   // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
   if (e && e.type === 'pagehide' && e.persisted === false) {
@@ -8791,6 +8849,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     window._activeDmKeyUnsub = fsOnSnapshot(myDmKeyRef, async (keySnap) => {
       if (currentDmId !== dmId || !keySnap.exists()) return;
       delete _e2ee.dmKeyCache[dmId];
+      delete _e2ee._dmKeyPromises[dmId];
       const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
       if (freshKey && allLoadedMessages.length > 0) {
         await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
@@ -13106,6 +13165,16 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
+      } else {
+        // サーバー上に1件もメッセージがない場合はローカルキャッシュをクリア
+        if (allLoadedMessages.length > 0) {
+          allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
+          allLoadedMessages = [];
+          lastMessagesData = [];
+          messagesIndexMap = {};
+          renderPinnedMessages();
+          renderMessagesWithReadReceipts();
+        }
       }
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
@@ -13841,39 +13910,7 @@ async function deleteRoomAndMessages(roomId) {
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
     if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   }
-
-  try {
-    const batch = writeBatch(db);
-
-    // 1. messages サブコレクションの全削除
-    const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
-    const messagesSnap = await getDocs(messagesRef);
-    messagesSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 2. readReceipts サブコレクションの全削除
-    const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
-    const readReceiptsSnap = await getDocs(readReceiptsRef);
-    readReceiptsSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 3. ルーム本体の削除
-    const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
-    batch.delete(roomRef);
-
-    await batch.commit();
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
-    } catch (err) { console.error("RTDB Room Delete Failed", err); }
-    console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
-  } catch (error) {
-    console.error("Error during room deletion process:", error);
-    throw error;
-  }
+  await deleteRoomCascade(currentServerId, roomId);
 }
 const executeDeleteRoom = async () => {
   if (!pendingRoomDelete) return;
@@ -15265,11 +15302,12 @@ async function sendMessage() {
           idToken
         });
         const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
-        } else {
-          fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
-        }
+        fetch(notifUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: notifPayload,
+          keepalive: true
+        }).catch(() => {});
       } catch (e) { }
     }
     } else if (snapServerId && snapRoomId) {
@@ -15308,11 +15346,12 @@ async function sendMessage() {
             idToken
           });
           const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
-          if (navigator.sendBeacon) {
-            navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
-          } else {
-            fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
-          }
+          fetch(notifUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: notifPayload,
+            keepalive: true
+          }).catch(() => {});
         }
       }
     } catch (_) {}
@@ -17831,39 +17870,69 @@ async function batchDeleteCollection(colRef) {
   }
 }
 
-// ルームと配下の全データ（messages, readReceipts）を削除
+// ルームと配下の全データ（添付ファイル、messages, readReceipts, roomKeys, rescueRequests, LocalStore）を完全削除
 async function deleteRoomCascade(serverId, roomId) {
   const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
+  // 1. ルーム内メッセージに添付されていたKVファイルをクリーンアップ
+  try {
+    const msgsSnap = await getDocs(collection(db, `${base}/messages`));
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    for (const mDoc of msgsSnap.docs) {
+      const m = mDoc.data();
+      const fileUrl = m.fileData || m.kvFileUrl;
+      if (fileUrl && fileUrl.includes('/api/file/')) {
+        const match = fileUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+        if (match) {
+          const fileKey = match[1];
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(serverId)}`;
+          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) {}
+  // 2. Firestore サブコレクションのページングバッチ削除
   await batchDeleteCollection(collection(db, `${base}/messages`));
   await batchDeleteCollection(collection(db, `${base}/readReceipts`));
   await batchDeleteCollection(collection(db, `${base}/roomKeys`));
   await batchDeleteCollection(collection(db, `${base}/rescueRequests`));
   await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
+  // 3. RTDB パスの削除
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
   } catch (err) { console.error("RTDB Room Delete Failed", err); }
+  // 4. クライアント側ローカル IndexedDB のメッセージ履歴も完全消去
+  try {
+    if (typeof LocalStore !== 'undefined' && LocalStore.clearMessagesForChannel) {
+      await LocalStore.clearMessagesForChannel(`${serverId}_${roomId}`);
+    }
+  } catch (_) {}
 }
-
-// サーバーと配下の全データ（rooms, messages, readReceipts, profiles, inviteCodes, secrets）を削除
+// サーバーと配下の全データ（全ルーム添付ファイル、rooms, messages, readReceipts, profiles, inviteCodes, secrets, LocalStore）を削除
 async function deleteServerCascade(serverId) {
   const base = `artifacts/${appId}/servers/${serverId}`;
-  // 全ルームを取得して配下も削除 (messages, readReceipts, roomKeys, rescueRequests)
   const roomsSnap = await getDocs(collection(db, `${base}/rooms`));
   for (const roomDoc of roomsSnap.docs) {
-    const rb = `${base}/rooms/${roomDoc.id}`;
-    await batchDeleteCollection(collection(db, `${rb}/messages`));
-    await batchDeleteCollection(collection(db, `${rb}/readReceipts`));
-    await batchDeleteCollection(collection(db, `${rb}/roomKeys`));
-    await batchDeleteCollection(collection(db, `${rb}/rescueRequests`));
-    await deleteDoc(roomDoc.ref);
+    await deleteRoomCascade(serverId, roomDoc.id).catch(() => {});
   }
   await batchDeleteCollection(collection(db, `${base}/profiles`));
   await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
   await batchDeleteCollection(collection(db, `${base}/secrets`));
   await batchDeleteCollection(collection(db, `${base}/stamps`));
   await batchDeleteCollection(collection(db, `${base}/stampGroups`));
+  // サーバーアイコンのKVファイル削除
+  try {
+    const sDoc = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+    if (sDoc.exists() && sDoc.data().iconUrl && sDoc.data().iconUrl.includes('/api/file/')) {
+      const match = sDoc.data().iconUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+      if (match) {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(serverId)}`;
+        fetch(`${WORKER_BASE_URL}/api/file/${match[1]}?${params}`, { method: 'DELETE' }).catch(() => {});
+      }
+    }
+  } catch (_) {}
   await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');

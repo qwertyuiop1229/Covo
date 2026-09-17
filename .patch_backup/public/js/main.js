@@ -75,16 +75,10 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 
 
-// === コンソールログの自動収集 & 確実なネイティブコンソール出力 (リロード間引き継ぎ対応) ===
-window._covoLogs = (() => {
-  try {
-    const saved = sessionStorage.getItem('covo_recent_logs');
-    return saved ? JSON.parse(saved) : (window._covoLogs || []);
-  } catch (_) {
-    return window._covoLogs || [];
-  }
-})();
-const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
+// === コンソールログの自動収集 & 二重出力完全防止システム ===
+window._covoLogs = window._covoLogs || [];
+// 削除済みエラーシグネチャの追跡セット（未定義エラーを完全根絶）
+const _dismissedErrorSignatures = new Set();
 // テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
   try {
@@ -148,11 +142,12 @@ function _reportTelemetryError(type, message, stack) {
     const msgStr = typeof message === 'object' ? (message instanceof Error ? (message.stack || message.message) : JSON.stringify(message)) : String(message || '');
     if (!msgStr || msgStr === '[object Object]') return;
     const signature = _createErrorSignature(type, msgStr, stack);
+    // 管理者が解決済みとして削除したエラーはセッション内での復活を抑制
+    if (_dismissedErrorSignatures.has(signature)) return;
     const now = Date.now();
     const lastReported = _reportedSignaturesRecently.get(signature) || 0;
     const isRapidDuplicate = (now - lastReported < 800);
     _reportedSignaturesRecently.set(signature, now);
-
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
     const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
     const envInfo = {
@@ -161,8 +156,7 @@ function _reportTelemetryError(type, message, stack) {
       screenSize: `${window.innerWidth}x${window.innerHeight}`,
       isElectron: Boolean(window.electronAPI)
     };
-
-    // 自分の画面に即座に表示できるよう、ローカルテレメトリ配列に即時反映
+    // 1. ローカル配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
@@ -194,51 +188,30 @@ function _reportTelemetryError(type, message, stack) {
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
         renderTelemetryErrorsList();
       }
-      }
-      // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+    }
+    // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
+    if (isRapidDuplicate) return;
+    // 2. RTDB へ即時直接プッシュ（get往復待ちを完全廃止し、ミリ秒単位でクラウドへ即時保存）
     if (typeof _getOrInitRTDB === 'function') {
       _getOrInitRTDB().then(rtdb => {
         if (rtdb) {
-          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update, set, get }) => {
+          import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, update }) => {
             const errRef = ref(rtdb, `artifacts/${appId}/error_reports/${signature}`);
-            get(errRef).then(snap => {
-              const prev = snap.val();
-              const prevCount = prev?.count || 0;
-              const prevEmails = Array.isArray(prev?.affectedEmails) ? prev.affectedEmails : [];
-              if (!prevEmails.includes(email)) prevEmails.push(email);
-              const payload = {
-                id: signature,
-                signature: signature,
-                type: type || 'error',
-                message: msgStr.substring(0, 3000),
-                stack: String(stack || '').substring(0, 6000),
-                firstOccurredAt: prev?.firstOccurredAt || Date.now(),
-                lastOccurredAt: Date.now(),
-                count: prevCount + 1,
-                affectedEmails: prevEmails,
-                environment: envInfo
-              };
-              set(errRef, payload).catch(() => {});
-            }).catch(() => {
-              set(errRef, {
-                id: signature,
-                signature: signature,
-                type: type || 'error',
-                message: msgStr.substring(0, 3000),
-                stack: String(stack || '').substring(0, 6000),
-                firstOccurredAt: Date.now(),
-                lastOccurredAt: Date.now(),
-                count: 1,
-                affectedEmails: [email],
-                environment: envInfo
-              }).catch(() => {});
-            });
+            const payload = {
+              id: signature,
+              signature: signature,
+              type: type || 'error',
+              message: msgStr.substring(0, 3000),
+              stack: String(stack || '').substring(0, 6000),
+              lastOccurredAt: Date.now(),
+              environment: envInfo
+            };
+            update(errRef, payload).catch(() => {});
           }).catch(() => {});
         }
       }).catch(() => {});
     }
-
-    // 2. Firestore へもバックアップ送信
+    // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
       const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
       setDoc(errorDocRef, {
@@ -266,7 +239,6 @@ function _reportTelemetryError(type, message, stack) {
   }
 }
 window._reportTelemetryError = _reportTelemetryError;
-
 function _flushPendingTelemetryErrors() {
   if (typeof db === 'undefined' || !db || typeof appId === 'undefined' || !appId) return;
   const items = _pendingTelemetryErrors.splice(0, _pendingTelemetryErrors.length);
@@ -274,138 +246,14 @@ function _flushPendingTelemetryErrors() {
     _reportTelemetryError(item.type, item.message, item.stack);
   }
 }
-
 // 起動前の早期エラーをフラッシュ
 if (Array.isArray(window._earlyErrors) && window._earlyErrors.length > 0) {
   const early = window._earlyErrors.splice(0, window._earlyErrors.length);
   early.forEach(e => _reportTelemetryError(e.type, e.message, e.stack));
 }
-
 // オンライン復帰時および定期的なフラッシュ
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
-
-function _isExtensionScriptError(msg, file, stack) {
-  const s = `${msg || ''} ${file || ''} ${stack || ''}`.toLowerCase();
-  return (
-    s.includes('content.js') ||
-    s.includes('globals-front.js') ||
-    s.includes('adblock') ||
-    s.includes('usecache') ||
-    s.includes('receiving end does not exist') ||
-    s.includes('could not establish connection') ||
-    s.includes('chrome-extension:') ||
-    s.includes('moz-extension:') ||
-    s.includes('safari-extension:') ||
-    s.includes('safari-web-extension:')
-  );
-}
-
-window.addEventListener('error', (event) => {
-  const msg = event.error ? (event.error.message || String(event.error)) : (event.message || 'Error');
-  const stack = (event.error && event.error.stack) || `${event.filename || ''}:${event.lineno || ''}:${event.colno || ''}`;
-  const isExt = _isExtensionScriptError(msg, event.filename, stack);
-  // 拡張機能による未処理エラーはブラウザコンソール（F12）の赤文字出力を消音
-  if (isExt) {
-    try { event.preventDefault(); } catch (_) {}
-  }
-  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-  const displayLine = event.filename ? `${tag}${msg} (${event.filename}:${event.lineno || 0})` : `${tag}${msg}`;
-  _pushLog('ERR', [displayLine]);
-  _reportTelemetryError('error', `${tag}${msg}`, stack);
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason;
-  const msg = reason instanceof Error ? (reason.message || reason.stack) : String(reason || 'Unhandled Promise Rejection');
-  const stack = (reason instanceof Error && reason.stack) ? reason.stack : '';
-  const isExt = _isExtensionScriptError(msg, '', stack);
-  // 拡張機能によるPromise拒否エラーをブラウザコンソール（F12）で消音
-  if (isExt) {
-    try { event.preventDefault(); } catch (_) {}
-  }
-  const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-  const displayLine = `${tag}Uncaught (in promise) ${msg}`;
-  _pushLog('ERR', [displayLine]);
-  _reportTelemetryError('unhandledrejection', displayLine, stack);
-});
-
-const _pushLog = (type, args) => {
-  try {
-    if (isTransientTelemetryError(args)) return;
-    const msg = Array.from(args || []).map(a => {
-      if (a instanceof Error) return a.stack || a.message;
-      if (typeof a === 'object') {
-        try { return JSON.stringify(a); } catch (err) { return String(a); }
-      }
-      return String(a);
-    }).join(' ');
-    const line = `[${type}] ${msg}`;
-    window._covoLogs.push(line);
-    if (window._covoLogs.length > 300) window._covoLogs.shift();
-    try {
-      sessionStorage.setItem('covo_recent_logs', JSON.stringify(window._covoLogs.slice(-150)));
-    } catch (_) {}
-    // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
-    const panel = document.getElementById('devConsolePanel');
-    if (panel && panel.style.display === 'flex') {
-      if (typeof __appendConsoleLine === 'function') {
-        __appendConsoleLine(line);
-      }
-    }
-    // 診断コンソール (#reportsConsoleStreamBody) が開いている場合も即時行追加＆オートスクロール
-    const reportsStreamBody = document.getElementById('reportsConsoleStreamBody');
-    if (reportsStreamBody && reportsStreamBody.offsetParent !== null) {
-      const lineDiv = document.createElement('div');
-      let colorClass = "text-gray-300";
-      if (line.startsWith("[ERR]")) colorClass = "text-rose-400";
-      else if (line.startsWith("[WARN]")) colorClass = "text-amber-400";
-      else if (line.startsWith("[INFO]")) colorClass = "text-blue-300";
-      lineDiv.className = colorClass;
-      lineDiv.textContent = line;
-      if (reportsStreamBody.querySelector('.text-gray-500')) {
-        reportsStreamBody.innerHTML = '';
-      }
-      reportsStreamBody.appendChild(lineDiv);
-      reportsStreamBody.scrollTop = reportsStreamBody.scrollHeight;
-    }
-  } catch (e) { }
-};
-// コンソール出力フック（ログストリームに記録し、ブラウザのネイティブコンソールへ常に出力）
-console.log = function (...args) {
-  _pushLog('INFO', args);
-  _orgLog.apply(console, args);
-};
-console.warn = function (...args) {
-  _pushLog('WARN', args);
-  try {
-    const errObj = args.find(a => a instanceof Error);
-    if (errObj) {
-      _reportTelemetryError('warn', errObj.message || String(errObj), errObj.stack || '');
-    } else {
-      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
-      if (msg && msg.trim()) {
-        _reportTelemetryError('warn', msg, '');
-      }
-    }
-  } catch (_) {}
-  _orgWarn.apply(console, args);
-};
-console.error = function (...args) {
-  _pushLog('ERR', args);
-  try {
-    const errObj = args.find(a => a instanceof Error);
-    if (errObj) {
-      _reportTelemetryError('error', errObj.message || String(errObj), errObj.stack || '');
-    } else {
-      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
-      if (msg && msg.trim()) {
-        _reportTelemetryError('error', msg, '');
-      }
-    }
-  } catch (_) {}
-  _orgErr.apply(console, args);
-};
 
 // ========= Cloudflare Worker ベースURL =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
@@ -3165,8 +3013,17 @@ function renderTelemetryErrorsList() {
       try {
         _dismissedErrorSignatures.add(err.id);
         _reportedSignaturesRecently.delete(err.id);
+        // 1. Firestore から削除
         await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        // 2. RTDB からも確実に削除
+        try {
+          const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+          const rtdb = await _getOrInitRTDB();
+          if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports/${err.id}`));
+        } catch (_) {}
+        // 3. ローカル配列 & localStorage キャッシュから完全除去
         _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+        _saveTelemetryErrorsToStorage();
         if (window._covoLogs && err.message) {
           window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
         }
@@ -3179,7 +3036,7 @@ function renderTelemetryErrorsList() {
         alertMessage("エラーログを削除しました", "success");
       } catch (e) {
         _dismissedErrorSignatures.delete(err.id);
-        console.error("Failed to delete error report from Firestore:", e);
+        console.error("Failed to delete error report:", e);
         alertMessage("削除に失敗しました: " + (e.message || e), "error");
       }
     });
@@ -3224,28 +3081,29 @@ window.clearAllTelemetryErrors = async function () {
     try {
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
+      if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
     } catch (_) {}
-
-    // 2. Firestore 上の全エラードキュメントをバッチ削除
+    // 2. Firestore 上の全エラードキュメントをバッチ削除 (500件上限を安全に分割コミット)
     try {
-      const batch = writeBatch(db);
-      toDelete.forEach(err => {
-        batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-      });
-      await batch.commit();
+      for (let i = 0; i < toDelete.length; i += 450) {
+        const chunk = toDelete.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach(err => {
+          batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+        });
+        await batch.commit();
+      }
     } catch (_) {}
-
-    // 3. ローカル状態とキューをクリア（再発時は新しく記録できるよう永久ブロックは行わない）
+    // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
     _cachedTelemetryErrors = [];
+    _saveTelemetryErrorsToStorage();
     _pendingTelemetryErrors.length = 0;
     _reportedSignaturesRecently.clear();
-
+    _dismissedErrorSignatures.clear();
     // 4. インメモリログからエラー・警告行を除去
     if (window._covoLogs) {
       window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
     }
-
     // 5. バッジとリストUIを即座に更新
     const badgeEl = document.getElementById("telemetryCountBadge");
     if (badgeEl) {
@@ -6936,6 +6794,17 @@ async function resyncActiveRoomMessages() {
           changed = true;
         }
       });
+      // 取得範囲内で他者によって削除されたメッセージを検知して除外
+      if (docs.length > 0) {
+        const docIdSet = new Set(docs.map(d => d.id));
+        const minDocTs = getMsgTimestamp(docs[0]);
+        const removedMsgs = allLoadedMessages.filter(m => getMsgTimestamp(m) >= minDocTs && !docIdSet.has(m.id));
+        if (removedMsgs.length > 0) {
+          removedMsgs.forEach(rm => LocalStore.deleteMessage(rm.id).catch(() => {}));
+          allLoadedMessages = allLoadedMessages.filter(m => getMsgTimestamp(m) < minDocTs || docIdSet.has(m.id));
+          changed = true;
+        }
+      }
       if (changed || allLoadedMessages.length === docs.length) {
         allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         lastMessagesData = [...allLoadedMessages];
@@ -7032,6 +6901,9 @@ const handlePageClose = (e) => {
   if ((typeof _callId !== 'undefined' && _callId) || (typeof _agoraClient !== 'undefined' && _agoraClient)) {
     try { endCall(false); } catch (_) {}
   }
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    try { window._voiceEngine.leave(); } catch (_) {}
+  }
   // pagehideでpersisted=false(トゥルーな閉鎖)の場合は強制送信
   if (e && e.type === 'pagehide' && e.persisted === false) {
     _beaconSent = false; // 強制リセット
@@ -7094,6 +6966,7 @@ let _rtdbOnDisconnect = null;
 
 async function _getOrInitRTDB() {
   if (_rtdb) return _rtdb;
+  if (!app) return null;
   const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   _rtdb = getDatabase(app);
   return _rtdb;
@@ -8935,6 +8808,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     window._activeDmKeyUnsub = fsOnSnapshot(myDmKeyRef, async (keySnap) => {
       if (currentDmId !== dmId || !keySnap.exists()) return;
       delete _e2ee.dmKeyCache[dmId];
+      delete _e2ee._dmKeyPromises[dmId];
       const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
       if (freshKey && allLoadedMessages.length > 0) {
         await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
@@ -10251,7 +10125,7 @@ window.switchSsTab = function (tab) {
 
   if (tab === "rooms") loadServerSettingsRooms();
   else if (tab === "members") {
-    if (typeof loadServerMembers === 'function') loadServerMembers();
+    if (typeof loadServerSettingsMembers === 'function') loadServerSettingsMembers();
   } else if (tab === "invites") {
     if (typeof loadInviteCodes === 'function') loadInviteCodes();
   } else if (tab === "stamps") {
@@ -13250,6 +13124,16 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
+      } else {
+        // サーバー上に1件もメッセージがない場合はローカルキャッシュをクリア
+        if (allLoadedMessages.length > 0) {
+          allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
+          allLoadedMessages = [];
+          lastMessagesData = [];
+          messagesIndexMap = {};
+          renderPinnedMessages();
+          renderMessagesWithReadReceipts();
+        }
       }
     } catch (err) {
       console.warn('[RTDB] Delta Sync error:', err);
@@ -13985,39 +13869,7 @@ async function deleteRoomAndMessages(roomId) {
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
     if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   }
-
-  try {
-    const batch = writeBatch(db);
-
-    // 1. messages サブコレクションの全削除
-    const messagesRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/messages`);
-    const messagesSnap = await getDocs(messagesRef);
-    messagesSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 2. readReceipts サブコレクションの全削除
-    const readReceiptsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}/readReceipts`);
-    const readReceiptsSnap = await getDocs(readReceiptsRef);
-    readReceiptsSnap.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-
-    // 3. ルーム本体の削除
-    const roomRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms`, roomId);
-    batch.delete(roomRef);
-
-    await batch.commit();
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${roomId}`));
-    } catch (err) { console.error("RTDB Room Delete Failed", err); }
-    console.log(`Successfully deleted room and all its subcollections for ${roomId}.`);
-  } catch (error) {
-    console.error("Error during room deletion process:", error);
-    throw error;
-  }
+  await deleteRoomCascade(currentServerId, roomId);
 }
 const executeDeleteRoom = async () => {
   if (!pendingRoomDelete) return;
@@ -15409,11 +15261,12 @@ async function sendMessage() {
           idToken
         });
         const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
-        } else {
-          fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
-        }
+        fetch(notifUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: notifPayload,
+          keepalive: true
+        }).catch(() => {});
       } catch (e) { }
     }
     } else if (snapServerId && snapRoomId) {
@@ -15452,11 +15305,12 @@ async function sendMessage() {
             idToken
           });
           const notifUrl = `${WORKER_BASE_URL}/api/sendNotification`;
-          if (navigator.sendBeacon) {
-            navigator.sendBeacon(notifUrl, new Blob([notifPayload], { type: 'application/json' }));
-          } else {
-            fetch(notifUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: notifPayload, keepalive: true }).catch(() => {});
-          }
+          fetch(notifUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: notifPayload,
+            keepalive: true
+          }).catch(() => {});
         }
       }
     } catch (_) {}
@@ -17744,14 +17598,14 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.38s）終了後にシェイククラスのみ先に削除（LINE完全準拠のキレのある振動）
+      // 揺れアニメーション（0.7s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 400);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
+      }, 750);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.4s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
-      }, 1300);
+      }, 1400);
     }
   }, didScroll ? 350 : 50);
 }
@@ -17975,39 +17829,69 @@ async function batchDeleteCollection(colRef) {
   }
 }
 
-// ルームと配下の全データ（messages, readReceipts）を削除
+// ルームと配下の全データ（添付ファイル、messages, readReceipts, roomKeys, rescueRequests, LocalStore）を完全削除
 async function deleteRoomCascade(serverId, roomId) {
   const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
+  // 1. ルーム内メッセージに添付されていたKVファイルをクリーンアップ
+  try {
+    const msgsSnap = await getDocs(collection(db, `${base}/messages`));
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    for (const mDoc of msgsSnap.docs) {
+      const m = mDoc.data();
+      const fileUrl = m.fileData || m.kvFileUrl;
+      if (fileUrl && fileUrl.includes('/api/file/')) {
+        const match = fileUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+        if (match) {
+          const fileKey = match[1];
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(serverId)}`;
+          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) {}
+  // 2. Firestore サブコレクションのページングバッチ削除
   await batchDeleteCollection(collection(db, `${base}/messages`));
   await batchDeleteCollection(collection(db, `${base}/readReceipts`));
   await batchDeleteCollection(collection(db, `${base}/roomKeys`));
   await batchDeleteCollection(collection(db, `${base}/rescueRequests`));
   await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
+  // 3. RTDB パスの削除
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
   } catch (err) { console.error("RTDB Room Delete Failed", err); }
+  // 4. クライアント側ローカル IndexedDB のメッセージ履歴も完全消去
+  try {
+    if (typeof LocalStore !== 'undefined' && LocalStore.clearMessagesForChannel) {
+      await LocalStore.clearMessagesForChannel(`${serverId}_${roomId}`);
+    }
+  } catch (_) {}
 }
-
-// サーバーと配下の全データ（rooms, messages, readReceipts, profiles, inviteCodes, secrets）を削除
+// サーバーと配下の全データ（全ルーム添付ファイル、rooms, messages, readReceipts, profiles, inviteCodes, secrets, LocalStore）を削除
 async function deleteServerCascade(serverId) {
   const base = `artifacts/${appId}/servers/${serverId}`;
-  // 全ルームを取得して配下も削除 (messages, readReceipts, roomKeys, rescueRequests)
   const roomsSnap = await getDocs(collection(db, `${base}/rooms`));
   for (const roomDoc of roomsSnap.docs) {
-    const rb = `${base}/rooms/${roomDoc.id}`;
-    await batchDeleteCollection(collection(db, `${rb}/messages`));
-    await batchDeleteCollection(collection(db, `${rb}/readReceipts`));
-    await batchDeleteCollection(collection(db, `${rb}/roomKeys`));
-    await batchDeleteCollection(collection(db, `${rb}/rescueRequests`));
-    await deleteDoc(roomDoc.ref);
+    await deleteRoomCascade(serverId, roomDoc.id).catch(() => {});
   }
   await batchDeleteCollection(collection(db, `${base}/profiles`));
   await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
   await batchDeleteCollection(collection(db, `${base}/secrets`));
   await batchDeleteCollection(collection(db, `${base}/stamps`));
   await batchDeleteCollection(collection(db, `${base}/stampGroups`));
+  // サーバーアイコンのKVファイル削除
+  try {
+    const sDoc = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
+    if (sDoc.exists() && sDoc.data().iconUrl && sDoc.data().iconUrl.includes('/api/file/')) {
+      const match = sDoc.data().iconUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+      if (match) {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(serverId)}`;
+        fetch(`${WORKER_BASE_URL}/api/file/${match[1]}?${params}`, { method: 'DELETE' }).catch(() => {});
+      }
+    }
+  } catch (_) {}
   await deleteDoc(doc(db, `artifacts/${appId}/servers`, serverId));
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');

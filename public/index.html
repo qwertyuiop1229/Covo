@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.196" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.197" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.196" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.197" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -252,7 +252,6 @@
       if (!text) return;
       const line = `[${type}] ${text}`;
       const logs = window._covoLogs || [];
-      // 直前に追加された行と同一内容の場合は多重記録を即座に破棄
       if (logs.length > 0 && logs[logs.length - 1] === line) {
         return;
       }
@@ -276,21 +275,111 @@
         streamBody.scrollTop = streamBody.scrollHeight;
       }
     };
-    // コンソールの先行フック（二重フックを完全防止）
+    // 🛡️ 超初期・クラッシュ時でも 100% クラウド (RTDB) にエラーを即時記録する軽量ダイレクトビーコン
+    window._sendEarlyTelemetry = function(type, message, stack) {
+      try {
+        if (_isIgnoredEarlyError(message, '', stack)) return;
+        const normType = String(type || 'error').toLowerCase();
+        const msgStr = String(message || 'Unknown Error').substring(0, 3000);
+        const stackStr = String(stack || '').substring(0, 6000);
+        let hash = 0;
+        const rawSig = `${normType}:::${msgStr.substring(0, 200)}:::${stackStr.substring(0, 200)}`;
+        for (let i = 0; i < rawSig.length; i++) {
+          hash = ((hash << 5) - hash) + rawSig.charCodeAt(i);
+          hash |= 0;
+        }
+        const signature = 'err_' + Math.abs(hash).toString(36);
+        // localStorage の即時キャッシュ更新
+        try {
+          const rawCached = localStorage.getItem('covo_cached_telemetry_errors');
+          const list = rawCached ? JSON.parse(rawCached) : [];
+          const existing = list.find(e => e.id === signature);
+          if (existing) {
+            existing.count = (existing.count || 1) + 1;
+            existing.lastOccurredAt = new Date().toISOString();
+          } else {
+            list.unshift({
+              id: signature,
+              signature: signature,
+              type: normType,
+              message: msgStr,
+              stack: stackStr,
+              firstOccurredAt: new Date().toISOString(),
+              lastOccurredAt: new Date().toISOString(),
+              count: 1,
+              affectedEmails: ['未初期化/起動前'],
+              environment: { userAgent: navigator.userAgent, appVersion: 'boot_early', screenSize: `${window.innerWidth}x${window.innerHeight}` }
+            });
+          }
+          localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(list.slice(0, 100)));
+        } catch (_) {}
+        // RTDB は .write: true なのでトークンなしで直接書き込める
+        const rtdbUrl = `https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/simplechat-65a0d/error_reports/${signature}.json`;
+        const payload = {
+          id: signature,
+          signature: signature,
+          type: normType,
+          message: msgStr,
+          stack: stackStr,
+          lastOccurredAt: Date.now(),
+          count: 1,
+          affectedEmails: ['未初期化/起動前'],
+          environment: { userAgent: navigator.userAgent, appVersion: 'boot_early', screenSize: `${window.innerWidth}x${window.innerHeight}` }
+        };
+        fetch(rtdbUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(() => {});
+      } catch (_) {}
+    };
+    function _extractErrorDetails(args) {
+      let stack = '';
+      let msgParts = [];
+      for (const a of args) {
+        if (a instanceof Error) {
+          if (!stack && a.stack) stack = a.stack;
+          msgParts.push(a.message || a.stack || String(a));
+        } else if (typeof a === 'object') {
+          try {
+            msgParts.push(JSON.stringify(a));
+          } catch (_) {
+            msgParts.push(String(a));
+          }
+        } else {
+          msgParts.push(String(a));
+        }
+      }
+      return { message: msgParts.join(' '), stack: stack || '' };
+    }
+    // コンソールの先行フック（二重フックを完全防止 & スタックトレース抽出）
     if (!window.__covo_console_hooked__) {
       window.__covo_console_hooked__ = true;
       console.warn = function(...args) {
-        const msg = args.map(a => (typeof a === 'object' ? (a instanceof Error ? (a.message || a.stack) : JSON.stringify(a)) : String(a))).join(' ');
+        const { message: msg, stack } = _extractErrorDetails(args);
         window._pushCovoLog('WARN', msg);
-        window._earlyErrors.push({ type: 'warn', message: msg, stack: '', time: Date.now() });
-        if (typeof window._reportTelemetryError === 'function') window._reportTelemetryError('warn', msg, '');
+        if (!_isIgnoredEarlyError(msg, '', stack)) {
+          if (typeof window._reportTelemetryError === 'function') {
+            window._reportTelemetryError('warn', msg, stack);
+          } else {
+            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'warn', message: msg, stack, time: Date.now() });
+            window._sendEarlyTelemetry('warn', msg, stack);
+          }
+        }
         window.__covo_native_console__.warn.apply(console, args);
       };
       console.error = function(...args) {
-        const msg = args.map(a => (typeof a === 'object' ? (a instanceof Error ? (a.message || a.stack) : JSON.stringify(a)) : String(a))).join(' ');
+        const { message: msg, stack } = _extractErrorDetails(args);
         window._pushCovoLog('ERR', msg);
-        window._earlyErrors.push({ type: 'error', message: msg, stack: '', time: Date.now() });
-        if (typeof window._reportTelemetryError === 'function') window._reportTelemetryError('error', msg, '');
+        if (!_isIgnoredEarlyError(msg, '', stack)) {
+          if (typeof window._reportTelemetryError === 'function') {
+            window._reportTelemetryError('error', msg, stack);
+          } else {
+            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack, time: Date.now() });
+            window._sendEarlyTelemetry('error', msg, stack);
+          }
+        }
         window.__covo_native_console__.error.apply(console, args);
       };
       console.log = function(...args) {
@@ -299,7 +388,7 @@
         window.__covo_native_console__.log.apply(console, args);
       };
     }
-    // エラーリスナーの先行登録（二重登録を完全防止）
+    // エラーリスナーの先行登録（二重登録を完全防止 & 100% 漏れなく即時収集）
     if (!window.__covo_error_listeners_attached__) {
       window.__covo_error_listeners_attached__ = true;
       window.addEventListener('error', function(e) {
@@ -312,10 +401,13 @@
         const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
         const logLine = `${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
         window._pushCovoLog('ERR', logLine);
-        if (typeof window._reportTelemetryError === 'function') {
-          window._reportTelemetryError('error', `${tag}${msg}`, stack);
-        } else {
-          window._earlyErrors.push({ type: 'error', message: `${tag}${msg}`, stack: stack, time: Date.now() });
+        if (!isExt) {
+          if (typeof window._reportTelemetryError === 'function') {
+            window._reportTelemetryError('error', msg, stack);
+          } else {
+            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
+            window._sendEarlyTelemetry('error', msg, stack);
+          }
         }
         if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
           showEmergencyRecoveryPanel(msg, e.error);
@@ -332,10 +424,13 @@
         const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
         const logLine = `${tag}Uncaught (in promise) ${msg}`;
         window._pushCovoLog('ERR', logLine);
-        if (typeof window._reportTelemetryError === 'function') {
-          window._reportTelemetryError('unhandledrejection', `${tag}Uncaught (in promise) ${msg}`, stack);
-        } else {
-          window._earlyErrors.push({ type: 'unhandledrejection', message: `${tag}Uncaught (in promise) ${msg}`, stack: stack, time: Date.now() });
+        if (!isExt) {
+          if (typeof window._reportTelemetryError === 'function') {
+            window._reportTelemetryError('unhandledrejection', msg, stack);
+          } else {
+            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
+            window._sendEarlyTelemetry('unhandledrejection', msg, stack);
+          }
         }
         if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
           showEmergencyRecoveryPanel(msg, e.reason);
@@ -3538,7 +3633,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.196"></script>
+  <script type="module" src="js/main.js?v=1.1.197"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
