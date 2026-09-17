@@ -15982,42 +15982,39 @@ function createMessageElement(message, messageId, readByCount = 0) {
       if (message.senderId !== userId && (textToDisplay.includes(`@${userNickname}`) || textToDisplay.includes('@all'))) {
         messageElement.classList.add("mention-highlight");
       }
-
-    // 長文メッセージの「もっと見る」展開 (#73)
-    const lineCount = (textToDisplay.match(/\n/g) || []).length;
-    if (textToDisplay.length > 380 || lineCount >= 8) {
-      const collWrapper = document.createElement("div");
-      collWrapper.className = "message-collapsible-wrapper";
-      collWrapper.appendChild(messageTextSpan);
-
-      const fadeDiv = document.createElement("div");
-      fadeDiv.className = "collapse-fade";
-      collWrapper.appendChild(fadeDiv);
-
-      const toggleBtn = document.createElement("button");
-      toggleBtn.type = "button";
-      toggleBtn.className = "expand-msg-btn";
-      toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
-      toggleBtn.onclick = (e) => {
-        e.stopPropagation();
-        const isExp = collWrapper.classList.contains("expanded");
-        if (isExp) {
-          collWrapper.classList.remove("expanded");
-          fadeDiv.style.display = "block";
-          toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
-        } else {
-          collWrapper.classList.add("expanded");
-          fadeDiv.style.display = "none";
-          toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i> 折りたたむ';
-        }
-      };
-
-      messageElement.appendChild(collWrapper);
-      messageElement.appendChild(toggleBtn);
-    } else {
-      messageElement.appendChild(messageTextSpan);
+      // 長文メッセージの「もっと見る」展開 (#73)
+      const lineCount = (textToDisplay.match(/\n/g) || []).length;
+      if (textToDisplay.length > 380 || lineCount >= 8) {
+        const collWrapper = document.createElement("div");
+        collWrapper.className = "message-collapsible-wrapper";
+        collWrapper.appendChild(messageTextSpan);
+        const fadeDiv = document.createElement("div");
+        fadeDiv.className = "collapse-fade";
+        collWrapper.appendChild(fadeDiv);
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "expand-msg-btn";
+        toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
+        toggleBtn.onclick = (e) => {
+          e.stopPropagation();
+          const isExp = collWrapper.classList.contains("expanded");
+          if (isExp) {
+            collWrapper.classList.remove("expanded");
+            fadeDiv.style.display = "block";
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
+          } else {
+            collWrapper.classList.add("expanded");
+            fadeDiv.style.display = "none";
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i> 折りたたむ';
+          }
+        };
+        messageElement.appendChild(collWrapper);
+        messageElement.appendChild(toggleBtn);
+      } else {
+        messageElement.appendChild(messageTextSpan);
+      }
     }
-  }
+    }
 
 
   // 期限切れ・欠落ファイル共通カード生成関数

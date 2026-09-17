@@ -69,7 +69,10 @@ export function _twemojiParse(el) {
  */
 export function escapeHtmlAndLinkUrls(text) {
   if (!text) return "";
-
+  // 🔒 暗号文生テキストの画面露出を100%防止（復号中プレースホルダーを返す）
+  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
+    return '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
+  }
   // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
   let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
 
