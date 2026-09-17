@@ -12,18 +12,14 @@
     "useGitignore": true,
     "useDefaultPatterns": true,
     "customPatterns": [
-      "**/repomix-output.xml",
       "repomix-output.xml",
       "repomix.config.json",
       "package-lock.json",
       "yarn.lock",
-      "leaks.json",
-      "*.log",
 
       ".patch_backup/",
       "scratch/",
       "tools/",
-      "tests/",
 
       "node_modules/",
       "server/node_modules/",
@@ -35,12 +31,6 @@
       "public/img/",
 
       "public/js/geoguessr_locations.js",
-      "public/js/geo_study.js",
-      "public/css/geo_study.css",
-      "public/js/voice_engine.js",
-      "public/js/voice_engine_v2.js",
-      "schema.sql",
-      "wrangler.toml",
       "public/css/font-awesome.min.css",
       "public/css/styles.css",
 
