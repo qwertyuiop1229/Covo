@@ -1347,7 +1347,7 @@ async function getFCMToken(serviceAccountJsonStr) {
 
 // RTDB REST API用 OAuth2トークン
 async function getRTDBToken(serviceAccountJsonStr) {
-  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.database');
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email');
 }
 
 // 共通: サービスアカウントJWTからGoogle OAuth2トークンを取得
@@ -3221,127 +3221,154 @@ async function handleD1Api(request, env, url) {
         // 100件超過メッセージ自動プルーニング & Cloudflare KV ファイル自動完全消去
         // -------------------------------------------------------------
         async function handlePruneChannelMessages(request, env) {
-        const cors = getCorsHeaders(request);
-        try {
-        const authHeader = request.headers.get("Authorization") || "";
-        const idToken = authHeader.replace("Bearer ", "").trim();
-        if (!idToken) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-        if (!verifiedUser) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const { appId, serverId, roomId, dmId } = await request.json();
-        if (!appId || (!dmId && (!serverId || !roomId))) {
-        return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        if (!isValidAppId(appId, env)) {
-        return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const isGlobal = await isAppAdmin(appId, verifiedUser, env);
-        if (dmId) {
-        const parts = dmId.split('_');
-        if (!isGlobal && !parts.includes(verifiedUser.uid)) {
-        return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        } else {
-        if (!isGlobal) {
-        const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
-        if (!isMember) {
-          return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        }
-        }
-
-        const projectId = env.FIREBASE_PROJECT_ID;
-        const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-        const [adminToken, rtdbToken] = await Promise.all([
-        getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
-        getRTDBToken(env.SERVICE_ACCOUNT_JSON)
-        ]);
-
-        const rtdbPath = dmId
-        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?access_token=${rtdbToken}`
-        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?access_token=${rtdbToken}`;
-
-        const rtdbRes = await fetch(rtdbPath);
-        if (!rtdbRes.ok) {
-        return new Response(JSON.stringify({ error: "Failed to fetch messages from RTDB" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const rtdbData = await rtdbRes.json();
-        if (!rtdbData || typeof rtdbData !== 'object') {
-        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-
-        const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
-        msgsList.sort((a, b) => {
-        const tA = a.timestamp || a.createdAt || 0;
-        const tB = b.timestamp || b.createdAt || 0;
-        return tA - tB;
-        });
-
-        const MAX_ALLOWED = 100;
-        if (msgsList.length <= MAX_ALLOWED) {
-        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-
-        const excessCount = msgsList.length - MAX_ALLOWED;
-        const excessMsgs = msgsList.slice(0, excessCount);
-
-        let deletedFiles = 0;
-        let prunedCount = 0;
-
-        for (const msg of excessMsgs) {
-        const fileUrls = [];
-        if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
-        if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
-        if (msg.text) {
-        const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
-        matches.forEach(m => fileUrls.push(m[0]));
-        }
-
-        for (const u of fileUrls) {
-        const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-        if (m && env.FILES) {
-          const fileKey = m[1];
+          const cors = getCorsHeaders(request);
           try {
-            await env.FILES.delete(fileKey);
-            deletedFiles++;
-          } catch (delErr) {
-            console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
+            const authHeader = request.headers.get("Authorization") || "";
+            const idToken = authHeader.replace("Bearer ", "").trim();
+            if (!idToken) {
+              return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+            if (!verifiedUser) {
+              return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const { appId, serverId, roomId, dmId } = await request.json();
+            if (!appId || (!dmId && (!serverId || !roomId))) {
+              return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (!isValidAppId(appId, env)) {
+              return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+            if (dmId) {
+              const parts = dmId.split('_');
+              if (!isGlobal && !parts.includes(verifiedUser.uid)) {
+                return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+              }
+            } else {
+              if (!isGlobal) {
+                const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+                if (!isMember) {
+                  return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+                }
+              }
+            }
+            const projectId = env.FIREBASE_PROJECT_ID;
+            const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+
+            // サービスアカウント優先、フォールバックでWorker認証トークンまたはユーザーIDトークンを使用
+            let adminToken = null;
+            let rtdbToken = null;
+            let isOAuth = false;
+            if (env.SERVICE_ACCOUNT_JSON) {
+              try {
+                const [aTok, rTok] = await Promise.all([
+                  getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+                  getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+                ]);
+                adminToken = aTok;
+                rtdbToken = rTok;
+                isOAuth = true;
+              } catch (tokErr) {
+                console.warn("[Prune] Service account token error, falling back:", tokErr);
+              }
+            }
+            if (!adminToken || !rtdbToken) {
+              const workerToken = await getWorkerAuthToken(env);
+              if (workerToken) {
+                adminToken = adminToken || workerToken;
+                rtdbToken = workerToken;
+                isOAuth = false;
+              } else {
+                adminToken = adminToken || idToken;
+                rtdbToken = idToken;
+                isOAuth = false;
+              }
+            }
+
+            const authQuery = isOAuth ? `access_token=${rtdbToken}` : `auth=${rtdbToken}`;
+            const rtdbPath = dmId
+              ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?${authQuery}`
+              : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?${authQuery}`;
+
+            const rtdbRes = await fetch(rtdbPath, {
+              headers: {
+                "Authorization": `Bearer ${rtdbToken}`,
+                "Accept": "application/json"
+              }
+            });
+            if (!rtdbRes.ok) {
+              const errText = await rtdbRes.text().catch(() => "");
+              console.warn(`[Prune] RTDB fetch skipped (status ${rtdbRes.status}):`, errText);
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, skipped: true }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const rtdbData = await rtdbRes.json();
+            if (!rtdbData || typeof rtdbData !== 'object') {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
+            msgsList.sort((a, b) => {
+              const tA = a.timestamp || a.createdAt || 0;
+              const tB = b.timestamp || b.createdAt || 0;
+              return tA - tB;
+            });
+            const MAX_ALLOWED = 100;
+            if (msgsList.length <= MAX_ALLOWED) {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const excessCount = msgsList.length - MAX_ALLOWED;
+            const excessMsgs = msgsList.slice(0, excessCount);
+            let deletedFiles = 0;
+            let prunedCount = 0;
+            for (const msg of excessMsgs) {
+              const fileUrls = [];
+              if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
+              if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
+              if (msg.text) {
+                const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
+                matches.forEach(m => fileUrls.push(m[0]));
+              }
+              for (const u of fileUrls) {
+                const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+                if (m && env.FILES) {
+                  const fileKey = m[1];
+                  try {
+                    await env.FILES.delete(fileKey);
+                    deletedFiles++;
+                  } catch (delErr) {
+                    console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
+                  }
+                }
+              }
+              const delMsgRtdbUrl = dmId
+                ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
+                : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
+              await fetch(delMsgRtdbUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${rtdbToken}` } }).catch(() => {});
+              if (!dmId && serverId && roomId && adminToken) {
+                const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
+                await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
+              }
+              if (env.DB) {
+                try {
+                  const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
+                  await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
+                } catch (_) {}
+              }
+              prunedCount++;
+            }
+            return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
+              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+            });
+          } catch (err) {
+            console.error("handlePruneChannelMessages error:", err);
+            return new Response(JSON.stringify({ success: false, error: err.toString(), skipped: true }), {
+              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+            });
           }
-        }
-        }
-
-        const delMsgRtdbUrl = dmId
-        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?access_token=${rtdbToken}`
-        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?access_token=${rtdbToken}`;
-        await fetch(delMsgRtdbUrl, { method: "DELETE" }).catch(() => {});
-
-        if (!dmId && serverId && roomId) {
-        const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
-        await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
-        }
-
-        if (env.DB) {
-        try {
-          const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
-          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
-        } catch (_) {}
-        }
-
-        prunedCount++;
-        }
-
-        return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
-        status: 200, headers: { ...cors, "Content-Type": "application/json" }
-        });
-        } catch (err) {
-        console.error("handlePruneChannelMessages error:", err);
-        return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
         }

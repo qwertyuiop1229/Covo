@@ -8867,7 +8867,6 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
     requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
-  pruneExcessMessages(null, null, dmId);
   };
 
   // =========================================================================
@@ -13634,7 +13633,6 @@ function selectRoom(roomId, roomName) {
       requestP2PLogBackfill('server', roomId, oldestTs);
     }).catch(() => {});
   } catch (e) { }
-  pruneExcessMessages(currentServerId, roomId, null);
 }
 
 let floatingDateTimer = null;

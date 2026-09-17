@@ -3329,600 +3329,6 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
 }
 </file>
 
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-let _dbInstance = null;
-let _dbInitPromise = null;
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
-  if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        _dbInstance.close();
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-    req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
-      resolve(null);
-    };
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-    };
-  });
-  return _dbInitPromise;
-}
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-function _extractMsgTimestamp(obj) {
-  if (!obj) return Date.now();
-  const ts = obj.timestamp ?? obj.createdAt;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = new Date(ts).getTime();
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (ts && typeof ts === 'object') {
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
-    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
-  }
-  return Date.now();
-}
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
-      if (cleanMsg._originalText) {
-        cleanMsg.text = cleanMsg._originalText;
-      }
-      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-        cleanMsg._decrypted = false;
-      }
-      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
-        if (cleanMsg._originalText) {
-          cleanMsg.text = cleanMsg._originalText;
-        }
-        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-          cleanMsg._decrypted = false;
-        }
-        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
-        resolve([]);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
-      resolve([]);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend || !friend.uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put(friend);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (f && f.uid) store.put(f);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-/**
- * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
- * @returns {Promise<boolean>}
- */
-export async function clearAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return false;
-  return new Promise((resolve) => {
-    try {
-      const stores = ["messages", "channels", "friends", "settings"];
-      const tx = db.transaction(stores, "readwrite");
-      for (const storeName of stores) {
-        if (db.objectStoreNames.contains(storeName)) {
-          tx.objectStore(storeName).clear();
-        }
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] clearAllLocalData exception:", e);
-      resolve(false);
-    }
-  });
-}
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData,
-    clearAllLocalData
-  };
-}
-</file>
-
 <file path="public/recovery.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -5213,6 +4619,603 @@ if (typeof window !== 'undefined') {
     body.discord-dark-theme #userProfileBanner {
       background-color: var(--user-banner-color, #2b2d31);
     }
+</file>
+
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+let _dbInstance = null;
+let _dbInitPromise = null;
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) return _dbInstance;
+  if (_dbInitPromise) return _dbInitPromise;
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
+      }
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        _dbInstance.close();
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+    req.onerror = () => {
+      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      resolve(null);
+    };
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+    };
+  });
+  return _dbInitPromise;
+}
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
+      if (cleanMsg._originalText) {
+        cleanMsg.text = cleanMsg._originalText;
+      }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] putMessage failed:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
+        if (cleanMsg._originalText) {
+          cleanMsg.text = cleanMsg._originalText;
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
+        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        console.warn("[LocalStore] getMessages failed:", req.error);
+        resolve([]);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] getMessages exception:", e);
+      resolve([]);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend || !friend.uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put(friend);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (f && f.uid) store.put(f);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
+  }
+}
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  if (typeof caches !== 'undefined' && caches.delete) {
+    caches.delete('covo_media_cache_v1').catch(() => {});
+  }
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData,
+    clearAllLocalData
+  };
+}
 </file>
 
 <file path="public/auth-desktop.html">
@@ -12534,448 +12537,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 </file>
 
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // ========================================================================
-    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
-    // ========================================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // アプリ全体管理者 (Super Admin / Global Admin)
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    // ログイン許可リスト管理者 (List Admin)
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          (
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
-            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
-          )
-        )
-      );
-    }
-
-    // サーバーオーナー判定
-    function isServerOwner(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-        )
-      );
-    }
-
-    // ========================================================================
-    // 📁 各コレクションのセキュリティルール
-    // ========================================================================
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定 (Settings)
-      match /settings/{docId} {
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リスト (Allowed Emails)
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000 &&
-          (!('category' in request.resource.data) ||
-           request.resource.data.category in ['bug', 'feature', 'other']);
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ
-      match /error_reports/{docId} {
-        allow create, update: if
-          request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read: if isAuthenticated();
-        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫
-      match /recovery_vault/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
-      }
-
-      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // モデレーション監査ログ (Audit Logs)
-      match /audit_logs/{logId} {
-        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
-        allow create: if isAuthenticated();
-        allow update, delete: if false;
-      }
-
-      // 招待コードインデックス (逆引き)
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報 (Users & Profiles)
-      match /users/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // フレンド関係性 (Relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル
-      match /dm_channels/{dmId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-
-        match /keys/{keyUserId} {
-          allow read: if isAuthenticated();
-          allow write: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-        }
-      }
-
-      // 端末間データ移行 (P2P Device Transfers)
-      match /device_transfers/{sessionCode} {
-        allow read, delete: if isAuthenticated();
-        allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // P2P 過去ログ分散補完 (P2P Log Sync)
-      match /p2p_log_sync/{syncId} {
-        allow read, delete: if isAuthenticated();
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.requesterUid == request.auth.uid &&
-            (!('dmId' in request.resource.data) ||
-             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
-             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if isAuthenticated();
-        match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // 3. グローバルオンライン状態 (Status)
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // 4. P2P音声通話シグナリング (Calls)
-      match /calls/{callId} {
-        allow read, delete: if isAuthenticated();
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-            request.resource.data.caller.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング (File Shares)
-      match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated();
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-            request.resource.data.sender.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // ========================================================================
-      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
-      // ========================================================================
-
-      match /servers/{serverId} {
-        allow read: if isAuthenticated();
-
-        // サーバー作成: 自分自身を管理者・初期参加者として作成
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.serverAdmins == [request.auth.uid] &&
-            request.resource.data.joinedUsers == [request.auth.uid]));
-
-        // サーバー設定の更新:
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
-
-        allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
-
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
-
-        // サーバー削除: サーバーオーナーまたは全体管理者のみ
-        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-
-        // サーバー内の秘密情報 (パスワードハッシュ等)
-        match /secrets/{docId} {
-          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧 (Channels / Rooms)
-        match /rooms/{roomId} {
-          allow read: if isAuthenticated();
-          allow create, delete: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isAuthenticated() &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
-          );
-
-          // ルーム内メッセージ (Messages)
-          match /messages/{messageId} {
-            allow read: if isAuthenticated();
-            allow create: if isAuthenticated() &&
-              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
-
-            allow update: if isAuthenticated() && (
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
-               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
-              || isGlobalAdmin(appId)
-            );
-
-            allow delete: if isAuthenticated() && (
-              resource.data.senderId == request.auth.uid ||
-              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
-              isServerAdmin(appId, serverId) ||
-              isServerOwner(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-          }
-
-          // 既読レシート (Read Receipts)
-          match /readReceipts/{receiptUserId} {
-            allow read: if isAuthenticated();
-            allow create, update: if isAuthenticated() &&
-              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
-            allow delete: if isAuthenticated() &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
-          match /roomKeys/{keyId} {
-            allow read, write: if isAuthenticated();
-          }
-
-          // E2EE 救済リクエスト (Rescue Requests)
-          match /rescueRequests/{reqUserId} {
-            allow read, delete: if isAuthenticated();
-            allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
-          }
-
-          // タイピングインジケーター (Typing)
-          match /typing/{userId} {
-            allow read: if isAuthenticated();
-            allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-          }
-        }
-
-        // サーバー別プロフィール (Profiles)
-        match /profiles/{profileUserId} {
-          allow read: if isAuthenticated();
-          allow create, update: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
-          allow delete: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ (Stamps)
-        match /stamps/{stampId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string &&
-            request.resource.data.name.size() > 0 &&
-            request.resource.data.name.size() <= 32 &&
-            request.resource.data.url is string &&
-            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // スタンプグループ (Stamp Groups)
-        match /stampGroups/{groupId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string;
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // 招待コード (Invite Codes)
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-
-      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
-      match /vc_signaling/{sigDocId} {
-        allow read, delete: if isAuthenticated();
-        allow create, update: if isAuthenticated() &&
-          request.resource.data.fromUid == request.auth.uid &&
-          request.resource.data.toUid is string;
-      }
-    }
-
-    // ルート直下 VC シグナリング (フォールバック用)
-    match /vc_signaling/{sigDocId} {
-      allow read, delete: if isAuthenticated();
-      allow create, update: if isAuthenticated() &&
-        request.resource.data.fromUid == request.auth.uid &&
-        request.resource.data.toUid is string;
-    }
-
-  }
-}
-</file>
-
 <file path="database.rules.json">
 {
   "rules": {
@@ -13327,6 +12888,449 @@ service cloud.firestore {
         }
       }
     }
+  }
+}
+</file>
+
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // アプリ全体管理者 (Super Admin / Global Admin)
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    // ログイン許可リスト管理者 (List Admin)
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          (
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
+            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
+          )
+        )
+      );
+    }
+
+    // サーバーオーナー判定
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+        )
+      );
+    }
+
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定 (Settings)
+      match /settings/{docId} {
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リスト (Allowed Emails)
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000 &&
+          (!('category' in request.resource.data) ||
+           request.resource.data.category in ['bug', 'feature', 'other']);
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ
+      match /error_reports/{docId} {
+        allow create, update: if
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read: if isAuthenticated();
+        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫
+      match /recovery_vault/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+      }
+
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false;
+      }
+
+      // 招待コードインデックス (逆引き)
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報 (Users & Profiles)
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // フレンド関係性 (Relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル
+      match /dm_channels/{dmId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+
+        match /keys/{keyUserId} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+        }
+      }
+
+      // 端末間データ移行 (P2P Device Transfers)
+      match /device_transfers/{sessionCode} {
+        allow read, delete: if isAuthenticated();
+        allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        match /{subcollection}/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // P2P 過去ログ分散補完 (P2P Log Sync)
+      match /p2p_log_sync/{syncId} {
+        allow read, delete: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.requesterUid == request.auth.uid &&
+            (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == null ||
+             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
+             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
+        allow update: if isAuthenticated();
+        match /{subcollection}/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // 3. グローバルオンライン状態 (Status)
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // 4. P2P音声通話シグナリング (Calls)
+      match /calls/{callId} {
+        allow read, delete: if isAuthenticated();
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング (File Shares)
+      match /fileshares/{shareId} {
+        allow read, delete: if isAuthenticated();
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
+
+      match /servers/{serverId} {
+        allow read: if isAuthenticated();
+
+        // サーバー作成: 自分自身を管理者・初期参加者として作成
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
+
+        // サーバー設定の更新:
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
+
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
+
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
+
+        // サーバー削除: サーバーオーナーまたは全体管理者のみ
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+
+        // サーバー内の秘密情報 (パスワードハッシュ等)
+        match /secrets/{docId} {
+          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧 (Channels / Rooms)
+        match /rooms/{roomId} {
+          allow read: if isAuthenticated();
+          allow create, delete: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isAuthenticated() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+          );
+
+          // ルーム内メッセージ (Messages)
+          match /messages/{messageId} {
+            allow read: if isAuthenticated();
+            allow create: if isAuthenticated() &&
+              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
+
+            allow update: if isAuthenticated() && (
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
+              || isGlobalAdmin(appId)
+            );
+
+            allow delete: if isAuthenticated() && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+          }
+
+          // 既読レシート (Read Receipts)
+          match /readReceipts/{receiptUserId} {
+            allow read: if isAuthenticated();
+            allow create, update: if isAuthenticated() &&
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow delete: if isAuthenticated() &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
+          match /roomKeys/{keyId} {
+            allow read, write: if isAuthenticated();
+          }
+
+          // E2EE 救済リクエスト (Rescue Requests)
+          match /rescueRequests/{reqUserId} {
+            allow read, delete: if isAuthenticated();
+            allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
+          }
+
+          // タイピングインジケーター (Typing)
+          match /typing/{userId} {
+            allow read: if isAuthenticated();
+            allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+          }
+        }
+
+        // サーバー別プロフィール (Profiles)
+        match /profiles/{profileUserId} {
+          allow read: if isAuthenticated();
+          allow create, update: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
+          allow delete: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ (Stamps)
+        match /stamps/{stampId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 &&
+            request.resource.data.name.size() <= 32 &&
+            request.resource.data.url is string &&
+            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // スタンプグループ (Stamp Groups)
+        match /stampGroups/{groupId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string;
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // 招待コード (Invite Codes)
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read, delete: if isAuthenticated();
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.fromUid == request.auth.uid &&
+          request.resource.data.toUid is string;
+      }
+    }
+
+    // ルート直下 VC シグナリング (フォールバック用)
+    match /vc_signaling/{sigDocId} {
+      allow read, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.fromUid == request.auth.uid &&
+        request.resource.data.toUid is string;
+    }
+
   }
 }
 </file>
@@ -15839,6 +15843,9 @@ export default {
       }
       if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
         return await handleAdminDeleteMessage(request, env);
+      }
+      if (url.pathname === "/api/pruneChannelMessages" && request.method === "POST") {
+        return await handlePruneChannelMessages(request, env);
       }
       if (url.pathname.startsWith("/api/d1/")) {
         return await handleD1Api(request, env, url);
@@ -18562,14 +18569,160 @@ async function handleD1Api(request, env, url) {
         await env.DB.prepare("INSERT INTO room_keys (room_id, user_id, server_id, app_id, key_data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, user_id) DO UPDATE SET key_data = excluded.key_data, updated_at = excluded.updated_at")
           .bind(roomId, userId, serverId || "unknown", appId, JSON.stringify(targetKeyData), Date.now()).run();
         return new Response(JSON.stringify({ success: true, keyData: targetKeyData, rescued: true }), { status: 200, headers: d1Cors });
-      }
-    }
-    return new Response(JSON.stringify({ error: "Unknown D1 API subpath" }), { status: 404, headers: d1Cors });
-  } catch (err) {
-    console.error("D1 API Error:", err);
-    return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 200, headers: d1Cors });
-  }
-}
+        }
+        }
+        return new Response(JSON.stringify({ error: "Unknown D1 API subpath" }), { status: 404, headers: d1Cors });
+        } catch (err) {
+        console.error("D1 API Error:", err);
+        return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 200, headers: d1Cors });
+        }
+        }
+        // -------------------------------------------------------------
+        // サーバーメンバー判定ヘルパー (プルーニング認可用)
+        // -------------------------------------------------------------
+        async function isServerMemberCheck(appId, serverId, verifiedUser, env) {
+        if (!appId || !serverId || !verifiedUser) return false;
+        if (env.DB) {
+        try {
+        const row = await env.DB.prepare("SELECT 1 FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, verifiedUser.uid, appId).first();
+        if (row) return true;
+        } catch (e) {
+        console.error("isServerMemberCheck D1 error:", e);
+        }
+        }
+        try {
+        const adminToken = await getAdminTokenForFirestore(env);
+        if (adminToken) {
+        const srvUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`;
+        const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+        const srvData = await srvRes.json();
+        if (!srvData.error && srvData.fields) {
+        if (srvData.fields.createdBy?.stringValue === verifiedUser.uid) return true;
+        if (srvData.fields.joinedUsers?.arrayValue?.values) {
+          const members = srvData.fields.joinedUsers.arrayValue.values.map(v => (v.stringValue || "").trim());
+          if (members.includes(verifiedUser.uid.trim())) return true;
+        }
+        }
+        }
+        } catch (e) {
+        console.error("isServerMemberCheck Firestore error:", e);
+        }
+        return false;
+        }
+        // -------------------------------------------------------------
+        // 100件超過メッセージ自動プルーニング & Cloudflare KV ファイル自動完全消去
+        // -------------------------------------------------------------
+        async function handlePruneChannelMessages(request, env) {
+        const cors = getCorsHeaders(request);
+        try {
+        const authHeader = request.headers.get("Authorization") || "";
+        const idToken = authHeader.replace("Bearer ", "").trim();
+        if (!idToken) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+        if (!verifiedUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const { appId, serverId, roomId, dmId } = await request.json();
+        if (!appId || (!dmId && (!serverId || !roomId))) {
+        return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        if (!isValidAppId(appId, env)) {
+        return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        if (!env.SERVICE_ACCOUNT_JSON) {
+        return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+        if (dmId) {
+        const parts = dmId.split('_');
+        if (!isGlobal && !parts.includes(verifiedUser.uid)) {
+        return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        } else {
+        if (!isGlobal) {
+        const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+        if (!isMember) {
+          return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        }
+        }
+        const projectId = env.FIREBASE_PROJECT_ID;
+        const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+        const [adminToken, rtdbToken] = await Promise.all([
+        getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+        getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+        ]);
+        const rtdbPath = dmId
+        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?access_token=${rtdbToken}`
+        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?access_token=${rtdbToken}`;
+        const rtdbRes = await fetch(rtdbPath);
+        if (!rtdbRes.ok) {
+        return new Response(JSON.stringify({ error: "Failed to fetch messages from RTDB" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const rtdbData = await rtdbRes.json();
+        if (!rtdbData || typeof rtdbData !== 'object') {
+        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
+        msgsList.sort((a, b) => {
+        const tA = a.timestamp || a.createdAt || 0;
+        const tB = b.timestamp || b.createdAt || 0;
+        return tA - tB;
+        });
+        const MAX_ALLOWED = 100;
+        if (msgsList.length <= MAX_ALLOWED) {
+        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const excessCount = msgsList.length - MAX_ALLOWED;
+        const excessMsgs = msgsList.slice(0, excessCount);
+        let deletedFiles = 0;
+        let prunedCount = 0;
+        for (const msg of excessMsgs) {
+        const fileUrls = [];
+        if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
+        if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
+        if (msg.text) {
+        const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
+        matches.forEach(m => fileUrls.push(m[0]));
+        }
+        for (const u of fileUrls) {
+        const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+        if (m && env.FILES) {
+          const fileKey = m[1];
+          try {
+            await env.FILES.delete(fileKey);
+            deletedFiles++;
+          } catch (delErr) {
+            console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
+          }
+        }
+        }
+        const delMsgRtdbUrl = dmId
+        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?access_token=${rtdbToken}`
+        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?access_token=${rtdbToken}`;
+        await fetch(delMsgRtdbUrl, { method: "DELETE" }).catch(() => {});
+        if (!dmId && serverId && roomId) {
+        const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
+        await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
+        }
+        if (env.DB) {
+        try {
+          const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
+          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
+        } catch (_) {}
+        }
+        prunedCount++;
+        }
+        return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
+        status: 200, headers: { ...cors, "Content-Type": "application/json" }
+        });
+        } catch (err) {
+        console.error("handlePruneChannelMessages error:", err);
+        return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        }
 </file>
 
 <file path="public/index.html">
@@ -18606,13 +18759,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.197" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.198" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.197" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.198" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -22002,7 +22155,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.197"></script>
+  <script type="module" src="js/main.js?v=1.1.198"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -28461,7 +28614,10 @@ window.executeLogout = async function (skipConfirm = false) {
         }
       }).catch(() => {});
     }
-    // IndexedDB (LocalStore) 内の全ローカルキャッシュを完全削除
+    // IndexedDB (LocalStore) & メディアキャッシュ内の全ローカルデータを完全削除
+    if ('caches' in window) {
+      await caches.delete('covo_media_cache_v1').catch(() => {});
+    }
     if (typeof LocalStore !== 'undefined' && LocalStore.clearAllLocalData) {
       await LocalStore.clearAllLocalData().catch(() => {});
     }
@@ -31531,6 +31687,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
     requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
+  pruneExcessMessages(null, null, dmId);
   };
   // =========================================================================
   // Discord本家準拠: 個チャ (DM) 相手のユーザープロフィールパネル描画
@@ -32018,12 +32175,34 @@ window.initiateMigrationReceive = async function() {
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
     });
+    const pendingCandidates = [];
+    onSnapshot(transferRef, async (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.offer && !pc.currentRemoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        while (pendingCandidates.length > 0) {
+          const cand = pendingCandidates.shift();
+          try { await pc.addIceCandidate(cand); } catch(e){}
+        }
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+      }
+    }, (err) => {
+      console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
+    });
     onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-          } catch (e) { }
+          const cand = new RTCIceCandidate(change.doc.data());
+          if (pc.currentRemoteDescription) {
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (e) { }
+          } else {
+            pendingCandidates.push(cand);
+          }
         }
       });
     }, (err) => {
@@ -35854,6 +36033,7 @@ function selectRoom(roomId, roomName) {
       requestP2PLogBackfill('server', roomId, oldestTs);
     }).catch(() => {});
   } catch (e) { }
+  pruneExcessMessages(currentServerId, roomId, null);
 }
 let floatingDateTimer = null;
 messagesDisplay.addEventListener("scroll", async () => {
@@ -36630,6 +36810,7 @@ async function sendSticker(emoji) {
     }
     cancelReply();
     resetAwayTimer();
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
   } catch (e) {
     console.error('[Sticker] 送信失敗:', e);
     alertMessage('スタンプの送信に失敗しました', 'error');
@@ -36999,9 +37180,75 @@ document.addEventListener('click', (e) => {
 });
 // ================= MODULE: messages.js ================
 // ================= MESSAGES MODULE ================
-// RTDBメッセージローテーション後方互換ダミー関数（クライアント側不正削除完全廃止）
+// === ローカルメディアキャッシュ (Cache Storage API 活用) ===
+// サーバーで100件を超過してKVから削除された後でも、ローカルに履歴を持つ端末では画像を永久に表示可能にする
+async function fetchWithMediaCache(url) {
+  if (!url || typeof url !== 'string' || !('caches' in window)) {
+    return fetch(url);
+  }
+  try {
+    const cache = await caches.open('covo_media_cache_v1');
+    const cachedResponse = await cache.match(url);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    const networkResponse = await fetch(url);
+    if (networkResponse.ok) {
+      cache.put(url, networkResponse.clone()).catch(() => {});
+    }
+    return networkResponse;
+  } catch (err) {
+    return fetch(url);
+  }
+}
+async function cacheLocalMediaFile(url, fileOrBlob) {
+  if (!url || !fileOrBlob || !('caches' in window)) return;
+  try {
+    const cache = await caches.open('covo_media_cache_v1');
+    const response = new Response(fileOrBlob, {
+      headers: {
+        'Content-Type': fileOrBlob.type || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000'
+      }
+    });
+    await cache.put(url, response);
+  } catch (_) {}
+}
+// === メッセージ自動プルーニング（最新100件超過分の自動削除 & KV添付ファイル完全消去） ===
+let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
-  return;
+  if ((!serverId || !roomId) && !dmId) return;
+  const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
+  const now = Date.now();
+  if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;
+  _pruneThrottleMap.set(channelKey, now);
+  try {
+    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+    if (!idToken) return;
+    fetch(`${WORKER_BASE_URL}/api/pruneChannelMessages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        appId,
+        serverId: serverId || null,
+        roomId: roomId || null,
+        dmId: dmId || null
+      }),
+      keepalive: true
+    }).then(async res => {
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        if (d.prunedCount > 0) {
+          console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+        }
+      }
+    }).catch(err => {
+      console.warn('[Prune] background prune notice:', err);
+    });
+  } catch (_) {}
 }
 async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
@@ -37173,6 +37420,7 @@ async function sendMessage() {
           "simplechat/messages",
           snapServerId
         );
+        cacheLocalMediaFile(fileUrl, fileToUpload);
         Object.assign(data, {
           fileData: fileUrl,
           fileName: attachedFile.name,
@@ -37307,6 +37555,7 @@ async function sendMessage() {
     const remainingFiles = (attachedFiles && attachedFiles.length > 1) ? attachedFiles.slice(1) : [];
     clearAttachedFile(); cancelReply();
     resetAwayTimer();
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
     // 複数ファイル添付時の順次バックグラウンドアップロード＆送信 (#70)
     if (remainingFiles.length > 0) {
       (async () => {
@@ -37388,6 +37637,7 @@ async function sendMessage() {
     }
     }
     const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+    cacheLocalMediaFile(fileUrl, fileToUpload);
     const data = {
     userId: userId,
     senderId: userId,
@@ -37484,6 +37734,7 @@ async function sendMessage() {
         }
       }
     } catch (_) {}
+    pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
     }
     }
 async function handleFilesSelected(filesList) {
@@ -38119,7 +38370,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   // 鍵の取得待機中は削除カードにせず、そのままリトライ待機
                   return;
                 }
-                const res = await fetch(message.fileData);
+                const res = await fetchWithMediaCache(message.fileData);
                 if (res.status === 404 || res.status === 410) {
                   markFileAsMissing(message.fileData);
                   message._fileExpired = true;
@@ -38266,7 +38517,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                     key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
                   }
                   if (!key) return;
-                  const res = await fetch(message.fileData);
+                  const res = await fetchWithMediaCache(message.fileData);
                   if (res.status === 404 || res.status === 410 || !res.ok) {
                     markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                     message._fileExpired = true;
@@ -38327,7 +38578,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
               }
               if (!key) throw new Error("鍵が見つかりません");
-              const res = await fetch(message.fileData);
+              const res = await fetchWithMediaCache(message.fileData);
               if (res.status === 404 || res.status === 410 || !res.ok) {
                 markFileAsMissing(message.fileData);
                 message._fileExpired = true;
@@ -38406,7 +38657,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
           return;
         }
         try {
-          const res = await fetch(message.kvFileUrl, { method: 'HEAD' }).catch(() => null);
+          const res = await fetchWithMediaCache(message.kvFileUrl).catch(() => null);
           if (res && (res.status === 404 || res.status === 410)) {
             markFileAsMissing(message.kvFileUrl);
             message._fileExpired = true;
@@ -41433,24 +41684,38 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
     deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     return;
   }
-  // 3. WebRTC DataChannel 経由で暗号化メッセージを送信
+  // 3. WebRTC DataChannel 経由で暗号化メッセージを送信 (TURN対応で100%貫通)
   let unsubRequesterCands = null;
   try {
-    const pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    const pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     let dc = null;
     const pendingCandidates = [];
     pc.ondatachannel = (ev) => {
       dc = ev.channel;
-      dc.onopen = () => {
-        // 暗号化された状態のメッセージ配列のみを送信（秘密鍵や別チャンネルのログは一切除外）
-        const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: localMsgs });
-        dc.send(payload);
+      const sendData = () => {
+        // メッセージ配列を安全なバッチサイズに整流して送信
+        const validMsgs = localMsgs.filter(m => m && m.id && (beforeTs == null || getMsgTimestamp(m) <= beforeTs));
+        const payload = JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs });
+        try {
+          dc.send(payload);
+        } catch (sendErr) {
+          console.warn('[P2P LogSync] Large payload batching fallback:', sendErr);
+          // 64KB超過時の小分けフォールバック
+          for (let i = 0; i < validMsgs.length; i += 25) {
+            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 25) }));
+          }
+        }
         setTimeout(() => {
           if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
           try { pc.close(); } catch (e) {}
           deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
-        }, 1000);
+        }, 1200);
       };
+      if (dc.readyState === 'open') {
+        sendData();
+      } else {
+        dc.onopen = sendData;
+      }
     };
     pc.onicecandidate = (e) => {
       if (e.candidate) {
@@ -41532,14 +41797,16 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
     deleteDoc(syncDocRef).catch(() => {});
   };
   try {
-    pc = new RTCPeerConnection(STUN_ONLY_CONFIG);
+    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     const dc = pc.createDataChannel('logSync', { ordered: true });
     dc.onmessage = async (ev) => {
       try {
         const res = JSON.parse(ev.data);
         if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
-          console.log(`[P2P LogSync] Received ${res.messages.length} backfilled messages for ${res.channelId}`);
-          await LocalStore.upsertMessagesBatch(res.messages);
+          // 届いたメッセージが安全なデータか検証（要求した過去日時より古い、または新規追加分のみ安全に合流）
+          const filteredIncoming = res.messages.filter(m => m && m.id && typeof m.channelId === 'string');
+          console.log(`[P2P LogSync] Received ${filteredIncoming.length} backfilled messages for ${res.channelId}`);
+          await LocalStore.upsertMessagesBatch(filteredIncoming);
           // 現在開いているチャンネルと一致していれば復号して即時画面反映
           const activeChId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
           if (res.channelId === activeChId) {
@@ -41551,8 +41818,8 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
                 await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
               }
             };
-            await decryptInPlace(res.messages);
-            res.messages.forEach(msg => {
+            await decryptInPlace(filteredIncoming);
+            filteredIncoming.forEach(msg => {
               const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
               if (idx >= 0) allLoadedMessages[idx] = msg;
               else allLoadedMessages.push(msg);
@@ -41577,18 +41844,22 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
     };
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await setDoc(syncDocRef, {
+    const syncPayload = {
       requesterUid: userId,
       targetUid: targetUid,
       channelType,
-      serverId: currentServerId || null,
-      roomId: channelType === 'server' ? targetId : null,
-      dmId: channelType === 'dm' ? targetId : null,
       beforeTs: oldestLocalTs || null,
       offer: { type: offer.type, sdp: offer.sdp },
       status: 'offering',
       createdAt: serverTimestamp()
-    });
+    };
+    if (channelType === 'server') {
+      syncPayload.serverId = currentServerId || null;
+      syncPayload.roomId = targetId;
+    } else {
+      syncPayload.dmId = targetId;
+    }
+    await setDoc(syncDocRef, syncPayload);
     unsubCands = onSnapshot(collection(db, `artifacts/${appId}/p2p_log_sync/${syncId}/targetCandidates`), (snap) => {
       snap.docChanges().forEach(async (ch) => {
         if (ch.type === 'added') {
@@ -48242,7 +48513,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.197",
+  "version": "1.1.198",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48299,7 +48570,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.197",
+  "version": "1.1.198",
   "force": false
 }
 </file>

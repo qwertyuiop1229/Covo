@@ -1,9 +1,7 @@
 {
-  "date": "2026-09-17T16:14:27.873Z",
+  "date": "2026-09-17T16:25:35.956Z",
   "files": [
-    "firestore.rules",
     "server/src/index.js",
-    "public/js/local_store.js",
     "public/js/main.js"
   ]
 }
